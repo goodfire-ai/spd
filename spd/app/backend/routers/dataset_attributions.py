@@ -13,13 +13,8 @@ from torch import Tensor
 
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
-from spd.dataset_attributions.storage import (
-    DatasetAttributionEntry as StorageEntry,
-)
-from spd.dataset_attributions.storage import (
-    DatasetAttributionStorage,
-)
-from spd.topology import CanonicalWeight
+from spd.dataset_attributions.storage import DatasetAttributionEntry as StorageEntry
+from spd.dataset_attributions.storage import DatasetAttributionStorage
 
 
 class DatasetAttributionEntry(BaseModel):
@@ -67,8 +62,7 @@ def _to_concrete_key(canonical_layer: str, component_idx: int, loaded: DepLoaded
     """
     if canonical_layer == "output":
         return f"output:{component_idx}"
-    canonical_weight = CanonicalWeight.parse(canonical_layer)
-    concrete = loaded.topology.get_target_module_path(canonical_weight)
+    concrete = loaded.topology.canon_to_target(canonical_layer)
     return f"{concrete}:{component_idx}"
 
 
@@ -111,7 +105,7 @@ def _to_api_entries(
     def _canonicalize_layer(layer: str) -> str:
         if layer == "output":
             return layer
-        return loaded.topology.get_canonical_weight(layer).canonical_str()
+        return loaded.topology.target_to_canon(layer)
 
     return [
         DatasetAttributionEntry(

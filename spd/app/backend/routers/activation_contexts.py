@@ -14,7 +14,6 @@ from spd.app.backend.compute import compute_ci_only
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.schemas import SubcomponentActivationContexts, SubcomponentMetadata
 from spd.app.backend.utils import log_errors
-from spd.topology import CanonicalWeight
 from spd.utils.distributed_utils import get_device
 
 
@@ -50,7 +49,7 @@ def get_activation_contexts_summary(
 
     summary: dict[str, list[SubcomponentMetadata]] = defaultdict(list)
     for comp in summary_data.values():
-        canonical_layer = loaded.topology.get_canonical_weight(comp.layer).canonical_str()
+        canonical_layer = loaded.topology.target_to_canon(comp.layer)
         summary[canonical_layer].append(
             SubcomponentMetadata(
                 subcomponent_idx=comp.component_idx,
@@ -82,7 +81,7 @@ def get_activation_context_detail(
     TODO: Add offset parameter for pagination to allow fetching remaining examples
           after initial view is loaded.
     """
-    concrete_layer = loaded.topology.get_target_module_path(CanonicalWeight.parse(layer))
+    concrete_layer = loaded.topology.canon_to_target(layer)
     component_key = f"{concrete_layer}:{component_idx}"
     comp = loaded.harvest.get_component(component_key)
     if comp is None:
@@ -128,7 +127,7 @@ def get_activation_contexts_bulk(
     # Translate canonical component keys to concrete paths for harvest lookup
     def _to_concrete_key(canonical_key: str) -> str:
         layer, idx = canonical_key.rsplit(":", 1)
-        concrete = loaded.topology.get_target_module_path(CanonicalWeight.parse(layer))
+        concrete = loaded.topology.canon_to_target(layer)
         return f"{concrete}:{idx}"
 
     concrete_to_canonical = {_to_concrete_key(k): k for k in request.component_keys}
@@ -176,7 +175,7 @@ def probe_component(
         sampling=loaded.config.sampling,
     )
 
-    concrete_layer = loaded.topology.get_target_module_path(CanonicalWeight.parse(request.layer))
+    concrete_layer = loaded.topology.canon_to_target(request.layer)
     assert concrete_layer in loaded.model.components, f"Layer {request.layer} not in model"
 
     ci_tensor = result.ci_lower_leaky[concrete_layer]

@@ -204,7 +204,6 @@ def get_architecture_info(wandb_path: str) -> ArchitectureInfo:
         dataset_name=task_config.dataset_name,
         tokenizer_name=config.tokenizer_name,
         layer_descriptions={
-            path: topology.get_canonical_weight(path).canonical_str()
-            for path in model.target_module_paths
+            path: topology.target_to_canon(path) for path in model.target_module_paths
         },
     )

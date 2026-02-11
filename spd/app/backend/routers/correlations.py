@@ -13,21 +13,21 @@ from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
 from spd.harvest import analysis
 from spd.log import logger
-from spd.topology import CanonicalWeight, TransformerTopology
+from spd.topology import TransformerTopology
 
 
 def _canonical_to_concrete_key(
     canonical_layer: str, component_idx: int, topology: TransformerTopology
 ) -> str:
     """Translate canonical layer address + component idx to concrete component key for harvest data."""
-    concrete = topology.get_target_module_path(CanonicalWeight.parse(canonical_layer))
+    concrete = topology.canon_to_target(canonical_layer)
     return f"{concrete}:{component_idx}"
 
 
 def _concrete_to_canonical_key(concrete_key: str, topology: TransformerTopology) -> str:
     """Translate concrete component key to canonical component key."""
     layer, idx = concrete_key.rsplit(":", 1)
-    canonical = topology.get_canonical_weight(layer).canonical_str()
+    canonical = topology.target_to_canon(layer)
     return f"{canonical}:{idx}"
 
 
@@ -261,8 +261,7 @@ def get_intruder_scores(loaded: DepLoadedRun) -> dict[str, float]:
     if scores is None:
         return {}
     return {
-        _concrete_to_canonical_key(key, loaded.topology): score
-        for key, score in scores.items()
+        _concrete_to_canonical_key(key, loaded.topology): score for key, score in scores.items()
     }
 
 

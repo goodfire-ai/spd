@@ -19,7 +19,6 @@ from pydantic import BaseModel
 from spd.app.backend.compute import Edge, Node
 from spd.app.backend.optim_cis import CELossConfig, KLLossConfig, LossConfig, MaskType
 from spd.settings import REPO_ROOT
-from spd.topology import CanonicalWeight
 
 GraphType = Literal["standard", "optimized", "manual"]
 
@@ -375,7 +374,7 @@ class PromptAttrDB:
 
         def _node_to_dict(n: Node) -> dict[str, str | int]:
             return {
-                "layer": n.layer.canonical_str(),
+                "layer": n.layer,
                 "seq_pos": n.seq_pos,
                 "component_idx": n.component_idx,
             }
@@ -490,7 +489,7 @@ class PromptAttrDB:
 
         def _node_from_dict(d: dict[str, str | int]) -> Node:
             return Node(
-                layer=CanonicalWeight.parse(str(d["layer"])),
+                layer=str(d["layer"]),
                 seq_pos=int(d["seq_pos"]),
                 component_idx=int(d["component_idx"]),
             )

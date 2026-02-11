@@ -20,7 +20,7 @@ from spd.configs import SamplingType
 from spd.log import logger
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
-from spd.topology import CanonicalWeight, Embed, TransformerTopology
+from spd.topology import TransformerTopology
 from spd.utils.general_utils import bf16_autocast
 
 
@@ -84,13 +84,13 @@ def compute_layer_alive_info(
 
 @dataclass
 class Node:
-    layer: CanonicalWeight
+    layer: str
     seq_pos: int
     component_idx: int
 
     @override
     def __str__(self) -> str:
-        return f"{self.layer.canonical_str()}:{self.seq_pos}:{self.component_idx}"
+        return f"{self.layer}:{self.seq_pos}:{self.component_idx}"
 
 
 def _get_seq_pos(node_key: str) -> int:
@@ -282,14 +282,14 @@ def _compute_edges_for_target(
                 retain_graph=True,
             )
             with torch.no_grad():
-                canonical_target = topology.get_canonical_weight(target)
+                canonical_target = topology.target_to_canon(target)
                 for source, source_info, grad, in_post_detach in zip(
                     sources, source_infos, grads, in_post_detaches, strict=True
                 ):
-                    canonical_source = topology.get_canonical_weight(source)
+                    canonical_source = topology.target_to_canon(source)
                     is_cross_seq = topology.is_cross_seq_pair(canonical_source, canonical_target)
                     weighted: Float[Tensor, "s C"] = (grad * in_post_detach)[0]
-                    if isinstance(canonical_source, Embed):
+                    if canonical_source == "embed":
                         weighted = weighted.sum(dim=1, keepdim=True)
 
                     s_in_range = range(s_out + 1) if is_cross_seq else [s_out]
@@ -431,7 +431,7 @@ def compute_edges_from_ci(
             topology=topology,
         )
         edges.extend(target_edges)
-        canonical_target = topology.get_canonical_weight(target).canonical_str()
+        canonical_target = topology.target_to_canon(target)
         logger.info(
             f"[perf]   {canonical_target}: {time.perf_counter() - t_target:.2f}s, "
             f"{len(target_edges)} edges"
@@ -711,7 +711,7 @@ def extract_node_ci_vals(
     """
     node_ci_vals: dict[str, float] = {}
     for layer_name, ci_tensor in ci_lower_leaky.items():
-        canonical = topology.get_canonical_weight(layer_name).canonical_str()
+        canonical = topology.target_to_canon(layer_name)
         n_seq = ci_tensor.shape[1]
         n_components = ci_tensor.shape[2]
         for seq_pos in range(n_seq):
@@ -733,7 +733,7 @@ def extract_node_subcomp_acts(
     """
     node_subcomp_acts: dict[str, float] = {}
     for layer_name, subcomp_acts in component_acts.items():
-        canonical = topology.get_canonical_weight(layer_name).canonical_str()
+        canonical = topology.target_to_canon(layer_name)
         ci = ci_lower_leaky[layer_name]
         alive_mask = ci[0] > ci_threshold  # [seq, C]
         alive_seq_indices, alive_c_indices = torch.where(alive_mask)

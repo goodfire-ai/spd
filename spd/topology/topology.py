@@ -1,138 +1,27 @@
-"""Canonical transformer topology.
+"""Bidirectional mapping between canonical weights and concrete module paths.
 
-Defines a normalized addressing scheme for transformer layers. All API
-consumers use canonical addresses instead of raw module paths.
-
-Canonical layer address format:
-    "embed"                   — embedding
-    "output"                  — unembed / logits
-    "{block}.attn.{p}"        — separate attention (p: q | k | v | o)
-    "{block}.attn_fused.{p}"  — fused attention (p: qkv | o)
-    "{block}.glu.{p}"         — gated FFN / SwiGLU (p: up | down | gate)
-    "{block}.mlp.{p}"         — simple FFN (p: up | down)
-
-Node key format (layer address + position):
-    "{layer_address}:{seq_pos}:{component_idx}"
-
-Examples:
-    "0.attn.q"         — block 0, attention Q projection
-    "2.glu.gate"       — block 2, SwiGLU gate projection
-    "1.mlp.up"         — block 1, simple FFN up projection
-    "0.attn.q:3:5"     — block 0, Q proj, seq pos 3, component 5
-    "embed:0:0"        — embedding, seq 0, pseudo-component 0
-    "output:7:42"      — output, seq 7, token 42
+Depends on torch.nn and specific model classes. For pure canonical types
+without torch, use canonical.py directly.
 """
 
 from __future__ import annotations
 
-import re
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass
-from typing import Literal, override
+from typing import Literal
 
 from torch import nn
 
-# ── Canonical weight types ──────────────────────────────────────────────
-
-_EMBED_RE = re.compile(r"^embed$")
-_OUTPUT_RE = re.compile(r"^output$")
-_LAYER_RE = re.compile(r"^(?P<layer>\d+)\.(?P<sublayer>attn|attn_fused|glu|mlp)\.(?P<proj>[a-z]+)$")
-
-
-class CanonicalWeight(ABC):
-    @abstractmethod
-    def canonical_str(self) -> str: ...
-
-    @staticmethod
-    def parse(s: str) -> CanonicalWeight:
-        """Parse a canonical address string into a CanonicalWeight."""
-        m_embed = _EMBED_RE.match(s)
-        m_output = _OUTPUT_RE.match(s)
-        m_layer = _LAYER_RE.match(s)
-
-        matches = [m for m in (m_embed, m_output, m_layer) if m is not None]
-        assert len(matches) == 1, f"Invalid canonical address: {s!r}"
-
-        if m_embed:
-            return Embed()
-        if m_output:
-            return Unembed()
-
-        assert m_layer is not None
-        layer_idx = int(m_layer.group("layer"))
-        sublayer = m_layer.group("sublayer")
-        proj = m_layer.group("proj")
-
-        cls, valid = _SUBLAYER_PROJECTIONS[sublayer]
-        assert proj in valid, f"Invalid projection {proj!r} for {sublayer!r} in {s!r}"
-        return LayerWeight(layer_idx, cls(weight=proj))
-
-
-@dataclass(frozen=True)
-class Embed(CanonicalWeight):
-    @override
-    def canonical_str(self) -> str:
-        return "embed"
-
-
-@dataclass(frozen=True)
-class Unembed(CanonicalWeight):
-    @override
-    def canonical_str(self) -> str:
-        return "output"
-
-
-@dataclass(frozen=True)
-class SeparateAttnWeight:
-    weight: Literal["q", "k", "v", "o"]
-
-
-@dataclass(frozen=True)
-class FusedAttnWeight:
-    weight: Literal["qkv", "o"]
-
-
-AttnWeight = SeparateAttnWeight | FusedAttnWeight
-
-
-@dataclass(frozen=True)
-class GLUWeight:
-    weight: Literal["up", "down", "gate"]
-
-
-@dataclass(frozen=True)
-class MLPWeight:
-    weight: Literal["up", "down"]
-
-
-FFNWeight = GLUWeight | MLPWeight
-
-
-@dataclass(frozen=True)
-class LayerWeight(CanonicalWeight):
-    layer_idx: int
-    name: AttnWeight | FFNWeight
-
-    @override
-    def canonical_str(self) -> str:
-        match self.name:
-            case SeparateAttnWeight(weight=p):
-                return f"{self.layer_idx}.attn.{p}"
-            case FusedAttnWeight(weight=p):
-                return f"{self.layer_idx}.attn_fused.{p}"
-            case GLUWeight(weight=p):
-                return f"{self.layer_idx}.glu.{p}"
-            case MLPWeight(weight=p):
-                return f"{self.layer_idx}.mlp.{p}"
-
-
-_SUBLAYER_PROJECTIONS: dict[str, tuple[type, tuple[str, ...]]] = {
-    "attn": (SeparateAttnWeight, ("q", "k", "v", "o")),
-    "attn_fused": (FusedAttnWeight, ("qkv", "o")),
-    "glu": (GLUWeight, ("up", "down", "gate")),
-    "mlp": (MLPWeight, ("up", "down")),
-}
-
+from spd.topology.canonical import (
+    CanonicalWeight,
+    Embed,
+    FusedAttnWeight,
+    GLUWeight,
+    LayerWeight,
+    MLPWeight,
+    SeparateAttnWeight,
+    Unembed,
+)
 
 # ── Sublayer path schemas ──────────────────────────────────────────────
 
@@ -364,24 +253,25 @@ class TransformerTopology:
         self.target_model = target_model
         self.path_schema = _get_path_schema(target_model)
 
-    def get_target_module_path(self, canonical: CanonicalWeight) -> str:
-        return self.path_schema.render_canonical_weight(canonical)
+    def canon_to_target(self, canonical: str) -> str:
+        return self.path_schema.render_canonical_weight(CanonicalWeight.parse(canonical))
 
-    def get_canonical_weight(self, target_module_path: str) -> CanonicalWeight:
-        return self.path_schema.parse_target_path(target_module_path)
+    def target_to_canon(self, target_module_path: str) -> str:
+        return self.path_schema.parse_target_path(target_module_path).canonical_str()
 
-    def get_module(self, canonical: CanonicalWeight) -> nn.Module:
-        return self.target_model.get_submodule(self.get_target_module_path(canonical))
+    def _get_module(self, canonical: CanonicalWeight) -> nn.Module:
+        target_path = self.path_schema.render_canonical_weight(canonical)
+        return self.target_model.get_submodule(target_path)
 
     @property
     def embedding_module(self) -> nn.Embedding:
-        mod = self.get_module(Embed())
+        mod = self._get_module(Embed())
         assert isinstance(mod, nn.Embedding)
         return mod
 
     @property
     def unembed_module(self) -> nn.Linear:
-        mod = self.get_module(Unembed())
+        mod = self._get_module(Unembed())
         assert isinstance(mod, nn.Linear)
         return mod
 
@@ -395,9 +285,10 @@ class TransformerTopology:
         """Unembedding weight matrix transposed to [d_model, vocab]."""
         return self.unembed_module.weight.T.detach()
 
-    # NOTE: is_cross_seq_pair logic needs review — stubbed for now
-    def is_cross_seq_pair(self, source: CanonicalWeight, target: CanonicalWeight) -> bool:
+    def is_cross_seq_pair(self, source_canonical: str, target_canonical: str) -> bool:
         """True if source is k/v and target is o in the same block."""
+        source = CanonicalWeight.parse(source_canonical)
+        target = CanonicalWeight.parse(target_canonical)
         match source, target:
             case (
                 LayerWeight(layer_idx=si, name=SeparateAttnWeight(weight="k" | "v")),

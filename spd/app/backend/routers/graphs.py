@@ -493,7 +493,7 @@ def _normalize_edges(edges: list[Edge], normalize: NormalizeType) -> list[Edge]:
     def get_group_key(edge: Edge) -> str:
         if normalize == "target":
             return str(edge.target)
-        return edge.target.layer.canonical_str()
+        return edge.target.layer
 
     sorted_edges = sorted(edges, key=get_group_key)
     groups = groupby(sorted_edges, key=get_group_key)
