@@ -109,6 +109,7 @@ def submit_harvest(
         [
             "python -m spd.autointerp.eval.scripts.run_intruder",
             f'"{wandb_path}"',
+            f"--harvest_subrun_id {subrun_id}",
         ]
     )
     intruder_config = SlurmConfig(

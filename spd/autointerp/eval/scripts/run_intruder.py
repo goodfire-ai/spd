@@ -2,6 +2,7 @@
 
 Usage:
     python -m spd.autointerp.eval.scripts.run_intruder <wandb_path> --limit 100
+    python -m spd.autointerp.eval.scripts.run_intruder <wandb_path> --harvest_subrun_id h-20260211_120000
 """
 
 import asyncio
@@ -13,6 +14,7 @@ from spd.autointerp.eval.intruder import run_intruder_scoring
 from spd.autointerp.interpret import get_architecture_info
 from spd.harvest.db import HarvestDB
 from spd.harvest.repo import HarvestRepo
+from spd.harvest.schemas import get_harvest_subrun_dir
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
@@ -21,6 +23,7 @@ def main(
     model: str = "google/gemini-3-flash-preview",
     limit: int | None = None,
     cost_limit_usd: float | None = None,
+    harvest_subrun_id: str | None = None,
 ) -> None:
     load_dotenv()
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
@@ -33,8 +36,11 @@ def main(
     components = harvest.get_all_components()
     ci_threshold = harvest.get_ci_threshold()
 
-    # Write intruder scores to the latest harvest sub-run's DB
-    db_path = harvest._resolve_db_path()
+    # Write intruder scores to the specified harvest sub-run's DB
+    if harvest_subrun_id is not None:
+        db_path = get_harvest_subrun_dir(run_id, harvest_subrun_id) / "harvest.db"
+    else:
+        db_path = harvest._resolve_db_path()
     assert db_path is not None, f"No harvest.db for run {run_id}"
     db = HarvestDB(db_path)
 
