@@ -25,11 +25,21 @@ def get_correlations_dir(wandb_run_id: str) -> Path:
     return get_harvest_dir(wandb_run_id) / "correlations"
 
 
+_PAD_SENTINEL = -1
+
+
 @dataclass
 class ActivationExample:
     token_ids: list[int]
     ci_values: list[float]
     component_acts: list[float]  # Normalized component activations: (v_i^T @ a) * ||u_i||
+
+    def __post_init__(self) -> None:
+        if any(t == _PAD_SENTINEL for t in self.token_ids):
+            mask = [t != _PAD_SENTINEL for t in self.token_ids]
+            self.token_ids = [v for v, k in zip(self.token_ids, mask, strict=True) if k]
+            self.ci_values = [v for v, k in zip(self.ci_values, mask, strict=True) if k]
+            self.component_acts = [v for v, k in zip(self.component_acts, mask, strict=True) if k]
 
 
 @dataclass
