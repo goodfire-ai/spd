@@ -39,8 +39,8 @@ class CompactSkepticalConfig(BaseConfig):
     """Current default strategy: compact prompt, skeptical tone, structured JSON output."""
 
     type: Literal["compact_skeptical"] = "compact_skeptical"
-    model: str
-    reasoning_effort: ReasoningEffort | None = None
+    model: str = "google/gemini-3-flash-preview"
+    reasoning_effort: ReasoningEffort | None = ReasoningEffort.MEDIUM
     max_examples: int = 30
     include_pmi: bool = True
     include_spd_context: bool = True
@@ -75,9 +75,7 @@ class AutointerpSlurmConfig(BaseConfig):
         └── fuzzing       (depends on interpret)
     """
 
-    config: CompactSkepticalConfig = CompactSkepticalConfig(
-        model="google/gemini-3-flash-preview", reasoning_effort=None
-    )
+    config: CompactSkepticalConfig = CompactSkepticalConfig()
     limit: int | None = None
     cost_limit_usd: float | None = None
     partition: str = DEFAULT_PARTITION_NAME
