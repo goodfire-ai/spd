@@ -160,6 +160,10 @@ class TestDistributedDeterminicity:
         new_env = os.environ.copy()
         new_env["CUDA_VISIBLE_DEVICES"] = ""
         new_env["SPD_OUT_DIR"] = str(spd_out_dir)
+        # Force single-threaded execution so that within-rank float32 operations
+        # are deterministic across different machines/CI environments.
+        new_env["OMP_NUM_THREADS"] = "1"
+        new_env["MKL_NUM_THREADS"] = "1"
 
         result = subprocess.run(cmd, env=new_env, capture_output=True, text=True, timeout=300)
 
