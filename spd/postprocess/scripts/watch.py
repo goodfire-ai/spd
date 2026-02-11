@@ -103,6 +103,7 @@ class JobInfo:
     tasks_running: int = 0
     tasks_failed: int = 0
     tasks_pending: int = 0
+    progress: tuple[int, int] | None = None  # (current, total) from log scraping
 
 
 def _query_squeue() -> str:
@@ -222,7 +223,10 @@ def _query_all_jobs() -> tuple[dict[str, dict[str, str]], dict[str, list[tuple[s
 
 def query_jobs(manifest: dict[str, Any]) -> dict[str, JobInfo]:
     """Look up job states for the exact job IDs in the manifest."""
+    from spd.postprocess.scripts.log_scrapers import scrape_progress
+
     manifest_jobs = manifest["jobs"]
+    manifest_config = manifest.get("config", {})
     parents, array_tasks = _query_all_jobs()
 
     result_map: dict[str, JobInfo] = {}
@@ -261,6 +265,9 @@ def query_jobs(manifest: dict[str, Any]) -> dict[str, JobInfo]:
                     1 for t in task_states if t in TERMINAL_STATES and t != "COMPLETED"
                 )
                 info.tasks_pending = sum(1 for t in task_states if t == "PENDING")
+
+            if info.state == "RUNNING":
+                info.progress = scrape_progress(manifest_key, job_id, manifest_config)
 
             result_map[key] = info
 
@@ -316,10 +323,36 @@ def _render_array(label: str, job: JobInfo) -> str:
     el = _elapsed(job.elapsed)
     fail = f"  {RED}{job.tasks_failed} failed{RESET}" if job.tasks_failed else ""
     jid = f"{DIM}#{job.job_id}{RESET}"
+    worker_progress = ""
+    if job.state == "RUNNING" and job.progress is not None:
+        cur, tot = job.progress
+        worker_progress = (
+            f"  {DIM}w1: {cur}/{tot}{RESET}" if tot > 0 else f"  {DIM}w1: {cur}{RESET}"
+        )
     return (
         f"    {color}{ic}{RESET} {label:<12} {bar}  {frac:>5}  "
-        f"{color}{job.state:<12}{RESET} {DIM}{el:>8}{RESET}  {jid}{fail}"
+        f"{color}{job.state:<12}{RESET} {DIM}{el:>8}{RESET}  {jid}{fail}{worker_progress}"
     )
+
+
+def _progress_str(progress: tuple[int, int] | None) -> str:
+    """Format progress as 'N/M' or 'N/?', right-aligned to 7 chars."""
+    if progress is None:
+        return "       "
+    current, total = progress
+    if total > 0:
+        return f"{current}/{total}".rjust(7)
+    return f"{current}/?".rjust(7)
+
+
+def _progress_bar(progress: tuple[int, int] | None) -> str:
+    """Build a progress bar from scraped (current, total). Falls back to indeterminate."""
+    if progress is None or progress[1] == 0:
+        h = BAR_W // 2
+        return f"{YELLOW}{'━' * h}{'╌' * (BAR_W - h)}{RESET}"
+    current, total = progress
+    filled = round(current / total * BAR_W)
+    return f"{YELLOW}{'━' * filled}{DIM}{'░' * (BAR_W - filled)}{RESET}"
 
 
 def _render_single(label: str, job: JobInfo) -> str:
@@ -329,15 +362,18 @@ def _render_single(label: str, job: JobInfo) -> str:
     match job.state:
         case "COMPLETED":
             bar = f"{GREEN}{'━' * BAR_W}{RESET}"
+            frac = "       "
         case "RUNNING":
-            h = BAR_W // 2
-            bar = f"{YELLOW}{'━' * h}{'╌' * (BAR_W - h)}{RESET}"
+            bar = _progress_bar(job.progress)
+            frac = _progress_str(job.progress)
         case "PENDING":
             bar = f"{DIM}{'· ' * (BAR_W // 2)}{RESET}"
+            frac = "       "
         case _:
             bar = f"{RED}{'━' * BAR_W}{RESET}"
+            frac = "       "
     return (
-        f"    {color}{ic}{RESET} {label:<12} {bar}{'':>7}"
+        f"    {color}{ic}{RESET} {label:<12} {bar} {frac} "
         f"{color}{job.state:<12}{RESET} {DIM}{el:>8}{RESET}  {jid}"
     )
 
