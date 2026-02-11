@@ -29,38 +29,52 @@ The command:
 For environments without SLURM, run the worker script directly:
 
 ```bash
-# Single GPU (defaults from HarvestConfig)
+# Single GPU (defaults from HarvestConfig, auto-generates subrun ID)
 python -m spd.harvest.scripts.run <wandb_path>
 
 # Single GPU with config file
 python -m spd.harvest.scripts.run <wandb_path> --config_path path/to/config.yaml
 
 # Multi-GPU (run in parallel via shell, tmux, etc.)
-python -m spd.harvest.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 0 --world_size 4 &
-python -m spd.harvest.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 1 --world_size 4 &
-python -m spd.harvest.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 2 --world_size 4 &
-python -m spd.harvest.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 3 --world_size 4 &
+# All workers and the merge step must share the same --subrun_id
+SUBRUN="h-$(date +%Y%m%d_%H%M%S)"
+python -m spd.harvest.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 0 --world_size 4 --subrun_id $SUBRUN &
+python -m spd.harvest.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 1 --world_size 4 --subrun_id $SUBRUN &
+python -m spd.harvest.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 2 --world_size 4 --subrun_id $SUBRUN &
+python -m spd.harvest.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 3 --world_size 4 --subrun_id $SUBRUN &
 wait
 
 # Merge results after all workers complete
-python -m spd.harvest.scripts.run <path> --merge
+python -m spd.harvest.scripts.run <path> --merge --subrun_id $SUBRUN
 ```
 
 Each worker processes batches where `batch_idx % world_size == rank`, then the merge step combines all partial results.
 
 ## Data Storage
 
-Data is stored in `SPD_OUT_DIR/harvest/` (see `spd/settings.py`):
+Each harvest invocation creates a timestamped sub-run directory. `HarvestRepo` automatically loads from the latest sub-run.
+
+```
+SPD_OUT_DIR/harvest/<run_id>/
+├── h-20260211_120000/          # sub-run 1
+│   ├── harvest.db              # SQLite DB: components table + config table (WAL mode)
+│   ├── component_correlations.pt
+│   ├── token_stats.pt
+│   └── worker_states/          # cleaned up after merge
+│       └── worker_*.pt
+├── h-20260211_140000/          # sub-run 2
+│   └── ...
+```
+
+Legacy layout (pre sub-run) is still supported as a fallback by `HarvestRepo`:
 
 ```
 SPD_OUT_DIR/harvest/<run_id>/
 ├── activation_contexts/
-│   └── harvest.db            # SQLite DB: components table + config table (WAL mode)
+│   └── harvest.db
 ├── correlations/
 │   ├── component_correlations.pt
 │   └── token_stats.pt
-└── worker_states/
-    └── worker_*.pt           # Per-worker states (cleaned up after merge)
 ```
 
 ## Architecture
@@ -75,6 +89,7 @@ Internal script called by SLURM jobs. Accepts config via `--config_path` (file) 
 - `--config_path`/`--config_json`: Provide `HarvestConfig` (defaults used if neither given)
 - `--rank R --world_size N`: Process subset of batches
 - `--merge`: Combine per-rank results into final files
+- `--subrun_id`: Sub-run identifier (auto-generated if not provided)
 
 ### Config (`config.py`)
 
@@ -83,8 +98,8 @@ Internal script called by SLURM jobs. Accepts config via `--config_path` (file) 
 ### Harvest Logic (`harvest.py`)
 
 Main harvesting functions:
-- `harvest_activation_contexts(wandb_path, config, ...)`: Process batches for a single rank
-- `merge_activation_contexts(wandb_path)`: Combine results from all ranks
+- `harvest_activation_contexts(wandb_path, config, output_dir, ...)`: Process batches for a single rank
+- `merge_activation_contexts(output_dir)`: Combine worker results from `output_dir/worker_states/` into `output_dir`
 
 ### Harvester (`harvester.py`)
 
@@ -116,17 +131,7 @@ Uses WAL mode for concurrent reads. Serialization via `orjson`.
 
 ### Repository (`repo.py`)
 
-`HarvestRepo` provides read-only access to all harvest data for a run. Lazily opens the SQLite database on first access. Used by the app backend.
-
-### Loaders (`loaders.py`)
-
-Standalone loader functions used by autointerp, dataset_attributions, and other modules:
-- `load_all_components(run_id)` -> list[ComponentData] (filtered by ci_threshold)
-- `load_activation_contexts_summary(run_id)` -> dict[component_key, ComponentSummary]
-- `load_component_activation_contexts(run_id, component_key)` -> ComponentData
-- `load_harvest_ci_threshold(run_id)` -> float
-- `load_correlations(run_id)` -> CorrelationStorage
-- `load_token_stats(run_id)` -> TokenStatsStorage
+`HarvestRepo` provides read-only access to all harvest data for a run. Automatically resolves the latest sub-run directory (by lexicographic sort of `h-YYYYMMDD_HHMMSS` names). Falls back to legacy layout if no sub-runs exist. Used by the app backend.
 
 ## Key Types (`schemas.py`)
 

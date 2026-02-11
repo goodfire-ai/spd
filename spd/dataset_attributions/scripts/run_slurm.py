@@ -10,6 +10,7 @@ Usage:
 """
 
 import secrets
+from datetime import datetime
 
 from spd.dataset_attributions.config import AttributionsSlurmConfig
 from spd.log import logger
@@ -57,6 +58,8 @@ def submit_attributions(
     else:
         commit_hash = "shared"
 
+    subrun_id = "da-" + datetime.now().strftime("%Y%m%d_%H%M%S")
+
     suffix = f"-{job_suffix}" if job_suffix else ""
     array_job_name = f"spd-attr{suffix}"
 
@@ -70,7 +73,8 @@ def submit_attributions(
             f'"{wandb_path}" '
             f"--config_json '{config_json}' "
             f"--rank {rank} "
-            f"--world_size {n_gpus}"
+            f"--world_size {n_gpus} "
+            f"--subrun_id {subrun_id}"
         )
         worker_commands.append(cmd)
 
@@ -90,7 +94,10 @@ def submit_attributions(
     )
 
     # Submit merge job with dependency on array completion
-    merge_cmd = f'python -m spd.dataset_attributions.scripts.run "{wandb_path}" --merge'
+    merge_cmd = (
+        f'python -m spd.dataset_attributions.scripts.run "{wandb_path}" '
+        f"--merge --subrun_id {subrun_id}"
+    )
     merge_config = SlurmConfig(
         job_name="spd-attr-merge",
         partition=partition,
@@ -106,6 +113,7 @@ def submit_attributions(
     logger.values(
         {
             "WandB path": wandb_path,
+            "Sub-run ID": subrun_id,
             "N batches": config.n_batches,
             "N GPUs": n_gpus,
             "Batch size": config.batch_size,

@@ -70,22 +70,19 @@ class HarvestResult:
     token_stats: TokenStatsStorage
     config: HarvestConfig
 
-    def save(self, activation_contexts_dir: Path, correlations_dir: Path) -> None:
+    def save(self, output_dir: Path) -> None:
         """Save harvest result to disk."""
-        activation_contexts_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-        db_path = activation_contexts_dir / "harvest.db"
+        db_path = output_dir / "harvest.db"
         db = HarvestDB(db_path)
         db.save_config(self.config)
         db.save_components(self.components)
         db.close()
         logger.info(f"Saved {len(self.components)} components to {db_path}")
 
-        # Save correlations (.pt)
-        self.correlations.save(correlations_dir / "component_correlations.pt")
-
-        # Save token stats (.pt)
-        self.token_stats.save(correlations_dir / "token_stats.pt")
+        self.correlations.save(output_dir / "component_correlations.pt")
+        self.token_stats.save(output_dir / "token_stats.pt")
 
 
 def _build_harvest_result(
@@ -133,8 +130,7 @@ def _build_harvest_result(
 def harvest_activation_contexts(
     wandb_path: str,
     config: HarvestConfig,
-    activation_contexts_dir: Path,
-    correlations_dir: Path,
+    output_dir: Path,
     rank: int | None = None,
     world_size: int | None = None,
 ) -> None:
@@ -143,8 +139,7 @@ def harvest_activation_contexts(
     Args:
         wandb_path: WandB run path for the target decomposition run.
         config: Harvest configuration.
-        activation_contexts_dir: Directory to save activation contexts.
-        correlations_dir: Directory to save correlations.
+        output_dir: Directory to save harvest outputs.
         rank: Worker rank for parallel execution (0 to world_size-1).
         world_size: Total number of workers. If specified with rank, only processes
             batches where batch_idx % world_size == rank.
@@ -240,7 +235,7 @@ def harvest_activation_contexts(
     if rank is not None:
         # Distributed: save worker state
         state = harvester.get_state()
-        state_dir = activation_contexts_dir.parent / "worker_states"
+        state_dir = output_dir / "worker_states"
         state_dir.mkdir(parents=True, exist_ok=True)
         state_path = state_dir / f"worker_{rank}.pt"
         torch.save(state, state_path)
@@ -248,24 +243,19 @@ def harvest_activation_contexts(
     else:
         # Single GPU: save full result
         result = _build_harvest_result(harvester, config)
-        result.save(activation_contexts_dir, correlations_dir)
-        logger.info(f"Saved results to {activation_contexts_dir} and {correlations_dir}")
+        result.save(output_dir)
+        logger.info(f"Saved results to {output_dir}")
 
 
-def merge_activation_contexts(wandb_path: str) -> None:
+def merge_activation_contexts(output_dir: Path) -> None:
     """Merge partial harvest results from parallel workers.
 
-    Looks for worker_*.pt state files and merges them into final harvest results.
+    Looks for worker_*.pt state files in output_dir/worker_states/ and merges them
+    into final harvest results written to output_dir.
 
     Uses streaming merge to avoid OOM - loads one file at a time instead of all at once.
     """
-    from spd.harvest.schemas import get_activation_contexts_dir, get_correlations_dir
-    from spd.utils.wandb_utils import parse_wandb_run_path
-
-    _, _, run_id = parse_wandb_run_path(wandb_path)
-    activation_contexts_dir = get_activation_contexts_dir(run_id)
-    correlations_dir = get_correlations_dir(run_id)
-    state_dir = activation_contexts_dir.parent / "worker_states"
+    state_dir = output_dir / "worker_states"
 
     # Find all worker state files
     worker_files = sorted(state_dir.glob("worker_*.pt"))
@@ -295,10 +285,11 @@ def merge_activation_contexts(wandb_path: str) -> None:
     )
 
     result = _build_harvest_result(harvester, config)
-    result.save(activation_contexts_dir, correlations_dir)
-    logger.info(f"Saved merged results to {activation_contexts_dir} and {correlations_dir}")
+    result.save(output_dir)
+    logger.info(f"Saved merged results to {output_dir}")
 
     # Clean up worker state files
     for worker_file in worker_files:
         worker_file.unlink()
+    state_dir.rmdir()
     logger.info(f"Deleted {len(worker_files)} worker state files")

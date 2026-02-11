@@ -14,14 +14,9 @@ def get_harvest_dir(wandb_run_id: str) -> Path:
     return HARVEST_DATA_DIR / wandb_run_id
 
 
-def get_activation_contexts_dir(wandb_run_id: str) -> Path:
-    """Get the activation contexts directory for a run."""
-    return get_harvest_dir(wandb_run_id) / "activation_contexts"
-
-
-def get_correlations_dir(wandb_run_id: str) -> Path:
-    """Get the correlations directory for a run."""
-    return get_harvest_dir(wandb_run_id) / "correlations"
+def get_harvest_subrun_dir(wandb_run_id: str, subrun_id: str) -> Path:
+    """Get the sub-run directory for a specific harvest invocation."""
+    return get_harvest_dir(wandb_run_id) / subrun_id
 
 
 @dataclass

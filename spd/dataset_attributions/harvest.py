@@ -24,7 +24,6 @@ from spd.app.backend.compute import get_sources_by_target
 from spd.data import train_loader_and_tokenizer
 from spd.dataset_attributions.config import DatasetAttributionConfig
 from spd.dataset_attributions.harvester import AttributionHarvester
-from spd.dataset_attributions.loaders import get_attributions_dir
 from spd.dataset_attributions.storage import DatasetAttributionStorage
 from spd.harvest.repo import HarvestRepo
 from spd.log import logger
@@ -103,17 +102,10 @@ def _build_alive_masks(
     return source_alive, target_alive
 
 
-def _get_output_path(run_id: str, rank: int | None) -> Path:
-    """Get output path for attributions."""
-    output_dir = get_attributions_dir(run_id)
-    if rank is not None:
-        return output_dir / f"dataset_attributions_rank_{rank}.pt"
-    return output_dir / "dataset_attributions.pt"
-
-
 def harvest_attributions(
     wandb_path: str,
     config: DatasetAttributionConfig,
+    output_dir: Path,
     rank: int | None = None,
     world_size: int | None = None,
 ) -> None:
@@ -122,6 +114,7 @@ def harvest_attributions(
     Args:
         wandb_path: WandB run path for the target decomposition run.
         config: Configuration for attribution harvesting.
+        output_dir: Directory to write results into.
         rank: Worker rank for parallel execution (0 to world_size-1).
         world_size: Total number of workers. If specified with rank, only processes
             batches where batch_idx % world_size == rank.
@@ -231,25 +224,28 @@ def harvest_attributions(
         ci_threshold=config.ci_threshold,
     )
 
-    output_path = _get_output_path(run_id, rank)
+    if rank is not None:
+        worker_dir = output_dir / "worker_states"
+        worker_dir.mkdir(parents=True, exist_ok=True)
+        output_path = worker_dir / f"dataset_attributions_rank_{rank}.pt"
+    else:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "dataset_attributions.pt"
     storage.save(output_path)
     logger.info(f"Saved dataset attributions to {output_path}")
 
 
-def merge_attributions(wandb_path: str) -> None:
+def merge_attributions(output_dir: Path) -> None:
     """Merge partial attribution files from parallel workers.
 
-    Looks for dataset_attributions_rank_*.pt files and merges them into
-    dataset_attributions.pt.
+    Looks for worker_states/dataset_attributions_rank_*.pt files and merges them
+    into dataset_attributions.pt in the output_dir.
 
     Uses streaming merge to avoid OOM - loads one file at a time instead of all at once.
     """
-    _, _, run_id = parse_wandb_run_path(wandb_path)
-    output_dir = get_attributions_dir(run_id)
-
-    # Find all rank files
-    rank_files = sorted(output_dir.glob("dataset_attributions_rank_*.pt"))
-    assert rank_files, f"No rank files found in {output_dir}"
+    worker_dir = output_dir / "worker_states"
+    rank_files = sorted(worker_dir.glob("dataset_attributions_rank_*.pt"))
+    assert rank_files, f"No rank files found in {worker_dir}"
     logger.info(f"Found {len(rank_files)} rank files to merge")
 
     # Load first file to get metadata and initialize accumulators
@@ -300,7 +296,8 @@ def merge_attributions(wandb_path: str) -> None:
     logger.info(f"Merged {len(rank_files)} files -> {output_path}")
     logger.info(f"Total: {total_batches} batches, {total_tokens:,} tokens")
 
-    # Clean up per-rank files after successful merge
+    # Clean up worker_states directory after successful merge
     for rank_file in rank_files:
         rank_file.unlink()
-    logger.info(f"Deleted {len(rank_files)} per-rank files")
+    worker_dir.rmdir()
+    logger.info(f"Deleted {len(rank_files)} per-rank files and worker_states/")

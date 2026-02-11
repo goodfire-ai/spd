@@ -14,7 +14,7 @@ from spd.harvest.schemas import (
     ActivationExample,
     ComponentData,
     ComponentTokenPMI,
-    get_activation_contexts_dir,
+    get_harvest_dir,
 )
 from spd.settings import SPD_OUT_DIR
 
@@ -22,7 +22,7 @@ HARVEST_DIR = SPD_OUT_DIR / "harvest"
 
 
 def migrate_run(run_id: str) -> bool:
-    ac_dir = get_activation_contexts_dir(run_id)
+    ac_dir = get_harvest_dir(run_id) / "activation_contexts"
     components_path = ac_dir / "components.jsonl"
     config_path = ac_dir / "config.json"
     db_path = ac_dir / "harvest.db"

@@ -9,6 +9,7 @@ Usage:
 """
 
 import secrets
+from datetime import datetime
 
 from spd.harvest.config import HarvestSlurmConfig
 from spd.log import logger
@@ -56,6 +57,8 @@ def submit_harvest(
     else:
         commit_hash = "shared"
 
+    subrun_id = "h-" + datetime.now().strftime("%Y%m%d_%H%M%S")
+
     suffix = f"-{job_suffix}" if job_suffix else ""
     array_job_name = f"spd-harvest{suffix}"
 
@@ -67,7 +70,8 @@ def submit_harvest(
             f'"{wandb_path}" '
             f"--config_json '{config.model_dump_json(exclude_none=True)}' "
             f"--rank {rank} "
-            f"--world_size {n_gpus}"
+            f"--world_size {n_gpus} "
+            f"--subrun_id {subrun_id}"
         )
         worker_commands.append(cmd)
 
@@ -87,7 +91,7 @@ def submit_harvest(
     )
 
     # Submit merge job with dependency on array completion
-    merge_cmd = f'python -m spd.harvest.scripts.run "{wandb_path}" --merge'
+    merge_cmd = f'python -m spd.harvest.scripts.run "{wandb_path}" --merge --subrun_id {subrun_id}'
     merge_config = SlurmConfig(
         job_name="spd-harvest-merge",
         partition=partition,
@@ -123,6 +127,7 @@ def submit_harvest(
     logger.values(
         {
             "WandB path": wandb_path,
+            "Sub-run ID": subrun_id,
             "N batches": config.n_batches,
             "N GPUs": n_gpus,
             "Batch size": config.batch_size,

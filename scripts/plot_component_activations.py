@@ -19,15 +19,13 @@ from spd.harvest.schemas import (
     ActivationExample,
     ComponentData,
     ComponentTokenPMI,
-    get_activation_contexts_dir,
+    get_harvest_dir,
 )
-from spd.settings import SPD_OUT_DIR
 
 
 def load_activation_contexts(run_id: str) -> dict[str, ComponentData]:
-    """Load all activation contexts."""
-    ctx_dir = get_activation_contexts_dir(run_id)
-    path = ctx_dir / "components.jsonl"
+    """Load all activation contexts from legacy JSONL format."""
+    path = get_harvest_dir(run_id) / "activation_contexts" / "components.jsonl"
     assert path.exists(), f"No harvest data found for run {run_id}"
 
     components: dict[str, ComponentData] = {}
@@ -50,8 +48,8 @@ def load_activation_contexts(run_id: str) -> dict[str, ComponentData]:
 
 
 def load_firing_counts(run_id: str) -> dict[str, int]:
-    """Load pre-calculated firing counts from harvest data."""
-    token_stats_path = SPD_OUT_DIR / "harvest" / run_id / "correlations" / "token_stats.pt"
+    """Load pre-calculated firing counts from harvest data (legacy path)."""
+    token_stats_path = get_harvest_dir(run_id) / "correlations" / "token_stats.pt"
     assert token_stats_path.exists(), f"No token stats found for run {run_id}"
 
     data = torch.load(token_stats_path)

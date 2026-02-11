@@ -16,33 +16,29 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 
-from spd.harvest.db import HarvestDB
-from spd.harvest.schemas import ComponentData, get_activation_contexts_dir
-from spd.settings import SPD_OUT_DIR
+from spd.harvest.repo import HarvestRepo
+from spd.harvest.schemas import ComponentData
 
 
 def load_activation_contexts(run_id: str) -> dict[str, ComponentData]:
     """Load all activation contexts."""
-    db_path = get_activation_contexts_dir(run_id) / "harvest.db"
-    assert db_path.exists(), f"No harvest data found for run {run_id}"
-    db = HarvestDB(db_path)
-    summary = db.get_summary()
-    all_keys = list(summary.keys())
-    return db.get_components_bulk(all_keys)
+    repo = HarvestRepo(run_id)
+    summary = repo.get_summary()
+    assert summary is not None, f"No harvest data found for run {run_id}"
+    return repo.get_components_bulk(list(summary.keys()))
 
 
 def load_firing_counts(run_id: str) -> dict[str, int]:
     """Load pre-calculated firing counts from harvest data."""
-    token_stats_path = SPD_OUT_DIR / "harvest" / run_id / "correlations" / "token_stats.pt"
-    assert token_stats_path.exists(), f"No token stats found for run {run_id}"
+    repo = HarvestRepo(run_id)
+    token_stats = repo.get_token_stats()
+    assert token_stats is not None, f"No token stats found for run {run_id}"
 
-    data = torch.load(token_stats_path)
-    component_keys = data["component_keys"]
-    firing_counts = data["firing_counts"]
-
-    return {key: int(count) for key, count in zip(component_keys, firing_counts, strict=True)}
+    return {
+        key: int(count)
+        for key, count in zip(token_stats.component_keys, token_stats.firing_counts, strict=True)
+    }
 
 
 def extract_activations(

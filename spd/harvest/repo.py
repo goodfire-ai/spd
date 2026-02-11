@@ -3,14 +3,20 @@
 Owns SPD_OUT_DIR/harvest/<run_id>/ and provides read access to all harvest artifacts.
 No in-memory caching -- reads go through on every call. Component data backed by SQLite;
 correlations and token stats remain as .pt files.
+
+Supports two layouts:
+- Sub-run layout (current): harvest/<run_id>/h-YYYYMMDD_HHMMSS/{harvest.db, *.pt}
+- Legacy layout (fallback): harvest/<run_id>/activation_contexts/harvest.db
+                             harvest/<run_id>/correlations/{*.pt}
 """
+
+from pathlib import Path
 
 from spd.harvest.db import HarvestDB
 from spd.harvest.schemas import (
     ComponentData,
     ComponentSummary,
-    get_activation_contexts_dir,
-    get_correlations_dir,
+    get_harvest_dir,
 )
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 
@@ -20,16 +26,49 @@ class HarvestRepo:
 
     def __init__(self, run_id: str) -> None:
         self.run_id = run_id
-        self._ac_dir = get_activation_contexts_dir(run_id)
-        self._corr_dir = get_correlations_dir(run_id)
         self._db: HarvestDB | None = None
+
+    def _find_latest_subrun(self) -> Path | None:
+        """Find the latest sub-run directory, or fall back to legacy layout."""
+        harvest_dir = get_harvest_dir(self.run_id)
+        if not harvest_dir.exists():
+            return None
+        candidates = sorted(
+            [d for d in harvest_dir.iterdir() if d.is_dir() and d.name.startswith("h-")],
+            key=lambda d: d.name,
+        )
+        if candidates:
+            return candidates[-1]
+        # Legacy fallback: check for old activation_contexts/harvest.db layout
+        if (harvest_dir / "activation_contexts" / "harvest.db").exists():
+            return None
+        return None
+
+    def _resolve_db_path(self) -> Path | None:
+        """Resolve the path to harvest.db, checking sub-run dirs then legacy layout."""
+        subrun = self._find_latest_subrun()
+        if subrun is not None:
+            path = subrun / "harvest.db"
+            return path if path.exists() else None
+        # Legacy fallback
+        legacy = get_harvest_dir(self.run_id) / "activation_contexts" / "harvest.db"
+        return legacy if legacy.exists() else None
+
+    def _resolve_data_dir(self) -> Path | None:
+        """Resolve the directory containing correlations and token stats .pt files."""
+        subrun = self._find_latest_subrun()
+        if subrun is not None:
+            return subrun
+        # Legacy fallback
+        legacy = get_harvest_dir(self.run_id) / "correlations"
+        return legacy if legacy.exists() else None
 
     def _get_db(self) -> HarvestDB | None:
         """Lazily open the SQLite database on first access."""
         if self._db is not None:
             return self._db
-        db_path = self._ac_dir / "harvest.db"
-        if not db_path.exists():
+        db_path = self._resolve_db_path()
+        if db_path is None:
             return None
         self._db = HarvestDB(db_path)
         return self._db
@@ -72,19 +111,27 @@ class HarvestRepo:
     # -- Correlations & token stats (tensor data) ------------------------------
 
     def has_correlations(self) -> bool:
-        return (self._corr_dir / "component_correlations.pt").exists()
+        data_dir = self._resolve_data_dir()
+        return data_dir is not None and (data_dir / "component_correlations.pt").exists()
 
     def get_correlations(self) -> CorrelationStorage | None:
-        path = self._corr_dir / "component_correlations.pt"
+        data_dir = self._resolve_data_dir()
+        if data_dir is None:
+            return None
+        path = data_dir / "component_correlations.pt"
         if not path.exists():
             return None
         return CorrelationStorage.load(path)
 
     def has_token_stats(self) -> bool:
-        return (self._corr_dir / "token_stats.pt").exists()
+        data_dir = self._resolve_data_dir()
+        return data_dir is not None and (data_dir / "token_stats.pt").exists()
 
     def get_token_stats(self) -> TokenStatsStorage | None:
-        path = self._corr_dir / "token_stats.pt"
+        data_dir = self._resolve_data_dir()
+        if data_dir is None:
+            return None
+        path = data_dir / "token_stats.pt"
         if not path.exists():
             return None
         return TokenStatsStorage.load(path)

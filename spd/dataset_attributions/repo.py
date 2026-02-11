@@ -2,6 +2,10 @@
 
 Owns SPD_OUT_DIR/dataset_attributions/<run_id>/ and provides read access
 to the attribution matrix. No in-memory caching.
+
+Supports two layouts:
+- Sub-run layout (current): dataset_attributions/<run_id>/da-YYYYMMDD_HHMMSS/dataset_attributions.pt
+- Legacy layout (fallback): dataset_attributions/<run_id>/dataset_attributions.pt
 """
 
 from spd.dataset_attributions.loaders import load_dataset_attributions
