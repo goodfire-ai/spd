@@ -264,6 +264,10 @@ class PGDReconLayerwiseLossConfig(PGDConfig):
     classname: Literal["PGDReconLayerwiseLoss"] = "PGDReconLayerwiseLoss"
 
 
+class PGDCEDiffConfig(PGDConfig):
+    classname: Literal["PGDCEDiff"] = "PGDCEDiff"
+
+
 class PGDMultiBatchConfig(LossMetricConfig):
     init: PGDInitStrategy
     step_size: float
@@ -366,6 +370,7 @@ EvalOnlyMetricConfigType = (
     | PermutedCIPlotsConfig
     | UVPlotsConfig
     | StochasticReconSubsetCEAndKLConfig
+    | PGDCEDiffConfig
     | PGDMultiBatchReconLossConfig
     | PGDMultiBatchReconSubsetLossConfig
 )

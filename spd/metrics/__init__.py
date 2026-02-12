@@ -18,6 +18,8 @@ from .identity_ci_error import IdentityCIError as IdentityCIError
 from .importance_minimality_loss import ImportanceMinimalityLoss as ImportanceMinimalityLoss
 from .importance_minimality_loss import importance_minimality_loss as importance_minimality_loss
 from .permuted_ci_plots import PermutedCIPlots as PermutedCIPlots
+from .pgd_ce_diff import PGDCEDiff as PGDCEDiff
+from .pgd_ce_diff import pgd_ce_diff_loss_update as pgd_ce_diff_loss_update
 from .pgd_masked_recon_layerwise_loss import PGDReconLayerwiseLoss as PGDReconLayerwiseLoss
 from .pgd_masked_recon_layerwise_loss import (
     pgd_recon_layerwise_loss as pgd_recon_layerwise_loss,

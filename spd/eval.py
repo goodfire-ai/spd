@@ -24,6 +24,7 @@ from spd.configs import (
     ImportanceMinimalityLossConfig,
     MetricConfigType,
     PermutedCIPlotsConfig,
+    PGDCEDiffConfig,
     PGDMultiBatchReconLossConfig,
     PGDMultiBatchReconSubsetLossConfig,
     PGDReconLayerwiseLossConfig,
@@ -51,6 +52,7 @@ from spd.metrics.faithfulness_loss import FaithfulnessLoss
 from spd.metrics.identity_ci_error import IdentityCIError
 from spd.metrics.importance_minimality_loss import ImportanceMinimalityLoss
 from spd.metrics.permuted_ci_plots import PermutedCIPlots
+from spd.metrics.pgd_ce_diff import PGDCEDiff
 from spd.metrics.pgd_masked_recon_layerwise_loss import PGDReconLayerwiseLoss
 from spd.metrics.pgd_masked_recon_loss import PGDReconLoss
 from spd.metrics.pgd_masked_recon_subset_loss import PGDReconSubsetLoss
@@ -240,6 +242,13 @@ def init_metric(
                 device=device,
                 use_delta_component=run_config.use_delta_component,
                 output_loss_type=run_config.output_loss_type,
+                pgd_config=cfg,
+            )
+        case PGDCEDiffConfig():
+            metric = PGDCEDiff(
+                model=model,
+                device=device,
+                use_delta_component=run_config.use_delta_component,
                 pgd_config=cfg,
             )
         case StochasticReconSubsetCEAndKLConfig():
