@@ -28,6 +28,11 @@ export const CANONICAL_RUNS: RegistryEntry[] = [
         modelName: "Lucius' pile run Feb 11",
     },
     {
+        wandbRunId: "goodfire/spd/s-eab2ace8",
+        modelName: "uhh one sec",
+        notes: "Oli's PPGD run, great metrics",
+    },
+    {
         wandbRunId: "goodfire/spd/s-892f140b",
         modelName: "ss_llama_simple_mlp-2L-wide",
         notes: "Lucius run, Jan 22",

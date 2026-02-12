@@ -5,6 +5,7 @@ Web-based visualization and analysis tool for exploring neural network component
 - **Backend**: Python FastAPI (`backend/`)
 - **Frontend**: Svelte 5 + TypeScript (`frontend/`)
 - **Database**: SQLite at `.data/app/prompt_attr.db` (relative to repo root)
+- **TODOs**: See `TODO.md` for open work items
 
 ## Project Context
 

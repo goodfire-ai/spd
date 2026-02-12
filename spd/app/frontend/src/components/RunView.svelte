@@ -26,8 +26,17 @@
 <div class="app-layout">
     <header class="top-bar">
         {#if runState.run.status === "loaded"}
+            {@const wandbParts = runState.run.data.wandb_path.split("/")}
             <button type="button" class="change-run-button" onclick={() => runState.clearRun()}>&lt;</button>
-            <span class="run-path">{runState.run.data.wandb_path}</span>
+            <span class="run-path"
+                >{runState.run.data.wandb_path}
+                <a
+                    class="wandb-link"
+                    href="https://wandb.ai/{wandbParts[0]}/{wandbParts[1]}/runs/{wandbParts[2]}"
+                    target="_blank"
+                    rel="noopener">(wandb)</a
+                >
+            </span>
         {/if}
 
         <nav class="nav-group">
@@ -132,11 +141,22 @@
     .run-path {
         display: flex;
         align-items: center;
+        gap: var(--space-2);
         padding: 0 var(--space-3);
         border-right: 1px solid var(--border-default);
         font-family: var(--font-mono);
         font-size: var(--text-sm);
         color: var(--text-primary);
+    }
+
+    .wandb-link {
+        color: var(--text-muted);
+        text-decoration: none;
+        font-size: var(--text-xs);
+    }
+
+    .wandb-link:hover {
+        color: var(--accent-primary);
     }
 
     .change-run-button {
