@@ -16,134 +16,9 @@ from torch import Tensor
 
 from spd.harvest.sampling import sample_at_most_n_per_group, top_k_pmi
 from spd.harvest.schemas import ActivationExample, ComponentData, ComponentTokenPMI
+from spd.log import logger
 
 WINDOW_PAD_SENTINEL = -1
-
-
-def _merge_reservoirs_inplace(dst: "Harvester", src: "Harvester") -> None:
-    """Merge src reservoir tensors into dst, vectorized over all components.
-
-    Uses Efraimidis-Spirakis: key = random()^(1/weight), take top-k.
-    Avoids concatenating the big [n_comp, k, window] tensors — computes
-    selection indices on small [n_comp, 2k] tensors, then gathers from
-    dst/src separately based on whether each selected index came from dst or src.
-    """
-    k = dst.max_examples_per_component
-    device = dst.reservoir_tokens.device
-    n_comp = dst.reservoir_n_items.shape[0]
-
-    # Validity mask over virtual [n_comp, 2k] index space: [0..k) = dst, [k..2k) = src
-    idx = torch.arange(k, device=device).unsqueeze(0)
-    valid_dst = idx < dst.reservoir_n_items.unsqueeze(1)
-    valid_src = idx < src.reservoir_n_items.unsqueeze(1)
-    valid = torch.cat([valid_dst, valid_src], dim=1)  # [n_comp, 2k]
-
-    # Efraimidis-Spirakis weighted sampling keys
-    weights = torch.zeros(n_comp, 2 * k, device=device)
-    weights[:, :k] = dst.reservoir_n_seen.unsqueeze(1).float()
-    weights[:, k:] = src.reservoir_n_seen.unsqueeze(1).float()
-    weights[~valid] = 0.0
-
-    rand = torch.rand(n_comp, 2 * k, device=device).clamp(min=1e-30)
-    keys = rand.pow(1.0 / weights.clamp(min=1.0))
-    keys[~valid] = -1.0
-
-    _, top_indices = keys.topk(k, dim=1)  # [n_comp, k] — indices into [0..2k)
-
-    # Split selected indices into dst-sourced and src-sourced
-    from_dst = top_indices < k
-    dst_indices = top_indices.clamp(max=k - 1)  # indices into dst's k dim
-    src_indices = (top_indices - k).clamp(min=0)  # indices into src's k dim
-
-    window = dst.reservoir_tokens.shape[2]
-    dst_idx_exp = dst_indices.unsqueeze(-1).expand(-1, -1, window)
-    src_idx_exp = src_indices.unsqueeze(-1).expand(-1, -1, window)
-    from_dst_exp = from_dst.unsqueeze(-1).expand(-1, -1, window)
-
-    dst.reservoir_tokens = torch.where(
-        from_dst_exp,
-        dst.reservoir_tokens.gather(1, dst_idx_exp),
-        src.reservoir_tokens.gather(1, src_idx_exp),
-    )
-    dst.reservoir_ci = torch.where(
-        from_dst_exp,
-        dst.reservoir_ci.gather(1, dst_idx_exp),
-        src.reservoir_ci.gather(1, src_idx_exp),
-    )
-    dst.reservoir_acts = torch.where(
-        from_dst_exp,
-        dst.reservoir_acts.gather(1, dst_idx_exp),
-        src.reservoir_acts.gather(1, src_idx_exp),
-    )
-
-    total_valid = valid.sum(dim=1)
-    dst.reservoir_n_items = total_valid.clamp(max=k)
-    dst.reservoir_n_seen = dst.reservoir_n_seen + src.reservoir_n_seen
-
-
-# ---------------------------------------------------------------------------
-# Reservoir sampling (Algorithm R) on tensor storage
-# ---------------------------------------------------------------------------
-
-
-def _reservoir_add_batch(
-    reservoir_tokens: Int[Tensor, "C k W"],
-    reservoir_ci: Float[Tensor, "C k W"],
-    reservoir_acts: Float[Tensor, "C k W"],
-    n_items: Int[Tensor, " C"],
-    n_seen: Int[Tensor, " C"],
-    comp_idx: Int[Tensor, " N"],
-    token_windows: Int[Tensor, "N W"],
-    ci_windows: Float[Tensor, "N W"],
-    act_windows: Float[Tensor, "N W"],
-    k: int,
-) -> None:
-    """Add firing windows to the tensor reservoir via Algorithm R.
-
-    Reservoir bookkeeping runs on CPU (cheap integer ops), then all accepted
-    windows are batch-written to device tensors in a single indexed assignment.
-    """
-    device = comp_idx.device
-    comps = comp_idx.cpu().tolist()
-    items_cpu = n_items.cpu()
-    seen_cpu = n_seen.cpu()
-
-    write_comps: list[int] = []
-    write_slots: list[int] = []
-    write_srcs: list[int] = []
-
-    for i, c in enumerate(comps):
-        n = int(seen_cpu[c])
-        if items_cpu[c] < k:
-            write_comps.append(c)
-            write_slots.append(int(items_cpu[c]))
-            write_srcs.append(i)
-            items_cpu[c] += 1
-        else:
-            j = random.randint(0, n)
-            if j < k:
-                write_comps.append(c)
-                write_slots.append(j)
-                write_srcs.append(i)
-        seen_cpu[c] += 1
-
-    n_items.copy_(items_cpu)
-    n_seen.copy_(seen_cpu)
-
-    if not write_comps:
-        return
-
-    c_t = torch.tensor(write_comps, dtype=torch.long, device=device)
-    s_t = torch.tensor(write_slots, dtype=torch.long, device=device)
-    f_t = torch.tensor(write_srcs, dtype=torch.long, device=device)
-    reservoir_tokens[c_t, s_t] = token_windows[f_t]
-    reservoir_ci[c_t, s_t] = ci_windows[f_t]
-    reservoir_acts[c_t, s_t] = act_windows[f_t]
-
-
-# ---------------------------------------------------------------------------
-# Harvester
-# ---------------------------------------------------------------------------
 
 
 class Harvester:
@@ -309,18 +184,54 @@ class Harvester:
         act_windows = subcomp_acts[bi, clamped, ci_idx]
         act_windows[~valid] = 0.0
 
-        _reservoir_add_batch(
-            self.reservoir_tokens,
-            self.reservoir_ci,
-            self.reservoir_acts,
-            self.reservoir_n_items,
-            self.reservoir_n_seen,
-            component_idx,
-            token_windows,
-            ci_windows,
-            act_windows,
-            self.max_examples_per_component,
-        )
+        self._reservoir_add(component_idx, token_windows, ci_windows, act_windows)
+
+    def _reservoir_add(
+        self,
+        comp_idx: Int[Tensor, " N"],
+        token_windows: Int[Tensor, "N W"],
+        ci_windows: Float[Tensor, "N W"],
+        act_windows: Float[Tensor, "N W"],
+    ) -> None:
+        """Add firing windows to the reservoir via Algorithm R.
+
+        Bookkeeping on CPU (cheap integer ops), then batch-write to device.
+        """
+        k = self.max_examples_per_component
+        device = comp_idx.device
+        comps = comp_idx.cpu().tolist()
+        items_cpu = self.reservoir_n_items.cpu()
+        seen_cpu = self.reservoir_n_seen.cpu()
+
+        write_comps: list[int] = []
+        write_slots: list[int] = []
+        write_srcs: list[int] = []
+
+        for i, c in enumerate(comps):
+            n = int(seen_cpu[c])
+            if items_cpu[c] < k:
+                write_comps.append(c)
+                write_slots.append(int(items_cpu[c]))
+                write_srcs.append(i)
+                items_cpu[c] += 1
+            else:
+                j = random.randint(0, n)
+                if j < k:
+                    write_comps.append(c)
+                    write_slots.append(j)
+                    write_srcs.append(i)
+            seen_cpu[c] += 1
+
+        self.reservoir_n_items.copy_(items_cpu)
+        self.reservoir_n_seen.copy_(seen_cpu)
+
+        if write_comps:
+            c_t = torch.tensor(write_comps, dtype=torch.long, device=device)
+            s_t = torch.tensor(write_slots, dtype=torch.long, device=device)
+            f_t = torch.tensor(write_srcs, dtype=torch.long, device=device)
+            self.reservoir_tokens[c_t, s_t] = token_windows[f_t]
+            self.reservoir_ci[c_t, s_t] = ci_windows[f_t]
+            self.reservoir_acts[c_t, s_t] = act_windows[f_t]
 
     # -- Serialization & merge ---------------------------------------------
 
@@ -390,13 +301,62 @@ class Harvester:
         self.output_token_prob_totals += other.output_token_prob_totals
         self.total_tokens_processed += other.total_tokens_processed
 
-        _merge_reservoirs_inplace(self, other)
+        self._merge_reservoirs(other)
+
+    def _merge_reservoirs(self, other: "Harvester") -> None:
+        """Merge other's reservoir into self, vectorized over all components.
+
+        Uses Efraimidis-Spirakis: key = random()^(1/weight), take top-k.
+        Computes selection indices on small [n_comp, 2k] tensors, then gathers
+        from self/other based on whether each selected index came from self or other.
+        """
+        k = self.max_examples_per_component
+        device = self.reservoir_tokens.device
+        n_comp = self.reservoir_n_items.shape[0]
+
+        idx = torch.arange(k, device=device).unsqueeze(0)
+        valid_self = idx < self.reservoir_n_items.unsqueeze(1)
+        valid_other = idx < other.reservoir_n_items.unsqueeze(1)
+        valid = torch.cat([valid_self, valid_other], dim=1)  # [n_comp, 2k]
+
+        weights = torch.zeros(n_comp, 2 * k, device=device)
+        weights[:, :k] = self.reservoir_n_seen.unsqueeze(1).float()
+        weights[:, k:] = other.reservoir_n_seen.unsqueeze(1).float()
+        weights[~valid] = 0.0
+
+        rand = torch.rand(n_comp, 2 * k, device=device).clamp(min=1e-30)
+        keys = rand.pow(1.0 / weights.clamp(min=1.0))
+        keys[~valid] = -1.0
+
+        _, top_indices = keys.topk(k, dim=1)  # [n_comp, k]
+
+        from_self = top_indices < k
+        self_indices = top_indices.clamp(max=k - 1)
+        other_indices = (top_indices - k).clamp(min=0)
+
+        window = self.reservoir_tokens.shape[2]
+        si = self_indices.unsqueeze(-1).expand(-1, -1, window)
+        oi = other_indices.unsqueeze(-1).expand(-1, -1, window)
+        mask = from_self.unsqueeze(-1).expand(-1, -1, window)
+
+        self.reservoir_tokens = torch.where(
+            mask, self.reservoir_tokens.gather(1, si), other.reservoir_tokens.gather(1, oi)
+        )
+        self.reservoir_ci = torch.where(
+            mask, self.reservoir_ci.gather(1, si), other.reservoir_ci.gather(1, oi)
+        )
+        self.reservoir_acts = torch.where(
+            mask, self.reservoir_acts.gather(1, si), other.reservoir_acts.gather(1, oi)
+        )
+
+        self.reservoir_n_items = valid.sum(dim=1).clamp(max=k)
+        self.reservoir_n_seen = self.reservoir_n_seen + other.reservoir_n_seen
 
     # -- Result building ---------------------------------------------------
 
     def build_results(self, pmi_top_k_tokens: int) -> Iterator[ComponentData]:
         """Yield ComponentData objects one at a time (constant memory)."""
-        print("  Moving tensors to CPU...")
+        logger.info("  Moving tensors to CPU...")
         mean_ci = (self.ci_sums / self.total_tokens_processed).cpu()
         firing_counts = self.firing_counts.cpu()
         input_token_counts = self.input_token_counts.cpu()
@@ -412,7 +372,7 @@ class Harvester:
         _log_base_rate_summary(firing_counts, input_token_totals)
 
         n_total = sum(self.c_per_layer[layer] for layer in self.layer_names)
-        print(
+        logger.info(
             f"  Computing stats for {n_total} components across {len(self.layer_names)} layers..."
         )
         for layer_name in tqdm.tqdm(self.layer_names, desc="Building components"):
@@ -470,14 +430,14 @@ class Harvester:
 def _log_base_rate_summary(firing_counts: Tensor, input_token_totals: Tensor) -> None:
     active_counts = firing_counts[firing_counts > 0]
     if len(active_counts) == 0:
-        print("  WARNING: No components fired above threshold!")
+        logger.info("  WARNING: No components fired above threshold!")
         return
 
     sorted_counts = active_counts.sort().values
     n_active = len(active_counts)
-    print("\n  === Base Rate Summary ===")
-    print(f"  Components with firings: {n_active} / {len(firing_counts)}")
-    print(
+    logger.info("\n  === Base Rate Summary ===")
+    logger.info(f"  Components with firings: {n_active} / {len(firing_counts)}")
+    logger.info(
         f"  Firing counts - min: {int(sorted_counts[0])}, "
         f"median: {int(sorted_counts[n_active // 2])}, "
         f"max: {int(sorted_counts[-1])}"
@@ -486,7 +446,7 @@ def _log_base_rate_summary(firing_counts: Tensor, input_token_totals: Tensor) ->
     LOW_FIRING_THRESHOLD = 100
     n_sparse = int((active_counts < LOW_FIRING_THRESHOLD).sum())
     if n_sparse > 0:
-        print(
+        logger.info(
             f"  WARNING: {n_sparse} components have <{LOW_FIRING_THRESHOLD} firings "
             f"(stats may be noisy)"
         )
@@ -494,7 +454,7 @@ def _log_base_rate_summary(firing_counts: Tensor, input_token_totals: Tensor) ->
     active_tokens = input_token_totals[input_token_totals > 0]
     sorted_token_counts = active_tokens.sort().values
     n_tokens = len(active_tokens)
-    print(
+    logger.info(
         f"  Tokens seen: {n_tokens} unique, "
         f"occurrences - min: {int(sorted_token_counts[0])}, "
         f"median: {int(sorted_token_counts[n_tokens // 2])}, "
@@ -504,11 +464,11 @@ def _log_base_rate_summary(firing_counts: Tensor, input_token_totals: Tensor) ->
     RARE_TOKEN_THRESHOLD = 10
     n_rare = int((active_tokens < RARE_TOKEN_THRESHOLD).sum())
     if n_rare > 0:
-        print(
+        logger.info(
             f"  Note: {n_rare} tokens have <{RARE_TOKEN_THRESHOLD} occurrences "
             f"(high precision/recall with these may be spurious)"
         )
-    print()
+    logger.info("")
 
 
 def _compute_token_pmi(
