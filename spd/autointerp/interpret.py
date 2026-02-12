@@ -12,7 +12,6 @@ from spd.autointerp.llm_api import (
     BudgetExceededError,
     CostTracker,
     LLMClient,
-    LLMClientConfig,
     RateLimiter,
     get_model_pricing,
     make_response_format,
@@ -100,12 +99,6 @@ def run_interpret(
     if limit is not None:
         eligible = eligible[:limit]
 
-    llm_config = LLMClientConfig(
-        openrouter_api_key=openrouter_api_key,
-        model=config.model,
-        cost_limit_usd=cost_limit_usd,
-    )
-
     db = InterpDB(db_path)
 
     async def _run() -> list[InterpretationResult]:
@@ -157,16 +150,16 @@ def run_interpret(
                             f"{llm.cost_tracker.output_tokens:,} out)"
                         )
 
-        async with OpenRouter(api_key=llm_config.openrouter_api_key) as api:
-            input_price, output_price = await get_model_pricing(api, llm_config.model)
+        async with OpenRouter(api_key=openrouter_api_key) as api:
+            input_price, output_price = await get_model_pricing(api, config.model)
             cost_tracker = CostTracker(
                 input_price_per_token=input_price,
                 output_price_per_token=output_price,
-                limit_usd=llm_config.cost_limit_usd,
+                limit_usd=cost_limit_usd,
             )
             llm = LLMClient(
                 api=api,
-                rate_limiter=RateLimiter(llm_config.max_requests_per_minute),
+                rate_limiter=RateLimiter(200),
                 cost_tracker=cost_tracker,
             )
 

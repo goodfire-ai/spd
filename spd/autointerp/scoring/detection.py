@@ -25,7 +25,6 @@ from spd.autointerp.llm_api import (
     BudgetExceededError,
     CostTracker,
     LLMClient,
-    LLMClientConfig,
     RateLimiter,
     get_model_pricing,
     make_response_format,
@@ -254,12 +253,6 @@ async def run_detection_scoring(
     if limit is not None:
         eligible = eligible[:limit]
 
-    llm_config = LLMClientConfig(
-        openrouter_api_key=openrouter_api_key,
-        model=model,
-        cost_limit_usd=cost_limit_usd,
-    )
-
     results: list[DetectionResult] = []
 
     existing_scores = db.get_scores("detection")
@@ -299,16 +292,16 @@ async def run_detection_scoring(
                         f"[{index}] scored {len(results)}, ${llm.cost_tracker.cost_usd():.2f}"
                     )
 
-    async with OpenRouter(api_key=llm_config.openrouter_api_key) as api:
-        input_price, output_price = await get_model_pricing(api, llm_config.model)
+    async with OpenRouter(api_key=openrouter_api_key) as api:
+        input_price, output_price = await get_model_pricing(api, model)
         cost_tracker = CostTracker(
             input_price_per_token=input_price,
             output_price_per_token=output_price,
-            limit_usd=llm_config.cost_limit_usd,
+            limit_usd=cost_limit_usd,
         )
         llm = LLMClient(
             api=api,
-            rate_limiter=RateLimiter(llm_config.max_requests_per_minute),
+            rate_limiter=RateLimiter(200),
             cost_tracker=cost_tracker,
         )
 
