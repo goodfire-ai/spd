@@ -126,9 +126,9 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
         sources_by_target=sources_by_target,
         config=spd_config,
         context_length=context_length,
-        harvest=HarvestRepo(run_id),
-        interp=InterpRepo(run_id),
-        attributions=AttributionRepo(run_id),
+        harvest=HarvestRepo.open(run_id),
+        interp=InterpRepo.open(run_id),
+        attributions=AttributionRepo.open(run_id),
     )
 
     logger.info(f"[API] Run {run.id} loaded on {DEVICE}")
@@ -164,7 +164,7 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
         prompt_count=prompt_count,
         context_length=context_length,
         backend_user=getpass.getuser(),
-        dataset_attributions_available=manager.run_state.attributions.has_attributions(),
+        dataset_attributions_available=manager.run_state.attributions is not None,
         dataset_search_enabled=dataset_search_enabled,
     )
 

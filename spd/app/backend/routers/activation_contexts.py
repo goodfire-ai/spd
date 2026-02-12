@@ -43,9 +43,9 @@ def get_activation_contexts_summary(
     loaded: DepLoadedRun,
 ) -> dict[str, list[SubcomponentMetadata]]:
     """Return lightweight summary of activation contexts (just idx + mean_ci per component)."""
+    if loaded.harvest is None:
+        raise HTTPException(status_code=404, detail="No harvest data available")
     summary_data = loaded.harvest.get_summary()
-    if summary_data is None:
-        raise HTTPException(status_code=404, detail="No activation contexts summary found")
 
     summary: dict[str, list[SubcomponentMetadata]] = defaultdict(list)
     for comp in summary_data.values():
@@ -81,6 +81,7 @@ def get_activation_context_detail(
     TODO: Add offset parameter for pagination to allow fetching remaining examples
           after initial view is loaded.
     """
+    assert loaded.harvest is not None, "No harvest data available"
     concrete_layer = loaded.topology.canon_to_target(layer)
     component_key = f"{concrete_layer}:{component_idx}"
     comp = loaded.harvest.get_component(component_key)
@@ -130,6 +131,7 @@ def get_activation_contexts_bulk(
         concrete = loaded.topology.canon_to_target(layer)
         return f"{concrete}:{idx}"
 
+    assert loaded.harvest is not None, "No harvest data available"
     concrete_to_canonical = {_to_concrete_key(k): k for k in request.component_keys}
     concrete_keys = list(concrete_to_canonical.keys())
     components = loaded.harvest.get_components_bulk(concrete_keys)

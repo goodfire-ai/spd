@@ -458,6 +458,7 @@ value = config.key
 - Do not write: `if everythingIsOk: continueHappyPath()`. Instead do `assert everythingIsOk`
 - You should have a VERY good reason to handle an error gracefully. If your program isn't working like it should then it shouldn't be running, you should be fixing it.
 - Do not write `try-catch` blocks unless it definitely makes sense
+- **Write for the golden path.** Never let edge cases bloat the code. Before handling them, just raise an exception. If an edge case becomes annoying enough, we'll handle it then — but write first and foremost for the common case.
 
 ### Control Flow
 - Keep I/O as high up as possible. Make as many functions as possible pure.
@@ -475,8 +476,9 @@ value = config.key
   - good: {<id>: <val>}
   - bad: {"tokens": …, "loss": …}
 - Default args are rarely a good idea. Avoid them unless necessary. You should have a very good reason for having a default value for an argument, especially if it's caller also defaults to the same thing
-- This repo uses basedpyright (not mypy) 
+- This repo uses basedpyright (not mypy)
 - Keep defaults high in the call stack.
+- Don't use `from __future__ import annotations` — use string quotes for forward references instead.
 
 ### Tensor Operations
 - Try to use einops by default for clarity.

@@ -68,10 +68,9 @@ def _to_concrete_key(canonical_layer: str, component_idx: int, loaded: DepLoaded
 
 def _require_storage(loaded: DepLoadedRun) -> DatasetAttributionStorage:
     """Get storage or raise 404."""
-    storage = loaded.attributions.get_attributions()
-    if storage is None:
+    if loaded.attributions is None:
         raise HTTPException(status_code=404, detail=NOT_AVAILABLE_MSG)
-    return storage
+    return loaded.attributions.get_attributions()
 
 
 def _require_source(storage: DatasetAttributionStorage, component_key: str) -> None:
@@ -122,8 +121,7 @@ def _to_api_entries(
 @log_errors
 def get_attribution_metadata(loaded: DepLoadedRun) -> DatasetAttributionMetadata:
     """Get metadata about dataset attributions availability."""
-    storage = loaded.attributions.get_attributions()
-    if storage is None:
+    if loaded.attributions is None:
         return DatasetAttributionMetadata(
             available=False,
             n_batches_processed=None,
@@ -133,6 +131,7 @@ def get_attribution_metadata(loaded: DepLoadedRun) -> DatasetAttributionMetadata
             d_model=None,
             ci_threshold=None,
         )
+    storage = loaded.attributions.get_attributions()
     return DatasetAttributionMetadata(
         available=True,
         n_batches_processed=storage.n_batches_processed,

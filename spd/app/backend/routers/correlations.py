@@ -109,10 +109,10 @@ def get_all_interpretations(
     Reasoning and prompt are excluded - fetch individually via
     GET /interpretations/{layer}/{component_idx} when needed.
     """
-    interpretations = loaded.interp.get_all_interpretations()
-    if interpretations is None:
+    if loaded.interp is None:
         return {}
 
+    interpretations = loaded.interp.get_all_interpretations()
     detection_scores = loaded.interp.get_detection_scores()
     fuzzing_scores = loaded.interp.get_fuzzing_scores()
 
@@ -138,6 +138,8 @@ def get_interpretation_detail(
 
     Returns reasoning and prompt for the specified component.
     """
+    if loaded.interp is None:
+        raise HTTPException(status_code=404, detail="No autointerp data available")
     concrete_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
     result = loaded.interp.get_interpretation(concrete_key)
 
@@ -172,6 +174,9 @@ async def request_component_interpretation(
         interpret_component,
     )
     from spd.autointerp.llm_api import CostTracker, LLMClient, RateLimiter  # noqa: F811
+
+    assert loaded.harvest is not None, "No harvest data available"
+    assert loaded.interp is not None, "No autointerp data available"
 
     component_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
 
@@ -254,6 +259,8 @@ def get_intruder_scores(loaded: DepLoadedRun) -> dict[str, float]:
     Returns a dict keyed by component_key (layer:cIdx) → score (0-1).
     Returns empty dict if no intruder scores are available.
     """
+    if loaded.harvest is None:
+        return {}
     scores = loaded.harvest.get_intruder_scores()
     if scores is None:
         return {}
@@ -281,6 +288,7 @@ def get_component_token_stats(
     and output tokens (what this component predicts).
     Returns None if token stats haven't been harvested for this run.
     """
+    assert loaded.harvest is not None, "No harvest data available"
     token_stats = loaded.harvest.get_token_stats()
     if token_stats is None:
         return None
@@ -338,6 +346,7 @@ def get_component_correlations_bulk(
 
     Returns a dict keyed by component_key. Components not found are omitted.
     """
+    assert loaded.harvest is not None, "No harvest data available"
     correlations = loaded.harvest.get_correlations()
     if correlations is None:
         return {}
@@ -409,6 +418,7 @@ def get_component_token_stats_bulk(
 
     Returns a dict keyed by component_key. Components not found are omitted.
     """
+    assert loaded.harvest is not None, "No harvest data available"
     token_stats = loaded.harvest.get_token_stats()
     if token_stats is None:
         return {}
@@ -463,6 +473,7 @@ def get_component_correlations(
     Returns top-k correlations across different metrics (precision, recall, Jaccard, PMI).
     Returns None if correlations haven't been harvested for this run.
     """
+    assert loaded.harvest is not None, "No harvest data available"
     correlations = loaded.harvest.get_correlations()
     if correlations is None:
         raise HTTPException(status_code=404, detail="No correlations data available")

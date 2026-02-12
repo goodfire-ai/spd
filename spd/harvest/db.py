@@ -93,14 +93,6 @@ class HarvestDB:
         )
         self._conn.commit()
 
-    def save_components(self, components: list[ComponentData]) -> None:
-        rows = [_serialize_component(comp) for comp in components]
-        self._conn.executemany(
-            "INSERT OR REPLACE INTO components VALUES (?, ?, ?, ?, ?, ?, ?)",
-            rows,
-        )
-        self._conn.commit()
-
     def save_components_iter(self, components: Iterable[ComponentData]) -> int:
         """Save components from an iterable, one at a time (constant memory)."""
         n = 0
@@ -154,6 +146,10 @@ class HarvestDB:
             for row in rows
         }
 
+    def get_config_dict(self) -> dict[str, object]:
+        rows = self._conn.execute("SELECT key, value FROM config").fetchall()
+        return {row["key"]: orjson.loads(row["value"]) for row in rows}
+
     def get_ci_threshold(self) -> float:
         row = self._conn.execute("SELECT value FROM config WHERE key = 'ci_threshold'").fetchone()
         assert row is not None, "ci_threshold not found in config table"
@@ -163,6 +159,11 @@ class HarvestDB:
         row = self._conn.execute("SELECT EXISTS(SELECT 1 FROM components LIMIT 1)").fetchone()
         assert row is not None
         return bool(row[0])
+
+    def get_component_count(self) -> int:
+        row = self._conn.execute("SELECT COUNT(*) FROM components").fetchone()
+        assert row is not None
+        return row[0]
 
     def get_all_components(self, ci_threshold: float) -> list[ComponentData]:
         """Load all components with mean_ci >= ci_threshold."""

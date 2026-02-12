@@ -31,13 +31,12 @@ def main(
     arch = get_architecture_info(wandb_path)
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
-    harvest = HarvestRepo(run_id, subrun_id=harvest_subrun_id)
+    harvest = HarvestRepo.open(run_id, subrun_id=harvest_subrun_id)
+    assert harvest is not None, f"No harvest data for {run_id}"
     components = harvest.get_all_components()
     ci_threshold = harvest.get_ci_threshold()
 
-    db_path = harvest._resolve_db_path()
-    assert db_path is not None, f"No harvest.db for run {run_id}"
-    db = HarvestDB(db_path)
+    db = HarvestDB(harvest.db_path)
 
     asyncio.run(
         run_intruder_scoring(

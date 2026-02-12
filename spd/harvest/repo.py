@@ -4,10 +4,8 @@ Owns SPD_OUT_DIR/harvest/<run_id>/ and provides read access to all harvest artif
 No in-memory caching -- reads go through on every call. Component data backed by SQLite;
 correlations and token stats remain as .pt files.
 
-Supports two layouts:
-- Sub-run layout (current): harvest/<run_id>/h-YYYYMMDD_HHMMSS/{harvest.db, *.pt}
-- Legacy layout (fallback): harvest/<run_id>/activation_contexts/harvest.db
-                             harvest/<run_id>/correlations/{*.pt}
+Use HarvestRepo.open() to construct — returns None if no harvest data exists.
+Layout: harvest/<run_id>/h-YYYYMMDD_HHMMSS/{harvest.db, *.pt}
 """
 
 from pathlib import Path
@@ -22,116 +20,81 @@ from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 
 
 class HarvestRepo:
-    """Read-only access to harvest data for a single run."""
+    """Read-only access to harvest data for a single run.
 
-    def __init__(self, run_id: str, subrun_id: str | None = None) -> None:
+    Constructed via HarvestRepo.open(). DB is opened eagerly at construction.
+    """
+
+    def __init__(self, db: HarvestDB, subrun_dir: Path, run_id: str) -> None:
+        self._db = db
+        self._subrun_dir = subrun_dir
+        self.db_path = subrun_dir / "harvest.db"
+        self.subrun_id = subrun_dir.name
         self.run_id = run_id
-        self._subrun_id = subrun_id
-        self._db: HarvestDB | None = None
 
-    def _find_subrun(self) -> Path | None:
-        """Find the sub-run directory: pinned if subrun_id set, otherwise latest."""
-        if self._subrun_id is not None:
-            path = get_harvest_dir(self.run_id) / self._subrun_id
-            return path if path.exists() else None
-
-        harvest_dir = get_harvest_dir(self.run_id)
+    @classmethod
+    def open(cls, run_id: str, subrun_id: str | None = None) -> "HarvestRepo | None":
+        """Open harvest data for a run. Returns None if no harvest data exists."""
+        harvest_dir = get_harvest_dir(run_id)
         if not harvest_dir.exists():
             return None
-        candidates = sorted(
-            [d for d in harvest_dir.iterdir() if d.is_dir() and d.name.startswith("h-")],
-            key=lambda d: d.name,
-        )
-        return candidates[-1] if candidates else None
 
-    def _resolve_db_path(self) -> Path | None:
-        """Resolve the path to harvest.db, checking sub-run dirs then legacy layout."""
-        subrun = self._find_subrun()
-        if subrun is not None:
-            path = subrun / "harvest.db"
-            return path if path.exists() else None
-        # Legacy fallback
-        legacy = get_harvest_dir(self.run_id) / "activation_contexts" / "harvest.db"
-        return legacy if legacy.exists() else None
+        if subrun_id is not None:
+            subrun_dir = harvest_dir / subrun_id
+        else:
+            candidates = sorted(
+                [d for d in harvest_dir.iterdir() if d.is_dir() and d.name.startswith("h-")],
+                key=lambda d: d.name,
+            )
+            if not candidates:
+                return None
+            subrun_dir = candidates[-1]
 
-    def _resolve_data_dir(self) -> Path | None:
-        """Resolve the directory containing correlations and token stats .pt files."""
-        subrun = self._find_subrun()
-        if subrun is not None:
-            return subrun
-        # Legacy fallback
-        legacy = get_harvest_dir(self.run_id) / "correlations"
-        return legacy if legacy.exists() else None
-
-    def _get_db(self) -> HarvestDB | None:
-        """Lazily open the SQLite database on first access."""
-        if self._db is not None:
-            return self._db
-        db_path = self._resolve_db_path()
-        if db_path is None:
+        db_path = subrun_dir / "harvest.db"
+        if not db_path.exists():
             return None
-        self._db = HarvestDB(db_path, readonly=True)
-        return self._db
+
+        return cls(
+            db=HarvestDB(db_path, readonly=True),
+            subrun_dir=subrun_dir,
+            run_id=run_id,
+        )
+
+    # -- Provenance ------------------------------------------------------------
+
+    def get_config(self) -> dict[str, object]:
+        return self._db.get_config_dict()
+
+    def get_component_count(self) -> int:
+        return self._db.get_component_count()
 
     # -- Activation contexts ---------------------------------------------------
 
-    def has_activation_contexts(self) -> bool:
-        db = self._get_db()
-        return db is not None and db.has_data()
-
-    def get_summary(self) -> dict[str, ComponentSummary] | None:
-        db = self._get_db()
-        if db is None:
-            return None
-        return db.get_summary()
+    def get_summary(self) -> dict[str, ComponentSummary]:
+        return self._db.get_summary()
 
     def get_component(self, component_key: str) -> ComponentData | None:
-        db = self._get_db()
-        if db is None:
-            return None
-        return db.get_component(component_key)
+        return self._db.get_component(component_key)
 
     def get_components_bulk(self, component_keys: list[str]) -> dict[str, ComponentData]:
-        db = self._get_db()
-        if db is None:
-            return {}
-        return db.get_components_bulk(component_keys)
+        return self._db.get_components_bulk(component_keys)
 
     def get_ci_threshold(self) -> float:
-        db = self._get_db()
-        assert db is not None, f"No harvest.db for run {self.run_id}"
-        return db.get_ci_threshold()
+        return self._db.get_ci_threshold()
 
     def get_all_components(self) -> list[ComponentData]:
-        """Load all components with mean_ci above the harvest ci_threshold."""
-        db = self._get_db()
-        assert db is not None, f"No harvest.db for run {self.run_id}"
-        return db.get_all_components(db.get_ci_threshold())
+        return self._db.get_all_components(self._db.get_ci_threshold())
 
     # -- Correlations & token stats (tensor data) ------------------------------
 
-    def has_correlations(self) -> bool:
-        data_dir = self._resolve_data_dir()
-        return data_dir is not None and (data_dir / "component_correlations.pt").exists()
-
     def get_correlations(self) -> CorrelationStorage | None:
-        data_dir = self._resolve_data_dir()
-        if data_dir is None:
-            return None
-        path = data_dir / "component_correlations.pt"
+        path = self._subrun_dir / "component_correlations.pt"
         if not path.exists():
             return None
         return CorrelationStorage.load(path)
 
-    def has_token_stats(self) -> bool:
-        data_dir = self._resolve_data_dir()
-        return data_dir is not None and (data_dir / "token_stats.pt").exists()
-
     def get_token_stats(self) -> TokenStatsStorage | None:
-        data_dir = self._resolve_data_dir()
-        if data_dir is None:
-            return None
-        path = data_dir / "token_stats.pt"
+        path = self._subrun_dir / "token_stats.pt"
         if not path.exists():
             return None
         return TokenStatsStorage.load(path)
@@ -139,8 +102,5 @@ class HarvestRepo:
     # -- Eval scores (e.g. intruder) -------------------------------------------
 
     def get_intruder_scores(self) -> dict[str, float] | None:
-        db = self._get_db()
-        if db is None:
-            return None
-        scores = db.get_scores("intruder")
+        scores = self._db.get_scores("intruder")
         return scores if scores else None

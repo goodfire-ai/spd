@@ -16,7 +16,6 @@ from spd.autointerp.config import ReasoningEffort
 from spd.autointerp.db import InterpDB
 from spd.autointerp.interpret import get_architecture_info
 from spd.autointerp.repo import InterpRepo
-from spd.autointerp.schemas import get_autointerp_dir
 from spd.harvest.repo import HarvestRepo
 from spd.utils.wandb_utils import parse_wandb_run_path
 
@@ -39,17 +38,19 @@ def main(
     arch = get_architecture_info(wandb_path)
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
-    interp = InterpRepo(run_id)
+    interp = InterpRepo.open(run_id)
+    assert interp is not None, f"No autointerp data for {run_id}. Run autointerp first."
     interpretations = interp.get_all_interpretations()
-    assert interpretations, f"No interpretation results for {run_id}. Run autointerp first."
     labels = {key: result.label for key, result in interpretations.items()}
 
-    harvest = HarvestRepo(run_id, subrun_id=harvest_subrun_id)
+    harvest = HarvestRepo.open(run_id, subrun_id=harvest_subrun_id)
+    assert harvest is not None, f"No harvest data for {run_id}"
     components = harvest.get_all_components()
     ci_threshold = harvest.get_ci_threshold()
 
-    db_path = get_autointerp_dir(run_id) / "interp.db"
-    db = InterpDB(db_path)
+    subrun_dir = InterpRepo._find_latest_subrun_dir(run_id)
+    assert subrun_dir is not None, f"No autointerp subrun found for {run_id}"
+    db = InterpDB(subrun_dir / "interp.db")
 
     match scorer:
         case "detection":

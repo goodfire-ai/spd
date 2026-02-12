@@ -56,7 +56,8 @@ def main(
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
-    harvest = HarvestRepo(run_id, subrun_id=harvest_subrun_id)
+    harvest = HarvestRepo.open(run_id, subrun_id=harvest_subrun_id)
+    assert harvest is not None, f"No harvest data for {run_id}"
 
     # Create timestamped run directory
     if autointerp_run_id is None:
@@ -67,8 +68,7 @@ def main(
     # Save config for reproducibility
     interp_config.to_file(run_dir / "config.yaml")
 
-    # DB lives at autointerp/<run_id>/interp.db (shared across autointerp runs)
-    db_path = get_autointerp_dir(run_id) / "interp.db"
+    db_path = run_dir / "interp.db"
 
     print(f"Autointerp run: {run_dir}")
 

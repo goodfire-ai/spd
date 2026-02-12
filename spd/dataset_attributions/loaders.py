@@ -32,16 +32,11 @@ def _find_latest_subrun(wandb_run_id: str) -> Path | None:
 
 
 def load_dataset_attributions(wandb_run_id: str) -> DatasetAttributionStorage | None:
-    """Load dataset attributions from the latest sub-run, with legacy fallback."""
+    """Load dataset attributions from the latest sub-run."""
     subrun = _find_latest_subrun(wandb_run_id)
-    if subrun is not None:
-        path = subrun / "dataset_attributions.pt"
-        if path.exists():
-            return DatasetAttributionStorage.load(path)
+    if subrun is None:
         return None
-
-    # Legacy fallback: flat layout
-    path = get_attributions_dir(wandb_run_id) / "dataset_attributions.pt"
-    if path.exists():
-        return DatasetAttributionStorage.load(path)
-    return None
+    path = subrun / "dataset_attributions.pt"
+    if not path.exists():
+        return None
+    return DatasetAttributionStorage.load(path)

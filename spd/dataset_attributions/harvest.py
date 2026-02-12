@@ -63,7 +63,8 @@ def _build_alive_masks(
     - Sources: [0, vocab_size) = wte tokens, [vocab_size, vocab_size + n_components) = component layers
     - Targets: [0, n_components) = component layers (output handled via out_residual)
     """
-    summary = HarvestRepo(run_id).get_summary()
+    harvest = HarvestRepo.open(run_id)
+    summary = harvest.get_summary() if harvest is not None else None
 
     n_sources = vocab_size + n_components
 

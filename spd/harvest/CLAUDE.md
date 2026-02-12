@@ -66,16 +66,7 @@ SPD_OUT_DIR/harvest/<run_id>/
 │   └── ...
 ```
 
-Legacy layout (pre sub-run) is still supported as a fallback by `HarvestRepo`:
-
-```
-SPD_OUT_DIR/harvest/<run_id>/
-├── activation_contexts/
-│   └── harvest.db
-├── correlations/
-│   ├── component_correlations.pt
-│   └── token_stats.pt
-```
+Legacy layout (pre sub-run, `activation_contexts/` + `correlations/`) is no longer supported.
 
 ## Architecture
 

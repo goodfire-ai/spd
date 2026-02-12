@@ -29,9 +29,9 @@ class RunState:
     sources_by_target: dict[str, list[str]]
     config: Config
     context_length: int
-    harvest: HarvestRepo
-    interp: InterpRepo
-    attributions: AttributionRepo
+    harvest: HarvestRepo | None
+    interp: InterpRepo | None
+    attributions: AttributionRepo | None
 
 
 @dataclass

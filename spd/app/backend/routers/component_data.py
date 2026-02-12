@@ -59,9 +59,10 @@ def get_component_data_bulk(
     logger.info(f"[perf] component_data/bulk: {len(request.component_keys)} keys requested")
 
     t0 = time.perf_counter()
-    has_ac = harvest.has_activation_contexts()
-    has_corr = harvest.has_correlations()
-    has_ts = harvest.has_token_stats()
+    has_harvest = harvest is not None
+    has_ac = has_harvest
+    has_corr = has_harvest
+    has_ts = has_harvest
     logger.info(
         f"[perf] harvest availability checks: {time.perf_counter() - t0:.2f}s "
         f"(ac={has_ac}, corr={has_corr}, ts={has_ts})"

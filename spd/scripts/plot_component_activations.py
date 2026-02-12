@@ -140,7 +140,8 @@ def main():
     output_dir_median.mkdir(parents=True, exist_ok=True)
     output_dir_freq.mkdir(parents=True, exist_ok=True)
 
-    repo = HarvestRepo(args.run_id)
+    repo = HarvestRepo.open(args.run_id)
+    assert repo is not None, f"No harvest data for {args.run_id}"
 
     print(f"Loading components for run {args.run_id}...")
     components = repo.get_all_components()

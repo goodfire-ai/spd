@@ -137,6 +137,11 @@ class InterpDB:
         assert row is not None
         return bool(row[0])
 
+    def get_interpretation_count(self) -> int:
+        row = self._conn.execute("SELECT COUNT(*) FROM interpretations").fetchone()
+        assert row is not None
+        return row[0]
+
     def has_scores(self, score_type: str) -> bool:
         row = self._conn.execute(
             "SELECT EXISTS(SELECT 1 FROM scores WHERE score_type = ? LIMIT 1)",

@@ -3,6 +3,7 @@
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import ClusterPathInput from "./ClusterPathInput.svelte";
     import DatasetExplorerTab from "./DatasetExplorerTab.svelte";
+    import DataSourcesTab from "./DataSourcesTab.svelte";
     import PromptAttributionsTab from "./PromptAttributionsTab.svelte";
     import DisplaySettingsDropdown from "./ui/DisplaySettingsDropdown.svelte";
     import ActivationContextsTab from "./ActivationContextsTab.svelte";
@@ -13,7 +14,7 @@
         runState.run?.status === "loaded" && runState.run.data.dataset_search_enabled,
     );
 
-    let activeTab = $state<"prompts" | "components" | "dataset-search" | null>(null);
+    let activeTab = $state<"prompts" | "components" | "dataset-search" | "data-sources" | null>(null);
     let showRunMenu = $state(false);
 
     $effect(() => {
@@ -69,6 +70,14 @@
                         Dataset Search
                     </button>
                 {/if}
+                <button
+                    type="button"
+                    class="tab-button"
+                    class:active={activeTab === "data-sources"}
+                    onclick={() => (activeTab = "data-sources")}
+                >
+                    Data Sources
+                </button>
             {/if}
         </nav>
 
@@ -100,6 +109,9 @@
                     <DatasetExplorerTab />
                 </div>
             {/if}
+            <div class="tab-content" class:hidden={activeTab !== "data-sources"}>
+                <DataSourcesTab />
+            </div>
         {:else if runState.run.status === "loading" || runState.prompts.status === "loading" || runState.allTokens.status === "loading"}
             <div class="empty-state">
                 <p>Loading run...</p>

@@ -20,21 +20,23 @@ Requires `OPENROUTER_API_KEY` env var.
 
 ## Data Storage
 
-All autointerp data (interpretations and scores) is stored in a single SQLite database:
+Each autointerp subrun has its own SQLite database:
 
 ```
 SPD_OUT_DIR/autointerp/<spd_run_id>/
-├── interp.db                      # SQLite DB: interpretations + scores (WAL mode)
 └── <autointerp_run_id>/           # e.g. a-20260206_153040
+    ├── interp.db                  # SQLite DB: interpretations + scores (WAL mode)
     └── config.yaml                # AutointerpConfig (for reproducibility)
 ```
+
+`InterpRepo` reads from the latest subrun (by lexicographic sort of `a-*` dir names).
 
 The `interp.db` schema has three tables:
 - `interpretations`: component_key -> label, confidence, reasoning, raw_response, prompt
 - `scores`: (component_key, score_type) -> score, details (JSON blob with trial data)
 - `config`: key-value store
 
-Score types: `intruder`, `detection`, `fuzzing`.
+Score types: `detection`, `fuzzing`. (Intruder scores live in `harvest.db`.)
 
 ## Architecture
 
@@ -72,11 +74,10 @@ Each strategy config type has a corresponding prompt implementation:
 
 ### Loaders (`loaders.py`)
 
-Standalone loader functions used by scoring scripts:
-- `load_interpretations(run_id)` — loads all interpretations from DB
-- `load_intruder_scores(run_id)` — loads intruder scores from DB
-- `load_detection_scores(run_id)` — loads detection scores from DB
-- `load_fuzzing_scores(run_id)` — loads fuzzing scores from DB
+Standalone loader functions for reading from the latest subrun's DB:
+- `load_interpretations(run_id)` — loads all interpretations
+- `load_detection_scores(run_id)` — loads detection scores
+- `load_fuzzing_scores(run_id)` — loads fuzzing scores
 
 ## Key Types (`schemas.py`)
 
