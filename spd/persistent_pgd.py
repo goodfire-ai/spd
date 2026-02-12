@@ -9,7 +9,7 @@ benefit of many PGD steps without the per-step computational cost.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Literal, override
+from typing import Any, ClassVar, override
 
 import torch
 from jaxtyping import Float, Int
@@ -19,6 +19,7 @@ from torch.distributed import ReduceOp
 from spd.configs import (
     AdamPGDConfig,
     BroadcastAcrossBatchScope,
+    OutputLossType,
     PerBatchPerPositionScope,
     PersistentPGDReconLossConfig,
     PersistentPGDReconSubsetLossConfig,
@@ -33,7 +34,7 @@ from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import ComponentsMaskInfo, RoutingMasks, make_mask_infos
 from spd.routing import AllLayersRouter, Router, get_subset_router
 from spd.utils.distributed_utils import all_reduce, call_on_rank0_then_broadcast
-from spd.utils.general_utils import calc_sum_recon_loss_lm
+from spd.utils.general_utils import calc_n_recon_examples_lm, calc_sum_recon_loss_lm
 
 PPGDSources = dict[str, Float[Tensor, " source_c"]]
 
@@ -268,7 +269,7 @@ def _interpolate_component_mask(
 def _persistent_pgd_recon_subset_loss_update(
     model: ComponentModel,
     ppgd_sources: PPGDSources,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: OutputLossType,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
@@ -279,9 +280,10 @@ def _persistent_pgd_recon_subset_loss_update(
 
     mask_infos = get_mask_infos(model, ci, weight_deltas, ppgd_sources, router)
     out = model(batch, mask_infos=mask_infos)
-    loss_type = output_loss_type
-    loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
-    n_examples = out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
+    loss = calc_sum_recon_loss_lm(
+        pred=out, target=target_out, loss_type=output_loss_type, batch=batch
+    )
+    n_examples = calc_n_recon_examples_lm(out.shape, output_loss_type)
 
     return loss, n_examples
 
@@ -289,7 +291,7 @@ def _persistent_pgd_recon_subset_loss_update(
 def persistent_pgd_recon_subset_loss(
     model: ComponentModel,
     ppgd_sources: PPGDSources,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: OutputLossType,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
@@ -312,7 +314,7 @@ def persistent_pgd_recon_subset_loss(
 def persistent_pgd_recon_loss(
     model: ComponentModel,
     ppgd_sources: PPGDSources,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: OutputLossType,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
@@ -341,13 +343,13 @@ class AbstractPersistentPGDReconLoss(Metric):
         model: ComponentModel,
         device: str,
         use_delta_component: bool,
-        output_loss_type: Literal["mse", "kl"],
+        output_loss_type: OutputLossType,
         router: Router,
         ppgd_sources: PPGDSources,
     ) -> None:
         self.model = model
         self.use_delta_component: bool = use_delta_component
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.output_loss_type: OutputLossType = output_loss_type
         self.router = router
         self.ppgd_sources = ppgd_sources
 
@@ -392,7 +394,7 @@ class PersistentPGDReconLoss(AbstractPersistentPGDReconLoss):
         model: ComponentModel,
         device: str,
         use_delta_component: bool,
-        output_loss_type: Literal["mse", "kl"],
+        output_loss_type: OutputLossType,
         ppgd_sources: PPGDSources,
     ) -> None:
         super().__init__(
@@ -413,7 +415,7 @@ class PersistentPGDReconSubsetLoss(AbstractPersistentPGDReconLoss):
         model: ComponentModel,
         device: str,
         use_delta_component: bool,
-        output_loss_type: Literal["mse", "kl"],
+        output_loss_type: OutputLossType,
         ppgd_sources: PPGDSources,
         routing: SubsetRoutingType,
     ) -> None:
