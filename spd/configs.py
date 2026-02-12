@@ -15,6 +15,8 @@ from spd.base_config import BaseConfig
 from spd.log import logger
 from spd.spd_types import GlobalCiFnType, LayerwiseCiFnType, ModelPath, Probability
 
+OutputLossType = Literal["mse", "kl", "ce"]
+
 
 class LayerwiseCiConfig(BaseConfig):
     """Configuration for layerwise CI functions (one per layer)."""
@@ -514,7 +516,7 @@ def _coerce_ppgd_scope(config_dict: dict[str, Any]) -> None:
             scope["type"] = "repeat_across_batch"
             if "n_masks" in scope:
                 scope["n_sources"] = scope.pop("n_masks")
-        case "per_batch":
+        case "per_batch" | "unique_per_batch_per_token":
             scope["type"] = "per_batch_per_position"
         case _:
             pass
@@ -744,7 +746,7 @@ class Config(BaseConfig):
             ),
         )
     )
-    output_loss_type: Literal["mse", "kl"] = Field(
+    output_loss_type: OutputLossType = Field(
         ...,
         description="Metric used to measure recon error between model outputs and targets",
     )
