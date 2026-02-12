@@ -189,7 +189,7 @@ async def score_component(
                 model=model,
                 reasoning=Reasoning(effort=reasoning_effort),
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=300,
+                max_tokens=5000,
                 context_label=f"{component.component_key}/trial{trial_idx}",
                 response_format=DETECTION_RESPONSE_FORMAT,
             )

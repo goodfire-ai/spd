@@ -181,7 +181,7 @@ async def score_component(
             response = await llm.chat(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=400,
+                max_tokens=5000,
                 context_label=f"{component.component_key}/trial{trial_idx}",
                 response_format=FUZZING_RESPONSE_FORMAT,
             )
