@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+from aiolimiter import AsyncLimiter
 from openrouter import OpenRouter
 from openrouter.components import (
     JSONSchemaConfig,
@@ -20,6 +21,7 @@ from openrouter.errors import (
     EdgeNetworkTimeoutResponseError,
     InternalServerResponseError,
     OpenRouterDefaultError,
+    OpenRouterError,
     ProviderOverloadedResponseError,
     RequestTimeoutResponseError,
     ServiceUnavailableResponseError,
@@ -78,29 +80,21 @@ class CostTracker:
         )
 
 
-class RateLimiter:
-    """Sliding window rate limiter for async code."""
+class GlobalBackoff:
+    """Shared backoff that pauses all coroutines when the API pushes back."""
 
-    def __init__(self, max_requests: int, period_seconds: float = 60.0):
-        self.max_requests = max_requests
-        self.period = period_seconds
-        self.timestamps: list[float] = []
-        self.lock = asyncio.Lock()
+    def __init__(self) -> None:
+        self._resume_at = 0.0
+        self._lock = asyncio.Lock()
 
-    async def acquire(self) -> None:
-        while True:
-            async with self.lock:
-                now = time.monotonic()
-                self.timestamps = [t for t in self.timestamps if now - t < self.period]
+    async def set_backoff(self, seconds: float) -> None:
+        async with self._lock:
+            self._resume_at = max(self._resume_at, time.monotonic() + seconds)
 
-                if len(self.timestamps) < self.max_requests:
-                    self.timestamps.append(now)
-                    return
-
-                sleep_time = self.timestamps[0] + self.period - now
-
-            if sleep_time > 0:
-                await asyncio.sleep(sleep_time)
+    async def wait(self) -> None:
+        delay = self._resume_at - time.monotonic()
+        if delay > 0:
+            await asyncio.sleep(delay)
 
 
 def make_response_format(name: str, schema: dict[str, Any]) -> ResponseFormatJSONSchema:
@@ -122,14 +116,17 @@ async def get_model_pricing(api: OpenRouter, model_id: str) -> tuple[float, floa
     raise ValueError(f"Model {model_id} not found")
 
 
-# @dataclass
-# class LLMClientConfig:
-#     """Everything needed to construct an LLMClient."""
-
-#     openrouter_api_key: str
-#     model: str
-#     cost_limit_usd: float | None = None
-#     max_requests_per_minute: int = 200
+def _get_retry_after(e: Exception) -> float | None:
+    """Extract Retry-After seconds from an OpenRouter error, if present."""
+    if not isinstance(e, OpenRouterError):
+        return None
+    val = e.headers.get("retry-after")
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except ValueError:
+        return None
 
 
 @dataclass
@@ -137,11 +134,14 @@ class LLMClient:
     """OpenRouter client with rate limiting, cost tracking, and retry.
 
     All API calls go through `chat()`, which enforces budget limits,
-    rate limiting, and retries with exponential backoff.
+    rate limiting (token bucket via aiolimiter), and retries with
+    exponential backoff. A shared GlobalBackoff pauses all coroutines
+    when the API returns Retry-After headers.
     """
 
     api: OpenRouter
-    rate_limiter: RateLimiter
+    rate_limiter: AsyncLimiter
+    backoff: GlobalBackoff
     cost_tracker: CostTracker
 
     async def chat(
@@ -163,47 +163,55 @@ class LLMClient:
 
         last_error: Exception | None = None
         for attempt in range(MAX_RETRIES):
-            await self.rate_limiter.acquire()
-            try:
-                kwargs: dict[str, Any] = dict(
-                    model=model,
-                    max_tokens=max_tokens,
-                    messages=messages,
-                )
-                if response_format is not None:
-                    kwargs["response_format"] = response_format
-                if reasoning is not None:
-                    kwargs["reasoning"] = reasoning
+            await self.backoff.wait()
+            async with self.rate_limiter:
+                try:
+                    kwargs: dict[str, Any] = dict(
+                        model=model,
+                        max_tokens=max_tokens,
+                        messages=messages,
+                    )
+                    if response_format is not None:
+                        kwargs["response_format"] = response_format
+                    if reasoning is not None:
+                        kwargs["reasoning"] = reasoning
 
-                response = await self.api.chat.send_async(**kwargs)
-                choice = response.choices[0]
-                message = choice.message
-                assert isinstance(message.content, str)
-                assert response.usage is not None
+                    response = await self.api.chat.send_async(**kwargs)
+                    choice = response.choices[0]
+                    message = choice.message
+                    assert isinstance(message.content, str)
+                    assert response.usage is not None
 
-                if choice.finish_reason == "length":
-                    logger.warning(f"{context_label}: Response truncated at {max_tokens} tokens")
+                    if choice.finish_reason == "length":
+                        logger.warning(
+                            f"{context_label}: Response truncated at {max_tokens} tokens"
+                        )
 
-                await self.cost_tracker.add(
-                    int(response.usage.prompt_tokens),
-                    int(response.usage.completion_tokens),
-                )
+                    await self.cost_tracker.add(
+                        int(response.usage.prompt_tokens),
+                        int(response.usage.completion_tokens),
+                    )
 
-                return message.content
-            except RETRYABLE_ERRORS as e:
-                last_error = e
-                if attempt == MAX_RETRIES - 1:
-                    break
+                    return message.content
+                except RETRYABLE_ERRORS as e:
+                    last_error = e
+                    if attempt == MAX_RETRIES - 1:
+                        break
 
-                delay = min(BASE_DELAY_S * (2**attempt), MAX_DELAY_S)
-                jitter = delay * JITTER_FACTOR * random.random()
-                total_delay = delay + jitter
+                    retry_after = _get_retry_after(e)
+                    if retry_after is not None:
+                        await self.backoff.set_backoff(retry_after)
+                        delay = retry_after
+                    else:
+                        delay = min(BASE_DELAY_S * (2**attempt), MAX_DELAY_S)
+                        jitter = delay * JITTER_FACTOR * random.random()
+                        delay = delay + jitter
 
-                logger.warning(
-                    f"[retry {attempt + 1}/{MAX_RETRIES}] ({context_label}) "
-                    f"{type(e).__name__}, backing off {total_delay:.1f}s"
-                )
-                await asyncio.sleep(total_delay)
+                    logger.warning(
+                        f"[retry {attempt + 1}/{MAX_RETRIES}] ({context_label}) "
+                        f"{type(e).__name__}, backing off {delay:.1f}s"
+                    )
+                    await asyncio.sleep(delay)
 
         assert last_error is not None
         raise RuntimeError(f"Max retries exceeded for {context_label}: {last_error}")

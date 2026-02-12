@@ -12,6 +12,7 @@ import json
 import random
 from dataclasses import asdict, dataclass
 
+from aiolimiter import AsyncLimiter
 from openrouter import OpenRouter
 
 from spd.app.backend.app_tokenizer import AppTokenizer
@@ -20,8 +21,8 @@ from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import (
     BudgetExceededError,
     CostTracker,
+    GlobalBackoff,
     LLMClient,
-    RateLimiter,
     get_model_pricing,
     make_response_format,
 )
@@ -287,7 +288,8 @@ async def run_fuzzing_scoring(
         )
         llm = LLMClient(
             api=api,
-            rate_limiter=RateLimiter(200),
+            rate_limiter=AsyncLimiter(max_rate=200, time_period=60),
+            backoff=GlobalBackoff(),
             cost_tracker=cost_tracker,
         )
 

@@ -166,6 +166,7 @@ async def request_component_interpretation(
     """
     import os
 
+    from aiolimiter import AsyncLimiter
     from openrouter import OpenRouter
 
     from spd.autointerp.config import CompactSkepticalConfig
@@ -173,7 +174,7 @@ async def request_component_interpretation(
         get_architecture_info,
         interpret_component,
     )
-    from spd.autointerp.llm_api import CostTracker, LLMClient, RateLimiter  # noqa: F811
+    from spd.autointerp.llm_api import CostTracker, GlobalBackoff, LLMClient  # noqa: F811
 
     assert loaded.harvest is not None, "No harvest data available"
     assert loaded.interp is not None, "No autointerp data available"
@@ -221,7 +222,8 @@ async def request_component_interpretation(
     async with OpenRouter(api_key=api_key) as api:
         llm = LLMClient(
             api=api,
-            rate_limiter=RateLimiter(max_requests=10),
+            rate_limiter=AsyncLimiter(max_rate=10, time_period=60),
+            backoff=GlobalBackoff(),
             cost_tracker=CostTracker(),
         )
         try:

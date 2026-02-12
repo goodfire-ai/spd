@@ -2,6 +2,7 @@ import asyncio
 import json
 from pathlib import Path
 
+from aiolimiter import AsyncLimiter
 from openrouter import OpenRouter
 from openrouter.components import Reasoning
 
@@ -11,8 +12,8 @@ from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import (
     BudgetExceededError,
     CostTracker,
+    GlobalBackoff,
     LLMClient,
-    RateLimiter,
     get_model_pricing,
     make_response_format,
 )
@@ -159,7 +160,8 @@ def run_interpret(
             )
             llm = LLMClient(
                 api=api,
-                rate_limiter=RateLimiter(200),
+                rate_limiter=AsyncLimiter(max_rate=200, time_period=60),
+                backoff=GlobalBackoff(),
                 cost_tracker=cost_tracker,
             )
 
