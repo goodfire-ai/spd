@@ -198,6 +198,73 @@
         return ci < 0.001 ? ci.toExponential(2) : ci.toFixed(3);
     }
 
+    // Log mean CI plot data
+    const PLOT_HEIGHT = 200;
+    const PLOT_PADDING = { top: 10, right: 15, bottom: 30, left: 55 };
+
+    let plotContainer: HTMLDivElement;
+    let plotWidth = $state(600);
+
+    onMount(() => {
+        const observer = new ResizeObserver((entries) => {
+            plotWidth = entries[0].contentRect.width;
+        });
+        observer.observe(plotContainer);
+        return () => observer.disconnect();
+    });
+
+    const LOG_Y_MIN = -6; // 1e-6 floor
+    const LOG_Y_MAX = 0; // 1 ceiling
+
+    const plotData = $derived.by(() => {
+        const allMetadata = activationContextsSummary[selectedLayer];
+        if (allMetadata.length === 0) return null;
+
+        const logValues = allMetadata.map((m) => Math.log10(Math.max(m.mean_ci, 1e-20)));
+        const yMin = Math.max(LOG_Y_MIN, Math.min(...logValues));
+        const yMax = LOG_Y_MAX;
+        const yRange = yMax - yMin || 1;
+
+        const innerWidth = plotWidth - PLOT_PADDING.left - PLOT_PADDING.right;
+        const innerHeight = PLOT_HEIGHT - PLOT_PADDING.top - PLOT_PADDING.bottom;
+
+        const n = allMetadata.length;
+        const xScale = n > 1 ? innerWidth / (n - 1) : 0;
+
+        const points = logValues.map((logVal, i) => ({
+            x: PLOT_PADDING.left + i * xScale,
+            y: PLOT_PADDING.top + (1 - (Math.max(logVal, yMin) - yMin) / yRange) * innerHeight,
+            rank: i,
+        }));
+
+        // Fixed ticks: 1, 1e-2, 1e-4, 1e-6 (every 2 orders of magnitude)
+        const yTicks: number[] = [];
+        for (let v = 0; v >= yMin; v -= 2) {
+            yTicks.push(v);
+        }
+        const yTickPositions = yTicks.map((tick) => ({
+            value: tick,
+            y: PLOT_PADDING.top + (1 - (tick - yMin) / yRange) * innerHeight,
+        }));
+
+        return { points, yTickPositions, innerWidth, innerHeight, n, yMin, yMax };
+    });
+
+    const currentPointIndex = $derived.by(() => {
+        if (!currentMetadata) return null;
+        const allMetadata = activationContextsSummary[selectedLayer];
+        return allMetadata.findIndex((m) => m.subcomponent_idx === currentMetadata.subcomponent_idx);
+    });
+
+    function handlePlotClick(rank: number) {
+        const pageIndex = currentLayerMetadata.findIndex(
+            (m) => m.subcomponent_idx === activationContextsSummary[selectedLayer][rank].subcomponent_idx,
+        );
+        if (pageIndex === -1) return;
+        currentPage = pageIndex;
+        loadCurrentComponent();
+    }
+
     // Compute global max absolute component act for normalization (used by both activating examples and probe)
     const maxAbsComponentAct = $derived.by(() => {
         if (componentData.componentDetail.status !== "loaded") return 1;
@@ -246,6 +313,81 @@
                 <span class="search-error">{searchError}</span>
             {/if}
         </div>
+    </div>
+
+    <div class="ci-plot" bind:this={plotContainer}>
+        {#if plotData}
+            <svg width={plotWidth} height={PLOT_HEIGHT}>
+                <!-- Y axis gridlines and labels -->
+                {#each plotData.yTickPositions as tick (tick.value)}
+                    <line
+                        x1={PLOT_PADDING.left}
+                        y1={tick.y}
+                        x2={PLOT_PADDING.left + plotData.innerWidth}
+                        y2={tick.y}
+                        stroke="var(--border-subtle)"
+                        stroke-width="1"
+                    />
+                    <text
+                        x={PLOT_PADDING.left - 8}
+                        y={tick.y}
+                        text-anchor="end"
+                        dominant-baseline="middle"
+                        class="plot-label"
+                    >
+                        1e{tick.value}
+                    </text>
+                {/each}
+
+                <!-- Data line -->
+                {#if plotData.points.length > 1}
+                    <polyline
+                        points={plotData.points.map((p) => `${p.x},${p.y}`).join(" ")}
+                        fill="none"
+                        stroke="var(--accent-primary)"
+                        stroke-width="1.5"
+                    />
+                {/if}
+
+                <!-- Clickable hit areas (invisible wider rects for easier clicking) -->
+                {#each plotData.points as point (point.rank)}
+                    <rect
+                        x={point.x - Math.max(plotData.innerWidth / plotData.n / 2, 2)}
+                        y={PLOT_PADDING.top}
+                        width={Math.max(plotData.innerWidth / plotData.n, 4)}
+                        height={plotData.innerHeight}
+                        fill="transparent"
+                        class="plot-hitarea"
+                        onclick={() => handlePlotClick(point.rank)}
+                    />
+                {/each}
+
+                <!-- Current component indicator -->
+                {#if currentPointIndex !== null && plotData.points[currentPointIndex]}
+                    {@const cp = plotData.points[currentPointIndex]}
+                    <line
+                        x1={cp.x}
+                        y1={PLOT_PADDING.top}
+                        x2={cp.x}
+                        y2={PLOT_PADDING.top + plotData.innerHeight}
+                        stroke="var(--accent-primary-dim)"
+                        stroke-width="1"
+                        stroke-dasharray="3 2"
+                    />
+                    <circle cx={cp.x} cy={cp.y} r="4" fill="var(--accent-primary)" />
+                {/if}
+
+                <!-- X axis label -->
+                <text
+                    x={PLOT_PADDING.left + plotData.innerWidth / 2}
+                    y={PLOT_HEIGHT - 4}
+                    text-anchor="middle"
+                    class="plot-label"
+                >
+                    Component rank ({plotData.n} total)
+                </text>
+            </svg>
+        {/if}
     </div>
 
     <div class="component-section">
@@ -472,6 +614,26 @@
     .page-input::-webkit-outer-spin-button {
         appearance: none;
         margin: 0;
+    }
+
+    .ci-plot {
+        width: 100%;
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+    }
+
+    .ci-plot svg {
+        display: block;
+    }
+
+    .ci-plot .plot-label {
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        fill: var(--text-muted);
+    }
+
+    .ci-plot .plot-hitarea {
+        cursor: pointer;
     }
 
     .component-section {
