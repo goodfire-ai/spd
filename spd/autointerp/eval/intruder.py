@@ -249,10 +249,10 @@ async def run_intruder_scoring(
     existing_scores = db.get_scores("intruder")
     completed = set(existing_scores.keys())
     if completed:
-        print(f"Resuming: {len(completed)} already scored")
+        logger.info(f"Resuming: {len(completed)} already scored")
 
     remaining = [c for c in eligible if c.component_key not in completed]
-    print(f"Scoring {len(remaining)} components")
+    logger.info(f"Scoring {len(remaining)} components")
 
     semaphore = asyncio.Semaphore(MAX_CONCURRENT)
     output_lock = asyncio.Lock()
@@ -286,14 +286,14 @@ async def run_intruder_scoring(
         )
         llm = LLMClient(
             api=api,
-            rate_limiter=AsyncLimiter(max_rate=200, time_period=60),
+            rate_limiter=AsyncLimiter(max_rate=5000, time_period=60),
             backoff=GlobalBackoff(),
             cost_tracker=cost_tracker,
         )
 
         await asyncio.gather(*[process_one(c, i, llm) for i, c in enumerate(remaining)])
 
-        print(f"Final cost: ${cost_tracker.cost_usd():.2f}")
+        logger.info(f"Final cost: ${cost_tracker.cost_usd():.2f}")
 
-    print(f"Scored {len(results)} components")
+    logger.info(f"Scored {len(results)} components")
     return results

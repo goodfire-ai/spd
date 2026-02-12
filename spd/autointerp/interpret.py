@@ -107,10 +107,10 @@ def run_interpret(
 
         completed = db.get_completed_keys()
         if completed:
-            print(f"Resuming: {len(completed)} already completed")
+            logger.info(f"Resuming: {len(completed)} already completed")
 
         remaining = [c for c in eligible if c.component_key not in completed]
-        print(f"Interpreting {len(remaining)} components")
+        logger.info(f"Interpreting {len(remaining)} components")
 
         semaphore = asyncio.Semaphore(MAX_CONCURRENT)
         output_lock = asyncio.Lock()
@@ -160,16 +160,16 @@ def run_interpret(
             )
             llm = LLMClient(
                 api=api,
-                rate_limiter=AsyncLimiter(max_rate=200, time_period=60),
+                rate_limiter=AsyncLimiter(max_rate=5000, time_period=60),
                 backoff=GlobalBackoff(),
                 cost_tracker=cost_tracker,
             )
 
             await asyncio.gather(*[process_one(c, i, llm) for i, c in enumerate(remaining)])
 
-            print(f"Final cost: ${cost_tracker.cost_usd():.2f}")
+            logger.info(f"Final cost: ${cost_tracker.cost_usd():.2f}")
 
-        print(f"Completed {len(results)} interpretations -> {db_path}")
+        logger.info(f"Completed {len(results)} interpretations -> {db_path}")
         return results
 
     return asyncio.run(_run())
