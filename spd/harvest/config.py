@@ -45,5 +45,5 @@ class HarvestSlurmConfig(BaseConfig):
     time: str = "24:00:00"
     merge_time: str = "02:00:00"
     merge_mem: str = "200G"
-    intruder_eval: IntruderEvalConfig | None = IntruderEvalConfig()
+    intruder_eval: IntruderEvalConfig | None = None
     intruder_eval_time: str = "12:00:00"
