@@ -24,14 +24,18 @@ LabelScorerType = Literal["detection", "fuzzing"]
 def main(
     wandb_path: str,
     scorer: LabelScorerType,
-    eval_config_json: str,
+    eval_config_json: str | dict[str, object],
     harvest_subrun_id: str | None = None,
 ) -> None:
     load_dotenv()
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
-    eval_config = AutointerpEvalConfig.model_validate_json(eval_config_json)
+    match eval_config_json:
+        case str(json_str):
+            eval_config = AutointerpEvalConfig.model_validate_json(json_str)
+        case dict(d):
+            eval_config = AutointerpEvalConfig.model_validate(d)
 
     arch = get_architecture_info(wandb_path)
     _, _, run_id = parse_wandb_run_path(wandb_path)
