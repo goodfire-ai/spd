@@ -9,7 +9,7 @@ from typing import Any
 
 import torch
 import tqdm
-from einops import einsum, rearrange, reduce
+from einops import einsum, rearrange, reduce, repeat
 from jaxtyping import Float, Int
 from torch import Tensor
 
@@ -17,6 +17,46 @@ from spd.harvest.reservoir import WINDOW_PAD_SENTINEL, ActivationExamplesReservo
 from spd.harvest.sampling import sample_at_most_n_per_group, top_k_pmi
 from spd.harvest.schemas import ActivationExample, ComponentData, ComponentTokenPMI
 from spd.log import logger
+
+
+def extract_firing_windows(
+    batch: Int[Tensor, "B S"],
+    ci: Float[Tensor, "B S C"],
+    component_acts: Float[Tensor, "B S C"],
+    batch_idx: Int[Tensor, " N"],
+    seq_idx: Int[Tensor, " N"],
+    comp_idx: Int[Tensor, " N"],
+    context_tokens_per_side: int,
+) -> tuple[Int[Tensor, "N W"], Float[Tensor, "N W"], Float[Tensor, "N W"]]:
+    """Extract context windows around firing positions.
+
+    For each firing at (batch_idx[i], seq_idx[i], comp_idx[i]), extracts a window
+    of 2*context_tokens_per_side+1 tokens centered on seq_idx[i]. Positions outside
+    sequence bounds are padded with WINDOW_PAD_SENTINEL / 0.0.
+
+    Returns (token_windows, ci_windows, act_windows), each [N, W].
+    """
+    seq_len = batch.shape[1]
+    offsets = torch.arange(
+        -context_tokens_per_side, context_tokens_per_side + 1, device=batch.device
+    )
+    window_positions = rearrange(seq_idx, "n -> n 1") + rearrange(offsets, "w -> 1 w")
+    in_bounds = (window_positions >= 0) & (window_positions < seq_len)
+    clamped = window_positions.clamp(0, seq_len - 1)
+
+    b = repeat(batch_idx, "n -> n w", w=offsets.shape[0])
+    c = repeat(comp_idx, "n -> n w", w=offsets.shape[0])
+
+    token_windows = batch[b, clamped]
+    token_windows[~in_bounds] = WINDOW_PAD_SENTINEL
+
+    ci_windows = ci[b, clamped, c]
+    ci_windows[~in_bounds] = 0.0
+
+    act_windows = component_acts[b, clamped, c]
+    act_windows[~in_bounds] = 0.0
+
+    return token_windows, ci_windows, act_windows
 
 
 class Harvester:
@@ -126,37 +166,17 @@ class Harvester:
         ci: Float[Tensor, "B S n_comp"],
         component_acts: Float[Tensor, "B S n_comp"],
     ) -> None:
-        firing = ci > self.ci_threshold
-        batch_idx, seq_idx, comp_idx = torch.where(firing)
+        batch_idx, seq_idx, comp_idx = torch.where(ci > self.ci_threshold)
         if len(batch_idx) == 0:
             return
 
-        MAX_FIRINGS_PER_COMPONENT = 5
-        keep = sample_at_most_n_per_group(comp_idx, MAX_FIRINGS_PER_COMPONENT)
+        keep = sample_at_most_n_per_group(comp_idx, 5)
         batch_idx, seq_idx, comp_idx = batch_idx[keep], seq_idx[keep], comp_idx[keep]
 
-        seq_len = batch.shape[1]
-        window_size = 2 * self.context_tokens_per_side + 1
-        offsets = torch.arange(
-            -self.context_tokens_per_side, self.context_tokens_per_side + 1, device=self.device
+        token_w, ci_w, act_w = extract_firing_windows(
+            batch, ci, component_acts, batch_idx, seq_idx, comp_idx, self.context_tokens_per_side
         )
-        window_positions = seq_idx.unsqueeze(1) + offsets
-        in_bounds = (window_positions >= 0) & (window_positions < seq_len)
-        clamped_positions = window_positions.clamp(0, seq_len - 1)
-
-        batch_expanded = batch_idx.unsqueeze(1).expand(-1, window_size)
-        comp_expanded = comp_idx.unsqueeze(1).expand(-1, window_size)
-
-        token_windows = batch[batch_expanded, clamped_positions]
-        token_windows[~in_bounds] = WINDOW_PAD_SENTINEL
-
-        ci_windows = ci[batch_expanded, clamped_positions, comp_expanded]
-        ci_windows[~in_bounds] = 0.0
-
-        act_windows = component_acts[batch_expanded, clamped_positions, comp_expanded]
-        act_windows[~in_bounds] = 0.0
-
-        self.reservoir.add(comp_idx, token_windows, ci_windows, act_windows)
+        self.reservoir.add(comp_idx, token_w, ci_w, act_w)
 
     # -- Serialization & merge ---------------------------------------------
 

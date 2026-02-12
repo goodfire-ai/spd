@@ -1,4 +1,4 @@
-"""Tests for the Harvester class."""
+"""Tests for the Harvester class and extract_firing_windows."""
 
 import random
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from spd.harvest.harvester import Harvester
+from spd.harvest.harvester import Harvester, extract_firing_windows
 from spd.harvest.reservoir import WINDOW_PAD_SENTINEL
 
 DEVICE = torch.device("cpu")
@@ -562,3 +562,107 @@ class TestProcessBatch:
         # Self-cooccurrence
         assert h.cooccurrence_counts[0, 0] == 1.0
         assert h.cooccurrence_counts[2, 2] == 1.0
+
+
+class TestExtractFiringWindows:
+    def test_center_window(self):
+        batch = torch.tensor([[10, 11, 12, 13, 14]])  # [1, 5]
+        ci = torch.zeros(1, 5, 2)
+        ci[0, 2, 0] = 0.9
+        acts = torch.ones(1, 5, 2)
+
+        tok_w, ci_w, _ = extract_firing_windows(
+            batch,
+            ci,
+            acts,
+            batch_idx=torch.tensor([0]),
+            seq_idx=torch.tensor([2]),
+            comp_idx=torch.tensor([0]),
+            context_tokens_per_side=1,
+        )
+
+        assert tok_w.shape == (1, 3)
+        assert tok_w[0].tolist() == [11, 12, 13]
+        assert ci_w[0, 1].item() == pytest.approx(0.9)
+
+    def test_left_boundary_padding(self):
+        batch = torch.tensor([[10, 11, 12]])
+        ci = torch.zeros(1, 3, 1)
+        acts = torch.zeros(1, 3, 1)
+
+        tok_w, _, _ = extract_firing_windows(
+            batch,
+            ci,
+            acts,
+            batch_idx=torch.tensor([0]),
+            seq_idx=torch.tensor([0]),
+            comp_idx=torch.tensor([0]),
+            context_tokens_per_side=2,
+        )
+
+        assert tok_w.shape == (1, 5)
+        assert tok_w[0, 0] == WINDOW_PAD_SENTINEL
+        assert tok_w[0, 1] == WINDOW_PAD_SENTINEL
+        assert tok_w[0, 2] == 10
+        assert tok_w[0, 3] == 11
+        assert tok_w[0, 4] == 12
+
+    def test_right_boundary_padding(self):
+        batch = torch.tensor([[10, 11, 12]])
+        ci = torch.zeros(1, 3, 1)
+        acts = torch.zeros(1, 3, 1)
+
+        tok_w, _, _ = extract_firing_windows(
+            batch,
+            ci,
+            acts,
+            batch_idx=torch.tensor([0]),
+            seq_idx=torch.tensor([2]),
+            comp_idx=torch.tensor([0]),
+            context_tokens_per_side=2,
+        )
+
+        assert tok_w[0, 0] == 10
+        assert tok_w[0, 1] == 11
+        assert tok_w[0, 2] == 12
+        assert tok_w[0, 3] == WINDOW_PAD_SENTINEL
+        assert tok_w[0, 4] == WINDOW_PAD_SENTINEL
+
+    def test_multiple_firings(self):
+        batch = torch.tensor([[0, 1, 2, 3, 4]])
+        ci = torch.zeros(1, 5, 3)
+        acts = torch.zeros(1, 5, 3)
+
+        tok_w, _, _ = extract_firing_windows(
+            batch,
+            ci,
+            acts,
+            batch_idx=torch.tensor([0, 0]),
+            seq_idx=torch.tensor([1, 3]),
+            comp_idx=torch.tensor([0, 2]),
+            context_tokens_per_side=1,
+        )
+
+        assert tok_w.shape == (2, 3)
+        assert tok_w[0].tolist() == [0, 1, 2]
+        assert tok_w[1].tolist() == [2, 3, 4]
+
+    def test_ci_and_acts_index_correct_component(self):
+        batch = torch.tensor([[0, 1, 2]])
+        ci = torch.zeros(1, 3, 4)
+        ci[0, 1, 2] = 0.5
+        acts = torch.zeros(1, 3, 4)
+        acts[0, 1, 2] = 7.0
+
+        _, ci_w, act_w = extract_firing_windows(
+            batch,
+            ci,
+            acts,
+            batch_idx=torch.tensor([0]),
+            seq_idx=torch.tensor([1]),
+            comp_idx=torch.tensor([2]),
+            context_tokens_per_side=0,
+        )
+
+        assert ci_w[0, 0].item() == pytest.approx(0.5)
+        assert act_w[0, 0].item() == pytest.approx(7.0)
