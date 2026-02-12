@@ -46,6 +46,7 @@ export const displaySettings = $state({
     nodeColorMode: "ci" as NodeColorMode,
     exampleColorMode: "ci" as ExampleColorMode,
     meanCiCutoff: 1e-7,
+    centerOnPeak: false,
     showAutoInterpPromptButton: false,
 });
 

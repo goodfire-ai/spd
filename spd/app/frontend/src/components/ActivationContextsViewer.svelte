@@ -198,12 +198,13 @@
         return ci < 0.001 ? ci.toExponential(2) : ci.toFixed(3);
     }
 
-    // Log mean CI plot data
+    // Mean CI plot
     const PLOT_HEIGHT = 200;
     const PLOT_PADDING = { top: 10, right: 15, bottom: 30, left: 55 };
 
     let plotContainer: HTMLDivElement;
     let plotWidth = $state(600);
+    let plotLogY = $state(true);
 
     onMount(() => {
         const observer = new ResizeObserver((entries) => {
@@ -214,40 +215,54 @@
     });
 
     const LOG_Y_MIN = -6; // 1e-6 floor
-    const LOG_Y_MAX = 0; // 1 ceiling
 
     const plotData = $derived.by(() => {
         const allMetadata = activationContextsSummary[selectedLayer];
         if (allMetadata.length === 0) return null;
 
-        const logValues = allMetadata.map((m) => Math.log10(Math.max(m.mean_ci, 1e-20)));
-        const yMin = Math.max(LOG_Y_MIN, Math.min(...logValues));
-        const yMax = LOG_Y_MAX;
-        const yRange = yMax - yMin || 1;
-
         const innerWidth = plotWidth - PLOT_PADDING.left - PLOT_PADDING.right;
         const innerHeight = PLOT_HEIGHT - PLOT_PADDING.top - PLOT_PADDING.bottom;
-
         const n = allMetadata.length;
         const xScale = n > 1 ? innerWidth / (n - 1) : 0;
 
-        const points = logValues.map((logVal, i) => ({
-            x: PLOT_PADDING.left + i * xScale,
-            y: PLOT_PADDING.top + (1 - (Math.max(logVal, yMin) - yMin) / yRange) * innerHeight,
-            rank: i,
-        }));
+        if (plotLogY) {
+            const logValues = allMetadata.map((m) => Math.log10(Math.max(m.mean_ci, 1e-20)));
+            const yMin = Math.max(LOG_Y_MIN, Math.min(...logValues));
+            const yMax = 0;
+            const yRange = yMax - yMin || 1;
 
-        // Fixed ticks: 1, 1e-2, 1e-4, 1e-6 (every 2 orders of magnitude)
-        const yTicks: number[] = [];
-        for (let v = 0; v >= yMin; v -= 2) {
-            yTicks.push(v);
+            const points = logValues.map((logVal, i) => ({
+                x: PLOT_PADDING.left + i * xScale,
+                y: PLOT_PADDING.top + (1 - (Math.max(logVal, yMin) - yMin) / yRange) * innerHeight,
+                rank: i,
+            }));
+
+            const yTicks: { value: number; y: number; label: string }[] = [];
+            for (let v = 0; v >= yMin; v -= 2) {
+                yTicks.push({
+                    value: v,
+                    y: PLOT_PADDING.top + (1 - (v - yMin) / yRange) * innerHeight,
+                    label: `1e${v}`,
+                });
+            }
+
+            return { points, yTicks, innerWidth, innerHeight, n };
+        } else {
+            const rawValues = allMetadata.map((m) => m.mean_ci);
+
+            const points = rawValues.map((val, i) => ({
+                x: PLOT_PADDING.left + i * xScale,
+                y: PLOT_PADDING.top + (1 - val) * innerHeight,
+                rank: i,
+            }));
+
+            const yTicks: { value: number; y: number; label: string }[] = [
+                { value: 1, y: PLOT_PADDING.top, label: "1" },
+                { value: 0, y: PLOT_PADDING.top + innerHeight, label: "0" },
+            ];
+
+            return { points, yTicks, innerWidth, innerHeight, n };
         }
-        const yTickPositions = yTicks.map((tick) => ({
-            value: tick,
-            y: PLOT_PADDING.top + (1 - (tick - yMin) / yRange) * innerHeight,
-        }));
-
-        return { points, yTickPositions, innerWidth, innerHeight, n, yMin, yMax };
     });
 
     const currentPointIndex = $derived.by(() => {
@@ -316,10 +331,14 @@
     </div>
 
     <div class="ci-plot" bind:this={plotContainer}>
+        <label class="plot-toggle">
+            <input type="checkbox" bind:checked={plotLogY} />
+            Log Y
+        </label>
         {#if plotData}
             <svg width={plotWidth} height={PLOT_HEIGHT}>
                 <!-- Y axis gridlines and labels -->
-                {#each plotData.yTickPositions as tick (tick.value)}
+                {#each plotData.yTicks as tick (tick.value)}
                     <line
                         x1={PLOT_PADDING.left}
                         y1={tick.y}
@@ -335,7 +354,7 @@
                         dominant-baseline="middle"
                         class="plot-label"
                     >
-                        1e{tick.value}
+                        {tick.label}
                     </text>
                 {/each}
 
@@ -617,9 +636,28 @@
     }
 
     .ci-plot {
+        position: relative;
         width: 100%;
         border: 1px solid var(--border-default);
         background: var(--bg-elevated);
+    }
+
+    .plot-toggle {
+        position: absolute;
+        top: var(--space-1);
+        right: var(--space-2);
+        display: flex;
+        align-items: center;
+        gap: var(--space-1);
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--text-muted);
+        cursor: pointer;
+        z-index: 1;
+    }
+
+    .plot-toggle input {
+        cursor: pointer;
     }
 
     .ci-plot svg {

@@ -89,6 +89,14 @@
                     <label class="checkbox-item single-row">
                         <input
                             type="checkbox"
+                            checked={displaySettings.centerOnPeak}
+                            onchange={() => (displaySettings.centerOnPeak = !displaySettings.centerOnPeak)}
+                        />
+                        <span class="stat-label">Center on peak</span>
+                    </label>
+                    <label class="checkbox-item single-row">
+                        <input
+                            type="checkbox"
                             checked={displaySettings.showAutoInterpPromptButton}
                             onchange={() =>
                                 (displaySettings.showAutoInterpPromptButton =

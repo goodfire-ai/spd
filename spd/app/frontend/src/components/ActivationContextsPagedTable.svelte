@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { displaySettings } from "../lib/displaySettings.svelte";
     import TokenHighlights from "./TokenHighlights.svelte";
 
     interface Props {
@@ -15,7 +16,6 @@
     let examplesEl = $state<HTMLDivElement | undefined>(undefined);
     let currentPage = $state(0);
     let pageSize = $state(10);
-    let centerAlign = $state(false);
 
     let nExamples = $derived(exampleTokens.length);
 
@@ -35,7 +35,7 @@
     const TOKEN_OVERHEAD_CH = 0.3;
 
     let minWidthCh = $derived.by(() => {
-        if (!centerAlign) return 0;
+        if (!displaySettings.centerOnPeak) return 0;
         let max = 0;
         for (let i = 0; i < exampleTokens.length; i++) {
             const fp = firingPositions[i];
@@ -97,7 +97,7 @@
     }
 
     $effect(() => {
-        if (!centerAlign) return;
+        if (!displaySettings.centerOnPeak) return;
         paginatedIndices; // eslint-disable-line @typescript-eslint/no-unused-expressions
         requestAnimationFrame(centerScroll);
     });
@@ -129,12 +129,12 @@
             </select>
         </div>
         <label class="center-toggle">
-            <input type="checkbox" bind:checked={centerAlign} />
+            <input type="checkbox" bind:checked={displaySettings.centerOnPeak} />
             Center on peak
         </label>
     </div>
     <div class="examples" bind:this={examplesEl}>
-        {#if centerAlign}
+        {#if displaySettings.centerOnPeak}
             <div class="examples-inner" style="min-width: {minWidthCh}ch">
                 {#each paginatedIndices as idx (idx)}
                     {@const fp = firingPositions[idx]}

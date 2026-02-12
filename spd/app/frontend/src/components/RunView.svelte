@@ -15,7 +15,6 @@
     );
 
     let activeTab = $state<"prompts" | "components" | "dataset-search" | "data-sources" | null>(null);
-    let showRunMenu = $state(false);
 
     $effect(() => {
         if (runState.prompts.status === "loaded" && activeTab === null) {
@@ -27,19 +26,8 @@
 <div class="app-layout">
     <header class="top-bar">
         {#if runState.run.status === "loaded"}
-            <div class="run-menu" onmouseenter={() => (showRunMenu = true)} onmouseleave={() => (showRunMenu = false)}>
-                <button type="button" class="run-menu-trigger">
-                    <span class="run-path">{runState.run.data.wandb_path}</span>
-                </button>
-                {#if showRunMenu}
-                    <div class="run-menu-dropdown">
-                        <pre class="config-yaml">{runState.run.data.config_yaml}</pre>
-                        <button type="button" class="change-run-button" onclick={() => runState.clearRun()}
-                            >Change Run</button
-                        >
-                    </div>
-                {/if}
-            </div>
+            <button type="button" class="change-run-button" onclick={() => runState.clearRun()}>&lt;</button>
+            <span class="run-path">{runState.run.data.wandb_path}</span>
         {/if}
 
         <nav class="nav-group">
@@ -141,80 +129,34 @@
         min-height: 44px;
     }
 
-    /* Run menu - hoverable dropdown */
-    .run-menu {
-        position: relative;
-        display: flex;
-        align-items: stretch;
-    }
-
-    .run-menu-trigger {
+    .run-path {
         display: flex;
         align-items: center;
-        gap: var(--space-2);
+        padding: 0 var(--space-3);
+        border-right: 1px solid var(--border-default);
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+        color: var(--text-primary);
+    }
+
+    .change-run-button {
+        display: flex;
+        align-items: center;
         padding: 0 var(--space-3);
         margin: 0;
         background: none;
         border: none;
         border-right: 1px solid var(--border-default);
         border-radius: 0;
-        cursor: pointer;
         font: inherit;
         font-size: var(--text-sm);
-        transition: background var(--transition-normal);
-    }
-
-    .run-menu-trigger:hover .run-path {
-        background: var(--bg-inset);
-    }
-
-    .run-path {
-        font-family: var(--font-mono);
-        color: var(--text-primary);
-    }
-
-    .run-menu-dropdown {
-        position: absolute;
-        top: 100%;
-        left: 0;
-        z-index: 1000;
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
-        padding: var(--space-3);
-        background: var(--bg-elevated);
-        border: 1px solid var(--border-strong);
-        border-radius: var(--radius-md);
-        box-shadow: var(--shadow-md);
-    }
-
-    .config-yaml {
-        max-width: 420px;
-        max-height: 50vh;
-        overflow: auto;
-        margin: 0;
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
-        color: var(--text-primary);
-        white-space: pre-wrap;
-        word-wrap: break-word;
-    }
-
-    .change-run-button {
-        padding: var(--space-2) var(--space-3);
-        background: var(--bg-inset);
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius-sm);
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
-        color: var(--text-secondary);
         font-weight: 500;
+        color: var(--text-muted);
         cursor: pointer;
-        text-align: center;
     }
 
     .change-run-button:hover {
-        background: var(--bg-surface);
+        background: var(--bg-inset);
         color: var(--text-primary);
     }
 
