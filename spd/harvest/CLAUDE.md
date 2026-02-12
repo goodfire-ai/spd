@@ -74,7 +74,7 @@ Legacy layout (pre sub-run, `activation_contexts/` + `correlations/`) is no long
 
 Entry point via `spd-harvest`. Submits array job + dependent merge job + optional intruder eval.
 
-**Intruder evaluation** is part of the harvest functional unit (not autointerp) because it evaluates the quality of the *decomposition itself* — whether component activation patterns are coherent — without relying on LLM-generated labels. Intruder scores are stored in `harvest.db`, not `interp.db`. The code lives in `spd/autointerp/eval/intruder.py` but is submitted as a harvest dependency.
+**Intruder evaluation** (`spd/harvest/intruder.py`) is part of the harvest functional unit because it evaluates the quality of the *decomposition itself* — whether component activation patterns are coherent — without relying on LLM-generated labels. Intruder scores are stored in `harvest.db`, not `interp.db`.
 
 ### Worker Script (`scripts/run.py`)
 

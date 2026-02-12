@@ -1,7 +1,7 @@
 """CLI for intruder detection eval.
 
 Usage:
-    python -m spd.autointerp.eval.scripts.run_intruder <wandb_path> --eval_config_json '...' --harvest_subrun_id h-20260211_120000
+    python -m spd.harvest.scripts.run_intruder <wandb_path> --eval_config_json '...' --harvest_subrun_id h-20260211_120000
 """
 
 import asyncio
@@ -9,10 +9,10 @@ import os
 
 from dotenv import load_dotenv
 
-from spd.autointerp.config import IntruderEvalConfig
-from spd.autointerp.eval.intruder import run_intruder_scoring
 from spd.autointerp.interpret import get_architecture_info
+from spd.harvest.config import IntruderEvalConfig
 from spd.harvest.db import HarvestDB
+from spd.harvest.intruder import run_intruder_scoring
 from spd.harvest.repo import HarvestRepo
 from spd.utils.wandb_utils import parse_wandb_run_path
 

@@ -6,11 +6,24 @@ HarvestSlurmConfig: HarvestConfig + SLURM submission params.
 
 from typing import Literal
 
+from openrouter.components import Effort
 from pydantic import PositiveInt
 
-from spd.autointerp.config import IntruderEvalConfig
 from spd.base_config import BaseConfig
 from spd.settings import DEFAULT_PARTITION_NAME
+
+
+class IntruderEvalConfig(BaseConfig):
+    """Config for intruder detection eval (decomposition quality, not label quality)."""
+
+    model: str = "google/gemini-3-flash-preview"
+    reasoning_effort: Effort = "low"
+    n_real: int = 4
+    n_trials: int = 10
+    density_tolerance: float = 0.05
+    max_concurrent: int = 50
+    limit: int | None = None
+    cost_limit_usd: float | None = None
 
 
 class HarvestConfig(BaseConfig):

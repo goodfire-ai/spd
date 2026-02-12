@@ -121,7 +121,7 @@ def submit_harvest(
         eval_config_json = intruder_eval_config.model_dump_json(exclude_none=True)
         intruder_cmd = " \\\n    ".join(
             [
-                "python -m spd.autointerp.eval.scripts.run_intruder",
+                "python -m spd.harvest.scripts.run_intruder",
                 f'"{wandb_path}"',
                 f"--harvest_subrun_id {subrun_id}",
                 f"--eval_config_json '{eval_config_json}'",

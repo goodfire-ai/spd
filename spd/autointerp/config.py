@@ -68,19 +68,6 @@ class AutointerpEvalConfig(BaseConfig):
     cost_limit_usd: float | None = None
 
 
-class IntruderEvalConfig(BaseConfig):
-    """Config for intruder detection eval (decomposition quality, not label quality)."""
-
-    model: str = "google/gemini-3-flash-preview"
-    reasoning_effort: Effort = "low"
-    n_real: int = 4
-    n_trials: int = 10
-    density_tolerance: float = 0.05
-    max_concurrent: int = 50
-    limit: int | None = None
-    cost_limit_usd: float | None = None
-
-
 class AutointerpSlurmConfig(BaseConfig):
     """Config for the autointerp functional unit (interpret + evals).
 

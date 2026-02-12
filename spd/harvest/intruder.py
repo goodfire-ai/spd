@@ -21,7 +21,6 @@ from openrouter.components import Effort, Reasoning
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
-from spd.autointerp.config import IntruderEvalConfig
 from spd.autointerp.llm_api import (
     BudgetExceededError,
     CostTracker,
@@ -30,6 +29,7 @@ from spd.autointerp.llm_api import (
     get_model_pricing,
     make_response_format,
 )
+from spd.harvest.config import IntruderEvalConfig
 from spd.harvest.db import HarvestDB
 from spd.harvest.schemas import ActivationExample, ComponentData
 from spd.log import logger
