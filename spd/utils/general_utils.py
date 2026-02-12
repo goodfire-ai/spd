@@ -2,7 +2,7 @@ import importlib
 import random
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Protocol
 
 import einops
 import numpy as np
@@ -10,13 +10,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import wandb
-from jaxtyping import Float
+from jaxtyping import Float, Int
 from pydantic import BaseModel
 from pydantic.v1.utils import deep_update
 from torch import Tensor
 
 from spd.base_config import BaseConfig
-from spd.configs import ScheduleConfig
+from spd.configs import OutputLossType, ScheduleConfig
 from spd.utils.run_utils import save_file
 
 # Avoid seaborn package installation (sns.color_palette("colorblind").as_hex())
@@ -235,7 +235,8 @@ def calc_kl_divergence_lm(
 def calc_sum_recon_loss_lm(
     pred: Float[Tensor, "... vocab"],
     target: Float[Tensor, "... vocab"],
-    loss_type: Literal["mse", "kl"],
+    loss_type: OutputLossType,
+    batch: Int[Tensor, "batch seq"] | None = None,
 ) -> Float[Tensor, ""]:
     """Calculate the reconstruction loss for a language model without reduction."""
     match loss_type:
@@ -243,7 +244,28 @@ def calc_sum_recon_loss_lm(
             loss = ((pred - target) ** 2).sum()
         case "kl":
             loss = calc_kl_divergence_lm(pred=pred, target=target, reduce=False).sum()
+        case "ce":
+            assert batch is not None, "batch required for CE loss"
+            shifted_logits = pred[:, :-1].contiguous()
+            shifted_labels = batch[:, 1:].contiguous()
+            loss = F.cross_entropy(
+                shifted_logits.reshape(-1, shifted_logits.size(-1)),
+                shifted_labels.reshape(-1),
+                reduction="sum",
+            )
     return loss
+
+
+def calc_n_recon_examples_lm(out_shape: torch.Size, loss_type: OutputLossType) -> int:
+    """Calculate the number of examples for normalizing reconstruction loss."""
+    match loss_type:
+        case "mse":
+            return out_shape.numel()
+        case "kl":
+            return out_shape[:-1].numel()
+        case "ce":
+            # CE shifts by 1: pred[:, :-1] vs labels[:, 1:]
+            return out_shape[0] * (out_shape[1] - 1)
 
 
 def runtime_cast[T](type_: type[T], obj: Any) -> T:

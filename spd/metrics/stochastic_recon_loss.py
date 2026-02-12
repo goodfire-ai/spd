@@ -1,24 +1,24 @@
-from typing import Any, ClassVar, Literal, override
+from typing import Any, ClassVar, override
 
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.configs import SamplingType
+from spd.configs import OutputLossType, SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.routing import AllLayersRouter
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm, get_obj_device
+from spd.utils.general_utils import calc_n_recon_examples_lm, calc_sum_recon_loss_lm, get_obj_device
 
 
 def _stochastic_recon_loss_update(
     model: ComponentModel,
     sampling: SamplingType,
     n_mask_samples: int,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: OutputLossType,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
@@ -40,9 +40,10 @@ def _stochastic_recon_loss_update(
     ]
     for stoch_mask_infos in stoch_mask_infos_list:
         out = model(batch, mask_infos=stoch_mask_infos)
-        loss_type = output_loss_type
-        loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
-        n_examples += out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
+        loss = calc_sum_recon_loss_lm(
+            pred=out, target=target_out, loss_type=output_loss_type, batch=batch
+        )
+        n_examples += calc_n_recon_examples_lm(out.shape, output_loss_type)
         sum_loss += loss
     return sum_loss, n_examples
 
@@ -57,7 +58,7 @@ def stochastic_recon_loss(
     model: ComponentModel,
     sampling: SamplingType,
     n_mask_samples: int,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: OutputLossType,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
@@ -88,13 +89,13 @@ class StochasticReconLoss(Metric):
         sampling: SamplingType,
         use_delta_component: bool,
         n_mask_samples: int,
-        output_loss_type: Literal["mse", "kl"],
+        output_loss_type: OutputLossType,
     ) -> None:
         self.model = model
         self.sampling: SamplingType = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples: int = n_mask_samples
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.output_loss_type: OutputLossType = output_loss_type
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
