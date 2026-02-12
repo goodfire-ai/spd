@@ -9,13 +9,11 @@ Usage:
 
 import fire
 
-from spd.log import logger
-from spd.postprocess.config import PostprocessConfig
-
 
 def main(
     wandb_path: str,
     config: str | None = None,
+    dry_run: bool = False,
 ) -> None:
     """Submit all postprocessing jobs for an SPD run.
 
@@ -27,11 +25,22 @@ def main(
         spd-postprocess wandb:goodfire/spd/runs/abc123
         spd-postprocess wandb:goodfire/spd/runs/abc123 --config my_config.yaml
     """
+    import yaml
+
+    from spd.log import logger
     from spd.postprocess import postprocess
+    from spd.postprocess.config import PostprocessConfig
     from spd.utils.wandb_utils import parse_wandb_run_path
 
     parse_wandb_run_path(wandb_path)
+
     cfg = PostprocessConfig.from_file(config) if config is not None else PostprocessConfig()
+
+    if dry_run:
+        logger.info("Dry run: skipping submission\n\nConfig:\n")
+        logger.info(yaml.dump(cfg.model_dump(), indent=2, sort_keys=False))
+        return
+
     manifest_path = postprocess(wandb_path=wandb_path, config=cfg)
     logger.info(f"Manifest: {manifest_path}")
 
