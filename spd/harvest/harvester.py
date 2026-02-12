@@ -149,7 +149,8 @@ class Harvester:
     ) -> None:
         n_components = firing_flat.shape[1]
         token_indices = tokens_flat.unsqueeze(0).expand(n_components, -1)
-        # use scatter_add for inputs because inputs are
+
+        # use scatter_add for inputs because inputs are one-hot / token indices
         self.input_cooccurrence.scatter_add_(
             dim=1, index=token_indices, src=rearrange(firing_flat, "pos c -> c pos").long()
         )
@@ -158,6 +159,8 @@ class Harvester:
             index=tokens_flat,
             src=torch.ones(tokens_flat.shape[0], device=self.device, dtype=torch.long),
         )
+
+        # however, for outputs we need to accumulate probability mass over vocab
         self.output_cooccurrence += einsum(firing_flat, probs_flat, "pos c, pos v -> c v")
         self.output_marginals += reduce(probs_flat, "pos v -> v", "sum")
 
@@ -199,10 +202,8 @@ class Harvester:
         }
         torch.save(data, path)
 
-    _CPU = torch.device("cpu")
-
     @staticmethod
-    def load(path: Path, device: torch.device = _CPU) -> "Harvester":
+    def load(path: Path, device: torch.device) -> "Harvester":
         d: dict[str, Any] = torch.load(path, weights_only=False)
         h = Harvester(
             layer_names=d["layer_names"],

@@ -205,7 +205,7 @@ class TestSaveLoadRoundtrip:
 
         path = tmp_path / "harvester.pt"
         h.save(path)
-        loaded = Harvester.load(path)
+        loaded = Harvester.load(path, device=DEVICE)
 
         assert loaded.layer_names == h.layer_names
         assert loaded.c_per_layer == h.c_per_layer
@@ -241,13 +241,6 @@ class TestSaveLoadRoundtrip:
         loaded = Harvester.load(path, device=torch.device("cpu"))
         assert loaded.device == torch.device("cpu")
         assert loaded.firing_counts.device == torch.device("cpu")
-
-    def test_default_load_device_is_cpu(self, tmp_path: Path):
-        h = _make_harvester()
-        path = tmp_path / "harvester.pt"
-        h.save(path)
-        loaded = Harvester.load(path)
-        assert loaded.device == torch.device("cpu")
 
 
 class TestMerge:

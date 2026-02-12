@@ -195,7 +195,7 @@ class TestStateDictRoundtrip:
             )
 
         sd = r.state_dict()
-        restored = ActivationExamplesReservoir.from_state_dict(sd)
+        restored = ActivationExamplesReservoir.from_state_dict(sd, device=DEVICE)
 
         assert restored.k == r.k
         assert restored.window == r.window

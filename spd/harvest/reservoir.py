@@ -148,12 +148,8 @@ class ActivationExamplesReservoir:
             "n_seen": self.n_seen.cpu(),
         }
 
-    _CPU = torch.device("cpu")
-
     @staticmethod
-    def from_state_dict(
-        d: dict[str, Any], device: torch.device = _CPU
-    ) -> "ActivationExamplesReservoir":
+    def from_state_dict(d: dict[str, Any], device: torch.device) -> "ActivationExamplesReservoir":
         r = ActivationExamplesReservoir.__new__(ActivationExamplesReservoir)
         r.k = d["k"]
         r.window = d["window"]
