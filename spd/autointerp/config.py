@@ -18,11 +18,9 @@ FORBIDDEN_WORDS_DEFAULT = [
     "story",
     "character",
     "theme",
-    "emotional",
     "descriptive",
     "content",
     "transition",
-    "dialogue",
     "scene",
 ]
 
