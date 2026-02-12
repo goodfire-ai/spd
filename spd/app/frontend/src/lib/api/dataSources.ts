@@ -18,9 +18,17 @@ export type AutointerpInfo = {
     eval_scores: string[];
 };
 
+export type AttributionsInfo = {
+    subrun_id: string;
+    n_batches_processed: number;
+    n_tokens_processed: number;
+    ci_threshold: number;
+};
+
 export type DataSourcesResponse = {
     harvest: HarvestInfo | null;
     autointerp: AutointerpInfo | null;
+    attributions: AttributionsInfo | null;
 };
 
 export async function fetchDataSources(): Promise<DataSourcesResponse> {

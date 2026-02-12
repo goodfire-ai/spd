@@ -38,9 +38,9 @@
     {:else if data.status === "error"}
         <p class="status-text error">Failed to load data sources: {data.error}</p>
     {:else if data.status === "loaded"}
-        {@const { harvest, autointerp } = data.data}
+        {@const { harvest, autointerp, attributions } = data.data}
 
-        {#if !harvest && !autointerp}
+        {#if !harvest && !autointerp && !attributions}
             <p class="status-text">No pipeline data available for this run.</p>
         {/if}
 
@@ -61,6 +61,25 @@
                         <span class="label">{key}</span>
                         <span class="value mono">{formatConfigValue(value)}</span>
                     {/each}
+                </div>
+            </section>
+        {/if}
+
+        {#if attributions}
+            <section class="source-section">
+                <h3 class="section-title">Dataset Attributions</h3>
+                <div class="info-grid">
+                    <span class="label">Subrun</span>
+                    <span class="value mono">{attributions.subrun_id}</span>
+
+                    <span class="label">Batches</span>
+                    <span class="value">{attributions.n_batches_processed.toLocaleString()}</span>
+
+                    <span class="label">Tokens</span>
+                    <span class="value">{attributions.n_tokens_processed.toLocaleString()}</span>
+
+                    <span class="label">CI threshold</span>
+                    <span class="value mono">{attributions.ci_threshold}</span>
                 </div>
             </section>
         {/if}

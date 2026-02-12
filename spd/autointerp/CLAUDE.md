@@ -72,13 +72,6 @@ Each strategy config type has a corresponding prompt implementation:
 - `interpret_component()` interprets a single component
 - `run_interpret()` orchestrates batch interpretation with resume support
 
-### Loaders (`loaders.py`)
-
-Standalone loader functions for reading from the latest subrun's DB:
-- `load_interpretations(run_id)` — loads all interpretations
-- `load_detection_scores(run_id)` — loads detection scores
-- `load_fuzzing_scores(run_id)` — loads fuzzing scores
-
 ## Key Types (`schemas.py`)
 
 ```python

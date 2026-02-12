@@ -1,6 +1,6 @@
 """Data sources provenance endpoint.
 
-Shows where harvest/autointerp data came from: subrun IDs, configs, counts.
+Shows where harvest/autointerp/attribution data came from: subrun IDs, configs, counts.
 """
 
 from typing import Any
@@ -26,9 +26,17 @@ class AutointerpInfo(BaseModel):
     eval_scores: list[str]
 
 
+class AttributionsInfo(BaseModel):
+    subrun_id: str
+    n_batches_processed: int
+    n_tokens_processed: int
+    ci_threshold: float
+
+
 class DataSourcesResponse(BaseModel):
     harvest: HarvestInfo | None
     autointerp: AutointerpInfo | None
+    attributions: AttributionsInfo | None
 
 
 router = APIRouter(prefix="/api/data_sources", tags=["data_sources"])
@@ -57,4 +65,18 @@ def get_data_sources(loaded: DepLoadedRun) -> DataSourcesResponse:
                 eval_scores=loaded.interp.get_available_score_types(),
             )
 
-    return DataSourcesResponse(harvest=harvest_info, autointerp=autointerp_info)
+    attributions_info: AttributionsInfo | None = None
+    if loaded.attributions is not None:
+        storage = loaded.attributions.get_attributions()
+        attributions_info = AttributionsInfo(
+            subrun_id=loaded.attributions.subrun_id,
+            n_batches_processed=storage.n_batches_processed,
+            n_tokens_processed=storage.n_tokens_processed,
+            ci_threshold=storage.ci_threshold,
+        )
+
+    return DataSourcesResponse(
+        harvest=harvest_info,
+        autointerp=autointerp_info,
+        attributions=attributions_info,
+    )

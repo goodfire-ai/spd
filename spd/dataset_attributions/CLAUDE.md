@@ -129,26 +129,9 @@ For large vocab models (V=32K), the naive approach would require O((V+C)²) stor
 The output-residual-based approach requires only O((V+C)×(C+d)) storage (~670 MB for Llama-scale),
 a 6.5x reduction. Output attributions are computed on-the-fly at query time with negligible latency.
 
-### Loaders (`loaders.py`)
+### Repository (`repo.py`)
 
-```python
-from spd.dataset_attributions.loaders import load_dataset_attributions
-
-storage = load_dataset_attributions(run_id)
-if storage:
-    # Get top sources attributing to a component (no w_unembed needed)
-    top_sources = storage.get_top_sources("h.0.mlp.c_fc:5", k=10, sign="positive")
-
-    # Get top component targets (no w_unembed needed)
-    top_comp_targets = storage.get_top_component_targets("h.0.mlp.c_fc:5", k=10, sign="positive")
-
-    # Get top targets including outputs (requires w_unembed)
-    w_unembed = model.target_model.lm_head.weight.T.detach()
-    top_targets = storage.get_top_targets("h.0.mlp.c_fc:5", k=10, sign="positive", w_unembed=w_unembed)
-
-    # Get top output targets only (requires w_unembed)
-    top_outputs = storage.get_top_output_targets("h.0.mlp.c_fc:5", k=10, sign="positive", w_unembed=w_unembed)
-```
+`AttributionRepo` provides read access via `AttributionRepo.open(run_id)`. Returns `None` if no data exists. Storage is loaded eagerly at construction.
 
 ## Key Types
 
