@@ -556,6 +556,7 @@ class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
     routing: Annotated[
         SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
     ]
+    warmup_pct: Probability = 0.0
 
     @model_validator(mode="before")
     @classmethod

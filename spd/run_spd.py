@@ -314,7 +314,14 @@ def optimize(
             microbatch_total_loss = torch.tensor(0.0, device=device)
             for loss_cfg, loss_val in microbatch_losses.items():
                 assert loss_cfg.coeff is not None
-                microbatch_total_loss = microbatch_total_loss + loss_cfg.coeff * loss_val
+                coeff = loss_cfg.coeff
+                if (
+                    isinstance(loss_cfg, PersistentPGDReconSubsetLossConfig)
+                    and loss_cfg.warmup_pct > 0
+                    and step < config.steps * loss_cfg.warmup_pct
+                ):
+                    coeff *= step / (config.steps * loss_cfg.warmup_pct)
+                microbatch_total_loss = microbatch_total_loss + coeff * loss_val
                 batch_log_data[f"train/loss/{loss_cfg.classname}"] += (
                     loss_val.item() / config.gradient_accumulation_steps
                 )
