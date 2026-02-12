@@ -75,9 +75,8 @@ def _save_harvest_results(
     db_path = output_dir / "harvest.db"
     db = HarvestDB(db_path)
     db.save_config(config)
-    n_saved = db.save_components_iter(
-        harvester.build_results(pmi_top_k_tokens=config.pmi_token_top_k)
-    )
+    components_iter = harvester.build_results(pmi_top_k_tokens=config.pmi_token_top_k)
+    n_saved = db.save_components_iter(components_iter)
     db.close()
     logger.info(f"Saved {n_saved} components to {db_path}")
 

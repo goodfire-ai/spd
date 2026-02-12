@@ -54,6 +54,9 @@
                     <span class="label">Components</span>
                     <span class="value">{harvest.n_components.toLocaleString()}</span>
 
+                    <span class="label">Intruder eval</span>
+                    <span class="value">{harvest.has_intruder_scores ? "yes" : "no"}</span>
+
                     {#each Object.entries(harvest.config) as [key, value] (key)}
                         <span class="label">{key}</span>
                         <span class="value mono">{formatConfigValue(value)}</span>

@@ -8,6 +8,7 @@ export type HarvestInfo = {
     subrun_id: string;
     config: Record<string, unknown>;
     n_components: number;
+    has_intruder_scores: boolean;
 };
 
 export type AutointerpInfo = {

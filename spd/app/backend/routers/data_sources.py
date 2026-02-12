@@ -16,6 +16,7 @@ class HarvestInfo(BaseModel):
     subrun_id: str
     config: dict[str, Any]
     n_components: int
+    has_intruder_scores: bool
 
 
 class AutointerpInfo(BaseModel):
@@ -42,22 +43,18 @@ def get_data_sources(loaded: DepLoadedRun) -> DataSourcesResponse:
             subrun_id=loaded.harvest.subrun_id,
             config=loaded.harvest.get_config(),
             n_components=loaded.harvest.get_component_count(),
+            has_intruder_scores=loaded.harvest.get_intruder_scores() is not None,
         )
 
     autointerp_info: AutointerpInfo | None = None
     if loaded.interp is not None:
         config = loaded.interp.get_config()
         if config is not None:
-            # intruder scores live in harvest.db, detection/fuzzing in interp.db
-            eval_scores = loaded.interp.get_available_score_types()
-            if loaded.harvest is not None and loaded.harvest.get_intruder_scores() is not None:
-                eval_scores = ["intruder", *eval_scores]
-
             autointerp_info = AutointerpInfo(
                 subrun_id=loaded.interp.subrun_id,
                 config=config,
                 n_interpretations=loaded.interp.get_interpretation_count(),
-                eval_scores=eval_scores,
+                eval_scores=loaded.interp.get_available_score_types(),
             )
 
     return DataSourcesResponse(harvest=harvest_info, autointerp=autointerp_info)

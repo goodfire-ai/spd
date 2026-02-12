@@ -23,11 +23,15 @@ def extract_firing_windows(
     batch: Int[Tensor, "B S"],
     ci: Float[Tensor, "B S C"],
     component_acts: Float[Tensor, "B S C"],
-    batch_idx: Int[Tensor, " N"],
-    seq_idx: Int[Tensor, " N"],
-    comp_idx: Int[Tensor, " N"],
+    batch_idx: Int[Tensor, " n_firings"],
+    seq_idx: Int[Tensor, " n_firings"],
+    comp_idx: Int[Tensor, " n_firings"],
     context_tokens_per_side: int,
-) -> tuple[Int[Tensor, "N W"], Float[Tensor, "N W"], Float[Tensor, "N W"]]:
+) -> tuple[
+    Int[Tensor, "n_firings window_size"],
+    Float[Tensor, "n_firings window_size"],
+    Float[Tensor, "n_firings window_size"],
+]:
     """Extract context windows around firing positions.
 
     For each firing at (batch_idx[i], seq_idx[i], comp_idx[i]), extracts a window
@@ -40,20 +44,25 @@ def extract_firing_windows(
     offsets = torch.arange(
         -context_tokens_per_side, context_tokens_per_side + 1, device=batch.device
     )
-    window_positions = rearrange(seq_idx, "n -> n 1") + rearrange(offsets, "w -> 1 w")
+    window_size = offsets.shape[0]
+    assert window_size == 2 * context_tokens_per_side + 1
+
+    window_positions: Int[Tensor, "n_firings window_size"]
+    window_positions = seq_idx.unsqueeze(1) + offsets.unsqueeze(0)
+
     in_bounds = (window_positions >= 0) & (window_positions < seq_len)
     clamped = window_positions.clamp(0, seq_len - 1)
 
-    b = repeat(batch_idx, "n -> n w", w=offsets.shape[0])
-    c = repeat(comp_idx, "n -> n w", w=offsets.shape[0])
+    batch_idx_rep = repeat(batch_idx, "n_firings -> n_firings window_size", window_size=window_size)
+    c_idx_rep = repeat(comp_idx, "n_firings -> n_firings window_size", window_size=window_size)
 
-    token_windows = batch[b, clamped]
+    token_windows = batch[batch_idx_rep, clamped]
     token_windows[~in_bounds] = WINDOW_PAD_SENTINEL
 
-    ci_windows = ci[b, clamped, c]
+    ci_windows = ci[batch_idx_rep, clamped, c_idx_rep]
     ci_windows[~in_bounds] = 0.0
 
-    act_windows = component_acts[b, clamped, c]
+    act_windows = component_acts[batch_idx_rep, clamped, c_idx_rep]
     act_windows[~in_bounds] = 0.0
 
     return token_windows, ci_windows, act_windows
@@ -137,22 +146,22 @@ class Harvester:
 
         self.firing_counts += reduce(firing, "b s c -> c", "sum")
         self.ci_sums += reduce(ci, "b s c -> c", "sum")
-        self.cooccurrence_counts += einsum(firing_flat, firing_flat, "pos c1, pos c2 -> c1 c2")
+        self.cooccurrence_counts += einsum(firing_flat, firing_flat, "S c1, S c2 -> c1 c2")
         self._accumulate_token_stats(tokens_flat, probs_flat, firing_flat)
         self._collect_activation_examples(batch, ci, component_acts)
 
     def _accumulate_token_stats(
         self,
-        tokens_flat: Int[Tensor, " pos"],
-        probs_flat: Float[Tensor, "pos vocab"],
-        firing_flat: Float[Tensor, "pos C"],
+        tokens_flat: Int[Tensor, " S"],
+        probs_flat: Float[Tensor, "S vocab"],
+        firing_flat: Float[Tensor, "S C"],
     ) -> None:
         n_components = firing_flat.shape[1]
-        token_indices = repeat(tokens_flat, "pos -> c pos", c=n_components)
+        token_indices = repeat(tokens_flat, "S -> c S", c=n_components)
 
         # use scatter_add for inputs because inputs are one-hot / token indices
         self.input_cooccurrence.scatter_add_(
-            dim=1, index=token_indices, src=rearrange(firing_flat, "pos c -> c pos").long()
+            dim=1, index=token_indices, src=rearrange(firing_flat, "S c -> c S").long()
         )
         self.input_marginals.scatter_add_(
             dim=0,
@@ -161,8 +170,8 @@ class Harvester:
         )
 
         # however, for outputs we need to accumulate probability mass over vocab
-        self.output_cooccurrence += einsum(firing_flat, probs_flat, "pos c, pos v -> c v")
-        self.output_marginals += reduce(probs_flat, "pos v -> v", "sum")
+        self.output_cooccurrence += einsum(firing_flat, probs_flat, "S c, S v -> c v")
+        self.output_marginals += reduce(probs_flat, "S v -> v", "sum")
 
     def _collect_activation_examples(
         self,
