@@ -6,7 +6,7 @@ Reservoir sampling uses Algorithm R directly on tensor storage — no Python lis
 
 import random
 from collections.abc import Iterator
-from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 import tqdm
@@ -20,54 +20,7 @@ from spd.harvest.schemas import ActivationExample, ComponentData, ComponentToken
 WINDOW_PAD_SENTINEL = -1
 
 
-@dataclass
-class HarvesterState:
-    """Serializable snapshot of all Harvester state. All tensors on CPU."""
-
-    layer_names: list[str]
-    c_per_layer: dict[str, int]
-    vocab_size: int
-    ci_threshold: float
-    max_examples_per_component: int
-    context_tokens_per_side: int
-
-    firing_counts: Tensor
-    ci_sums: Tensor
-    count_ij: Tensor
-    input_token_counts: Tensor
-    input_token_totals: Tensor
-    output_token_prob_mass: Tensor
-    output_token_prob_totals: Tensor
-    total_tokens_processed: int
-
-    reservoir_tokens: Int[Tensor, "n_comp k window"]
-    reservoir_ci: Float[Tensor, "n_comp k window"]
-    reservoir_acts: Float[Tensor, "n_comp k window"]
-    reservoir_n_items: Int[Tensor, " n_comp"]
-    reservoir_n_seen: Int[Tensor, " n_comp"]
-
-    def merge_into(self, other: "HarvesterState") -> None:
-        """Merge another HarvesterState into this one (in-place).
-
-        Tensor stats: simple +=.
-        Reservoirs: Efraimidis-Spirakis weighted merge, vectorized over components.
-        """
-        assert other.layer_names == self.layer_names
-        assert other.c_per_layer == self.c_per_layer
-
-        self.firing_counts += other.firing_counts
-        self.ci_sums += other.ci_sums
-        self.count_ij += other.count_ij
-        self.input_token_counts += other.input_token_counts
-        self.input_token_totals += other.input_token_totals
-        self.output_token_prob_mass += other.output_token_prob_mass
-        self.output_token_prob_totals += other.output_token_prob_totals
-        self.total_tokens_processed += other.total_tokens_processed
-
-        _merge_reservoirs_inplace(self, other)
-
-
-def _merge_reservoirs_inplace(dst: HarvesterState, src: HarvesterState) -> None:
+def _merge_reservoirs_inplace(dst: "Harvester", src: "Harvester") -> None:
     """Merge src reservoir tensors into dst, vectorized over all components.
 
     Uses Efraimidis-Spirakis: key = random()^(1/weight), take top-k.
@@ -191,21 +144,6 @@ def _reservoir_add_batch(
 # ---------------------------------------------------------------------------
 # Harvester
 # ---------------------------------------------------------------------------
-
-_FIELDS_TO_DEVICE = [
-    "firing_counts",
-    "ci_sums",
-    "count_ij",
-    "input_token_counts",
-    "input_token_totals",
-    "output_token_prob_mass",
-    "output_token_prob_totals",
-    "reservoir_tokens",
-    "reservoir_ci",
-    "reservoir_acts",
-    "reservoir_n_items",
-    "reservoir_n_seen",
-]
 
 
 class Harvester:
@@ -384,55 +322,75 @@ class Harvester:
             self.max_examples_per_component,
         )
 
-    # -- Serialization -----------------------------------------------------
+    # -- Serialization & merge ---------------------------------------------
 
-    def get_state(self) -> HarvesterState:
-        """Snapshot all state to CPU tensors for serialization."""
-        return HarvesterState(
-            layer_names=self.layer_names,
-            c_per_layer=self.c_per_layer,
-            vocab_size=self.vocab_size,
-            ci_threshold=self.ci_threshold,
-            max_examples_per_component=self.max_examples_per_component,
-            context_tokens_per_side=self.context_tokens_per_side,
-            firing_counts=self.firing_counts.cpu(),
-            ci_sums=self.ci_sums.cpu(),
-            count_ij=self.count_ij.cpu(),
-            input_token_counts=self.input_token_counts.cpu(),
-            input_token_totals=self.input_token_totals.cpu(),
-            output_token_prob_mass=self.output_token_prob_mass.cpu(),
-            output_token_prob_totals=self.output_token_prob_totals.cpu(),
-            total_tokens_processed=self.total_tokens_processed,
-            reservoir_tokens=self.reservoir_tokens.cpu(),
-            reservoir_ci=self.reservoir_ci.cpu(),
-            reservoir_acts=self.reservoir_acts.cpu(),
-            reservoir_n_items=self.reservoir_n_items.cpu(),
-            reservoir_n_seen=self.reservoir_n_seen.cpu(),
-        )
+    _TENSOR_FIELDS = [
+        "firing_counts", "ci_sums", "count_ij",
+        "input_token_counts", "input_token_totals",
+        "output_token_prob_mass", "output_token_prob_totals",
+        "reservoir_tokens", "reservoir_ci", "reservoir_acts",
+        "reservoir_n_items", "reservoir_n_seen",
+    ]  # fmt: skip
+
+    def save(self, path: Path) -> None:
+        """Serialize all state to disk (tensors moved to CPU)."""
+        data: dict[str, object] = {
+            "layer_names": self.layer_names,
+            "c_per_layer": self.c_per_layer,
+            "vocab_size": self.vocab_size,
+            "ci_threshold": self.ci_threshold,
+            "max_examples_per_component": self.max_examples_per_component,
+            "context_tokens_per_side": self.context_tokens_per_side,
+            "total_tokens_processed": self.total_tokens_processed,
+        }
+        for f in self._TENSOR_FIELDS:
+            data[f] = getattr(self, f).cpu()
+        torch.save(data, path)
+
+    _CPU = torch.device("cpu")
 
     @staticmethod
-    def from_state(state: HarvesterState, device: torch.device) -> "Harvester":
-        """Reconstruct Harvester from a serialized state."""
+    def load(path: Path, device: torch.device = _CPU) -> "Harvester":
+        """Load from disk."""
+        from typing import Any
+
+        d: dict[str, Any] = torch.load(path, weights_only=False)
         h = Harvester.__new__(Harvester)
-        h.layer_names = state.layer_names
-        h.c_per_layer = state.c_per_layer
-        h.vocab_size = state.vocab_size
-        h.ci_threshold = state.ci_threshold
-        h.max_examples_per_component = state.max_examples_per_component
-        h.context_tokens_per_side = state.context_tokens_per_side
+        h.layer_names = d["layer_names"]
+        h.c_per_layer = d["c_per_layer"]
+        h.vocab_size = d["vocab_size"]
+        h.ci_threshold = d["ci_threshold"]
+        h.max_examples_per_component = d["max_examples_per_component"]
+        h.context_tokens_per_side = d["context_tokens_per_side"]
+        h.total_tokens_processed = d["total_tokens_processed"]
         h.device = device
-        h.total_tokens_processed = state.total_tokens_processed
 
         h.layer_offsets = {}
         offset = 0
-        for layer in state.layer_names:
+        for layer in h.layer_names:
             h.layer_offsets[layer] = offset
-            offset += state.c_per_layer[layer]
+            offset += h.c_per_layer[layer]
 
-        for field in _FIELDS_TO_DEVICE:
-            setattr(h, field, getattr(state, field).to(device))
+        for f in Harvester._TENSOR_FIELDS:
+            setattr(h, f, d[f].to(device))
 
         return h
+
+    def merge(self, other: "Harvester") -> None:
+        """Merge another Harvester into this one (in-place)."""
+        assert other.layer_names == self.layer_names
+        assert other.c_per_layer == self.c_per_layer
+
+        self.firing_counts += other.firing_counts
+        self.ci_sums += other.ci_sums
+        self.count_ij += other.count_ij
+        self.input_token_counts += other.input_token_counts
+        self.input_token_totals += other.input_token_totals
+        self.output_token_prob_mass += other.output_token_prob_mass
+        self.output_token_prob_totals += other.output_token_prob_totals
+        self.total_tokens_processed += other.total_tokens_processed
+
+        _merge_reservoirs_inplace(self, other)
 
     # -- Result building ---------------------------------------------------
 

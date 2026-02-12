@@ -113,10 +113,6 @@ Key optimizations:
 - Subsampling: Caps firings per batch at 10k (plenty for k=20 examples per component)
 - All accumulation on GPU, only moves to CPU for final `build_results()`
 
-### Reservoir Sampler (`reservoir_sampler.py`)
-
-Implements reservoir sampling for uniform random sampling from a stream. Maintains a fixed-size buffer of examples that represents a uniform sample over all items seen.
-
 ### Storage (`storage.py`)
 
 `CorrelationStorage` and `TokenStatsStorage` classes for loading/saving harvested data.

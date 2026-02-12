@@ -23,7 +23,7 @@ from torch import Tensor
 from spd.data import train_loader_and_tokenizer
 from spd.harvest.config import HarvestConfig
 from spd.harvest.db import HarvestDB
-from spd.harvest.harvester import Harvester, HarvesterState
+from spd.harvest.harvester import Harvester
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -215,11 +215,10 @@ def harvest_activation_contexts(
     # Save results (with rank suffix if distributed)
     if rank is not None:
         # Distributed: save worker state
-        state = harvester.get_state()
         state_dir = output_dir / "worker_states"
         state_dir.mkdir(parents=True, exist_ok=True)
         state_path = state_dir / f"worker_{rank}.pt"
-        torch.save(state, state_path)
+        harvester.save(state_path)
         logger.info(f"[Worker {rank}] Saved state to {state_path}")
     else:
         # Single GPU: save full result
@@ -245,25 +244,22 @@ def merge_activation_contexts(output_dir: Path) -> None:
 
     first_worker_file, *rest_worker_files = worker_files
 
-    logger.info(f"Loading worker 0 state: {first_worker_file.name}")
-    merged_state: HarvesterState = torch.load(first_worker_file, weights_only=False)
-    logger.info(f"Loaded worker 0 state: {merged_state.total_tokens_processed:,} tokens")
+    logger.info(f"Loading worker 0: {first_worker_file.name}")
+    harvester = Harvester.load(first_worker_file)
+    logger.info(f"Loaded worker 0: {harvester.total_tokens_processed:,} tokens")
 
     for worker_file in tqdm.tqdm(rest_worker_files, desc="Merging worker states"):
-        state: HarvesterState = torch.load(worker_file, weights_only=False)
-        merged_state.merge_into(state)
-        del state
+        other = Harvester.load(worker_file)
+        harvester.merge(other)
+        del other
 
-    logger.info(f"Merge complete. Total tokens: {merged_state.total_tokens_processed:,}")
+    logger.info(f"Merge complete. Total tokens: {harvester.total_tokens_processed:,}")
 
     config = HarvestConfig(
-        ci_threshold=merged_state.ci_threshold,
-        activation_examples_per_component=merged_state.max_examples_per_component,
-        activation_context_tokens_per_side=merged_state.context_tokens_per_side,
+        ci_threshold=harvester.ci_threshold,
+        activation_examples_per_component=harvester.max_examples_per_component,
+        activation_context_tokens_per_side=harvester.context_tokens_per_side,
     )
-
-    harvester = Harvester.from_state(merged_state, torch.device("cpu"))
-    del merged_state
 
     _save_harvest_results(harvester, config, output_dir)
     logger.info(f"Saved merged results to {output_dir}")
