@@ -55,62 +55,43 @@ def get_component_data_bulk(
     HTTP roundtrips from 3 to 1.
     """
     t_total = time.perf_counter()
-    harvest = loaded.harvest
-    logger.info(f"[perf] component_data/bulk: {len(request.component_keys)} keys requested")
+    n_keys = len(request.component_keys)
+    logger.info(f"[perf] component_data/bulk: {n_keys} keys requested")
+
+    if loaded.harvest is None:
+        return BulkComponentDataResponse(activation_contexts={}, correlations={}, token_stats={})
 
     t0 = time.perf_counter()
-    has_harvest = harvest is not None
-    has_ac = has_harvest
-    has_corr = has_harvest
-    has_ts = has_harvest
-    logger.info(
-        f"[perf] harvest availability checks: {time.perf_counter() - t0:.2f}s "
-        f"(ac={has_ac}, corr={has_corr}, ts={has_ts})"
-    )
-
-    t0 = time.perf_counter()
-    activation_contexts: dict[str, SubcomponentActivationContexts] = (
-        get_activation_contexts_bulk(
-            BulkActivationContextsRequest(
-                component_keys=request.component_keys,
-                limit=request.activation_contexts_limit,
-            ),
-            loaded,
-        )
-        if has_ac
-        else {}
+    activation_contexts = get_activation_contexts_bulk(
+        BulkActivationContextsRequest(
+            component_keys=request.component_keys,
+            limit=request.activation_contexts_limit,
+        ),
+        loaded,
     )
     logger.info(
         f"[perf] activation_contexts: {time.perf_counter() - t0:.2f}s ({len(activation_contexts)} results)"
     )
 
     t0 = time.perf_counter()
-    correlations: dict[str, ComponentCorrelationsResponse] = (
-        get_component_correlations_bulk(
-            BulkCorrelationsRequest(
-                component_keys=request.component_keys,
-                top_k=request.correlations_top_k,
-            ),
-            loaded,
-        )
-        if has_corr
-        else {}
+    correlations = get_component_correlations_bulk(
+        BulkCorrelationsRequest(
+            component_keys=request.component_keys,
+            top_k=request.correlations_top_k,
+        ),
+        loaded,
     )
     logger.info(
         f"[perf] correlations: {time.perf_counter() - t0:.2f}s ({len(correlations)} results)"
     )
 
     t0 = time.perf_counter()
-    token_stats: dict[str, TokenStatsResponse] = (
-        get_component_token_stats_bulk(
-            BulkTokenStatsRequest(
-                component_keys=request.component_keys,
-                top_k=request.token_stats_top_k,
-            ),
-            loaded,
-        )
-        if has_ts
-        else {}
+    token_stats = get_component_token_stats_bulk(
+        BulkTokenStatsRequest(
+            component_keys=request.component_keys,
+            top_k=request.token_stats_top_k,
+        ),
+        loaded,
     )
     logger.info(f"[perf] token_stats: {time.perf_counter() - t0:.2f}s ({len(token_stats)} results)")
     logger.info(f"[perf] component_data/bulk total: {time.perf_counter() - t_total:.2f}s")
