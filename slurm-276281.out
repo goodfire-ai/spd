@@ -1,0 +1,405 @@
+Downloading run from wandb: goodfire/spd/s-275c8f21
+wandb: Currently logged in as: olicg-gf (goodfire) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+[retry 1/8] (h.0.mlp.c_fc:1871/trial9) ConnectError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:1858/trial8) ConnectError, backing off 0.6s
+[0] scored 38, $0.21
+[retry 1/8] (h.0.mlp.c_fc:1976/trial1) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:1920/trial6) ChatError, backing off 0.5s
+[retry 1/8] (h.0.mlp.c_fc:1960/trial3) ChatError, backing off 0.5s
+[retry 1/8] (h.0.mlp.c_fc:1984/trial1) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:1937/trial5) ChatError, backing off 0.5s
+[retry 1/8] (h.0.mlp.c_fc:1988/trial0) ChatError, backing off 0.6s
+h.0.mlp.c_fc:1997/trial2: JSONDecodeError: Expecting value: line 2 column 14 (char 15)
+h.0.mlp.c_fc:2013/trial3: JSONDecodeError: Expecting value: line 2 column 14 (char 15)
+[retry 1/8] (h.0.mlp.c_fc:1996/trial4) ConnectError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:2012/trial2) ConnectError, backing off 0.7s
+[100] scored 90, $0.44
+h.0.mlp.c_fc:2028/trial9: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:2027/trial7: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+[retry 1/8] (h.0.mlp.c_fc:1998/trial8) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:2064/trial1) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:2019/trial9) ChatError, backing off 0.5s
+[retry 1/8] (h.0.mlp.c_fc:2013/trial7) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:2065/trial1) ChatError, backing off 0.7s
+[retry 2/8] (h.0.mlp.c_fc:2064/trial1) ChatError, backing off 1.2s
+[retry 1/8] (h.0.mlp.c_fc:2000/trial5) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:2073/trial1) ChatError, backing off 0.5s
+[retry 1/8] (h.0.mlp.c_fc:2094/trial0) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:2001/trial8) ChatError, backing off 0.5s
+[retry 1/8] (h.0.mlp.c_fc:1983/trial9) ChatError, backing off 0.5s
+h.0.mlp.c_fc:1971/trial9: JSONDecodeError: Invalid control character at: line 3 column 251 (char 269)
+h.0.mlp.c_fc:1976/trial8: JSONDecodeError: Expecting value: line 2 column 14 (char 15)
+h.0.mlp.c_fc:2109/trial0: JSONDecodeError: Unterminated string starting at: line 3 column 16 (char 34)
+h.0.mlp.c_fc:2105/trial0: JSONDecodeError: Unterminated string starting at: line 3 column 16 (char 34)
+h.0.mlp.c_fc:2100/trial2: JSONDecodeError: Expecting value: line 2 column 14 (char 15)
+[retry 1/8] (h.0.mlp.c_fc:2116/trial5) ChatError, backing off 0.5s
+[retry 1/8] (h.0.mlp.c_fc:2049/trial9) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:2205/trial1) ChatError, backing off 0.5s
+[retry 1/8] (h.0.mlp.c_fc:2172/trial3) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:2139/trial5) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:2135/trial7) ChatError, backing off 0.6s
+[200] scored 199, $0.86
+[retry 1/8] (h.0.mlp.c_fc:2269/trial2) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:2228/trial7) ChatError, backing off 0.5s
+[retry 1/8] (h.0.mlp.c_fc:2211/trial9) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:2255/trial3) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:2297/trial0) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:2213/trial7) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:2231/trial3) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:2355/trial0) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:2288/trial9) ChatError, backing off 0.5s
+[300] scored 293, $1.25
+[400] scored 392, $1.62
+[500] scored 497, $2.03
+[600] scored 598, $2.42
+h.0.mlp.c_fc:3025/trial0: JSONDecodeError: Expecting value: line 2 column 14 (char 15)
+[retry 1/8] (h.0.mlp.c_fc:3035/trial7) ChatError, backing off 0.6s
+h.0.mlp.c_fc:3038/trial6: JSONDecodeError: Expecting value: line 2 column 14 (char 15)
+h.0.mlp.c_fc:3076/trial6: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+[retry 1/8] (h.0.mlp.c_fc:3036/trial6) ChatError, backing off 0.5s
+[retry 1/8] (h.0.mlp.c_fc:3101/trial2) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:3076/trial7) ChatError, backing off 0.7s
+h.0.mlp.c_fc:3051/trial9: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:3084/trial3: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:3080/trial7: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:3091/trial5: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:2983/trial8: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:3057/trial7: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:3068/trial3: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:3077/trial3: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:3107/trial3: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:3025/trial8: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+[retry 1/8] (h.0.mlp.c_fc:3042/trial8) ChatError, backing off 0.7s
+h.0.mlp.c_fc:3031/trial8: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:3108/trial1: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+[retry 1/8] (h.0.mlp.c_fc:3039/trial8) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:3058/trial7) ChatError, backing off 0.6s
+h.0.mlp.c_fc:3097/trial4: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:3089/trial7: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+[retry 1/8] (h.0.mlp.c_fc:3112/trial1) ChatError, backing off 0.5s
+h.0.mlp.c_fc:3071/trial6: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:3064/trial8: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:3120/trial0: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+[retry 1/8] (h.0.mlp.c_fc:3060/trial8) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:3025/trial9) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:3120/trial1) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:3157/trial6) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:3184/trial1) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:3158/trial3) ChatError, backing off 0.5s
+[700] scored 695, $2.80
+h.0.mlp.c_fc:3127/trial7: JSONDecodeError: Expecting value: line 2 column 14 (char 15)
+[retry 1/8] (h.0.mlp.c_fc:3204/trial7) ChatError, backing off 0.7s
+h.0.mlp.c_fc:3249/trial6: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:3290/trial0: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+h.0.mlp.c_fc:3223/trial4: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+[retry 1/8] (h.0.mlp.c_fc:3213/trial9) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:3282/trial1) ChatError, backing off 0.5s
+h.0.mlp.c_fc:3204/trial8: ResponseValidationError: Response validation failed: 4 validation errors for Unmarshaller
+body.id
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.choices
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.created
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+body.model
+  Field required [type=missing, input_value={'error': {'message': 'In...TrjQ3SiPZV9wNWl35MAH90'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+[retry 1/8] (h.0.mlp.c_fc:3255/trial4) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:3195/trial8) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:3227/trial5) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:3270/trial4) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:3285/trial1) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:3260/trial4) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:3313/trial1) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:3279/trial6) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:3319/trial0) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:3317/trial0) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:3278/trial4) ChatError, backing off 0.5s
+[retry 2/8] (h.0.mlp.c_fc:3319/trial0) ChatError, backing off 1.3s
+[retry 1/8] (h.0.mlp.c_fc:3257/trial7) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:3184/trial9) ChatError, backing off 0.7s
+[retry 1/8] (h.0.mlp.c_fc:3302/trial2) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:3273/trial7) ChatError, backing off 0.6s
+[retry 1/8] (h.0.mlp.c_fc:3282/trial6) ChatError, backing off 0.5s
+[retry 1/8] (h.0.mlp.c_fc:3273/trial9) ChatError, backing off 0.7s
+[800] scored 793, $3.17
+[900] scored 908, $3.62
