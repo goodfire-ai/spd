@@ -27,6 +27,6 @@ class PostprocessConfig(BaseConfig):
     """
 
     harvest: HarvestSlurmConfig = HarvestSlurmConfig()
-    attributions: AttributionsSlurmConfig | None = AttributionsSlurmConfig()
     autointerp: AutointerpSlurmConfig | None = AutointerpSlurmConfig()
     intruder: IntruderSlurmConfig | None = None
+    attributions: AttributionsSlurmConfig | None = None
