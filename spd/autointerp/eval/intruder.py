@@ -17,11 +17,11 @@ from dataclasses import asdict, dataclass
 
 from aiolimiter import AsyncLimiter
 from openrouter import OpenRouter
-from openrouter.components import Reasoning
+from openrouter.components import Effort, Reasoning
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
-from spd.autointerp.config import IntruderEvalConfig, ReasoningEffort
+from spd.autointerp.config import IntruderEvalConfig
 from spd.autointerp.llm_api import (
     BudgetExceededError,
     CostTracker,
@@ -174,7 +174,7 @@ Respond with the intruder example number (1-{n_total}) and brief reasoning."""
 async def score_component(
     llm: LLMClient,
     model: str,
-    reasoning_effort: ReasoningEffort,
+    reasoning_effort: Effort,
     component: ComponentData,
     density_index: DensityIndex,
     app_tok: AppTokenizer,

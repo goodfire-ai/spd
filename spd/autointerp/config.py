@@ -7,12 +7,11 @@ AutointerpSlurmConfig: CompactSkepticalConfig + eval + SLURM submission params.
 
 from typing import Annotated, Literal
 
+from openrouter.components import Effort
 from pydantic import Field
 
 from spd.base_config import BaseConfig
 from spd.settings import DEFAULT_PARTITION_NAME
-
-ReasoningEffort = Literal["none", "minimal", "low", "medium", "high"]
 
 FORBIDDEN_WORDS_DEFAULT = [
     "narrative",
@@ -33,7 +32,7 @@ class CompactSkepticalConfig(BaseConfig):
 
     type: Literal["compact_skeptical"] = "compact_skeptical"
     model: str = "google/gemini-3-flash-preview"
-    reasoning_effort: ReasoningEffort = "medium"
+    reasoning_effort: Effort = "low"
     max_examples: int = 30
     include_pmi: bool = True
     include_spd_context: bool = True
@@ -54,7 +53,7 @@ class AutointerpEvalConfig(BaseConfig):
     """Config for label-based autointerp evals (detection, fuzzing)."""
 
     model: str = "google/gemini-3-flash-preview"
-    reasoning_effort: ReasoningEffort = "medium"
+    reasoning_effort: Effort = "low"
 
     detection_n_activating: int = 5
     detection_n_non_activating: int = 5
@@ -73,7 +72,7 @@ class IntruderEvalConfig(BaseConfig):
     """Config for intruder detection eval (decomposition quality, not label quality)."""
 
     model: str = "google/gemini-3-flash-preview"
-    reasoning_effort: ReasoningEffort = "medium"
+    reasoning_effort: Effort = "low"
     n_real: int = 4
     n_trials: int = 10
     density_tolerance: float = 0.05

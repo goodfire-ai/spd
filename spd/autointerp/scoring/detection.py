@@ -16,11 +16,11 @@ from dataclasses import asdict, dataclass
 
 from aiolimiter import AsyncLimiter
 from openrouter import OpenRouter
-from openrouter.components import Reasoning
+from openrouter.components import Effort, Reasoning
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
-from spd.autointerp.config import AutointerpEvalConfig, ReasoningEffort
+from spd.autointerp.config import AutointerpEvalConfig
 from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import (
     BudgetExceededError,
@@ -153,7 +153,7 @@ Respond with the list of activating example numbers."""
 async def score_component(
     llm: LLMClient,
     model: str,
-    reasoning_effort: ReasoningEffort,
+    reasoning_effort: Effort,
     component: ComponentData,
     all_components: list[ComponentData],
     app_tok: AppTokenizer,
@@ -234,7 +234,7 @@ async def run_detection_scoring(
     components: list[ComponentData],
     labels: dict[str, str],
     model: str,
-    reasoning_effort: ReasoningEffort,
+    reasoning_effort: Effort,
     openrouter_api_key: str,
     tokenizer_name: str,
     db: InterpDB,
