@@ -4,10 +4,7 @@ Called by SLURM jobs submitted via spd-attributions, or run directly for non-SLU
 
 Usage:
     # Single GPU
-    python -m spd.dataset_attributions.scripts.run <path>
-
-    # With config file
-    python -m spd.dataset_attributions.scripts.run <path> --config_path path/to/config.yaml
+    python -m spd.dataset_attributions.scripts.run <path> --config_json '...'
 
     # Multi-GPU (run in parallel)
     python -m spd.dataset_attributions.scripts.run <path> --config_json '...' --rank 0 --world_size 4 --subrun_id da-20260211_120000
@@ -23,31 +20,18 @@ from spd.dataset_attributions.harvest import (
     merge_attributions,
 )
 from spd.dataset_attributions.repo import get_attributions_subrun_dir
+from spd.log import logger
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
 def main(
     wandb_path: str,
-    config_path: str | None = None,
     config_json: str | dict[str, object] | None = None,
     rank: int | None = None,
     world_size: int | None = None,
     merge: bool = False,
     subrun_id: str | None = None,
 ) -> None:
-    """Compute dataset attributions, or merge results.
-
-    Args:
-        wandb_path: WandB run path for the target decomposition run.
-        config_path: Path to DatasetAttributionConfig YAML/JSON file.
-        config_json: Inline DatasetAttributionConfig as JSON string.
-        rank: Worker rank for parallel execution (0 to world_size-1).
-        world_size: Total number of workers. If specified with rank, only processes
-            batches where batch_idx % world_size == rank.
-        merge: If True, merge partial results from workers.
-        subrun_id: Sub-run identifier (e.g. "da-20260211_120000"). Generated if not provided.
-    """
-
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
     if subrun_id is None:
@@ -57,28 +41,26 @@ def main(
 
     if merge:
         assert rank is None and world_size is None, "Cannot specify rank/world_size with --merge"
-        print(f"Merging attribution results for {wandb_path} (subrun {subrun_id})")
+        logger.info(f"Merging attribution results for {wandb_path} (subrun {subrun_id})")
         merge_attributions(output_dir)
         return
 
     assert (rank is None) == (world_size is None), "rank and world_size must both be set or unset"
 
-    match (config_path, config_json):
-        case (str(path), None):
-            config = DatasetAttributionConfig.from_file(path)
-        case (None, str(json_str)):
+    match config_json:
+        case str(json_str):
             config = DatasetAttributionConfig.model_validate_json(json_str)
-        case (None, dict(d)):
+        case dict(d):
             config = DatasetAttributionConfig.model_validate(d)
-        case (None, None):
+        case None:
             config = DatasetAttributionConfig()
-        case _:
-            raise ValueError("config_path and config_json are mutually exclusive")
 
     if world_size is not None:
-        print(f"Distributed harvest: {wandb_path} (rank {rank}/{world_size}, subrun {subrun_id})")
+        logger.info(
+            f"Distributed harvest: {wandb_path} (rank {rank}/{world_size}, subrun {subrun_id})"
+        )
     else:
-        print(f"Single-GPU harvest: {wandb_path} (subrun {subrun_id})")
+        logger.info(f"Single-GPU harvest: {wandb_path} (subrun {subrun_id})")
 
     harvest_attributions(wandb_path, config, output_dir, rank=rank, world_size=world_size)
 

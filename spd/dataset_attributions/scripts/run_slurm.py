@@ -114,7 +114,7 @@ def submit_attributions(
         job_name="spd-attr-merge",
         partition=partition,
         n_gpus=0,  # No GPU needed for merge
-        time="01:00:00",  # Merge is quick
+        time=slurm_config.merge_time,
         snapshot_branch=snapshot_branch,
         dependency_job_id=array_result.job_id,
     )

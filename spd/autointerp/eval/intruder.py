@@ -17,9 +17,11 @@ from dataclasses import asdict, dataclass
 
 from aiolimiter import AsyncLimiter
 from openrouter import OpenRouter
+from openrouter.components import Reasoning
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
+from spd.autointerp.config import IntruderEvalConfig, ReasoningEffort
 from spd.autointerp.llm_api import (
     BudgetExceededError,
     CostTracker,
@@ -31,12 +33,6 @@ from spd.autointerp.llm_api import (
 from spd.harvest.db import HarvestDB
 from spd.harvest.schemas import ActivationExample, ComponentData
 from spd.log import logger
-
-MAX_CONCURRENT = 50
-
-N_REAL = 4
-N_TRIALS = 10
-DENSITY_TOLERANCE = 0.05
 
 INTRUDER_RESPONSE_FORMAT = make_response_format(
     "intruder_response",
@@ -100,7 +96,7 @@ class DensityIndex:
         self,
         target: ComponentData,
         rng: random.Random,
-        tolerance: float = DENSITY_TOLERANCE,
+        tolerance: float,
     ) -> ComponentData:
         """Sample a different component with similar bold density."""
         assert target.component_key in self._key_to_idx
@@ -139,9 +135,10 @@ def _sample_intruder(
     target: ComponentData,
     density_index: DensityIndex,
     rng: random.Random,
+    density_tolerance: float,
 ) -> ActivationExample:
     """Sample an intruder example from a component with similar bold density."""
-    donor = density_index.sample_similar(target, rng)
+    donor = density_index.sample_similar(target, rng, tolerance=density_tolerance)
     return rng.choice(donor.activation_examples)
 
 
@@ -154,13 +151,15 @@ def _build_prompt(
 ) -> str:
     all_examples = list(real_examples)
     all_examples.insert(intruder_position, intruder)
+    n_total = len(all_examples)
+    n_real = len(real_examples)
 
     examples_text = ""
     for i, ex in enumerate(all_examples):
         examples_text += f"Example {i + 1}: {_format_example(ex, app_tok, ci_threshold)}\n\n"
 
     return f"""\
-Below are 5 text snippets from a neural network's training data. Four come from contexts \
+Below are {n_total} text snippets from a neural network's training data. {n_real} come from contexts \
 where the SAME component fires strongly. One is an INTRUDER from a DIFFERENT component.
 
 Tokens between <<delimiters>> are where the component fires most strongly.
@@ -169,27 +168,31 @@ Tokens between <<delimiters>> are where the component fires most strongly.
 Which example is the intruder? Identify what pattern the majority share, then pick \
 the example that does not fit.
 
-Respond with the intruder example number (1-5) and brief reasoning."""
+Respond with the intruder example number (1-{n_total}) and brief reasoning."""
 
 
 async def score_component(
     llm: LLMClient,
     model: str,
+    reasoning_effort: ReasoningEffort,
     component: ComponentData,
     density_index: DensityIndex,
     app_tok: AppTokenizer,
     ci_threshold: float,
+    n_real: int,
+    n_trials: int,
+    density_tolerance: float,
 ) -> IntruderResult:
-    assert len(component.activation_examples) >= N_REAL + 1
+    assert len(component.activation_examples) >= n_real + 1
 
-    rng = random.Random(hash(component.component_key))
+    rng = random.Random()
     trials: list[IntruderTrial] = []
     n_errors = 0
 
-    for trial_idx in range(N_TRIALS):
-        real_examples = rng.sample(component.activation_examples, N_REAL)
-        intruder = _sample_intruder(component, density_index, rng)
-        intruder_pos = rng.randint(0, N_REAL)
+    for trial_idx in range(n_trials):
+        real_examples = rng.sample(component.activation_examples, n_real)
+        intruder = _sample_intruder(component, density_index, rng, density_tolerance)
+        intruder_pos = rng.randint(0, n_real)
         correct_answer = intruder_pos + 1
 
         prompt = _build_prompt(real_examples, intruder, intruder_pos, app_tok, ci_threshold)
@@ -197,6 +200,7 @@ async def score_component(
         try:
             response = await llm.chat(
                 model=model,
+                reasoning=Reasoning(effort=reasoning_effort),
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=300,
                 context_label=f"{component.component_key}/trial{trial_idx}",
@@ -233,16 +237,22 @@ async def run_intruder_scoring(
     tokenizer_name: str,
     db: HarvestDB,
     ci_threshold: float,
+    eval_config: IntruderEvalConfig,
     limit: int | None = None,
     cost_limit_usd: float | None = None,
 ) -> list[IntruderResult]:
+    n_real = eval_config.n_real
+    n_trials = eval_config.n_trials
+    density_tolerance = eval_config.density_tolerance
+    max_concurrent = eval_config.max_concurrent
+
     app_tok = AppTokenizer.from_pretrained(tokenizer_name)
 
-    eligible = [c for c in components if len(c.activation_examples) >= N_REAL + 1]
+    eligible = [c for c in components if len(c.activation_examples) >= n_real + 1]
     if limit is not None:
         eligible = eligible[:limit]
 
-    density_index = DensityIndex(components, min_examples=N_REAL + 1, ci_threshold=ci_threshold)
+    density_index = DensityIndex(components, min_examples=n_real + 1, ci_threshold=ci_threshold)
 
     results: list[IntruderResult] = []
 
@@ -254,14 +264,23 @@ async def run_intruder_scoring(
     remaining = [c for c in eligible if c.component_key not in completed]
     logger.info(f"Scoring {len(remaining)} components")
 
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+    semaphore = asyncio.Semaphore(max_concurrent)
     output_lock = asyncio.Lock()
 
     async def process_one(component: ComponentData, index: int, llm: LLMClient) -> None:
         async with semaphore:
             try:
                 result = await score_component(
-                    llm, model, component, density_index, app_tok, ci_threshold
+                    llm,
+                    model,
+                    eval_config.reasoning_effort,
+                    component,
+                    density_index,
+                    app_tok,
+                    ci_threshold,
+                    n_real=n_real,
+                    n_trials=n_trials,
+                    density_tolerance=density_tolerance,
                 )
             except BudgetExceededError:
                 return

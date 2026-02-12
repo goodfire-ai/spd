@@ -20,7 +20,6 @@ import tqdm
 from jaxtyping import Bool
 from torch import Tensor
 
-from spd.app.backend.compute import get_sources_by_target
 from spd.data import train_loader_and_tokenizer
 from spd.dataset_attributions.config import DatasetAttributionConfig
 from spd.dataset_attributions.harvester import AttributionHarvester
@@ -28,7 +27,7 @@ from spd.dataset_attributions.storage import DatasetAttributionStorage
 from spd.harvest.repo import HarvestRepo
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.topology import TransformerTopology
+from spd.topology import TransformerTopology, get_sources_by_target
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import extract_batch_data
 from spd.utils.wandb_utils import parse_wandb_run_path
@@ -294,10 +293,10 @@ def merge_attributions(output_dir: Path) -> None:
 
     output_path = output_dir / "dataset_attributions.pt"
     merged.save(output_path)
+    assert output_path.stat().st_size > 0, f"Merge output is empty: {output_path}"
     logger.info(f"Merged {len(rank_files)} files -> {output_path}")
     logger.info(f"Total: {total_batches} batches, {total_tokens:,} tokens")
 
-    # Clean up worker_states directory after successful merge
     for rank_file in rank_files:
         rank_file.unlink()
     worker_dir.rmdir()

@@ -100,10 +100,10 @@ def run_interpret(
     if limit is not None:
         eligible = eligible[:limit]
 
-    db = InterpDB(db_path)
-
     async def _run() -> list[InterpretationResult]:
+        db = InterpDB(db_path)
         results: list[InterpretationResult] = []
+        n_errors = 0
 
         completed = db.get_completed_keys()
         if completed:
@@ -139,6 +139,8 @@ def run_interpret(
                 except BudgetExceededError:
                     return
                 except Exception as e:
+                    nonlocal n_errors
+                    n_errors += 1
                     logger.error(f"Skipping {component.component_key}: {type(e).__name__}: {e}")
                     return
                 async with output_lock:
@@ -168,6 +170,14 @@ def run_interpret(
             await asyncio.gather(*[process_one(c, i, llm) for i, c in enumerate(remaining)])
 
             logger.info(f"Final cost: ${cost_tracker.cost_usd():.2f}")
+
+        db.close()
+
+        error_rate = n_errors / len(remaining) if remaining else 0.0
+        if error_rate > 0.2:
+            raise RuntimeError(
+                f"Error rate {error_rate:.0%} ({n_errors}/{len(remaining)}) exceeds 20% threshold"
+            )
 
         logger.info(f"Completed {len(results)} interpretations -> {db_path}")
         return results

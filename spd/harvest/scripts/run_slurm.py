@@ -107,8 +107,8 @@ def submit_harvest(
         job_name="spd-harvest-merge",
         partition=partition,
         n_gpus=0,
-        time="02:00:00",
-        mem="200G",
+        time=slurm_config.merge_time,
+        mem=slurm_config.merge_mem,
         snapshot_branch=snapshot_branch,
         dependency_job_id=array_result.job_id,
     )
@@ -116,12 +116,15 @@ def submit_harvest(
     merge_result = submit_slurm_job(merge_script, "harvest_merge")
 
     intruder_result = None
-    if slurm_config.intruder_eval:
+    if slurm_config.intruder_eval is not None:
+        intruder_eval_config = slurm_config.intruder_eval
+        eval_config_json = intruder_eval_config.model_dump_json(exclude_none=True)
         intruder_cmd = " \\\n    ".join(
             [
                 "python -m spd.autointerp.eval.scripts.run_intruder",
                 f'"{wandb_path}"',
                 f"--harvest_subrun_id {subrun_id}",
+                f"--eval_config_json '{eval_config_json}'",
             ]
         )
         intruder_config = SlurmConfig(
@@ -129,7 +132,7 @@ def submit_harvest(
             partition=partition,
             n_gpus=0,
             cpus_per_task=16,
-            time="12:00:00",
+            time=slurm_config.intruder_eval_time,
             snapshot_branch=snapshot_branch,
             dependency_job_id=merge_result.job_id,
         )

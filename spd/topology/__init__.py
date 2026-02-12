@@ -18,4 +18,5 @@ Node key format:
     "{layer_address}:{seq_pos}:{component_idx}"
 """
 
+from spd.topology.gradient_connectivity import get_sources_by_target as get_sources_by_target
 from spd.topology.topology import TransformerTopology as TransformerTopology

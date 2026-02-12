@@ -14,7 +14,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from spd.app.backend.app_tokenizer import AppTokenizer
-from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.database import PromptAttrDB
 from spd.app.backend.routers import graphs as graphs_router
 from spd.app.backend.routers import runs as runs_router
@@ -29,7 +28,7 @@ from spd.configs import (
 )
 from spd.models.component_model import ComponentModel
 from spd.pretrain.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
-from spd.topology import TransformerTopology
+from spd.topology import TransformerTopology, get_sources_by_target
 from spd.utils.module_utils import expand_module_patterns
 
 DEVICE = "cpu"

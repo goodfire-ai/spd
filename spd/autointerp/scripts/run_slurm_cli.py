@@ -22,6 +22,9 @@ def main(
     """
     from spd.autointerp.config import AutointerpSlurmConfig
     from spd.autointerp.scripts.run_slurm import submit_autointerp
+    from spd.utils.wandb_utils import parse_wandb_run_path
+
+    parse_wandb_run_path(wandb_path)
 
     slurm_config = (
         AutointerpSlurmConfig.from_file(config) if config is not None else AutointerpSlurmConfig()

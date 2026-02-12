@@ -150,6 +150,7 @@ def harvest_activation_contexts(
         ci_threshold=config.ci_threshold,
         max_examples_per_component=config.activation_examples_per_component,
         context_tokens_per_side=config.activation_context_tokens_per_side,
+        max_examples_per_batch_per_component=config.max_examples_per_batch_per_component,
         device=device,
     )
 
@@ -258,9 +259,10 @@ def merge_activation_contexts(output_dir: Path) -> None:
     )
 
     _save_harvest_results(harvester, config, output_dir)
+    db_path = output_dir / "harvest.db"
+    assert db_path.exists() and db_path.stat().st_size > 0, f"Merge output is empty: {db_path}"
     logger.info(f"Saved merged results to {output_dir}")
 
-    # Clean up worker state files
     for worker_file in worker_files:
         worker_file.unlink()
     state_dir.rmdir()

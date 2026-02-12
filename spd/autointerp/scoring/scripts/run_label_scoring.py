@@ -1,9 +1,8 @@
 """CLI for label-based scoring (detection, fuzzing).
 
 Usage:
-    python -m spd.autointerp.scoring.scripts.run_label_scoring <wandb_path> --scorer detection
-    python -m spd.autointerp.scoring.scripts.run_label_scoring <wandb_path> --scorer fuzzing
-    python -m spd.autointerp.scoring.scripts.run_label_scoring <wandb_path> --scorer detection --autointerp_run_id 20260206_153040
+    python -m spd.autointerp.scoring.scripts.run_label_scoring <wandb_path> --scorer detection --eval_config_json '...'
+    python -m spd.autointerp.scoring.scripts.run_label_scoring <wandb_path> --scorer fuzzing --eval_config_json '...'
 """
 
 import asyncio
@@ -12,7 +11,7 @@ from typing import Literal
 
 from dotenv import load_dotenv
 
-from spd.autointerp.config import ReasoningEffort
+from spd.autointerp.config import AutointerpEvalConfig
 from spd.autointerp.db import InterpDB
 from spd.autointerp.interpret import get_architecture_info
 from spd.autointerp.repo import InterpRepo
@@ -25,15 +24,14 @@ LabelScorerType = Literal["detection", "fuzzing"]
 def main(
     wandb_path: str,
     scorer: LabelScorerType,
-    model: str = "google/gemini-3-flash-preview",
-    reasoning_effort: ReasoningEffort = "medium",
-    limit: int | None = None,
-    cost_limit_usd: float | None = None,
+    eval_config_json: str,
     harvest_subrun_id: str | None = None,
 ) -> None:
     load_dotenv()
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
+
+    eval_config = AutointerpEvalConfig.model_validate_json(eval_config_json)
 
     arch = get_architecture_info(wandb_path)
     _, _, run_id = parse_wandb_run_path(wandb_path)
@@ -60,13 +58,14 @@ def main(
                 run_detection_scoring(
                     components=components,
                     labels=labels,
-                    model=model,
-                    reasoning_effort=reasoning_effort,
+                    model=eval_config.model,
+                    reasoning_effort=eval_config.reasoning_effort,
                     openrouter_api_key=openrouter_api_key,
                     tokenizer_name=arch.tokenizer_name,
                     db=db,
-                    limit=limit,
-                    cost_limit_usd=cost_limit_usd,
+                    eval_config=eval_config,
+                    limit=eval_config.limit,
+                    cost_limit_usd=eval_config.cost_limit_usd,
                 )
             )
         case "fuzzing":
@@ -76,13 +75,14 @@ def main(
                 run_fuzzing_scoring(
                     components=components,
                     labels=labels,
-                    model=model,
+                    model=eval_config.model,
                     openrouter_api_key=openrouter_api_key,
                     tokenizer_name=arch.tokenizer_name,
                     db=db,
                     ci_threshold=ci_threshold,
-                    limit=limit,
-                    cost_limit_usd=cost_limit_usd,
+                    eval_config=eval_config,
+                    limit=eval_config.limit,
+                    cost_limit_usd=eval_config.cost_limit_usd,
                 )
             )
 

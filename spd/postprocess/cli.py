@@ -9,6 +9,7 @@ Usage:
 
 import fire
 
+from spd.log import logger
 from spd.postprocess.config import PostprocessConfig
 
 
@@ -27,10 +28,12 @@ def main(
         spd-postprocess wandb:goodfire/spd/runs/abc123 --config my_config.yaml
     """
     from spd.postprocess import postprocess
+    from spd.utils.wandb_utils import parse_wandb_run_path
 
+    parse_wandb_run_path(wandb_path)
     cfg = PostprocessConfig.from_file(config) if config is not None else PostprocessConfig()
     manifest_path = postprocess(wandb_path=wandb_path, config=cfg)
-    print(f"\nManifest: {manifest_path}")
+    logger.info(f"Manifest: {manifest_path}")
 
 
 def cli() -> None:

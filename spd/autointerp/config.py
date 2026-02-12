@@ -40,6 +40,8 @@ class CompactSkepticalConfig(BaseConfig):
     include_dataset_description: bool = True
     label_max_words: int = 5
     forbidden_words: list[str] = FORBIDDEN_WORDS_DEFAULT
+    limit: int | None = None
+    cost_limit_usd: float | None = None
 
 
 AutointerpConfig = Annotated[
@@ -49,15 +51,35 @@ AutointerpConfig = Annotated[
 
 
 class AutointerpEvalConfig(BaseConfig):
-    """Config for autointerp eval jobs (detection, fuzzing).
-
-    Partition is inherited from the parent AutointerpSlurmConfig / CLI —
-    evals always run on the same partition as the interpret job.
-    """
+    """Config for label-based autointerp evals (detection, fuzzing)."""
 
     model: str = "google/gemini-3-flash-preview"
     reasoning_effort: ReasoningEffort = "medium"
-    time: str = "12:00:00"
+
+    detection_n_activating: int = 5
+    detection_n_non_activating: int = 5
+    detection_n_trials: int = 5
+    detection_max_concurrent: int = 50
+
+    fuzzing_n_correct: int = 5
+    fuzzing_n_incorrect: int = 2
+    fuzzing_n_trials: int = 5
+    fuzzing_max_concurrent: int = 50
+    limit: int | None = None
+    cost_limit_usd: float | None = None
+
+
+class IntruderEvalConfig(BaseConfig):
+    """Config for intruder detection eval (decomposition quality, not label quality)."""
+
+    model: str = "google/gemini-3-flash-preview"
+    reasoning_effort: ReasoningEffort = "medium"
+    n_real: int = 4
+    n_trials: int = 10
+    density_tolerance: float = 0.05
+    max_concurrent: int = 50
+    limit: int | None = None
+    cost_limit_usd: float | None = None
 
 
 class AutointerpSlurmConfig(BaseConfig):
@@ -70,8 +92,7 @@ class AutointerpSlurmConfig(BaseConfig):
     """
 
     config: CompactSkepticalConfig = CompactSkepticalConfig()
-    limit: int | None = None
-    cost_limit_usd: float | None = None
     partition: str = DEFAULT_PARTITION_NAME
     time: str = "12:00:00"
     evals: AutointerpEvalConfig | None = AutointerpEvalConfig()
+    evals_time: str = "12:00:00"

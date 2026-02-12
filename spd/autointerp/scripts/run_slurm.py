@@ -69,10 +69,6 @@ def submit_autointerp(
     ]
     if harvest_subrun_id is not None:
         interpret_parts.append(f"--harvest_subrun_id {harvest_subrun_id}")
-    if slurm_config.limit is not None:
-        interpret_parts.append(f"--limit {slurm_config.limit}")
-    if slurm_config.cost_limit_usd is not None:
-        interpret_parts.append(f"--cost_limit_usd {slurm_config.cost_limit_usd}")
 
     interpret_cmd = " \\\n    ".join(interpret_parts)
 
@@ -107,14 +103,15 @@ def submit_autointerp(
         )
 
     # === 2. Detection + fuzzing scoring (depend on interpret) ===
+    eval_config_json = evals.model_dump_json(exclude_none=True)
+
     scoring_results: dict[str, SubmitResult] = {}
     for scorer in ("detection", "fuzzing"):
         scoring_parts = [
             "python -m spd.autointerp.scoring.scripts.run_label_scoring",
             f'"{wandb_path}"',
             f"--scorer {scorer}",
-            f"--model {evals.model}",
-            f"--reasoning_effort {evals.reasoning_effort}",
+            f"--eval_config_json '{eval_config_json}'",
         ]
         if harvest_subrun_id is not None:
             scoring_parts.append(f"--harvest_subrun_id {harvest_subrun_id}")
@@ -125,7 +122,7 @@ def submit_autointerp(
             partition=partition,
             n_gpus=0,
             cpus_per_task=16,
-            time=evals.time,
+            time=slurm_config.evals_time,
             snapshot_branch=snapshot_branch,
             dependency_job_id=interpret_result.job_id,
         )

@@ -36,7 +36,9 @@ The `interp.db` schema has three tables:
 - `scores`: (component_key, score_type) -> score, details (JSON blob with trial data)
 - `config`: key-value store
 
-Score types: `detection`, `fuzzing`. (Intruder scores live in `harvest.db`.)
+Score types: `detection`, `fuzzing`.
+
+**Note on intruder scores**: Intruder scores live in `harvest.db`, not `interp.db`. This is intentional — intruder evaluation tests the quality of the *decomposition itself* (are component activation patterns coherent?), not the quality of LLM-generated labels. It requires only harvest data, not interpretations. Detection and fuzzing, by contrast, evaluate interpretation labels and belong here.
 
 ## Architecture
 

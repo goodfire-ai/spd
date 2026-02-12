@@ -24,6 +24,9 @@ def harvest(
     """
     from spd.harvest.config import HarvestSlurmConfig
     from spd.harvest.scripts.run_slurm import submit_harvest
+    from spd.utils.wandb_utils import parse_wandb_run_path
+
+    parse_wandb_run_path(wandb_path)
 
     slurm_config = (
         HarvestSlurmConfig.from_file(config) if config is not None else HarvestSlurmConfig()

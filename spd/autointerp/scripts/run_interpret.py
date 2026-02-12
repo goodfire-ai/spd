@@ -1,11 +1,8 @@
 """CLI for autointerp pipeline.
 
-Usage (direct execution):
-    python -m spd.autointerp.scripts.run_interpret <wandb_path> --config_path path/to/config.yaml
+Usage:
     python -m spd.autointerp.scripts.run_interpret <wandb_path> --config_json '...'
-
-Usage (SLURM submission):
-    spd-autointerp <wandb_path>
+    spd-autointerp <wandb_path>  # SLURM submission
 """
 
 import os
@@ -17,38 +14,21 @@ from spd.autointerp.config import CompactSkepticalConfig
 from spd.autointerp.interpret import run_interpret
 from spd.autointerp.schemas import get_autointerp_dir
 from spd.harvest.repo import HarvestRepo
+from spd.log import logger
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
 def main(
     wandb_path: str,
-    config_path: str | None = None,
-    config_json: str | dict[str, object] | None = None,
+    config_json: str | dict[str, object],
     autointerp_run_id: str | None = None,
-    limit: int | None = None,
-    cost_limit_usd: float | None = None,
     harvest_subrun_id: str | None = None,
 ) -> None:
-    """Interpret harvested components.
-
-    Args:
-        wandb_path: WandB run path (e.g. wandb:entity/project/runs/run_id).
-        config_path: Path to CompactSkepticalConfig YAML/JSON file.
-        config_json: Inline CompactSkepticalConfig as JSON string.
-        autointerp_run_id: Pre-assigned run ID (timestamp). Generated if not provided.
-        limit: Max number of components to interpret.
-        cost_limit_usd: Cost budget in USD.
-    """
-
-    match (config_path, config_json):
-        case (str(path), None):
-            interp_config = CompactSkepticalConfig.from_file(path)
-        case (None, str(json_str)):
+    match config_json:
+        case str(json_str):
             interp_config = CompactSkepticalConfig.model_validate_json(json_str)
-        case (None, dict(d)):
+        case dict(d):
             interp_config = CompactSkepticalConfig.model_validate(d)
-        case _:
-            raise ValueError("Exactly one of config_path or config_json must be provided")
 
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
@@ -70,7 +50,7 @@ def main(
 
     db_path = run_dir / "interp.db"
 
-    print(f"Autointerp run: {run_dir}")
+    logger.info(f"Autointerp run: {run_dir}")
 
     run_interpret(
         wandb_path,
@@ -78,8 +58,8 @@ def main(
         interp_config,
         harvest,
         db_path,
-        limit,
-        cost_limit_usd,
+        interp_config.limit,
+        interp_config.cost_limit_usd,
     )
 
 

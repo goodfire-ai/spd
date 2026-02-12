@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import PositiveInt
 
+from spd.autointerp.config import IntruderEvalConfig
 from spd.base_config import BaseConfig
 from spd.settings import DEFAULT_PARTITION_NAME
 
@@ -19,6 +20,7 @@ class HarvestConfig(BaseConfig):
     activation_examples_per_component: int = 1000
     activation_context_tokens_per_side: int = 20
     pmi_token_top_k: int = 40
+    max_examples_per_batch_per_component: int = 5
 
 
 class HarvestSlurmConfig(BaseConfig):
@@ -28,4 +30,7 @@ class HarvestSlurmConfig(BaseConfig):
     n_gpus: PositiveInt = 8
     partition: str = DEFAULT_PARTITION_NAME
     time: str = "24:00:00"
-    intruder_eval: bool = True
+    merge_time: str = "02:00:00"
+    merge_mem: str = "200G"
+    intruder_eval: IntruderEvalConfig | None = IntruderEvalConfig()
+    intruder_eval_time: str = "12:00:00"

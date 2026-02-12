@@ -80,6 +80,9 @@ class CostTracker:
         )
 
 
+MAX_BACKOFF_S = 600.0
+
+
 class GlobalBackoff:
     """Shared backoff that pauses all coroutines when the API pushes back."""
 
@@ -88,6 +91,9 @@ class GlobalBackoff:
         self._lock = asyncio.Lock()
 
     async def set_backoff(self, seconds: float) -> None:
+        assert seconds <= MAX_BACKOFF_S, (
+            f"Server requested {seconds:.0f}s backoff, exceeds {MAX_BACKOFF_S:.0f}s cap"
+        )
         async with self._lock:
             self._resume_at = max(self._resume_at, time.monotonic() + seconds)
 

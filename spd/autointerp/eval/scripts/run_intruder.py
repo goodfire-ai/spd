@@ -1,8 +1,7 @@
 """CLI for intruder detection eval.
 
 Usage:
-    python -m spd.autointerp.eval.scripts.run_intruder <wandb_path> --limit 100
-    python -m spd.autointerp.eval.scripts.run_intruder <wandb_path> --harvest_subrun_id h-20260211_120000
+    python -m spd.autointerp.eval.scripts.run_intruder <wandb_path> --eval_config_json '...' --harvest_subrun_id h-20260211_120000
 """
 
 import asyncio
@@ -10,6 +9,7 @@ import os
 
 from dotenv import load_dotenv
 
+from spd.autointerp.config import IntruderEvalConfig
 from spd.autointerp.eval.intruder import run_intruder_scoring
 from spd.autointerp.interpret import get_architecture_info
 from spd.harvest.db import HarvestDB
@@ -19,14 +19,14 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 
 def main(
     wandb_path: str,
-    model: str = "google/gemini-3-flash-preview",
-    limit: int | None = None,
-    cost_limit_usd: float | None = None,
-    harvest_subrun_id: str | None = None,
+    eval_config_json: str,
+    harvest_subrun_id: str,
 ) -> None:
     load_dotenv()
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
+
+    eval_config = IntruderEvalConfig.model_validate_json(eval_config_json)
 
     arch = get_architecture_info(wandb_path)
     _, _, run_id = parse_wandb_run_path(wandb_path)
@@ -41,13 +41,14 @@ def main(
     asyncio.run(
         run_intruder_scoring(
             components=components,
-            model=model,
+            model=eval_config.model,
             openrouter_api_key=openrouter_api_key,
             tokenizer_name=arch.tokenizer_name,
             db=db,
             ci_threshold=ci_threshold,
-            limit=limit,
-            cost_limit_usd=cost_limit_usd,
+            eval_config=eval_config,
+            limit=eval_config.limit,
+            cost_limit_usd=eval_config.cost_limit_usd,
         )
     )
 

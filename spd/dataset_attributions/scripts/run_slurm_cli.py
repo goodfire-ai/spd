@@ -24,6 +24,9 @@ def submit_attributions(
     """
     from spd.dataset_attributions.config import AttributionsSlurmConfig
     from spd.dataset_attributions.scripts.run_slurm import submit_attributions as impl
+    from spd.utils.wandb_utils import parse_wandb_run_path
+
+    parse_wandb_run_path(wandb_path)
 
     slurm_config = (
         AttributionsSlurmConfig.from_file(config)

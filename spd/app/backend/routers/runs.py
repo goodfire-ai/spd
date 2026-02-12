@@ -9,7 +9,6 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from spd.app.backend.app_tokenizer import AppTokenizer
-from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.dependencies import DepStateManager
 from spd.app.backend.state import RunState
 from spd.app.backend.utils import log_errors
@@ -19,7 +18,7 @@ from spd.dataset_attributions.repo import AttributionRepo
 from spd.harvest.repo import HarvestRepo
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.topology import TransformerTopology
+from spd.topology import TransformerTopology, get_sources_by_target
 from spd.utils.distributed_utils import get_device
 from spd.utils.wandb_utils import parse_wandb_run_path
 

@@ -30,6 +30,7 @@ def _make_harvester() -> Harvester:
         ci_threshold=CI_THRESHOLD,
         max_examples_per_component=MAX_EXAMPLES,
         context_tokens_per_side=CONTEXT_TOKENS_PER_SIDE,
+        max_examples_per_batch_per_component=5,
         device=DEVICE,
     )
 
@@ -285,6 +286,7 @@ class TestMerge:
             ci_threshold=CI_THRESHOLD,
             max_examples_per_component=MAX_EXAMPLES,
             context_tokens_per_side=CONTEXT_TOKENS_PER_SIDE,
+            max_examples_per_batch_per_component=5,
             device=DEVICE,
         )
         with pytest.raises(AssertionError):

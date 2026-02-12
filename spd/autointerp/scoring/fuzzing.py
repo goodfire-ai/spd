@@ -17,6 +17,7 @@ from openrouter import OpenRouter
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
+from spd.autointerp.config import AutointerpEvalConfig
 from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import (
     BudgetExceededError,
@@ -28,12 +29,6 @@ from spd.autointerp.llm_api import (
 )
 from spd.harvest.schemas import ActivationExample, ComponentData
 from spd.log import logger
-
-MAX_CONCURRENT = 50
-
-N_CORRECT = 5
-N_INCORRECT = 2
-N_TRIALS = 5
 
 FUZZING_RESPONSE_FORMAT = make_response_format(
     "fuzzing_response",
@@ -141,11 +136,14 @@ async def score_component(
     app_tok: AppTokenizer,
     label: str,
     ci_threshold: float,
+    n_correct: int,
+    n_incorrect: int,
+    n_trials: int,
 ) -> FuzzingResult:
-    min_examples = N_CORRECT + N_INCORRECT
+    min_examples = n_correct + n_incorrect
     assert len(component.activation_examples) >= min_examples
 
-    rng = random.Random(hash(component.component_key))
+    rng = random.Random()
     trials: list[FuzzingTrial] = []
     n_errors = 0
     total_tp = 0
@@ -153,10 +151,10 @@ async def score_component(
     total_pos = 0
     total_neg = 0
 
-    for trial_idx in range(N_TRIALS):
-        sampled = rng.sample(component.activation_examples, N_CORRECT + N_INCORRECT)
-        correct_examples = sampled[:N_CORRECT]
-        incorrect_examples = sampled[N_CORRECT:]
+    for trial_idx in range(n_trials):
+        sampled = rng.sample(component.activation_examples, n_correct + n_incorrect)
+        correct_examples = sampled[:n_correct]
+        incorrect_examples = sampled[n_correct:]
 
         formatted: list[tuple[str, bool]] = []
 
@@ -232,12 +230,18 @@ async def run_fuzzing_scoring(
     tokenizer_name: str,
     db: InterpDB,
     ci_threshold: float,
+    eval_config: AutointerpEvalConfig,
     limit: int | None = None,
     cost_limit_usd: float | None = None,
 ) -> list[FuzzingResult]:
+    n_correct = eval_config.fuzzing_n_correct
+    n_incorrect = eval_config.fuzzing_n_incorrect
+    n_trials = eval_config.fuzzing_n_trials
+    max_concurrent = eval_config.fuzzing_max_concurrent
+
     app_tok = AppTokenizer.from_pretrained(tokenizer_name)
 
-    min_examples = N_CORRECT + N_INCORRECT
+    min_examples = n_correct + n_incorrect
     eligible = [
         c
         for c in components
@@ -251,19 +255,27 @@ async def run_fuzzing_scoring(
     existing_scores = db.get_scores("fuzzing")
     completed = set(existing_scores.keys())
     if completed:
-        print(f"Resuming: {len(completed)} already scored")
+        logger.info(f"Resuming: {len(completed)} already scored")
 
     remaining = [c for c in eligible if c.component_key not in completed]
-    print(f"Scoring {len(remaining)} components")
+    logger.info(f"Scoring {len(remaining)} components")
 
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+    semaphore = asyncio.Semaphore(max_concurrent)
     output_lock = asyncio.Lock()
 
     async def process_one(component: ComponentData, index: int, llm: LLMClient) -> None:
         async with semaphore:
             try:
                 result = await score_component(
-                    llm, model, component, app_tok, labels[component.component_key], ci_threshold
+                    llm,
+                    model,
+                    component,
+                    app_tok,
+                    labels[component.component_key],
+                    ci_threshold,
+                    n_correct=n_correct,
+                    n_incorrect=n_incorrect,
+                    n_trials=n_trials,
                 )
             except BudgetExceededError:
                 return
@@ -295,7 +307,7 @@ async def run_fuzzing_scoring(
 
         await asyncio.gather(*[process_one(c, i, llm) for i, c in enumerate(remaining)])
 
-        print(f"Final cost: ${cost_tracker.cost_usd():.2f}")
+        logger.info(f"Final cost: ${cost_tracker.cost_usd():.2f}")
 
-    print(f"Scored {len(results)} components")
+    logger.info(f"Scored {len(results)} components")
     return results

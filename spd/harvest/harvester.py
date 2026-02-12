@@ -83,6 +83,7 @@ class Harvester:
         ci_threshold: float,
         max_examples_per_component: int,
         context_tokens_per_side: int,
+        max_examples_per_batch_per_component: int,
         device: torch.device,
     ):
         self.layer_names = layer_names
@@ -91,6 +92,7 @@ class Harvester:
         self.ci_threshold = ci_threshold
         self.max_examples_per_component = max_examples_per_component
         self.context_tokens_per_side = context_tokens_per_side
+        self.max_examples_per_batch_per_component = max_examples_per_batch_per_component
         self.device = device
 
         self.layer_offsets: dict[str, int] = {}
@@ -183,7 +185,7 @@ class Harvester:
         if len(batch_idx) == 0:
             return
 
-        keep = sample_at_most_n_per_group(comp_idx, 5)
+        keep = sample_at_most_n_per_group(comp_idx, self.max_examples_per_batch_per_component)
         batch_idx, seq_idx, comp_idx = batch_idx[keep], seq_idx[keep], comp_idx[keep]
 
         token_w, ci_w, act_w = extract_firing_windows(
@@ -199,6 +201,7 @@ class Harvester:
             "ci_threshold": self.ci_threshold,
             "max_examples_per_component": self.max_examples_per_component,
             "context_tokens_per_side": self.context_tokens_per_side,
+            "max_examples_per_batch_per_component": self.max_examples_per_batch_per_component,
             "total_tokens_processed": self.total_tokens_processed,
             "reservoir": self.reservoir.state_dict(),
             "firing_counts": self.firing_counts.cpu(),
@@ -221,6 +224,7 @@ class Harvester:
             ci_threshold=d["ci_threshold"],
             max_examples_per_component=d["max_examples_per_component"],
             context_tokens_per_side=d["context_tokens_per_side"],
+            max_examples_per_batch_per_component=d.get("max_examples_per_batch_per_component", 5),
             device=device,
         )
         h.total_tokens_processed = d["total_tokens_processed"]
@@ -237,6 +241,8 @@ class Harvester:
     def merge(self, other: "Harvester") -> None:
         assert other.layer_names == self.layer_names
         assert other.c_per_layer == self.c_per_layer
+        assert other.vocab_size == self.vocab_size
+        assert other.ci_threshold == self.ci_threshold
 
         self.firing_counts += other.firing_counts
         self.ci_sums += other.ci_sums

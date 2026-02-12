@@ -20,7 +20,7 @@ from openrouter.components import Reasoning
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
-from spd.autointerp.config import ReasoningEffort
+from spd.autointerp.config import AutointerpEvalConfig, ReasoningEffort
 from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import (
     BudgetExceededError,
@@ -32,12 +32,6 @@ from spd.autointerp.llm_api import (
 )
 from spd.harvest.schemas import ActivationExample, ComponentData
 from spd.log import logger
-
-MAX_CONCURRENT = 50
-
-N_ACTIVATING = 5
-N_NON_ACTIVATING = 5
-N_TRIALS = 5
 
 DETECTION_RESPONSE_FORMAT = make_response_format(
     "detection_response",
@@ -164,17 +158,20 @@ async def score_component(
     all_components: list[ComponentData],
     app_tok: AppTokenizer,
     label: str,
+    n_activating: int,
+    n_non_activating: int,
+    n_trials: int,
 ) -> DetectionResult:
-    assert len(component.activation_examples) >= N_ACTIVATING
+    assert len(component.activation_examples) >= n_activating
 
-    rng = random.Random(hash(component.component_key))
+    rng = random.Random()
     trials: list[DetectionTrial] = []
     n_errors = 0
 
-    for trial_idx in range(N_TRIALS):
-        activating = _sample_activating_examples(component, N_ACTIVATING, rng)
+    for trial_idx in range(n_trials):
+        activating = _sample_activating_examples(component, n_activating, rng)
         non_activating = _sample_non_activating_examples(
-            component, all_components, N_NON_ACTIVATING, rng
+            component, all_components, n_non_activating, rng
         )
 
         formatted: list[tuple[str, bool]] = []
@@ -241,15 +238,21 @@ async def run_detection_scoring(
     openrouter_api_key: str,
     tokenizer_name: str,
     db: InterpDB,
+    eval_config: AutointerpEvalConfig,
     limit: int | None = None,
     cost_limit_usd: float | None = None,
 ) -> list[DetectionResult]:
+    n_activating = eval_config.detection_n_activating
+    n_non_activating = eval_config.detection_n_non_activating
+    n_trials = eval_config.detection_n_trials
+    max_concurrent = eval_config.detection_max_concurrent
+
     app_tok = AppTokenizer.from_pretrained(tokenizer_name)
 
     eligible = [
         c
         for c in components
-        if c.component_key in labels and len(c.activation_examples) >= N_ACTIVATING
+        if c.component_key in labels and len(c.activation_examples) >= n_activating
     ]
     if limit is not None:
         eligible = eligible[:limit]
@@ -259,12 +262,12 @@ async def run_detection_scoring(
     existing_scores = db.get_scores("detection")
     completed = set(existing_scores.keys())
     if completed:
-        print(f"Resuming: {len(completed)} already scored")
+        logger.info(f"Resuming: {len(completed)} already scored")
 
     remaining = [c for c in eligible if c.component_key not in completed]
-    print(f"Scoring {len(remaining)} components")
+    logger.info(f"Scoring {len(remaining)} components")
 
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+    semaphore = asyncio.Semaphore(max_concurrent)
     output_lock = asyncio.Lock()
 
     async def process_one(component: ComponentData, index: int, llm: LLMClient) -> None:
@@ -278,6 +281,9 @@ async def run_detection_scoring(
                     components,
                     app_tok,
                     labels[component.component_key],
+                    n_activating=n_activating,
+                    n_non_activating=n_non_activating,
+                    n_trials=n_trials,
                 )
             except BudgetExceededError:
                 return
@@ -309,7 +315,7 @@ async def run_detection_scoring(
 
         await asyncio.gather(*[process_one(c, i, llm) for i, c in enumerate(remaining)])
 
-        print(f"Final cost: ${cost_tracker.cost_usd():.2f}")
+        logger.info(f"Final cost: ${cost_tracker.cost_usd():.2f}")
 
-    print(f"Scored {len(results)} components")
+    logger.info(f"Scored {len(results)} components")
     return results
