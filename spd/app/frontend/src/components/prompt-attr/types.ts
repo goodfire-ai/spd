@@ -67,6 +67,8 @@ export type OptimizeConfigDraft = {
     pnorm: number;
     beta: number;
     maskType: MaskType;
+    advPgdNSteps: number | null;
+    advPgdStepSize: number | null;
 };
 
 // Validated types for API calls (all required fields present)
@@ -87,6 +89,8 @@ export type OptimizeConfigValid = {
     pnorm: number;
     beta: number;
     maskType: MaskType;
+    advPgdNSteps: number | null;
+    advPgdStepSize: number | null;
 };
 
 /** Validate draft config, returning valid config or null if incomplete */
@@ -175,5 +179,7 @@ export function defaultOptimizeConfig(numTokens: number): OptimizeConfigDraft {
         pnorm: 0.3,
         beta: 0,
         maskType: "stochastic",
+        advPgdNSteps: null,
+        advPgdStepSize: null,
     };
 }

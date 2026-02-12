@@ -107,6 +107,8 @@ export type OptimizationResult = {
     mask_type: MaskType;
     loss: LossResult;
     metrics: OptimizationMetrics;
+    adv_pgd_n_steps: number | null;
+    adv_pgd_step_size: number | null;
 };
 
 export type SubcomponentMetadata = {

@@ -26,6 +26,7 @@ from spd.app.backend.compute import (
 from spd.app.backend.database import GraphType, OptimizationParams, StoredGraph
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.optim_cis import (
+    AdvPGDConfig,
     CELossConfig,
     KLLossConfig,
     LossConfig,
@@ -112,6 +113,8 @@ class OptimizationResult(BaseModel):
     mask_type: MaskType
     loss: CELossResult | KLLossResult
     metrics: OptimizationMetricsResult
+    adv_pgd_n_steps: int | None = None
+    adv_pgd_step_size: float | None = None
 
 
 class GraphDataWithOptimization(GraphData):
@@ -536,11 +539,14 @@ def compute_graph_optimized_stream(
     loss_coeff: Annotated[float, Query(gt=0)],
     loss_position: Annotated[int, Query(ge=0)],
     label_token: Annotated[int | None, Query()] = None,
+    adv_pgd_n_steps: Annotated[int | None, Query(gt=0)] = None,
+    adv_pgd_step_size: Annotated[float | None, Query(gt=0)] = None,
 ):
     """Compute optimized attribution graph for a prompt with streaming progress.
 
     loss_type determines whether to use CE (cross-entropy for specific token) or KL (distribution matching).
     label_token is required when loss_type is "ce".
+    adv_pgd_n_steps and adv_pgd_step_size enable adversarial PGD when both are provided.
     """
     # Build loss config based on type
     loss_config: LossConfig
@@ -583,6 +589,8 @@ def compute_graph_optimized_stream(
         beta=beta,
         mask_type=mask_type,
         loss=loss_config,
+        adv_pgd_n_steps=adv_pgd_n_steps,
+        adv_pgd_step_size=adv_pgd_step_size,
     )
 
     optim_config = OptimCIConfig(
@@ -599,6 +607,9 @@ def compute_graph_optimized_stream(
         sampling=loaded.config.sampling,
         ce_kl_rounding_threshold=0.5,
         mask_type=mask_type,
+        adv_pgd=AdvPGDConfig(n_steps=adv_pgd_n_steps, step_size=adv_pgd_step_size, init="random")
+        if adv_pgd_n_steps is not None and adv_pgd_step_size is not None
+        else None,
     )
 
     def work(on_progress: ProgressCallback) -> GraphDataWithOptimization:
@@ -678,6 +689,8 @@ def compute_graph_optimized_stream(
                     stoch_masked_label_prob=result.metrics.stoch_masked_label_prob,
                     l0_total=result.metrics.l0_total,
                 ),
+                adv_pgd_n_steps=adv_pgd_n_steps,
+                adv_pgd_step_size=adv_pgd_step_size,
             ),
         )
 
@@ -830,6 +843,8 @@ def stored_graph_to_response(
             loss=loss_result,
             # Metrics not stored in DB for cached graphs - use l0_total from graph
             metrics=OptimizationMetricsResult(l0_total=float(fg.l0_total)),
+            adv_pgd_n_steps=opt.adv_pgd_n_steps,
+            adv_pgd_step_size=opt.adv_pgd_step_size,
         ),
     )
 
