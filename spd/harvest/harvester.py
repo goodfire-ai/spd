@@ -1,5 +1,6 @@
 """Harvester for collecting component statistics in a single pass."""
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import cast
 
@@ -189,6 +190,8 @@ class Harvester:
             ReservoirSampler[ActivationExampleTuple](k=max_examples_per_component)
             for _ in range(n_components)
         ]
+        # Tensor reservoir data, set by from_state (avoids ~187 GB Python list overhead)
+        self._tensor_reservoirs: tuple[Tensor, Tensor, Tensor, Tensor] | None = None
 
         self.total_tokens_processed = 0
 
@@ -351,16 +354,26 @@ class Harvester:
 
     @staticmethod
     def from_state(state: HarvesterState, device: torch.device) -> "Harvester":
-        """Reconstruct Harvester from state."""
-        harvester = Harvester(
-            layer_names=state.layer_names,
-            c_per_layer=state.c_per_layer,
-            vocab_size=state.vocab_size,
-            ci_threshold=state.ci_threshold,
-            max_examples_per_component=state.max_examples_per_component,
-            context_tokens_per_side=state.context_tokens_per_side,
-            device=device,
-        )
+        """Reconstruct Harvester from state.
+
+        Keeps reservoir data as tensors (~26 GB) rather than unpacking to Python lists
+        (~187 GB) to avoid OOM during merge finalization.
+        """
+        harvester = Harvester.__new__(Harvester)
+        harvester.layer_names = state.layer_names
+        harvester.c_per_layer = state.c_per_layer
+        harvester.vocab_size = state.vocab_size
+        harvester.ci_threshold = state.ci_threshold
+        harvester.max_examples_per_component = state.max_examples_per_component
+        harvester.context_tokens_per_side = state.context_tokens_per_side
+        harvester.device = device
+
+        harvester.layer_offsets = {}
+        offset = 0
+        for layer in state.layer_names:
+            harvester.layer_offsets[layer] = offset
+            offset += state.c_per_layer[layer]
+
         harvester.firing_counts = state.firing_counts.to(device)
         harvester.ci_sums = state.ci_sums.to(device)
         harvester.count_ij = state.count_ij.to(device)
@@ -370,36 +383,18 @@ class Harvester:
         harvester.output_token_prob_totals = state.output_token_prob_totals.to(device)
         harvester.total_tokens_processed = state.total_tokens_processed
 
-        # Unpack tensor reservoirs back into Python samplers for build_results
-        n_components = state.reservoir_n_items.shape[0]
-        reservoir_tokens = state.reservoir_tokens.cpu()
-        reservoir_ci = state.reservoir_ci.cpu()
-        reservoir_acts = state.reservoir_acts.cpu()
-        reservoir_n_items = state.reservoir_n_items.cpu()
-        reservoir_n_seen = state.reservoir_n_seen.cpu()
-
-        samplers: list[ReservoirSampler[ActivationExampleTuple]] = []
-        for i in range(n_components):
-            sampler: ReservoirSampler[ActivationExampleTuple] = ReservoirSampler(
-                k=state.max_examples_per_component
-            )
-            sampler.n_seen = int(reservoir_n_seen[i])
-            n = int(reservoir_n_items[i])
-            sampler.samples = [
-                (
-                    reservoir_tokens[i, j].tolist(),
-                    reservoir_ci[i, j].tolist(),
-                    reservoir_acts[i, j].tolist(),
-                )
-                for j in range(n)
-            ]
-            samplers.append(sampler)
-        harvester.activation_example_samplers = samplers
+        harvester._tensor_reservoirs = (
+            state.reservoir_tokens,
+            state.reservoir_ci,
+            state.reservoir_acts,
+            state.reservoir_n_items,
+        )
+        harvester.activation_example_samplers = []
 
         return harvester
 
-    def build_results(self, pmi_top_k_tokens: int) -> list[ComponentData]:
-        """Convert accumulated state into ComponentData objects."""
+    def build_results(self, pmi_top_k_tokens: int) -> Iterator[ComponentData]:
+        """Yield ComponentData objects one at a time (constant memory)."""
         print("  Moving tensors to CPU...")
         mean_ci_per_component = (self.ci_sums / self.total_tokens_processed).cpu()
         firing_counts = self.firing_counts.cpu()
@@ -414,7 +409,8 @@ class Harvester:
         print(
             f"  Computing stats for {n_total} components across {len(self.layer_names)} layers..."
         )
-        components = []
+        tensor_reservoirs = getattr(self, "_tensor_reservoirs", None)
+
         for layer_name in tqdm.tqdm(self.layer_names, desc="Building components"):
             layer_offset = self.layer_offsets[layer_name]
             layer_c = self.c_per_layer[layer_name]
@@ -427,23 +423,7 @@ class Harvester:
                 if component_firing_count == 0:
                     continue
 
-                sampler = self.activation_example_samplers[flat_idx]
-                activation_examples = [
-                    ActivationExample(
-                        token_ids=[t for t in token_ids if t != WINDOW_PAD_SENTINEL],
-                        ci_values=[
-                            c
-                            for t, c in zip(token_ids, ci_values, strict=True)
-                            if t != WINDOW_PAD_SENTINEL
-                        ],
-                        component_acts=[
-                            a
-                            for t, a in zip(token_ids, component_acts, strict=True)
-                            if t != WINDOW_PAD_SENTINEL
-                        ],
-                    )
-                    for token_ids, ci_values, component_acts in sampler.samples
-                ]
+                activation_examples = _build_activation_examples(self, flat_idx, tensor_reservoirs)
 
                 input_token_pmi = _compute_token_pmi(
                     token_mass_for_component=input_token_counts[flat_idx],
@@ -461,19 +441,15 @@ class Harvester:
                     top_k=pmi_top_k_tokens,
                 )
 
-                components.append(
-                    ComponentData(
-                        component_key=f"{layer_name}:{component_idx}",
-                        layer=layer_name,
-                        component_idx=component_idx,
-                        mean_ci=mean_ci,
-                        activation_examples=activation_examples,
-                        input_token_pmi=input_token_pmi,
-                        output_token_pmi=output_token_pmi,
-                    )
+                yield ComponentData(
+                    component_key=f"{layer_name}:{component_idx}",
+                    layer=layer_name,
+                    component_idx=component_idx,
+                    mean_ci=mean_ci,
+                    activation_examples=activation_examples,
+                    input_token_pmi=input_token_pmi,
+                    output_token_pmi=output_token_pmi,
                 )
-
-        return components
 
     def _log_base_rate_summary(self, firing_counts: Tensor, input_token_totals: Tensor) -> None:
         active_counts = firing_counts[firing_counts > 0]
@@ -517,6 +493,45 @@ class Harvester:
                 f"(high precision/recall with these may be spurious)"
             )
         print()
+
+
+def _build_activation_examples(
+    harvester: Harvester,
+    flat_idx: int,
+    tensor_reservoirs: tuple[Tensor, Tensor, Tensor, Tensor] | None,
+) -> list[ActivationExample]:
+    """Build activation examples from either tensor reservoirs or Python samplers."""
+    if tensor_reservoirs is not None:
+        res_tokens, res_ci, res_acts, res_n_items = tensor_reservoirs
+        n = int(res_n_items[flat_idx])
+        examples = []
+        for j in range(n):
+            tokens = res_tokens[flat_idx, j]
+            valid = tokens != WINDOW_PAD_SENTINEL
+            examples.append(
+                ActivationExample(
+                    token_ids=tokens[valid].tolist(),
+                    ci_values=res_ci[flat_idx, j][valid].tolist(),
+                    component_acts=res_acts[flat_idx, j][valid].tolist(),
+                )
+            )
+        return examples
+
+    sampler = harvester.activation_example_samplers[flat_idx]
+    return [
+        ActivationExample(
+            token_ids=[t for t in token_ids if t != WINDOW_PAD_SENTINEL],
+            ci_values=[
+                c for t, c in zip(token_ids, ci_values, strict=True) if t != WINDOW_PAD_SENTINEL
+            ],
+            component_acts=[
+                a
+                for t, a in zip(token_ids, component_acts, strict=True)
+                if t != WINDOW_PAD_SENTINEL
+            ],
+        )
+        for token_ids, ci_values, component_acts in sampler.samples
+    ]
 
 
 def _compute_token_pmi(

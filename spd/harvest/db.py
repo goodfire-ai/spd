@@ -1,6 +1,7 @@
 """SQLite database for component-level harvest data."""
 
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import asdict
 from pathlib import Path
 
@@ -97,6 +98,18 @@ class HarvestDB:
             rows,
         )
         self._conn.commit()
+
+    def save_components_iter(self, components: Iterable[ComponentData]) -> int:
+        """Save components from an iterable, one at a time (constant memory)."""
+        n = 0
+        for comp in components:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO components VALUES (?, ?, ?, ?, ?, ?, ?)",
+                _serialize_component(comp),
+            )
+            n += 1
+        self._conn.commit()
+        return n
 
     def save_config(self, config: HarvestConfig) -> None:
         data = config.model_dump()

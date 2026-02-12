@@ -13,7 +13,6 @@ Performance (SimpleStories, 600M tokens, batch_size=256):
 
 import itertools
 import time
-from dataclasses import dataclass
 from pathlib import Path
 
 import torch
@@ -25,7 +24,6 @@ from spd.data import train_loader_and_tokenizer
 from spd.harvest.config import HarvestConfig
 from spd.harvest.db import HarvestDB
 from spd.harvest.harvester import Harvester, HarvesterState
-from spd.harvest.schemas import ComponentData
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -61,40 +59,28 @@ def _normalize_component_acts(
     return normalized
 
 
-@dataclass
-class HarvestResult:
-    """Result of harvest containing components, correlations, and token stats."""
-
-    components: list[ComponentData]
-    correlations: CorrelationStorage
-    token_stats: TokenStatsStorage
-    config: HarvestConfig
-
-    def save(self, output_dir: Path) -> None:
-        """Save harvest result to disk."""
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        db_path = output_dir / "harvest.db"
-        db = HarvestDB(db_path)
-        db.save_config(self.config)
-        db.save_components(self.components)
-        db.close()
-        logger.info(f"Saved {len(self.components)} components to {db_path}")
-
-        self.correlations.save(output_dir / "component_correlations.pt")
-        self.token_stats.save(output_dir / "token_stats.pt")
-
-
-def _build_harvest_result(
+def _save_harvest_results(
     harvester: Harvester,
     config: HarvestConfig,
-) -> HarvestResult:
-    """Build HarvestResult from a harvester."""
-    logger.info("Building component results...")
-    components = harvester.build_results(pmi_top_k_tokens=config.pmi_token_top_k)
-    logger.info(f"Built {len(components)} components (skipped components with no firings)")
+    output_dir: Path,
+) -> None:
+    """Build and save all harvest results to disk.
 
-    # Build component keys list (same ordering as tensors)
+    Components are streamed to the DB one at a time to avoid holding all ~40K
+    ComponentData objects in memory simultaneously (~187 GB as Python objects).
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Building and saving component results...")
+    db_path = output_dir / "harvest.db"
+    db = HarvestDB(db_path)
+    db.save_config(config)
+    n_saved = db.save_components_iter(
+        harvester.build_results(pmi_top_k_tokens=config.pmi_token_top_k)
+    )
+    db.close()
+    logger.info(f"Saved {n_saved} components to {db_path}")
+
     component_keys = [
         f"{layer}:{c}"
         for layer in harvester.layer_names
@@ -107,6 +93,7 @@ def _build_harvest_result(
         count_ij=harvester.count_ij.long().cpu(),
         count_total=harvester.total_tokens_processed,
     )
+    correlations.save(output_dir / "component_correlations.pt")
 
     token_stats = TokenStatsStorage(
         component_keys=component_keys,
@@ -118,13 +105,7 @@ def _build_harvest_result(
         output_totals=harvester.output_token_prob_totals.cpu(),
         firing_counts=harvester.firing_counts.cpu(),
     )
-
-    return HarvestResult(
-        components=components,
-        correlations=correlations,
-        token_stats=token_stats,
-        config=config,
-    )
+    token_stats.save(output_dir / "token_stats.pt")
 
 
 def harvest_activation_contexts(
@@ -242,8 +223,7 @@ def harvest_activation_contexts(
         logger.info(f"[Worker {rank}] Saved state to {state_path}")
     else:
         # Single GPU: save full result
-        result = _build_harvest_result(harvester, config)
-        result.save(output_dir)
+        _save_harvest_results(harvester, config, output_dir)
         logger.info(f"Saved results to {output_dir}")
 
 
@@ -253,8 +233,8 @@ def merge_activation_contexts(output_dir: Path) -> None:
     Looks for worker_*.pt state files in output_dir/worker_states/ and merges them
     into final harvest results written to output_dir.
 
-    Reservoir data is tensor-packed (~26GB per state vs ~170GB as Python lists),
-    so two states fit comfortably in CPU RAM (~112GB total, well under 200GB).
+    Peak memory ~61 GB: tensor state (~48 GB) + temporary copies during save (~13 GB).
+    Components are streamed to SQLite one at a time (never all in memory).
     """
 
     state_dir = output_dir / "worker_states"
@@ -276,16 +256,16 @@ def merge_activation_contexts(output_dir: Path) -> None:
 
     logger.info(f"Merge complete. Total tokens: {merged_state.total_tokens_processed:,}")
 
-    harvester = Harvester.from_state(merged_state, torch.device("cpu"))
-
     config = HarvestConfig(
         ci_threshold=merged_state.ci_threshold,
         activation_examples_per_component=merged_state.max_examples_per_component,
         activation_context_tokens_per_side=merged_state.context_tokens_per_side,
     )
 
-    result = _build_harvest_result(harvester, config)
-    result.save(output_dir)
+    harvester = Harvester.from_state(merged_state, torch.device("cpu"))
+    del merged_state
+
+    _save_harvest_results(harvester, config, output_dir)
     logger.info(f"Saved merged results to {output_dir}")
 
     # Clean up worker state files
