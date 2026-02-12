@@ -90,7 +90,7 @@ def _save_harvest_results(
     correlations = CorrelationStorage(
         component_keys=component_keys,
         count_i=harvester.firing_counts.long().cpu(),
-        count_ij=harvester.count_ij.long().cpu(),
+        count_ij=harvester.cooccurrence_counts.long().cpu(),
         count_total=harvester.total_tokens_processed,
     )
     correlations.save(output_dir / "component_correlations.pt")
@@ -99,10 +99,10 @@ def _save_harvest_results(
         component_keys=component_keys,
         vocab_size=harvester.vocab_size,
         n_tokens=harvester.total_tokens_processed,
-        input_counts=harvester.input_token_counts.cpu(),
-        input_totals=harvester.input_token_totals.float().cpu(),
-        output_counts=harvester.output_token_prob_mass.cpu(),
-        output_totals=harvester.output_token_prob_totals.cpu(),
+        input_counts=harvester.input_cooccurrence.cpu(),
+        input_totals=harvester.input_marginals.float().cpu(),
+        output_counts=harvester.output_cooccurrence.cpu(),
+        output_totals=harvester.output_marginals.cpu(),
         firing_counts=harvester.firing_counts.cpu(),
     )
     token_stats.save(output_dir / "token_stats.pt")
@@ -191,14 +191,14 @@ def harvest_activation_contexts(
             expected_n_comp = sum(model.module_to_c[layer] for layer in layer_names)
             assert ci.shape[2] == expected_n_comp
 
-            component_acts = model.get_all_component_acts(out.cache)
-            normalized_acts = _normalize_component_acts(component_acts, u_norms)
-            subcomp_acts: Float[Tensor, "B S n_comp"] = torch.cat(
+            per_layer_acts = model.get_all_component_acts(out.cache)
+            normalized_acts = _normalize_component_acts(per_layer_acts, u_norms)
+            component_acts: Float[Tensor, "B S n_comp"] = torch.cat(
                 [normalized_acts[layer] for layer in layer_names],
                 dim=2,
             )
 
-            harvester.process_batch(batch, ci, probs, subcomp_acts)
+            harvester.process_batch(batch, ci, probs, component_acts)
 
         batches_processed += 1
         now = time.time()

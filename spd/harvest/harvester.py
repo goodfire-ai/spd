@@ -13,7 +13,7 @@ from einops import einsum, rearrange, reduce
 from jaxtyping import Float, Int
 from torch import Tensor
 
-from spd.harvest.reservoir import ActivationExamplesReservoir
+from spd.harvest.reservoir import WINDOW_PAD_SENTINEL, ActivationExamplesReservoir
 from spd.harvest.sampling import sample_at_most_n_per_group, top_k_pmi
 from spd.harvest.schemas import ActivationExample, ComponentData, ComponentTokenPMI
 from spd.log import logger
@@ -50,29 +50,33 @@ class Harvester:
             self.layer_offsets[layer] = offset
             offset += c_per_layer[layer]
 
-        n = sum(c_per_layer[layer] for layer in layer_names)
-        w = 2 * context_tokens_per_side + 1
+        n_components = sum(c_per_layer[layer] for layer in layer_names)
+        window_size = 2 * context_tokens_per_side + 1
 
-        # Correlation accumulators
-        self.firing_counts = torch.zeros(n, device=device)
-        self.ci_sums = torch.zeros(n, device=device)
-        self.count_ij = torch.zeros(n, n, device=device, dtype=torch.float32)
-
-        # Token stat accumulators
-        self.input_token_counts: Int[Tensor, "n vocab"] = torch.zeros(
-            n, vocab_size, device=device, dtype=torch.long
+        # Per-component firing stats
+        self.firing_counts = torch.zeros(n_components, device=device)
+        self.ci_sums = torch.zeros(n_components, device=device)
+        self.cooccurrence_counts = torch.zeros(
+            n_components, n_components, device=device, dtype=torch.float32
         )
-        self.input_token_totals: Int[Tensor, " vocab"] = torch.zeros(
+
+        # Per-(component, token) stats for PMI computation
+        #   input: hard token counts at positions where component fires
+        #   output: predicted probability mass at positions where component fires
+        self.input_cooccurrence: Int[Tensor, "n_comp vocab"] = torch.zeros(
+            n_components, vocab_size, device=device, dtype=torch.long
+        )
+        self.input_marginals: Int[Tensor, " vocab"] = torch.zeros(
             vocab_size, device=device, dtype=torch.long
         )
-        self.output_token_prob_mass: Float[Tensor, "n vocab"] = torch.zeros(
-            n, vocab_size, device=device
+        self.output_cooccurrence: Float[Tensor, "n_comp vocab"] = torch.zeros(
+            n_components, vocab_size, device=device
         )
-        self.output_token_prob_totals: Float[Tensor, " vocab"] = torch.zeros(
-            vocab_size, device=device
-        )
+        self.output_marginals: Float[Tensor, " vocab"] = torch.zeros(vocab_size, device=device)
 
-        self.reservoir = ActivationExamplesReservoir(n, max_examples_per_component, w, device)
+        self.reservoir = ActivationExamplesReservoir(
+            n_components, max_examples_per_component, window_size, device
+        )
         self.total_tokens_processed = 0
 
     # -- Batch processing --------------------------------------------------
@@ -82,88 +86,84 @@ class Harvester:
         batch: Int[Tensor, "B S"],
         ci: Float[Tensor, "B S n_comp"],
         output_probs: Float[Tensor, "B S V"],
-        subcomp_acts: Float[Tensor, "B S n_comp"],
+        component_acts: Float[Tensor, "B S n_comp"],
     ) -> None:
         self.total_tokens_processed += batch.numel()
 
         firing = (ci > self.ci_threshold).float()
         firing_flat = rearrange(firing, "b s c -> (b s) c")
-        batch_flat = rearrange(batch, "b s -> (b s)")
-        output_probs_flat = rearrange(output_probs, "b s v -> (b s) v")
+        tokens_flat = rearrange(batch, "b s -> (b s)")
+        probs_flat = rearrange(output_probs, "b s v -> (b s) v")
 
         self.firing_counts += reduce(firing, "b s c -> c", "sum")
         self.ci_sums += reduce(ci, "b s c -> c", "sum")
-        self.count_ij += einsum(firing_flat, firing_flat, "pos c1, pos c2 -> c1 c2")
-        self._accumulate_token_stats(batch_flat, output_probs_flat, firing_flat)
-        self._collect_activation_examples(batch, ci, subcomp_acts)
+        self.cooccurrence_counts += einsum(firing_flat, firing_flat, "pos c1, pos c2 -> c1 c2")
+        self._accumulate_token_stats(tokens_flat, probs_flat, firing_flat)
+        self._collect_activation_examples(batch, ci, component_acts)
 
     def _accumulate_token_stats(
         self,
-        batch_flat: Int[Tensor, " pos"],
-        output_probs_flat: Float[Tensor, "pos vocab"],
+        tokens_flat: Int[Tensor, " pos"],
+        probs_flat: Float[Tensor, "pos vocab"],
         firing_flat: Float[Tensor, "pos n_comp"],
     ) -> None:
         n_components = firing_flat.shape[1]
-        token_indices = batch_flat.unsqueeze(0).expand(n_components, -1)
-        self.input_token_counts.scatter_add_(
+        token_indices = tokens_flat.unsqueeze(0).expand(n_components, -1)
+        self.input_cooccurrence.scatter_add_(
             dim=1, index=token_indices, src=rearrange(firing_flat, "pos c -> c pos").long()
         )
-        self.input_token_totals.scatter_add_(
+        self.input_marginals.scatter_add_(
             dim=0,
-            index=batch_flat,
-            src=torch.ones(batch_flat.shape[0], device=self.device, dtype=torch.long),
+            index=tokens_flat,
+            src=torch.ones(tokens_flat.shape[0], device=self.device, dtype=torch.long),
         )
-        self.output_token_prob_mass += einsum(firing_flat, output_probs_flat, "pos c, pos v -> c v")
-        self.output_token_prob_totals += reduce(output_probs_flat, "pos v -> v", "sum")
+        self.output_cooccurrence += einsum(firing_flat, probs_flat, "pos c, pos v -> c v")
+        self.output_marginals += reduce(probs_flat, "pos v -> v", "sum")
 
     def _collect_activation_examples(
         self,
         batch: Int[Tensor, "B S"],
         ci: Float[Tensor, "B S n_comp"],
-        subcomp_acts: Float[Tensor, "B S n_comp"],
+        component_acts: Float[Tensor, "B S n_comp"],
     ) -> None:
         firing = ci > self.ci_threshold
-        batch_idx, seq_idx, component_idx = torch.where(firing)
+        batch_idx, seq_idx, comp_idx = torch.where(firing)
         if len(batch_idx) == 0:
             return
 
         MAX_FIRINGS_PER_COMPONENT = 5
-        keep_mask = sample_at_most_n_per_group(component_idx, MAX_FIRINGS_PER_COMPONENT)
-        batch_idx = batch_idx[keep_mask]
-        seq_idx = seq_idx[keep_mask]
-        component_idx = component_idx[keep_mask]
+        keep = sample_at_most_n_per_group(comp_idx, MAX_FIRINGS_PER_COMPONENT)
+        batch_idx, seq_idx, comp_idx = batch_idx[keep], seq_idx[keep], comp_idx[keep]
 
-        S = batch.shape[1]
-        w = 2 * self.context_tokens_per_side + 1
+        seq_len = batch.shape[1]
+        window_size = 2 * self.context_tokens_per_side + 1
         offsets = torch.arange(
             -self.context_tokens_per_side, self.context_tokens_per_side + 1, device=self.device
         )
         window_positions = seq_idx.unsqueeze(1) + offsets
-        valid = (window_positions >= 0) & (window_positions < S)
-        clamped = window_positions.clamp(0, S - 1)
+        in_bounds = (window_positions >= 0) & (window_positions < seq_len)
+        clamped_positions = window_positions.clamp(0, seq_len - 1)
 
-        bi = batch_idx.unsqueeze(1).expand(-1, w)
-        ci_idx = component_idx.unsqueeze(1).expand(-1, w)
+        batch_expanded = batch_idx.unsqueeze(1).expand(-1, window_size)
+        comp_expanded = comp_idx.unsqueeze(1).expand(-1, window_size)
 
-        from spd.harvest.reservoir import WINDOW_PAD_SENTINEL
+        token_windows = batch[batch_expanded, clamped_positions]
+        token_windows[~in_bounds] = WINDOW_PAD_SENTINEL
 
-        token_windows = batch[bi, clamped]
-        token_windows[~valid] = WINDOW_PAD_SENTINEL
+        ci_windows = ci[batch_expanded, clamped_positions, comp_expanded]
+        ci_windows[~in_bounds] = 0.0
 
-        ci_windows = ci[bi, clamped, ci_idx]
-        ci_windows[~valid] = 0.0
+        act_windows = component_acts[batch_expanded, clamped_positions, comp_expanded]
+        act_windows[~in_bounds] = 0.0
 
-        act_windows = subcomp_acts[bi, clamped, ci_idx]
-        act_windows[~valid] = 0.0
-
-        self.reservoir.add(component_idx, token_windows, ci_windows, act_windows)
+        self.reservoir.add(comp_idx, token_windows, ci_windows, act_windows)
 
     # -- Serialization & merge ---------------------------------------------
 
     _STAT_FIELDS = [
-        "firing_counts", "ci_sums", "count_ij",
-        "input_token_counts", "input_token_totals",
-        "output_token_prob_mass", "output_token_prob_totals",
+        "firing_counts", "ci_sums", "cooccurrence_counts",
+        "input_cooccurrence", "input_marginals",
+        "output_cooccurrence", "output_marginals",
     ]  # fmt: skip
 
     def save(self, path: Path) -> None:
@@ -214,11 +214,11 @@ class Harvester:
 
         self.firing_counts += other.firing_counts
         self.ci_sums += other.ci_sums
-        self.count_ij += other.count_ij
-        self.input_token_counts += other.input_token_counts
-        self.input_token_totals += other.input_token_totals
-        self.output_token_prob_mass += other.output_token_prob_mass
-        self.output_token_prob_totals += other.output_token_prob_totals
+        self.cooccurrence_counts += other.cooccurrence_counts
+        self.input_cooccurrence += other.input_cooccurrence
+        self.input_marginals += other.input_marginals
+        self.output_cooccurrence += other.output_cooccurrence
+        self.output_marginals += other.output_marginals
         self.total_tokens_processed += other.total_tokens_processed
 
         self.reservoir.merge(other.reservoir)
@@ -230,16 +230,16 @@ class Harvester:
         logger.info("  Moving tensors to CPU...")
         mean_ci = (self.ci_sums / self.total_tokens_processed).cpu()
         firing_counts = self.firing_counts.cpu()
-        input_token_counts = self.input_token_counts.cpu()
-        input_token_totals = self.input_token_totals.cpu()
-        output_token_prob_mass = self.output_token_prob_mass.cpu()
-        output_token_prob_totals = self.output_token_prob_totals.cpu()
+        input_cooccurrence = self.input_cooccurrence.cpu()
+        input_marginals = self.input_marginals.cpu()
+        output_cooccurrence = self.output_cooccurrence.cpu()
+        output_marginals = self.output_marginals.cpu()
 
         reservoir_cpu = ActivationExamplesReservoir.from_state_dict(
             self.reservoir.state_dict(), torch.device("cpu")
         )
 
-        _log_base_rate_summary(firing_counts, input_token_totals)
+        _log_base_rate_summary(firing_counts, input_marginals)
 
         n_total = sum(self.c_per_layer[layer] for layer in self.layer_names)
         logger.info(
@@ -247,12 +247,12 @@ class Harvester:
         )
         for layer_name in tqdm.tqdm(self.layer_names, desc="Building components"):
             layer_offset = self.layer_offsets[layer_name]
-            layer_c = self.c_per_layer[layer_name]
+            layer_n = self.c_per_layer[layer_name]
 
-            for cidx in range(layer_c):
-                flat = layer_offset + cidx
+            for comp_idx in range(layer_n):
+                flat_idx = layer_offset + comp_idx
 
-                n_firings = float(firing_counts[flat])
+                n_firings = float(firing_counts[flat_idx])
                 if n_firings == 0:
                     continue
 
@@ -262,25 +262,25 @@ class Harvester:
                         ci_values=ci_vals.tolist(),
                         component_acts=acts.tolist(),
                     )
-                    for toks, ci_vals, acts in reservoir_cpu.examples(flat)
+                    for toks, ci_vals, acts in reservoir_cpu.examples(flat_idx)
                 ]
 
                 yield ComponentData(
-                    component_key=f"{layer_name}:{cidx}",
+                    component_key=f"{layer_name}:{comp_idx}",
                     layer=layer_name,
-                    component_idx=cidx,
-                    mean_ci=float(mean_ci[flat]),
+                    component_idx=comp_idx,
+                    mean_ci=float(mean_ci[flat_idx]),
                     activation_examples=examples,
                     input_token_pmi=_compute_token_pmi(
-                        input_token_counts[flat],
-                        input_token_totals,
+                        input_cooccurrence[flat_idx],
+                        input_marginals,
                         n_firings,
                         self.total_tokens_processed,
                         pmi_top_k_tokens,
                     ),
                     output_token_pmi=_compute_token_pmi(
-                        output_token_prob_mass[flat],
-                        output_token_prob_totals,
+                        output_cooccurrence[flat_idx],
+                        output_marginals,
                         n_firings,
                         self.total_tokens_processed,
                         pmi_top_k_tokens,
@@ -293,7 +293,7 @@ class Harvester:
 # ---------------------------------------------------------------------------
 
 
-def _log_base_rate_summary(firing_counts: Tensor, input_token_totals: Tensor) -> None:
+def _log_base_rate_summary(firing_counts: Tensor, input_marginals: Tensor) -> None:
     active_counts = firing_counts[firing_counts > 0]
     if len(active_counts) == 0:
         logger.info("  WARNING: No components fired above threshold!")
@@ -317,7 +317,7 @@ def _log_base_rate_summary(firing_counts: Tensor, input_token_totals: Tensor) ->
             f"(stats may be noisy)"
         )
 
-    active_tokens = input_token_totals[input_token_totals > 0]
+    active_tokens = input_marginals[input_marginals > 0]
     sorted_token_counts = active_tokens.sort().values
     n_tokens = len(active_tokens)
     logger.info(

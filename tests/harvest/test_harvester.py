@@ -39,11 +39,11 @@ class TestInit:
         h = _make_harvester()
         assert h.firing_counts.shape == (N_TOTAL,)
         assert h.ci_sums.shape == (N_TOTAL,)
-        assert h.count_ij.shape == (N_TOTAL, N_TOTAL)
-        assert h.input_token_counts.shape == (N_TOTAL, VOCAB_SIZE)
-        assert h.input_token_totals.shape == (VOCAB_SIZE,)
-        assert h.output_token_prob_mass.shape == (N_TOTAL, VOCAB_SIZE)
-        assert h.output_token_prob_totals.shape == (VOCAB_SIZE,)
+        assert h.cooccurrence_counts.shape == (N_TOTAL, N_TOTAL)
+        assert h.input_cooccurrence.shape == (N_TOTAL, VOCAB_SIZE)
+        assert h.input_marginals.shape == (VOCAB_SIZE,)
+        assert h.output_cooccurrence.shape == (N_TOTAL, VOCAB_SIZE)
+        assert h.output_marginals.shape == (VOCAB_SIZE,)
         assert h.reservoir.tokens.shape == (N_TOTAL, MAX_EXAMPLES, WINDOW)
         assert h.reservoir.ci.shape == (N_TOTAL, MAX_EXAMPLES, WINDOW)
         assert h.reservoir.acts.shape == (N_TOTAL, MAX_EXAMPLES, WINDOW)
@@ -54,7 +54,7 @@ class TestInit:
         h = _make_harvester()
         assert h.firing_counts.device == DEVICE
         assert h.reservoir.tokens.device == DEVICE
-        assert h.count_ij.device == DEVICE
+        assert h.cooccurrence_counts.device == DEVICE
 
     def test_layer_offsets(self):
         h = _make_harvester()
@@ -64,7 +64,7 @@ class TestInit:
         h = _make_harvester()
         assert h.firing_counts.sum() == 0
         assert h.ci_sums.sum() == 0
-        assert h.count_ij.sum() == 0
+        assert h.cooccurrence_counts.sum() == 0
         assert h.reservoir.n_items.sum() == 0
         assert h.reservoir.n_seen.sum() == 0
         assert h.total_tokens_processed == 0
@@ -188,11 +188,11 @@ class TestSaveLoadRoundtrip:
         h.firing_counts[0] = 10.0
         h.firing_counts[3] = 5.0
         h.ci_sums[0] = 2.5
-        h.count_ij[0, 3] = 7.0
-        h.input_token_counts[0, 2] = 15
-        h.input_token_totals[2] = 100
-        h.output_token_prob_mass[0, 5] = 0.3
-        h.output_token_prob_totals[5] = 1.0
+        h.cooccurrence_counts[0, 3] = 7.0
+        h.input_cooccurrence[0, 2] = 15
+        h.input_marginals[2] = 100
+        h.output_cooccurrence[0, 5] = 0.3
+        h.output_marginals[5] = 1.0
         h.total_tokens_processed = 500
 
         # Add a reservoir entry
@@ -251,16 +251,16 @@ class TestMerge:
         h2.firing_counts[0] = 20.0
         h1.ci_sums[1] = 3.0
         h2.ci_sums[1] = 7.0
-        h1.count_ij[0, 1] = 5.0
-        h2.count_ij[0, 1] = 3.0
-        h1.input_token_counts[0, 2] = 10
-        h2.input_token_counts[0, 2] = 5
-        h1.input_token_totals[2] = 100
-        h2.input_token_totals[2] = 200
-        h1.output_token_prob_mass[0, 0] = 0.5
-        h2.output_token_prob_mass[0, 0] = 0.3
-        h1.output_token_prob_totals[0] = 1.0
-        h2.output_token_prob_totals[0] = 2.0
+        h1.cooccurrence_counts[0, 1] = 5.0
+        h2.cooccurrence_counts[0, 1] = 3.0
+        h1.input_cooccurrence[0, 2] = 10
+        h2.input_cooccurrence[0, 2] = 5
+        h1.input_marginals[2] = 100
+        h2.input_marginals[2] = 200
+        h1.output_cooccurrence[0, 0] = 0.5
+        h2.output_cooccurrence[0, 0] = 0.3
+        h1.output_marginals[0] = 1.0
+        h2.output_marginals[0] = 2.0
         h1.total_tokens_processed = 100
         h2.total_tokens_processed = 200
 
@@ -268,11 +268,11 @@ class TestMerge:
 
         assert h1.firing_counts[0] == 30.0
         assert h1.ci_sums[1] == 10.0
-        assert h1.count_ij[0, 1] == 8.0
-        assert h1.input_token_counts[0, 2] == 15
-        assert h1.input_token_totals[2] == 300
-        assert h1.output_token_prob_mass[0, 0] == 0.8
-        assert h1.output_token_prob_totals[0] == 3.0
+        assert h1.cooccurrence_counts[0, 1] == 8.0
+        assert h1.input_cooccurrence[0, 2] == 15
+        assert h1.input_marginals[2] == 300
+        assert h1.output_cooccurrence[0, 0] == 0.8
+        assert h1.output_marginals[0] == 3.0
         assert h1.total_tokens_processed == 300
 
     def test_merge_asserts_matching_structure(self):
@@ -381,14 +381,14 @@ class TestBuildResults:
         h.ci_sums[1] = 1.0
 
         # Set up token stats so PMI computation works
-        h.input_token_counts[0, 0] = 8
-        h.input_token_counts[1, 1] = 3
-        h.input_token_totals[0] = 50
-        h.input_token_totals[1] = 30
-        h.output_token_prob_mass[0, 0] = 5.0
-        h.output_token_prob_mass[1, 1] = 2.0
-        h.output_token_prob_totals[0] = 20.0
-        h.output_token_prob_totals[1] = 15.0
+        h.input_cooccurrence[0, 0] = 8
+        h.input_cooccurrence[1, 1] = 3
+        h.input_marginals[0] = 50
+        h.input_marginals[1] = 30
+        h.output_cooccurrence[0, 0] = 5.0
+        h.output_cooccurrence[1, 1] = 2.0
+        h.output_marginals[0] = 20.0
+        h.output_marginals[1] = 15.0
 
         # Add reservoir examples for component 0
         for i in range(3):
@@ -457,10 +457,10 @@ class TestBuildResults:
         # Fire component at flat index 5 = layer_1:1
         h.firing_counts[5] = 8.0
         h.ci_sums[5] = 1.6
-        h.input_token_totals[0] = 50
-        h.input_token_counts[5, 0] = 4
-        h.output_token_prob_totals[0] = 10.0
-        h.output_token_prob_mass[5, 0] = 2.0
+        h.input_marginals[0] = 50
+        h.input_cooccurrence[5, 0] = 4
+        h.output_marginals[0] = 10.0
+        h.output_cooccurrence[5, 0] = 2.0
 
         h.reservoir.add(
             torch.tensor([5]),
@@ -486,10 +486,10 @@ class TestBuildResults:
         h.total_tokens_processed = 100
         h.firing_counts[0] = 5.0
         h.ci_sums[0] = 1.0
-        h.input_token_totals[0] = 50
-        h.input_token_counts[0, 0] = 3
-        h.output_token_prob_totals[0] = 10.0
-        h.output_token_prob_mass[0, 0] = 1.0
+        h.input_marginals[0] = 50
+        h.input_cooccurrence[0, 0] = 3
+        h.output_marginals[0] = 10.0
+        h.output_cooccurrence[0, 0] = 1.0
 
         # Manually write a reservoir entry with a sentinel in it
         h.reservoir.tokens[0, 0] = torch.tensor([WINDOW_PAD_SENTINEL, 5, 6])
@@ -557,8 +557,8 @@ class TestProcessBatch:
         subcomp_acts = torch.zeros(B, S, N_TOTAL)
 
         h.process_batch(batch, ci, output_probs, subcomp_acts)
-        assert h.count_ij[0, 2] == 1.0
-        assert h.count_ij[2, 0] == 1.0
+        assert h.cooccurrence_counts[0, 2] == 1.0
+        assert h.cooccurrence_counts[2, 0] == 1.0
         # Self-cooccurrence
-        assert h.count_ij[0, 0] == 1.0
-        assert h.count_ij[2, 2] == 1.0
+        assert h.cooccurrence_counts[0, 0] == 1.0
+        assert h.cooccurrence_counts[2, 2] == 1.0
