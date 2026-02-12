@@ -17,7 +17,7 @@ class IntruderEvalConfig(BaseConfig):
     """Config for intruder detection eval (decomposition quality, not label quality)."""
 
     model: str = "google/gemini-3-flash-preview"
-    reasoning_effort: Effort = "low"
+    reasoning_effort: Effort = "none"
     n_real: int = 4
     n_trials: int = 10
     density_tolerance: float = 0.05

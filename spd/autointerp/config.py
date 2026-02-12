@@ -54,7 +54,7 @@ class AutointerpEvalConfig(BaseConfig):
     """Config for label-based autointerp evals (detection, fuzzing)."""
 
     model: str = "google/gemini-3-flash-preview"
-    reasoning_effort: Effort = "low"
+    reasoning_effort: Effort = "none"
 
     detection_n_activating: int = 5
     detection_n_non_activating: int = 5
