@@ -245,9 +245,9 @@ def merge_activation_contexts(output_dir: Path) -> None:
 
     first_worker_file, *rest_worker_files = worker_files
 
-    logger.info(f"Loading worker 0: {first_worker_file.name}")
+    logger.info(f"Loading worker 0 state: {first_worker_file.name}")
     merged_state: HarvesterState = torch.load(first_worker_file, weights_only=False)
-    logger.info(f"Loaded worker 0: {merged_state.total_tokens_processed:,} tokens")
+    logger.info(f"Loaded worker 0 state: {merged_state.total_tokens_processed:,} tokens")
 
     for worker_file in tqdm.tqdm(rest_worker_files, desc="Merging worker states"):
         state: HarvesterState = torch.load(worker_file, weights_only=False)
