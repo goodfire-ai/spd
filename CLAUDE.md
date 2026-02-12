@@ -298,15 +298,17 @@ Defaults are defined in `PostprocessConfig` (`spd/postprocess/config.py`). Pass 
 - `attributions: null` — skip dataset attributions
 - `autointerp: null` — skip autointerp entirely (interpret + evals)
 - `autointerp.evals: null` — skip evals but still run interpret
+- `intruder: null` — skip intruder eval
 
 SLURM dependency graph:
 
 ```
-harvest (GPU array → merge → intruder eval)
-└── autointerp (functional unit, depends on harvest merge)
-    ├── interpret           (CPU, LLM calls)
-    │   ├── detection       (CPU, depends on interpret)
-    │   └── fuzzing         (CPU, depends on interpret)
+harvest (GPU array → merge)
+├── intruder eval    (CPU, depends on harvest merge, label-free)
+└── autointerp       (depends on harvest merge)
+    ├── interpret    (CPU, LLM calls)
+    │   ├── detection (CPU, depends on interpret)
+    │   └── fuzzing   (CPU, depends on interpret)
 attributions (GPU array → merge, parallel with harvest)
 ```
 

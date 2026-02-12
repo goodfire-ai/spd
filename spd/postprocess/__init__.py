@@ -5,11 +5,11 @@ All steps always run — data accumulates (harvest upserts, autointerp resumes).
 
 Dependency graph:
     harvest (GPU array -> merge)
-    └── autointerp (functional unit, depends on harvest merge)
-        ├── intruder eval       (CPU, label-free)
-        ├── interpret           (CPU, LLM calls, resumes via completed keys)
-        │   ├── detection       (CPU, label-dependent)
-        │   └── fuzzing         (CPU, label-dependent)
+    ├── intruder eval    (CPU, depends on harvest merge, label-free)
+    └── autointerp       (depends on harvest merge)
+        ├── interpret    (CPU, LLM calls, resumes via completed keys)
+        │   ├── detection (CPU, label-dependent)
+        │   └── fuzzing   (CPU, label-dependent)
     attributions (GPU array -> merge, parallel with harvest)
 """
 
@@ -23,6 +23,7 @@ from spd.log import logger
 from spd.postprocess.config import PostprocessConfig
 from spd.settings import SPD_OUT_DIR
 from spd.utils.git_utils import create_git_snapshot
+from spd.utils.slurm import SlurmConfig, SubmitResult, generate_script, submit_slurm_job
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
@@ -62,6 +63,39 @@ def postprocess(wandb_path: str, config: PostprocessConfig) -> Path:
             harvest_subrun_id=harvest_result.subrun_id,
         )
 
+    # === 4. Intruder eval (depends on harvest merge, label-free) ===
+    intruder_result: SubmitResult | None = None
+    if config.intruder is not None:
+        eval_config_json = config.intruder.config.model_dump_json(exclude_none=True)
+        intruder_cmd = " \\\n    ".join(
+            [
+                "python -m spd.harvest.scripts.run_intruder",
+                f'"{wandb_path}"',
+                f"--harvest_subrun_id {harvest_result.subrun_id}",
+                f"--eval_config_json '{eval_config_json}'",
+            ]
+        )
+        intruder_slurm = SlurmConfig(
+            job_name="spd-intruder-eval",
+            partition=config.intruder.partition,
+            n_gpus=0,
+            cpus_per_task=16,
+            time=config.intruder.time,
+            snapshot_branch=snapshot_branch,
+            dependency_job_id=harvest_result.job_id,
+        )
+        intruder_script = generate_script(intruder_slurm, intruder_cmd)
+        intruder_result = submit_slurm_job(intruder_script, "intruder_eval")
+
+        logger.section("Intruder eval job submitted")
+        logger.values(
+            {
+                "Job ID": intruder_result.job_id,
+                "Depends on": f"harvest merge ({harvest_result.job_id})",
+                "Log": intruder_result.log_pattern,
+            }
+        )
+
     # === Write manifest ===
     subrun_id = "pp-" + datetime.now().strftime("%Y%m%d_%H%M%S")
     manifest_dir = SPD_OUT_DIR / "postprocess" / run_id / subrun_id
@@ -73,8 +107,8 @@ def postprocess(wandb_path: str, config: PostprocessConfig) -> Path:
         "harvest_merge": harvest_result.merge_result.job_id,
         "harvest_subrun": harvest_result.subrun_id,
     }
-    if harvest_result.intruder_result is not None:
-        jobs["intruder_eval"] = harvest_result.intruder_result.job_id
+    if intruder_result is not None:
+        jobs["intruder_eval"] = intruder_result.job_id
     if attr_result is not None:
         jobs["attr_array"] = attr_result.array_result.job_id
         jobs["attr_merge"] = attr_result.merge_result.job_id

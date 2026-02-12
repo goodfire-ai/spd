@@ -1,7 +1,7 @@
 """SLURM launcher for harvest pipeline.
 
-Harvest is a functional unit: GPU workers -> merge -> intruder eval. This module
-submits all jobs in the unit with proper dependency chaining.
+Harvest is a functional unit: GPU workers -> merge. This module submits all
+jobs in the unit with proper dependency chaining.
 
 Usage:
     spd-harvest <wandb_path> --n_gpus 24
@@ -29,7 +29,6 @@ from spd.utils.slurm import (
 class HarvestSubmitResult:
     array_result: SubmitResult
     merge_result: SubmitResult
-    intruder_result: SubmitResult | None
     subrun_id: str
 
     @property
@@ -115,51 +114,24 @@ def submit_harvest(
     merge_script = generate_script(merge_config, merge_cmd)
     merge_result = submit_slurm_job(merge_script, "harvest_merge")
 
-    intruder_result = None
-    if slurm_config.intruder_eval is not None:
-        intruder_eval_config = slurm_config.intruder_eval
-        eval_config_json = intruder_eval_config.model_dump_json(exclude_none=True)
-        intruder_cmd = " \\\n    ".join(
-            [
-                "python -m spd.harvest.scripts.run_intruder",
-                f'"{wandb_path}"',
-                f"--harvest_subrun_id {subrun_id}",
-                f"--eval_config_json '{eval_config_json}'",
-            ]
-        )
-        intruder_config = SlurmConfig(
-            job_name="spd-intruder-eval",
-            partition=partition,
-            n_gpus=0,
-            cpus_per_task=16,
-            time=slurm_config.intruder_eval_time,
-            snapshot_branch=snapshot_branch,
-            dependency_job_id=merge_result.job_id,
-        )
-        intruder_script = generate_script(intruder_config, intruder_cmd)
-        intruder_result = submit_slurm_job(intruder_script, "intruder_eval")
-
-    log_values: dict[str, str | int | None] = {
-        "WandB path": wandb_path,
-        "Sub-run ID": subrun_id,
-        "N batches": config.n_batches,
-        "N GPUs": n_gpus,
-        "Batch size": config.batch_size,
-        "Snapshot": f"{snapshot_branch} ({commit_hash[:8]})",
-        "Array Job ID": array_result.job_id,
-        "Merge Job ID": merge_result.job_id,
-        "Worker logs": array_result.log_pattern,
-        "Merge log": merge_result.log_pattern,
-    }
-    if intruder_result is not None:
-        log_values["Intruder Job ID"] = intruder_result.job_id
-        log_values["Intruder log"] = intruder_result.log_pattern
     logger.section("Harvest jobs submitted!")
-    logger.values(log_values)
+    logger.values(
+        {
+            "WandB path": wandb_path,
+            "Sub-run ID": subrun_id,
+            "N batches": config.n_batches,
+            "N GPUs": n_gpus,
+            "Batch size": config.batch_size,
+            "Snapshot": f"{snapshot_branch} ({commit_hash[:8]})",
+            "Array Job ID": array_result.job_id,
+            "Merge Job ID": merge_result.job_id,
+            "Worker logs": array_result.log_pattern,
+            "Merge log": merge_result.log_pattern,
+        }
+    )
 
     return HarvestSubmitResult(
         array_result=array_result,
         merge_result=merge_result,
-        intruder_result=intruder_result,
         subrun_id=subrun_id,
     )

@@ -72,9 +72,9 @@ Legacy layout (pre sub-run, `activation_contexts/` + `correlations/`) is no long
 
 ### SLURM Launcher (`scripts/run_slurm.py`, `scripts/run_slurm_cli.py`)
 
-Entry point via `spd-harvest`. Submits array job + dependent merge job + optional intruder eval.
+Entry point via `spd-harvest`. Submits array job + dependent merge job.
 
-**Intruder evaluation** (`spd/harvest/intruder.py`) is part of the harvest functional unit because it evaluates the quality of the *decomposition itself* — whether component activation patterns are coherent — without relying on LLM-generated labels. Intruder scores are stored in `harvest.db`, not `interp.db`.
+**Intruder evaluation** (`spd/harvest/intruder.py`) evaluates the quality of the *decomposition itself* — whether component activation patterns are coherent — without relying on LLM-generated labels. Intruder scores are stored in `harvest.db`, not `interp.db`. Intruder eval is submitted as a top-level postprocess stage (via `spd-postprocess`), not as part of the harvest pipeline.
 
 ### Worker Script (`scripts/run.py`)
 

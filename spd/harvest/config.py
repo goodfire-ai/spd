@@ -27,6 +27,14 @@ class IntruderEvalConfig(BaseConfig):
     max_requests_per_minute: int = 200
 
 
+class IntruderSlurmConfig(BaseConfig):
+    """Config for intruder eval SLURM submission."""
+
+    config: IntruderEvalConfig = IntruderEvalConfig()
+    partition: str = DEFAULT_PARTITION_NAME
+    time: str = "4:00:00"
+
+
 class HarvestConfig(BaseConfig):
     n_batches: int | Literal["whole_dataset"] = 20_000
     batch_size: int = 32
@@ -43,8 +51,6 @@ class HarvestSlurmConfig(BaseConfig):
     config: HarvestConfig = HarvestConfig()
     n_gpus: PositiveInt = 8
     partition: str = DEFAULT_PARTITION_NAME
-    time: str = "24:00:00"
-    merge_time: str = "02:00:00"
+    time: str = "12:00:00"
+    merge_time: str = "04:00:00"
     merge_mem: str = "200G"
-    intruder_eval: IntruderEvalConfig | None = None
-    intruder_eval_time: str = "12:00:00"
