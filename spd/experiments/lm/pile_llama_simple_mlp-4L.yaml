@@ -17,7 +17,7 @@ ci_config:
     d_model: 1024
     n_blocks: 8
     mlp_hidden_dim:
-    - 8192
+    - 4096
     attn_config:
       n_heads: 16
       max_len: 512
@@ -26,13 +26,13 @@ sampling: continuous
 sigmoid_type: leaky_hard
 module_info:
 - module_pattern: h.*.mlp.c_fc
-  C: 4096
+  C: 3072
 - module_pattern: h.*.mlp.down_proj
   C: 3072
 - module_pattern: h.*.attn.q_proj
   C: 512
 - module_pattern: h.*.attn.k_proj
-  C: 256
+  C: 512
 - module_pattern: h.*.attn.v_proj
   C: 1024
 - module_pattern: h.*.attn.o_proj
@@ -40,10 +40,10 @@ module_info:
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.0005
+- coeff: 0.001
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
-  beta: 0.1
+  beta: 0.05
   p_anneal_start_frac: 0.0
   p_anneal_final_p: 0.4
   p_anneal_end_frac: 1.0
@@ -56,7 +56,7 @@ loss_metric_configs:
   classname: PersistentPGDReconSubsetLoss
   optimizer:
     type: adam
-    lr: 0.1
+    lr: 0.04
     beta1: 0.9
     beta2: 0.99
     eps: 1.0e-08
@@ -69,7 +69,7 @@ loss_metric_configs:
   classname: FaithfulnessLoss
 output_loss_type: kl
 lr_schedule:
-  start_val: 1.0e-04
+  start_val: 5.0e-05
   warmup_pct: 0.0
   final_val_frac: 0.1
   fn_type: cosine

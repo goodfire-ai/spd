@@ -1,20 +1,21 @@
-from typing import Any, ClassVar, Literal, override
+from typing import Any, ClassVar, override
 
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
+from spd.configs import OutputLossType
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm
+from spd.utils.general_utils import calc_n_recon_examples_lm, calc_sum_recon_loss_lm
 
 
 def _unmasked_recon_loss_update(
     model: ComponentModel,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: OutputLossType,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
 ) -> tuple[Float[Tensor, ""], int]:
@@ -26,8 +27,10 @@ def _unmasked_recon_loss_update(
         }
     )
     out = model(batch, mask_infos=all_ones_mask_infos)
-    loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
-    n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
+    loss = calc_sum_recon_loss_lm(
+        pred=out, target=target_out, loss_type=output_loss_type, batch=batch
+    )
+    n_examples = calc_n_recon_examples_lm(out.shape, output_loss_type)
     return loss, n_examples
 
 
@@ -39,7 +42,7 @@ def _unmasked_recon_loss_compute(
 
 def unmasked_recon_loss(
     model: ComponentModel,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: OutputLossType,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
 ) -> Float[Tensor, ""]:
@@ -61,10 +64,10 @@ class UnmaskedReconLoss(Metric):
         self,
         model: ComponentModel,
         device: str,
-        output_loss_type: Literal["mse", "kl"],
+        output_loss_type: OutputLossType,
     ) -> None:
         self.model = model
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.output_loss_type: OutputLossType = output_loss_type
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
