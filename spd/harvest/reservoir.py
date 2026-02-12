@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import torch
+from einops import rearrange, repeat
 from jaxtyping import Float, Int
 from torch import Tensor
 
@@ -98,14 +99,14 @@ class ActivationExamplesReservoir:
         device = self.device
         n_comp = self.n_components
 
-        idx = torch.arange(self.k, device=device).unsqueeze(0)
-        valid_self = idx < self.n_items.unsqueeze(1)
-        valid_other = idx < other.n_items.unsqueeze(1)
+        idx = rearrange(torch.arange(self.k, device=device), "k -> 1 k")
+        valid_self = idx < rearrange(self.n_items, "c -> c 1")
+        valid_other = idx < rearrange(other.n_items, "c -> c 1")
         valid = torch.cat([valid_self, valid_other], dim=1)
 
         weights = torch.zeros(n_comp, 2 * self.k, device=device)
-        weights[:, : self.k] = self.n_seen.unsqueeze(1).float()
-        weights[:, self.k :] = other.n_seen.unsqueeze(1).float()
+        weights[:, : self.k] = rearrange(self.n_seen.float(), "c -> c 1")
+        weights[:, self.k :] = rearrange(other.n_seen.float(), "c -> c 1")
         weights[~valid] = 0.0
 
         rand = torch.rand(n_comp, 2 * self.k, device=device).clamp(min=1e-30)
@@ -118,9 +119,9 @@ class ActivationExamplesReservoir:
         self_indices = top_indices.clamp(max=self.k - 1)
         other_indices = (top_indices - self.k).clamp(min=0)
 
-        si = self_indices.unsqueeze(-1).expand(-1, -1, self.window)
-        oi = other_indices.unsqueeze(-1).expand(-1, -1, self.window)
-        mask = from_self.unsqueeze(-1).expand(-1, -1, self.window)
+        si = repeat(self_indices, "c k -> c k w", w=self.window)
+        oi = repeat(other_indices, "c k -> c k w", w=self.window)
+        mask = repeat(from_self, "c k -> c k w", w=self.window)
 
         self.tokens = torch.where(mask, self.tokens.gather(1, si), other.tokens.gather(1, oi))
         self.ci = torch.where(mask, self.ci.gather(1, si), other.ci.gather(1, oi))

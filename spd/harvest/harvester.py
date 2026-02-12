@@ -96,20 +96,20 @@ class Harvester:
         # Per-component firing stats
         self.firing_counts = torch.zeros(n_components, device=device)
         self.ci_sums = torch.zeros(n_components, device=device)
-        self.cooccurrence_counts = torch.zeros(
+        self.cooccurrence_counts: Float[Tensor, "C C"] = torch.zeros(
             n_components, n_components, device=device, dtype=torch.float32
         )
 
         # Per-(component, token) stats for PMI computation
         #   input: hard token counts at positions where component fires
         #   output: predicted probability mass at positions where component fires
-        self.input_cooccurrence: Int[Tensor, "n_comp vocab"] = torch.zeros(
+        self.input_cooccurrence: Int[Tensor, "C vocab"] = torch.zeros(
             n_components, vocab_size, device=device, dtype=torch.long
         )
         self.input_marginals: Int[Tensor, " vocab"] = torch.zeros(
             vocab_size, device=device, dtype=torch.long
         )
-        self.output_cooccurrence: Float[Tensor, "n_comp vocab"] = torch.zeros(
+        self.output_cooccurrence: Float[Tensor, "C vocab"] = torch.zeros(
             n_components, vocab_size, device=device
         )
         self.output_marginals: Float[Tensor, " vocab"] = torch.zeros(vocab_size, device=device)
@@ -124,9 +124,9 @@ class Harvester:
     def process_batch(
         self,
         batch: Int[Tensor, "B S"],
-        ci: Float[Tensor, "B S n_comp"],
+        ci: Float[Tensor, "B S C"],
         output_probs: Float[Tensor, "B S V"],
-        component_acts: Float[Tensor, "B S n_comp"],
+        component_acts: Float[Tensor, "B S C"],
     ) -> None:
         self.total_tokens_processed += batch.numel()
 
@@ -145,10 +145,10 @@ class Harvester:
         self,
         tokens_flat: Int[Tensor, " pos"],
         probs_flat: Float[Tensor, "pos vocab"],
-        firing_flat: Float[Tensor, "pos n_comp"],
+        firing_flat: Float[Tensor, "pos C"],
     ) -> None:
         n_components = firing_flat.shape[1]
-        token_indices = tokens_flat.unsqueeze(0).expand(n_components, -1)
+        token_indices = repeat(tokens_flat, "pos -> c pos", c=n_components)
 
         # use scatter_add for inputs because inputs are one-hot / token indices
         self.input_cooccurrence.scatter_add_(
@@ -167,8 +167,8 @@ class Harvester:
     def _collect_activation_examples(
         self,
         batch: Int[Tensor, "B S"],
-        ci: Float[Tensor, "B S n_comp"],
-        component_acts: Float[Tensor, "B S n_comp"],
+        ci: Float[Tensor, "B S C"],
+        component_acts: Float[Tensor, "B S C"],
     ) -> None:
         batch_idx, seq_idx, comp_idx = torch.where(ci > self.ci_threshold)
         if len(batch_idx) == 0:
