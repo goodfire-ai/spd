@@ -230,9 +230,6 @@ def merge_activation_contexts(output_dir: Path) -> None:
 
     Looks for worker_*.pt state files in output_dir/worker_states/ and merges them
     into final harvest results written to output_dir.
-
-    Peak memory ~61 GB: tensor state (~48 GB) + temporary copies during save (~13 GB).
-    Components are streamed to SQLite one at a time (never all in memory).
     """
 
     state_dir = output_dir / "worker_states"

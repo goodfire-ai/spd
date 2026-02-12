@@ -6,12 +6,13 @@ for sampling and Efraimidis-Spirakis for merging parallel reservoirs.
 
 import random
 from collections.abc import Iterator
-from typing import Any
 
 import torch
 from einops import rearrange, repeat
 from jaxtyping import Float, Int
 from torch import Tensor
+
+from spd.utils.general_utils import runtime_cast
 
 WINDOW_PAD_SENTINEL = -1
 
@@ -21,26 +22,66 @@ class ActivationExamplesReservoir:
 
     Each component slot holds up to `k` windows of size `w`, where each window
     contains (token_ids, ci_values, component_acts) aligned by position.
+
+    Use create() for fresh allocation, from_state_dict() for deserialization.
     """
 
-    def __init__(self, n_components: int, k: int, window: int, device: torch.device):
+    def __init__(
+        self,
+        n_components: int,
+        k: int,
+        window: int,
+        device: torch.device,
+        tokens: Int[Tensor, "C k w"],
+        ci: Float[Tensor, "C k w"],
+        acts: Float[Tensor, "C k w"],
+        n_items: Int[Tensor, " C"],
+        n_seen: Int[Tensor, " C"],
+    ):
+        self.n_components = n_components
         self.k = k
         self.window = window
-        self.tokens: Int[Tensor, "C k w"] = torch.full(
-            (n_components, k, window), WINDOW_PAD_SENTINEL, dtype=torch.long, device=device
+        self.device = device
+        self.tokens = tokens
+        self.ci = ci
+        self.acts = acts
+        self.n_items = n_items
+        self.n_seen = n_seen
+
+    @classmethod
+    def create(
+        cls, n_components: int, k: int, window: int, device: torch.device
+    ) -> "ActivationExamplesReservoir":
+        return cls(
+            n_components=n_components,
+            k=k,
+            window=window,
+            device=device,
+            tokens=torch.full(
+                (n_components, k, window), WINDOW_PAD_SENTINEL, dtype=torch.long, device=device
+            ),
+            ci=torch.zeros(n_components, k, window, device=device),
+            acts=torch.zeros(n_components, k, window, device=device),
+            n_items=torch.zeros(n_components, dtype=torch.long, device=device),
+            n_seen=torch.zeros(n_components, dtype=torch.long, device=device),
         )
-        self.ci: Float[Tensor, "C k w"] = torch.zeros(n_components, k, window, device=device)
-        self.acts: Float[Tensor, "C k w"] = torch.zeros(n_components, k, window, device=device)
-        self.n_items: Int[Tensor, " C"] = torch.zeros(n_components, dtype=torch.long, device=device)
-        self.n_seen: Int[Tensor, " C"] = torch.zeros(n_components, dtype=torch.long, device=device)
 
-    @property
-    def n_components(self) -> int:
-        return self.n_items.shape[0]
-
-    @property
-    def device(self) -> torch.device:
-        return self.tokens.device
+    @classmethod
+    def from_state_dict(
+        cls, d: dict[str, object], device: torch.device
+    ) -> "ActivationExamplesReservoir":
+        tokens = runtime_cast(Tensor, d["tokens"])
+        return cls(
+            n_components=tokens.shape[0],
+            k=runtime_cast(int, d["k"]),
+            window=runtime_cast(int, d["window"]),
+            device=device,
+            tokens=tokens.to(device),
+            ci=runtime_cast(Tensor, d["ci"]).to(device),
+            acts=runtime_cast(Tensor, d["acts"]).to(device),
+            n_items=runtime_cast(Tensor, d["n_items"]).to(device),
+            n_seen=runtime_cast(Tensor, d["n_seen"]).to(device),
+        )
 
     def add(
         self,
@@ -138,7 +179,20 @@ class ActivationExamplesReservoir:
             mask = toks != WINDOW_PAD_SENTINEL
             yield toks[mask], self.ci[component, j][mask], self.acts[component, j][mask]
 
-    def state_dict(self) -> dict[str, Any]:
+    def to(self, device: torch.device) -> "ActivationExamplesReservoir":
+        return ActivationExamplesReservoir(
+            n_components=self.n_components,
+            k=self.k,
+            window=self.window,
+            device=device,
+            tokens=self.tokens.to(device),
+            ci=self.ci.to(device),
+            acts=self.acts.to(device),
+            n_items=self.n_items.to(device),
+            n_seen=self.n_seen.to(device),
+        )
+
+    def state_dict(self) -> dict[str, object]:
         return {
             "k": self.k,
             "window": self.window,
@@ -148,15 +202,3 @@ class ActivationExamplesReservoir:
             "n_items": self.n_items.cpu(),
             "n_seen": self.n_seen.cpu(),
         }
-
-    @staticmethod
-    def from_state_dict(d: dict[str, Any], device: torch.device) -> "ActivationExamplesReservoir":
-        r = ActivationExamplesReservoir.__new__(ActivationExamplesReservoir)
-        r.k = d["k"]
-        r.window = d["window"]
-        r.tokens = d["tokens"].to(device)
-        r.ci = d["ci"].to(device)
-        r.acts = d["acts"].to(device)
-        r.n_items = d["n_items"].to(device)
-        r.n_seen = d["n_seen"].to(device)
-        return r

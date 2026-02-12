@@ -13,7 +13,7 @@ WINDOW = 3
 
 
 def _make_reservoir() -> ActivationExamplesReservoir:
-    return ActivationExamplesReservoir(N_COMPONENTS, K, WINDOW, DEVICE)
+    return ActivationExamplesReservoir.create(N_COMPONENTS, K, WINDOW, DEVICE)
 
 
 class TestAdd:
@@ -215,5 +215,7 @@ class TestStateDictRoundtrip:
         )
 
         sd = r.state_dict()
-        assert sd["tokens"].device == torch.device("cpu")
-        assert sd["n_items"].device == torch.device("cpu")
+        assert isinstance(sd["tokens"], torch.Tensor) and sd["tokens"].device == torch.device("cpu")
+        assert isinstance(sd["n_items"], torch.Tensor) and sd["n_items"].device == torch.device(
+            "cpu"
+        )

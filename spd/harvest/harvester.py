@@ -123,7 +123,7 @@ class Harvester:
         )
         self.output_marginals: Float[Tensor, " vocab"] = torch.zeros(vocab_size, device=device)
 
-        self.reservoir = ActivationExamplesReservoir(
+        self.reservoir = ActivationExamplesReservoir.create(
             n_components, max_examples_per_component, window_size, device
         )
         self.total_tokens_processed = 0
@@ -261,9 +261,7 @@ class Harvester:
         output_cooccurrence = self.output_cooccurrence.cpu()
         output_marginals = self.output_marginals.cpu()
 
-        reservoir_cpu = ActivationExamplesReservoir.from_state_dict(
-            self.reservoir.state_dict(), torch.device("cpu")
-        )
+        reservoir_cpu = self.reservoir.to(torch.device("cpu"))
 
         _log_base_rate_summary(firing_counts, input_marginals)
 
