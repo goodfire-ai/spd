@@ -21,7 +21,7 @@ class InterpRepo:
         db_path = get_autointerp_dir(self.run_id) / "interp.db"
         if not db_path.exists():
             return None
-        self._db = InterpDB(db_path)
+        self._db = InterpDB(db_path, readonly=True)
         return self._db
 
     def _get_or_create_db(self) -> InterpDB:

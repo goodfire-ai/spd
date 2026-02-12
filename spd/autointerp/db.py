@@ -33,11 +33,16 @@ CREATE TABLE IF NOT EXISTS config (
 
 
 class InterpDB:
-    def __init__(self, db_path: Path) -> None:
-        self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    def __init__(self, db_path: Path, readonly: bool = False) -> None:
+        if readonly:
+            self._conn = sqlite3.connect(
+                f"file:{db_path}?immutable=1", uri=True, check_same_thread=False
+            )
+        else:
+            self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.executescript(_SCHEMA)
         self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.executescript(_SCHEMA)
 
     def save_interpretation(self, result: InterpretationResult) -> None:
         self._conn.execute(

@@ -8,7 +8,7 @@ def _open_db(wandb_run_id: str) -> InterpDB | None:
     db_path = get_autointerp_dir(wandb_run_id) / "interp.db"
     if not db_path.exists():
         return None
-    return InterpDB(db_path)
+    return InterpDB(db_path, readonly=True)
 
 
 def load_interpretations(
