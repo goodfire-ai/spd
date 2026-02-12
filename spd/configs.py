@@ -15,7 +15,7 @@ from spd.base_config import BaseConfig
 from spd.log import logger
 from spd.spd_types import GlobalCiFnType, LayerwiseCiFnType, ModelPath, Probability
 
-
+OutputLossType = Literal["mse", "kl", "ce"]
 class LayerwiseCiConfig(BaseConfig):
     """Configuration for layerwise CI functions (one per layer)."""
 
@@ -744,7 +744,7 @@ class Config(BaseConfig):
             ),
         )
     )
-    output_loss_type: Literal["mse", "kl"] = Field(
+    output_loss_type: OutputLossType = Field(
         ...,
         description="Metric used to measure recon error between model outputs and targets",
     )

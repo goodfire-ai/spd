@@ -1,5 +1,3 @@
-from typing import Literal
-
 from jaxtyping import Float, Int
 from torch import Tensor
 
@@ -10,6 +8,7 @@ from spd.configs import (
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
     LossMetricConfigType,
+    OutputLossType,
     PersistentPGDReconLossConfig,
     PersistentPGDReconSubsetLossConfig,
     PGDReconLayerwiseLossConfig,
@@ -56,7 +55,7 @@ def compute_losses(
     ppgd_sourcess: dict[
         PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PPGDSources
     ],
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: OutputLossType,
 ) -> dict[LossMetricConfigType, Float[Tensor, ""]]:
     """Compute losses for each config and return a dict mapping config to loss tensor."""
     losses: dict[LossMetricConfigType, Float[Tensor, ""]] = {}
