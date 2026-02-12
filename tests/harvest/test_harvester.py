@@ -216,7 +216,15 @@ class TestSaveLoadRoundtrip:
         assert loaded.total_tokens_processed == h.total_tokens_processed
         assert loaded.layer_offsets == h.layer_offsets
 
-        for field in Harvester._STAT_FIELDS:
+        for field in [
+            "firing_counts",
+            "ci_sums",
+            "cooccurrence_counts",
+            "input_cooccurrence",
+            "input_marginals",
+            "output_cooccurrence",
+            "output_marginals",
+        ]:
             assert torch.equal(getattr(loaded, field), getattr(h, field).cpu()), field
 
         # Check reservoir fields roundtrip

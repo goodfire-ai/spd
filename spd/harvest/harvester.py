@@ -149,6 +149,7 @@ class Harvester:
     ) -> None:
         n_components = firing_flat.shape[1]
         token_indices = tokens_flat.unsqueeze(0).expand(n_components, -1)
+        # use scatter_add for inputs because inputs are
         self.input_cooccurrence.scatter_add_(
             dim=1, index=token_indices, src=rearrange(firing_flat, "pos c -> c pos").long()
         )
@@ -178,14 +179,6 @@ class Harvester:
         )
         self.reservoir.add(comp_idx, token_w, ci_w, act_w)
 
-    # -- Serialization & merge ---------------------------------------------
-
-    _STAT_FIELDS = [
-        "firing_counts", "ci_sums", "cooccurrence_counts",
-        "input_cooccurrence", "input_marginals",
-        "output_cooccurrence", "output_marginals",
-    ]  # fmt: skip
-
     def save(self, path: Path) -> None:
         data: dict[str, object] = {
             "layer_names": self.layer_names,
@@ -196,9 +189,14 @@ class Harvester:
             "context_tokens_per_side": self.context_tokens_per_side,
             "total_tokens_processed": self.total_tokens_processed,
             "reservoir": self.reservoir.state_dict(),
+            "firing_counts": self.firing_counts.cpu(),
+            "ci_sums": self.ci_sums.cpu(),
+            "cooccurrence_counts": self.cooccurrence_counts.cpu(),
+            "input_cooccurrence": self.input_cooccurrence.cpu(),
+            "input_marginals": self.input_marginals.cpu(),
+            "output_cooccurrence": self.output_cooccurrence.cpu(),
+            "output_marginals": self.output_marginals.cpu(),
         }
-        for f in self._STAT_FIELDS:
-            data[f] = getattr(self, f).cpu()
         torch.save(data, path)
 
     _CPU = torch.device("cpu")
@@ -206,25 +204,23 @@ class Harvester:
     @staticmethod
     def load(path: Path, device: torch.device = _CPU) -> "Harvester":
         d: dict[str, Any] = torch.load(path, weights_only=False)
-        h = Harvester.__new__(Harvester)
-        h.layer_names = d["layer_names"]
-        h.c_per_layer = d["c_per_layer"]
-        h.vocab_size = d["vocab_size"]
-        h.ci_threshold = d["ci_threshold"]
-        h.max_examples_per_component = d["max_examples_per_component"]
-        h.context_tokens_per_side = d["context_tokens_per_side"]
+        h = Harvester(
+            layer_names=d["layer_names"],
+            c_per_layer=d["c_per_layer"],
+            vocab_size=d["vocab_size"],
+            ci_threshold=d["ci_threshold"],
+            max_examples_per_component=d["max_examples_per_component"],
+            context_tokens_per_side=d["context_tokens_per_side"],
+            device=device,
+        )
         h.total_tokens_processed = d["total_tokens_processed"]
-        h.device = device
-
-        h.layer_offsets = {}
-        offset = 0
-        for layer in h.layer_names:
-            h.layer_offsets[layer] = offset
-            offset += h.c_per_layer[layer]
-
-        for f in Harvester._STAT_FIELDS:
-            setattr(h, f, d[f].to(device))
-
+        h.firing_counts = d["firing_counts"].to(device)
+        h.ci_sums = d["ci_sums"].to(device)
+        h.cooccurrence_counts = d["cooccurrence_counts"].to(device)
+        h.input_cooccurrence = d["input_cooccurrence"].to(device)
+        h.input_marginals = d["input_marginals"].to(device)
+        h.output_cooccurrence = d["output_cooccurrence"].to(device)
+        h.output_marginals = d["output_marginals"].to(device)
         h.reservoir = ActivationExamplesReservoir.from_state_dict(d["reservoir"], device)
         return h
 
