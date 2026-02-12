@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass
 
 from aiolimiter import AsyncLimiter
 from openrouter import OpenRouter
+from openrouter.components import Effort, Reasoning
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
@@ -132,6 +133,7 @@ Respond with the list of correctly-highlighted example numbers and brief reasoni
 async def score_component(
     llm: LLMClient,
     model: str,
+    reasoning_effort: Effort,
     component: ComponentData,
     app_tok: AppTokenizer,
     label: str,
@@ -180,6 +182,7 @@ async def score_component(
         try:
             response = await llm.chat(
                 model=model,
+                reasoning=Reasoning(effort=reasoning_effort),
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=5000,
                 context_label=f"{component.component_key}/trial{trial_idx}",
@@ -269,6 +272,7 @@ async def run_fuzzing_scoring(
                 result = await score_component(
                     llm,
                     model,
+                    eval_config.reasoning_effort,
                     component,
                     app_tok,
                     labels[component.component_key],
