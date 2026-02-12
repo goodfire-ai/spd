@@ -41,6 +41,7 @@ class CompactSkepticalConfig(BaseConfig):
     forbidden_words: list[str] = FORBIDDEN_WORDS_DEFAULT
     limit: int | None = None
     cost_limit_usd: float | None = None
+    max_requests_per_minute: int = 500
 
 
 AutointerpConfig = Annotated[
@@ -66,6 +67,7 @@ class AutointerpEvalConfig(BaseConfig):
     fuzzing_max_concurrent: int = 50
     limit: int | None = None
     cost_limit_usd: float | None = None
+    max_requests_per_minute: int = 500
 
 
 class AutointerpSlurmConfig(BaseConfig):

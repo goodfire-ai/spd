@@ -308,7 +308,7 @@ async def run_detection_scoring(
         )
         llm = LLMClient(
             api=api,
-            rate_limiter=AsyncLimiter(max_rate=200, time_period=60),
+            rate_limiter=AsyncLimiter(max_rate=eval_config.max_requests_per_minute, time_period=60),
             backoff=GlobalBackoff(),
             cost_tracker=cost_tracker,
         )

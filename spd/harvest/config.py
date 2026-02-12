@@ -24,6 +24,7 @@ class IntruderEvalConfig(BaseConfig):
     max_concurrent: int = 50
     limit: int | None = None
     cost_limit_usd: float | None = None
+    max_requests_per_minute: int = 200
 
 
 class HarvestConfig(BaseConfig):
