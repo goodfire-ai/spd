@@ -122,14 +122,14 @@ async def get_model_pricing(api: OpenRouter, model_id: str) -> tuple[float, floa
     raise ValueError(f"Model {model_id} not found")
 
 
-@dataclass
-class LLMClientConfig:
-    """Everything needed to construct an LLMClient."""
+# @dataclass
+# class LLMClientConfig:
+#     """Everything needed to construct an LLMClient."""
 
-    openrouter_api_key: str
-    model: str
-    cost_limit_usd: float | None = None
-    max_requests_per_minute: int = 200
+#     openrouter_api_key: str
+#     model: str
+#     cost_limit_usd: float | None = None
+#     max_requests_per_minute: int = 200
 
 
 @dataclass

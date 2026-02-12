@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS config (
 
 class InterpDB:
     def __init__(self, db_path: Path) -> None:
-        self._conn = sqlite3.connect(str(db_path))
+        self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
