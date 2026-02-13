@@ -7,7 +7,7 @@ from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
-from spd.utils.distributed_utils import all_reduce
+from spd.utils.distributed_utils import all_reduce, is_distributed
 
 
 def _get_linear_annealed_p(
@@ -90,6 +90,7 @@ def _importance_minimality_loss_compute(
     per_component_sums: dict[str, Float[Tensor, " C"]],
     n_examples: int,
     beta: float,
+    log_sums: dict[str, Float[Tensor, " C"]] | None = None,
 ) -> Float[Tensor, ""]:
     """Compute final loss from accumulated per-component sums.
 
@@ -98,12 +99,19 @@ def _importance_minimality_loss_compute(
     2. Calculate (per_component_mean + beta * per_component_mean * log2(1 + layer_sums)).sum()
 
     Then sum contributions from all layers.
+
+    Args:
+        log_sums: Sums to use inside the log term. If None, uses per_component_sums. In
+            distributed training, this should be the all-reduced global sums so the log term
+            reflects total activation across all GPUs.
     """
+    if log_sums is None:
+        log_sums = per_component_sums
     total_loss = torch.tensor(0.0, device=next(iter(per_component_sums.values())).device)
-    for layer_sums in per_component_sums.values():
+    for layer_name, layer_sums in per_component_sums.items():
         per_component_mean = layer_sums / n_examples
         layer_loss = (
-            per_component_mean + beta * per_component_mean * torch.log2(1 + layer_sums)
+            per_component_mean + beta * per_component_mean * torch.log2(1 + log_sums[layer_name])
         ).sum()
         total_loss += layer_loss
     return total_loss
@@ -137,10 +145,21 @@ def importance_minimality_loss(
         p_anneal_end_frac=p_anneal_end_frac,
         current_frac_of_training=current_frac_of_training,
     )
+
+    # In distributed training, all-reduce sums so the log term uses global sums across all GPUs.
+    # Detached because all_reduce is not differentiable; gradients still flow through
+    # per_component_sums via per_component_mean.
+    log_sums: dict[str, Float[Tensor, " C"]] | None = None
+    if is_distributed():
+        log_sums = {}
+        for layer_name, sums in per_component_sums.items():
+            log_sums[layer_name] = all_reduce(sums.detach().clone(), op=ReduceOp.SUM)
+
     return _importance_minimality_loss_compute(
         per_component_sums=per_component_sums,
         n_examples=n_examples,
         beta=beta,
+        log_sums=log_sums,
     )
 
 
