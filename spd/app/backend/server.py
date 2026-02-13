@@ -35,6 +35,7 @@ from spd.app.backend.routers import (
     dataset_search_router,
     graphs_router,
     intervention_router,
+    pretrain_info_router,
     prompts_router,
     runs_router,
 )
@@ -159,6 +160,7 @@ app.include_router(dataset_attributions_router)
 app.include_router(agents_router)
 app.include_router(component_data_router)
 app.include_router(data_sources_router)
+app.include_router(pretrain_info_router)
 
 
 def cli(port: int = 8000) -> None:

@@ -1,5 +1,7 @@
 <script lang="ts">
+    import { onMount } from "svelte";
     import { CANONICAL_RUNS, formatRunIdForDisplay, type RegistryEntry } from "../lib/registry";
+    import { fetchPretrainInfo, type PretrainInfoResponse } from "../lib/api/pretrainInfo";
 
     type Props = {
         onSelect: (wandbPath: string, contextLength: number) => void;
@@ -11,6 +13,23 @@
 
     let customPath = $state("");
     let contextLength = $state(512);
+
+    // Architecture info fetched in real-time for each canonical run
+    let archInfo = $state<Record<string, PretrainInfoResponse | "loading" | "error">>({});
+
+    onMount(() => {
+        for (const entry of CANONICAL_RUNS) {
+            archInfo[entry.wandbRunId] = "loading";
+            fetchPretrainInfo(entry.wandbRunId).then(
+                (info) => {
+                    archInfo[entry.wandbRunId] = info;
+                },
+                () => {
+                    archInfo[entry.wandbRunId] = "error";
+                },
+            );
+        }
+    });
 
     function handleRegistrySelect(entry: RegistryEntry) {
         onSelect(entry.wandbRunId, contextLength);
@@ -42,11 +61,17 @@
 
         <div class="runs-grid">
             {#each CANONICAL_RUNS as entry (entry.wandbRunId)}
+                {@const info = archInfo[entry.wandbRunId]}
                 <button class="run-card" onclick={() => handleRegistrySelect(entry)} disabled={isLoading}>
                     <span class="run-model">{entry.modelName}</span>
                     <span class="run-id">{formatRunIdForDisplay(entry.wandbRunId)}</span>
                     {#if entry.notes}
                         <span class="run-notes">{entry.notes}</span>
+                    {/if}
+                    {#if info && info !== "loading" && info !== "error"}
+                        <span class="run-arch">{info.summary}</span>
+                    {:else if info === "loading"}
+                        <span class="run-arch loading">loading arch...</span>
                     {/if}
                     {#if entry.clusterMappings}
                         <span class="run-cluster-mappings">{entry.clusterMappings.length} clustering runs</span>
@@ -188,6 +213,23 @@
         font-size: var(--text-xs);
         color: var(--text-muted);
         font-family: var(--font-sans);
+    }
+
+    .run-arch {
+        font-size: 10px;
+        font-family: var(--font-mono);
+        color: var(--text-secondary, var(--text-muted));
+        background: var(--bg-inset, var(--bg-base));
+        padding: 1px 4px;
+        border-radius: 3px;
+        line-height: 1.3;
+    }
+
+    .run-arch.loading {
+        opacity: 0.5;
+        font-style: italic;
+        font-family: var(--font-sans);
+        background: none;
     }
 
     .run-cluster-mappings {
