@@ -8,7 +8,7 @@
     import type { NodePosition, EdgeData, OutputProbability, HoveredNode } from "../../lib/promptAttributionsTypes";
     import { buildEdgeIndexes } from "../../lib/promptAttributionsTypes";
     import type { ArtifactGraphData } from "../../lib/api/investigations";
-    import { getAliasedRowLabel } from "../../lib/layerAliasing";
+    import { getRowKey, sortRows, getRowLabel } from "../../lib/graphLayout";
     import { colors, getEdgeColor, rgbToCss } from "../../lib/colors";
     import {
         lerp,
@@ -30,8 +30,6 @@
     const HIT_AREA_PADDING = 4;
     const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
     const LABEL_WIDTH = 100;
-    const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "lm_head", "output"];
-    const QKV_SUBTYPES = ["q_proj", "k_proj", "v_proj"];
 
     type Props = {
         data: ArtifactGraphData;
@@ -52,25 +50,6 @@
     // Refs
     let innerContainer: HTMLDivElement;
     const zoom = useZoomPan(() => innerContainer);
-
-    // Helper functions (not reactive)
-    function parseLayer(name: string): { block: number; subtype: string } {
-        if (name === "wte") return { block: -1, subtype: "wte" };
-        if (name === "lm_head") return { block: Infinity - 1, subtype: "lm_head" };
-        if (name === "output") return { block: Infinity, subtype: "output" };
-        const m = name.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
-        if (!m) return { block: 0, subtype: name };
-        return { block: +m[1], subtype: m[3] };
-    }
-
-    function getRowKey(layer: string): string {
-        const info = parseLayer(layer);
-        if (QKV_SUBTYPES.includes(info.subtype)) {
-            const m = layer.match(/h\.(\d+)/);
-            return m ? `h.${m[1]}.qkv` : layer;
-        }
-        return layer;
-    }
 
     // Compute layout - ONLY for nodes involved in edges
     function computeLayout(graphData: ArtifactGraphData, edges: EdgeData[], compGap: number, lGap: number) {
@@ -97,23 +76,7 @@
             nodesPerLayerSeq[key].push(+cIdx);
         }
 
-        // Sort rows
-        const rows = Array.from(allRows).sort((a, b) => {
-            const parseRow = (r: string) => {
-                if (r === "wte") return { block: -1, subtype: "wte" };
-                if (r === "lm_head") return { block: Infinity - 1, subtype: "lm_head" };
-                if (r === "output") return { block: Infinity, subtype: "output" };
-                const mQkv = r.match(/h\.(\d+)\.qkv/);
-                if (mQkv) return { block: +mQkv[1], subtype: "qkv" };
-                const m = r.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
-                if (!m) return { block: 0, subtype: r };
-                return { block: +m[1], subtype: m[3] };
-            };
-            const infoA = parseRow(a);
-            const infoB = parseRow(b);
-            if (infoA.block !== infoB.block) return infoA.block - infoB.block;
-            return ROW_ORDER.indexOf(infoA.subtype) - ROW_ORDER.indexOf(infoB.subtype);
-        });
+        const rows = sortRows(Array.from(allRows));
 
         // Assign Y positions
         const rowYPositions: Record<string, number> = {};
@@ -260,7 +223,7 @@
             hoverTimeout = null;
         }
         hoveredNode = { layer, seqIdx, cIdx };
-        const size = layer === "wte" || layer === "output" ? "small" : "large";
+        const size = layer === "embed" || layer === "output" ? "small" : "large";
         tooltipPos = calcTooltipPos(event.clientX, event.clientY, size);
     }
 
@@ -313,7 +276,7 @@
                             font-family="'Berkeley Mono', 'SF Mono', monospace"
                             fill={colors.textSecondary}
                         >
-                            {getAliasedRowLabel(layer, getRowKey(layer).endsWith(".qkv"))}
+                            {getRowLabel(getRowKey(layer))}
                         </text>
                     {/each}
                 </g>

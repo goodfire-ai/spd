@@ -17,6 +17,20 @@
     // Architecture info fetched in real-time for each canonical run
     let archInfo = $state<Record<string, PretrainInfoResponse | "loading" | "error">>({});
 
+    function formatArchLabel(info: PretrainInfoResponse): string {
+        const cfg = info.target_model_config;
+        const parts: string[] = [];
+        if (info.dataset_short) parts.push(info.dataset_short);
+        parts.push(info.model_type);
+        if (cfg) {
+            const nLayer = cfg.n_layer as number | undefined;
+            const nEmbd = cfg.n_embd as number | undefined;
+            if (nLayer != null) parts.push(`${nLayer}L`);
+            if (nEmbd != null) parts.push(`d${nEmbd}`);
+        }
+        return parts.join(" ");
+    }
+
     onMount(() => {
         for (const entry of CANONICAL_RUNS) {
             archInfo[entry.wandbRunId] = "loading";
@@ -63,15 +77,16 @@
             {#each CANONICAL_RUNS as entry (entry.wandbRunId)}
                 {@const info = archInfo[entry.wandbRunId]}
                 <button class="run-card" onclick={() => handleRegistrySelect(entry)} disabled={isLoading}>
-                    <span class="run-model">{entry.modelName}</span>
+                    {#if info && info !== "loading" && info !== "error"}
+                        <span class="run-model">{formatArchLabel(info)}</span>
+                    {:else if info === "loading"}
+                        <span class="run-model loading">loading...</span>
+                    {:else}
+                        <span class="run-model">{formatRunIdForDisplay(entry.wandbRunId)}</span>
+                    {/if}
                     <span class="run-id">{formatRunIdForDisplay(entry.wandbRunId)}</span>
                     {#if entry.notes}
                         <span class="run-notes">{entry.notes}</span>
-                    {/if}
-                    {#if info && info !== "loading" && info !== "error"}
-                        <span class="run-arch">{info.summary}</span>
-                    {:else if info === "loading"}
-                        <span class="run-arch loading">loading arch...</span>
                     {/if}
                     {#if entry.clusterMappings}
                         <span class="run-cluster-mappings">{entry.clusterMappings.length} clustering runs</span>
@@ -200,7 +215,12 @@
         font-size: var(--text-sm);
         font-weight: 600;
         color: var(--text-primary);
-        font-family: var(--font-sans);
+        font-family: var(--font-mono);
+    }
+
+    .run-model.loading {
+        opacity: 0.5;
+        font-style: italic;
     }
 
     .run-id {
@@ -213,23 +233,6 @@
         font-size: var(--text-xs);
         color: var(--text-muted);
         font-family: var(--font-sans);
-    }
-
-    .run-arch {
-        font-size: 10px;
-        font-family: var(--font-mono);
-        color: var(--text-secondary, var(--text-muted));
-        background: var(--bg-inset, var(--bg-base));
-        padding: 1px 4px;
-        border-radius: 3px;
-        line-height: 1.3;
-    }
-
-    .run-arch.loading {
-        opacity: 0.5;
-        font-style: italic;
-        font-family: var(--font-sans);
-        background: none;
     }
 
     .run-cluster-mappings {
