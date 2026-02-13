@@ -7,7 +7,7 @@ from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
-from spd.utils.distributed_utils import all_reduce
+from spd.utils.distributed_utils import all_reduce, get_distributed_state
 
 
 def _get_linear_annealed_p(
@@ -90,20 +90,26 @@ def _importance_minimality_loss_compute(
     per_component_sums: dict[str, Float[Tensor, " C"]],
     n_examples: int,
     beta: float,
+    log_scale: int = 1,
 ) -> Float[Tensor, ""]:
     """Compute final loss from accumulated per-component sums.
 
     For each layer:
     1. Divide per-component sums by n_examples to get means over batch/seq (i.e. per_component_mean)
-    2. Calculate (per_component_mean + beta * per_component_mean * log2(1 + layer_sums)).sum()
+    2. Calculate (per_component_mean + beta * per_component_mean * log2(1 + layer_sums * log_scale)).sum()
 
     Then sum contributions from all layers.
+
+    Args:
+        log_scale: Multiplier for layer_sums inside the log2 term. In DDP training, set to
+            world_size so the log penalty reflects the estimated global sum rather than the
+            local per-rank sum.
     """
     total_loss = torch.tensor(0.0, device=next(iter(per_component_sums.values())).device)
     for layer_sums in per_component_sums.values():
         per_component_mean = layer_sums / n_examples
         layer_loss = (
-            per_component_mean + beta * per_component_mean * torch.log2(1 + layer_sums)
+            per_component_mean + beta * per_component_mean * torch.log2(1 + layer_sums * log_scale)
         ).sum()
         total_loss += layer_loss
     return total_loss
@@ -121,10 +127,9 @@ def importance_minimality_loss(
 ) -> Float[Tensor, ""]:
     """Compute importance minimality loss.
 
-    NOTE: If gradient accumulation is used, this function won't do exactly what you want, but will
-    probably be good enough. Ideally, the `layer_loss` calculation in
-    _importance_minimality_loss_compute should be done once over all microbatches rather than
-    once per microbatch. But this would break our current implementation property that loss
+    NOTE: If gradient accumulation is used, the log term won't perfectly reflect the full effective
+    batch. Ideally, the log2(1 + layer_sums) in _importance_minimality_loss_compute should be
+    computed once over all microbatches. But this would break our current property that loss
     functions are stateless.
     """
 
@@ -137,10 +142,13 @@ def importance_minimality_loss(
         p_anneal_end_frac=p_anneal_end_frac,
         current_frac_of_training=current_frac_of_training,
     )
+    dist_state = get_distributed_state()
+    log_scale = dist_state.world_size if dist_state is not None else 1
     return _importance_minimality_loss_compute(
         per_component_sums=per_component_sums,
         n_examples=n_examples,
         beta=beta,
+        log_scale=log_scale,
     )
 
 
