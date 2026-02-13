@@ -166,7 +166,7 @@ Use this to understand what role a component plays in a circuit.""",
             "properties": {
                 "layer": {
                     "type": "string",
-                    "description": "Layer name (e.g., 'h.0.mlp.c_fc', 'h.2.attn.o_proj')",
+                    "description": "Canonical layer name (e.g., '0.mlp.up', '2.attn.o')",
                 },
                 "component_idx": {
                     "type": "integer",
@@ -295,7 +295,7 @@ Only call this for complete, validated explanations - not preliminary hypotheses
                         "properties": {
                             "component_key": {
                                 "type": "string",
-                                "description": "Component key (e.g., 'h.0.mlp.c_fc:5')",
+                                "description": "Component key (e.g., '0.mlp.up:5')",
                             },
                             "role": {
                                 "type": "string",
@@ -574,6 +574,12 @@ def _canonicalize_layer(layer: str, loaded: Any) -> str:
     return loaded.topology.target_to_canon(layer)
 
 
+def _canonicalize_key(concrete_key: str, loaded: Any) -> str:
+    """Translate concrete component key (e.g. 'h.0.mlp.c_fc:444') to canonical ('0.mlp.up:444')."""
+    layer, idx = concrete_key.rsplit(":", 1)
+    return f"{_canonicalize_layer(layer, loaded)}:{idx}"
+
+
 def _tool_optimize_graph(params: dict[str, Any]) -> Generator[dict[str, Any]]:
     """Optimize a sparse circuit for a behavior. Yields progress events."""
     manager, loaded = _get_state()
@@ -775,17 +781,23 @@ def _tool_get_component_info(params: dict[str, Any]) -> dict[str, Any]:
     layer = params["layer"]
     component_idx = params["component_idx"]
     top_k = params.get("top_k", 20)
-    component_key = f"{layer}:{component_idx}"
+    canonical_key = f"{layer}:{component_idx}"
+
+    # Harvest/interp repos store concrete keys (e.g. "h.0.mlp.c_fc:444")
+    concrete_layer = loaded.topology.canon_to_target(layer)
+    concrete_key = f"{concrete_layer}:{component_idx}"
 
     _log_event(
-        "tool_call", f"get_component_info: {component_key}", {"layer": layer, "idx": component_idx}
+        "tool_call",
+        f"get_component_info: {canonical_key}",
+        {"layer": layer, "idx": component_idx},
     )
 
-    result: dict[str, Any] = {"component_key": component_key}
+    result: dict[str, Any] = {"component_key": canonical_key}
 
     # Get interpretation
     if loaded.interp is not None:
-        interp = loaded.interp.get_interpretation(component_key)
+        interp = loaded.interp.get_interpretation(concrete_key)
         if interp is not None:
             result["interpretation"] = {
                 "label": interp.label,
@@ -802,10 +814,10 @@ def _tool_get_component_info(params: dict[str, Any]) -> dict[str, Any]:
     token_stats = loaded.harvest.get_token_stats()
     if token_stats is not None:
         input_stats = analysis.get_input_token_stats(
-            token_stats, component_key, loaded.tokenizer, top_k
+            token_stats, concrete_key, loaded.tokenizer, top_k
         )
         output_stats = analysis.get_output_token_stats(
-            token_stats, component_key, loaded.tokenizer, top_k
+            token_stats, concrete_key, loaded.tokenizer, top_k
         )
         if input_stats and output_stats:
             result["token_stats"] = {
@@ -826,20 +838,20 @@ def _tool_get_component_info(params: dict[str, Any]) -> dict[str, Any]:
     else:
         result["token_stats"] = None
 
-    # Get correlations
+    # Get correlations (return canonical keys)
     correlations = loaded.harvest.get_correlations()
-    if correlations is not None and analysis.has_component(correlations, component_key):
+    if correlations is not None and analysis.has_component(correlations, concrete_key):
         result["correlated_components"] = {
             "precision": [
-                {"key": c.component_key, "score": c.score}
+                {"key": _canonicalize_key(c.component_key, loaded), "score": c.score}
                 for c in analysis.get_correlated_components(
-                    correlations, component_key, "precision", top_k
+                    correlations, concrete_key, "precision", top_k
                 )
             ],
             "pmi": [
-                {"key": c.component_key, "score": c.score}
+                {"key": _canonicalize_key(c.component_key, loaded), "score": c.score}
                 for c in analysis.get_correlated_components(
-                    correlations, component_key, "pmi", top_k
+                    correlations, concrete_key, "pmi", top_k
                 )
             ],
         }
@@ -873,7 +885,7 @@ def _tool_run_ablation(params: dict[str, Any]) -> dict[str, Any]:
         if len(parts) != 3:
             raise ValueError(f"Invalid node key format: {key!r} (expected 'layer:seq:cIdx')")
         layer, seq_str, cidx_str = parts
-        if layer in ("wte", "output"):
+        if layer in ("wte", "embed", "output"):
             raise ValueError(f"Cannot intervene on {layer!r} nodes - only internal layers allowed")
         active_nodes.append((layer, int(seq_str), int(cidx_str)))
 
@@ -1157,10 +1169,10 @@ def _tool_save_graph_artifact(params: dict[str, Any]) -> dict[str, Any]:
     filtered_ci_vals = {k: v for k, v in graph.node_ci_vals.items() if v > ci_threshold}
     l0_total = len(filtered_ci_vals)
 
-    # Step 2: Add pseudo nodes (wte and output) - same as _add_pseudo_layer_nodes
+    # Step 2: Add pseudo nodes (embed and output) - same as _add_pseudo_layer_nodes
     node_ci_vals_with_pseudo = dict(filtered_ci_vals)
     for seq_pos in range(num_tokens):
-        node_ci_vals_with_pseudo[f"wte:{seq_pos}:0"] = 1.0
+        node_ci_vals_with_pseudo[f"embed:{seq_pos}:0"] = 1.0
     for key, out_prob in out_probs.items():
         seq_pos, token_id = key.split(":")
         node_ci_vals_with_pseudo[f"output:{seq_pos}:{token_id}"] = out_prob.prob
@@ -1298,9 +1310,10 @@ def _tool_get_component_activation_examples(params: dict[str, Any]) -> dict[str,
     )
 
     assert loaded.harvest is not None, "harvest data not loaded"
+    canonical_key = f"{layer}:{component_idx}"
     comp = loaded.harvest.get_component(component_key)
     if comp is None:
-        return {"component_key": component_key, "examples": [], "total": 0}
+        return {"component_key": canonical_key, "examples": [], "total": 0}
 
     examples = []
     for ex in comp.activation_examples[:limit]:
@@ -1314,7 +1327,7 @@ def _tool_get_component_activation_examples(params: dict[str, Any]) -> dict[str,
         )
 
     return {
-        "component_key": component_key,
+        "component_key": canonical_key,
         "examples": examples,
         "total": len(comp.activation_examples),
         "mean_ci": comp.mean_ci,
