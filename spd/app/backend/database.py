@@ -33,13 +33,13 @@ def get_default_db_path() -> Path:
     """Get the default database path.
 
     Checks env vars in order:
-    1. SPD_SWARM_TASK_DIR - swarm mode, db at task_dir/app.db
+    1. SPD_INVESTIGATION_DIR - investigation mode, db at dir/app.db
     2. SPD_APP_DB_PATH - explicit override
     3. Default: .data/app/prompt_attr.db
     """
-    swarm_task_dir = os.environ.get("SPD_SWARM_TASK_DIR")
-    if swarm_task_dir:
-        return Path(swarm_task_dir) / "app.db"
+    investigation_dir = os.environ.get("SPD_INVESTIGATION_DIR")
+    if investigation_dir:
+        return Path(investigation_dir) / "app.db"
     env_path = os.environ.get("SPD_APP_DB_PATH")
     if env_path:
         return Path(env_path)

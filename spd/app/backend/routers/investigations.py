@@ -1,7 +1,7 @@
-"""Investigations endpoint for viewing agent swarm results.
+"""Investigations endpoint for viewing agent investigation results.
 
-Lists and serves investigation data from SPD_OUT_DIR/agent_swarm/.
-Each task is treated as an independent investigation (flattened across swarms).
+Lists and serves investigation data from SPD_OUT_DIR/investigations/.
+Each investigation directory contains findings from a single agent run.
 """
 
 import json
@@ -16,26 +16,24 @@ from spd.settings import SPD_OUT_DIR
 
 router = APIRouter(prefix="/api/investigations", tags=["investigations"])
 
-SWARM_DIR = SPD_OUT_DIR / "agent_swarm"
+INVESTIGATIONS_DIR = SPD_OUT_DIR / "investigations"
 
 
 class InvestigationSummary(BaseModel):
-    """Summary of a single investigation (task)."""
+    """Summary of a single investigation."""
 
-    id: str  # swarm_id/task_id
-    swarm_id: str
-    task_id: int
+    id: str
     wandb_path: str | None
+    prompt: str | None
     created_at: str
     has_research_log: bool
     has_explanations: bool
     event_count: int
     last_event_time: str | None
     last_event_message: str | None
-    # Agent-provided summary
     title: str | None
     summary: str | None
-    status: str | None  # in_progress, completed, inconclusive
+    status: str | None
 
 
 class EventEntry(BaseModel):
@@ -51,23 +49,21 @@ class InvestigationDetail(BaseModel):
     """Full detail of an investigation including logs."""
 
     id: str
-    swarm_id: str
-    task_id: int
     wandb_path: str | None
+    prompt: str | None
     created_at: str
     research_log: str | None
     events: list[EventEntry]
     explanations: list[dict[str, Any]]
-    artifact_ids: list[str]  # List of artifact IDs available for this investigation
-    # Agent-provided summary
+    artifact_ids: list[str]
     title: str | None
     summary: str | None
     status: str | None
 
 
-def _parse_swarm_metadata(swarm_path: Path) -> dict[str, Any] | None:
-    """Parse metadata.json from a swarm directory."""
-    metadata_path = swarm_path / "metadata.json"
+def _parse_metadata(inv_path: Path) -> dict[str, Any] | None:
+    """Parse metadata.json from an investigation directory."""
+    metadata_path = inv_path / "metadata.json"
     if not metadata_path.exists():
         return None
     try:
@@ -105,9 +101,9 @@ def _get_last_event(events_path: Path) -> tuple[str | None, str | None, int]:
     return last_time, last_msg, count
 
 
-def _parse_task_summary(task_path: Path) -> tuple[str | None, str | None, str | None]:
-    """Parse summary.json from a task directory. Returns (title, summary, status)."""
-    summary_path = task_path / "summary.json"
+def _parse_task_summary(inv_path: Path) -> tuple[str | None, str | None, str | None]:
+    """Parse summary.json from an investigation directory. Returns (title, summary, status)."""
+    summary_path = inv_path / "summary.json"
     if not summary_path.exists():
         return None, None, None
     try:
@@ -117,21 +113,17 @@ def _parse_task_summary(task_path: Path) -> tuple[str | None, str | None, str | 
         return None, None, None
 
 
-def _list_artifact_ids(task_path: Path) -> list[str]:
-    """List all artifact IDs for a task."""
-    artifacts_dir = task_path / "artifacts"
+def _list_artifact_ids(inv_path: Path) -> list[str]:
+    """List all artifact IDs for an investigation."""
+    artifacts_dir = inv_path / "artifacts"
     if not artifacts_dir.exists():
         return []
-    artifact_ids = []
-    for f in sorted(artifacts_dir.glob("graph_*.json")):
-        artifact_ids.append(f.stem)  # e.g., "graph_001"
-    return artifact_ids
+    return [f.stem for f in sorted(artifacts_dir.glob("graph_*.json"))]
 
 
-def _get_task_created_at(task_path: Path, swarm_metadata: dict[str, Any] | None) -> str:
-    """Get creation time for a task."""
-    # Try to get from first event
-    events_path = task_path / "events.jsonl"
+def _get_created_at(inv_path: Path, metadata: dict[str, Any] | None) -> str:
+    """Get creation time for an investigation."""
+    events_path = inv_path / "events.jsonl"
     if events_path.exists():
         try:
             with open(events_path) as f:
@@ -143,87 +135,72 @@ def _get_task_created_at(task_path: Path, swarm_metadata: dict[str, Any] | None)
         except Exception:
             pass
 
-    # Fall back to swarm metadata
-    if swarm_metadata and "created_at" in swarm_metadata:
-        return swarm_metadata["created_at"]
+    if metadata and "created_at" in metadata:
+        return metadata["created_at"]
 
-    # Fall back to directory mtime
-    return datetime.fromtimestamp(task_path.stat().st_mtime).isoformat()
+    return datetime.fromtimestamp(inv_path.stat().st_mtime).isoformat()
 
 
 @router.get("")
 def list_investigations() -> list[InvestigationSummary]:
-    """List all investigations (tasks) flattened across swarms."""
-    if not SWARM_DIR.exists():
+    """List all investigations."""
+    if not INVESTIGATIONS_DIR.exists():
         return []
 
     results = []
 
-    for swarm_path in SWARM_DIR.iterdir():
-        if not swarm_path.is_dir() or not swarm_path.name.startswith("swarm-"):
+    for inv_path in INVESTIGATIONS_DIR.iterdir():
+        if not inv_path.is_dir() or not inv_path.name.startswith("inv-"):
             continue
 
-        swarm_id = swarm_path.name
-        metadata = _parse_swarm_metadata(swarm_path)
-        wandb_path = metadata.get("wandb_path") if metadata else None
+        inv_id = inv_path.name
+        metadata = _parse_metadata(inv_path)
 
-        for task_path in swarm_path.iterdir():
-            if not task_path.is_dir() or not task_path.name.startswith("task_"):
-                continue
+        events_path = inv_path / "events.jsonl"
+        last_time, last_msg, event_count = _get_last_event(events_path)
+        title, summary, status = _parse_task_summary(inv_path)
 
-            try:
-                task_id = int(task_path.name.split("_")[1])
-            except (ValueError, IndexError):
-                continue
+        explanations_path = inv_path / "explanations.jsonl"
 
-            events_path = task_path / "events.jsonl"
-            last_time, last_msg, event_count = _get_last_event(events_path)
-            title, summary, status = _parse_task_summary(task_path)
-
-            results.append(
-                InvestigationSummary(
-                    id=f"{swarm_id}/{task_id}",
-                    swarm_id=swarm_id,
-                    task_id=task_id,
-                    wandb_path=wandb_path,
-                    created_at=_get_task_created_at(task_path, metadata),
-                    has_research_log=(task_path / "research_log.md").exists(),
-                    has_explanations=(task_path / "explanations.jsonl").exists()
-                    and (task_path / "explanations.jsonl").stat().st_size > 0,
-                    event_count=event_count,
-                    last_event_time=last_time,
-                    last_event_message=last_msg,
-                    title=title,
-                    summary=summary,
-                    status=status,
-                )
+        results.append(
+            InvestigationSummary(
+                id=inv_id,
+                wandb_path=metadata.get("wandb_path") if metadata else None,
+                prompt=metadata.get("prompt") if metadata else None,
+                created_at=_get_created_at(inv_path, metadata),
+                has_research_log=(inv_path / "research_log.md").exists(),
+                has_explanations=explanations_path.exists()
+                and explanations_path.stat().st_size > 0,
+                event_count=event_count,
+                last_event_time=last_time,
+                last_event_message=last_msg,
+                title=title,
+                summary=summary,
+                status=status,
             )
+        )
 
-    # Sort by creation time, newest first
     results.sort(key=lambda x: x.created_at, reverse=True)
     return results
 
 
-@router.get("/{swarm_id}/{task_id}")
-def get_investigation(swarm_id: str, task_id: int) -> InvestigationDetail:
+@router.get("/{inv_id}")
+def get_investigation(inv_id: str) -> InvestigationDetail:
     """Get full details of an investigation."""
-    swarm_path = SWARM_DIR / swarm_id
-    task_path = swarm_path / f"task_{task_id}"
+    inv_path = INVESTIGATIONS_DIR / inv_id
 
-    if not task_path.exists() or not task_path.is_dir():
-        raise HTTPException(status_code=404, detail=f"Investigation {swarm_id}/{task_id} not found")
+    if not inv_path.exists() or not inv_path.is_dir():
+        raise HTTPException(status_code=404, detail=f"Investigation {inv_id} not found")
 
-    metadata = _parse_swarm_metadata(swarm_path)
+    metadata = _parse_metadata(inv_path)
 
-    # Read research log
     research_log = None
-    research_log_path = task_path / "research_log.md"
+    research_log_path = inv_path / "research_log.md"
     if research_log_path.exists():
         research_log = research_log_path.read_text()
 
-    # Read events
     events = []
-    events_path = task_path / "events.jsonl"
+    events_path = inv_path / "events.jsonl"
     if events_path.exists():
         with open(events_path) as f:
             for line in f:
@@ -243,9 +220,8 @@ def get_investigation(swarm_id: str, task_id: int) -> InvestigationDetail:
                 except json.JSONDecodeError:
                     continue
 
-    # Read explanations
     explanations: list[dict[str, Any]] = []
-    explanations_path = task_path / "explanations.jsonl"
+    explanations_path = inv_path / "explanations.jsonl"
     if explanations_path.exists():
         with open(explanations_path) as f:
             for line in f:
@@ -257,17 +233,14 @@ def get_investigation(swarm_id: str, task_id: int) -> InvestigationDetail:
                 except json.JSONDecodeError:
                     continue
 
-    title, summary, status = _parse_task_summary(task_path)
-
-    # List artifact IDs
-    artifact_ids = _list_artifact_ids(task_path)
+    title, summary, status = _parse_task_summary(inv_path)
+    artifact_ids = _list_artifact_ids(inv_path)
 
     return InvestigationDetail(
-        id=f"{swarm_id}/{task_id}",
-        swarm_id=swarm_id,
-        task_id=task_id,
+        id=inv_id,
         wandb_path=metadata.get("wandb_path") if metadata else None,
-        created_at=_get_task_created_at(task_path, metadata),
+        prompt=metadata.get("prompt") if metadata else None,
+        created_at=_get_created_at(inv_path, metadata),
         research_log=research_log,
         events=events,
         explanations=explanations,
@@ -278,25 +251,25 @@ def get_investigation(swarm_id: str, task_id: int) -> InvestigationDetail:
     )
 
 
-@router.get("/{swarm_id}/{task_id}/artifacts")
-def list_artifacts(swarm_id: str, task_id: int) -> list[str]:
+@router.get("/{inv_id}/artifacts")
+def list_artifacts(inv_id: str) -> list[str]:
     """List all artifact IDs for an investigation."""
-    task_path = SWARM_DIR / swarm_id / f"task_{task_id}"
-    if not task_path.exists():
-        raise HTTPException(status_code=404, detail=f"Investigation {swarm_id}/{task_id} not found")
-    return _list_artifact_ids(task_path)
+    inv_path = INVESTIGATIONS_DIR / inv_id
+    if not inv_path.exists():
+        raise HTTPException(status_code=404, detail=f"Investigation {inv_id} not found")
+    return _list_artifact_ids(inv_path)
 
 
-@router.get("/{swarm_id}/{task_id}/artifacts/{artifact_id}")
-def get_artifact(swarm_id: str, task_id: int, artifact_id: str) -> dict[str, Any]:
+@router.get("/{inv_id}/artifacts/{artifact_id}")
+def get_artifact(inv_id: str, artifact_id: str) -> dict[str, Any]:
     """Get a specific artifact by ID."""
-    task_path = SWARM_DIR / swarm_id / f"task_{task_id}"
-    artifact_path = task_path / "artifacts" / f"{artifact_id}.json"
+    inv_path = INVESTIGATIONS_DIR / inv_id
+    artifact_path = inv_path / "artifacts" / f"{artifact_id}.json"
 
     if not artifact_path.exists():
         raise HTTPException(
             status_code=404,
-            detail=f"Artifact {artifact_id} not found in {swarm_id}/{task_id}",
+            detail=f"Artifact {artifact_id} not found in {inv_id}",
         )
 
     data: dict[str, Any] = json.loads(artifact_path.read_text())

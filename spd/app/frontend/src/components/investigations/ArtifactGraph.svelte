@@ -158,7 +158,13 @@
                 const baseX = seqXStarts[seqIdx] + COL_PADDING;
                 const baseY = layerYPositions[layer];
 
-                const sorted = sortComponentsByImportance(nodes, layer, seqIdx, graphData.nodeCiVals, graphData.outputProbs);
+                const sorted = sortComponentsByImportance(
+                    nodes,
+                    layer,
+                    seqIdx,
+                    graphData.nodeCiVals,
+                    graphData.outputProbs,
+                );
                 const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, compGap);
 
                 for (const cIdx of nodes) {
