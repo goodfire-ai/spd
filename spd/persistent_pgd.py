@@ -160,15 +160,30 @@ class PersistentPGDState:
 
         self.optimizer.init_state(self.sources)
 
-    def get_grads(self, loss: Float[Tensor, ""]) -> PPGDSources:
-        grads = torch.autograd.grad(loss, list(self.sources.values()), retain_graph=True)
+    def get_grads(
+        self, loss: Float[Tensor, ""], r1_coeff: float = 0.0
+    ) -> tuple[PPGDSources, Float[Tensor, ""] | None]:
+        use_r1 = r1_coeff > 0.0
+        grads = torch.autograd.grad(
+            loss,
+            list(self.sources.values()),
+            retain_graph=True,
+            create_graph=use_r1,
+        )
+
+        r1_penalty: Float[Tensor, ""] | None
+        if use_r1:
+            r1_penalty = r1_coeff * torch.stack([g.pow(2).sum() for g in grads]).sum()
+            grads = tuple(g.detach() for g in grads)
+        else:
+            r1_penalty = None
 
         if self._skip_all_reduce:
-            return dict(zip(self.sources.keys(), grads, strict=True))
+            return dict(zip(self.sources.keys(), grads, strict=True)), r1_penalty
         return {
             k: all_reduce(g, op=ReduceOp.SUM)
             for k, g in zip(self.sources.keys(), grads, strict=True)
-        }
+        }, r1_penalty
 
     def step(self, grads: PPGDSources) -> dict[str, float]:
         """Perform one PGD update step using the provided gradients.
