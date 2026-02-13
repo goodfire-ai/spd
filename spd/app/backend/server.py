@@ -54,7 +54,7 @@ async def lifespan(app: FastAPI):  # pyright: ignore[reportUnusedParameter]
     import os
     from pathlib import Path
 
-    from spd.app.backend.routers.mcp import SwarmConfig, set_swarm_config
+    from spd.app.backend.routers.mcp import InvestigationConfig, set_investigation_config
 
     manager = StateManager.get()
 
@@ -66,23 +66,17 @@ async def lifespan(app: FastAPI):  # pyright: ignore[reportUnusedParameter]
     logger.info(f"[STARTUP] Device: {DEVICE}")
     logger.info(f"[STARTUP] CUDA available: {torch.cuda.is_available()}")
 
-    # Configure MCP for agent swarm mode (derives paths from task_dir)
-    swarm_task_dir = os.environ.get("SPD_SWARM_TASK_DIR")
-    swarm_suggestions_path = os.environ.get("SPD_SWARM_SUGGESTIONS_PATH")
-
-    if swarm_task_dir or swarm_suggestions_path:
-        assert swarm_task_dir and swarm_suggestions_path, (
-            "Swarm mode requires: SPD_SWARM_TASK_DIR and SPD_SWARM_SUGGESTIONS_PATH"
-        )
-        task_dir = Path(swarm_task_dir)
-        set_swarm_config(
-            SwarmConfig(
-                events_log_path=task_dir / "events.jsonl",
-                task_dir=task_dir,
-                suggestions_path=Path(swarm_suggestions_path),
+    # Configure MCP for investigation mode (derives paths from investigation dir)
+    investigation_dir = os.environ.get("SPD_INVESTIGATION_DIR")
+    if investigation_dir:
+        inv_dir = Path(investigation_dir)
+        set_investigation_config(
+            InvestigationConfig(
+                events_log_path=inv_dir / "events.jsonl",
+                investigation_dir=inv_dir,
             )
         )
-        logger.info(f"[STARTUP] Swarm mode enabled: task_dir={swarm_task_dir}")
+        logger.info(f"[STARTUP] Investigation mode enabled: dir={investigation_dir}")
 
     yield
 

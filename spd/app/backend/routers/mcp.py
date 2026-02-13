@@ -11,7 +11,7 @@ import json
 import queue
 import threading
 import traceback
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,12 +23,14 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from spd.app.backend.compute import (
+    compute_ci_only,
     compute_intervention_forward,
     compute_prompt_attributions_optimized,
 )
 from spd.app.backend.database import StoredGraph
 from spd.app.backend.optim_cis import CELossConfig, OptimCIConfig
 from spd.app.backend.routers.graphs import _build_out_probs
+from spd.app.backend.routers.pretrain_info import _get_pretrain_info
 from spd.app.backend.state import StateManager
 from spd.configs import ImportanceMinimalityLossConfig
 from spd.harvest import analysis
@@ -44,26 +46,25 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 
 
 @dataclass
-class SwarmConfig:
-    """Configuration for agent swarm mode. All paths are required when in swarm mode."""
+class InvestigationConfig:
+    """Configuration for investigation mode. All paths are required when in investigation mode."""
 
     events_log_path: Path
-    task_dir: Path
-    suggestions_path: Path
+    investigation_dir: Path
 
 
-_swarm_config: SwarmConfig | None = None
+_investigation_config: InvestigationConfig | None = None
 
 
-def set_swarm_config(config: SwarmConfig) -> None:
-    """Configure MCP for agent swarm mode."""
-    global _swarm_config
-    _swarm_config = config
+def set_investigation_config(config: InvestigationConfig) -> None:
+    """Configure MCP for investigation mode."""
+    global _investigation_config
+    _investigation_config = config
 
 
 def _log_event(event_type: str, message: str, details: dict[str, Any] | None = None) -> None:
-    """Log an event to the events file if in swarm mode."""
-    if _swarm_config is None:
+    """Log an event to the events file if in investigation mode."""
+    if _investigation_config is None:
         return
     event = {
         "event_type": event_type,
@@ -71,7 +72,7 @@ def _log_event(event_type: str, message: str, details: dict[str, Any] | None = N
         "message": message,
         "details": details or {},
     }
-    with open(_swarm_config.events_log_path, "a") as f:
+    with open(_investigation_config.events_log_path, "a") as f:
         f.write(json.dumps(event) + "\n")
 
 
@@ -361,38 +362,6 @@ Only call this for complete, validated explanations - not preliminary hypotheses
         },
     ),
     ToolDefinition(
-        name="submit_suggestion",
-        description="""Submit a suggestion for improving the SPD system.
-
-Use this when you encounter limitations, have ideas for new tools, or think
-of ways the system could better support investigation work.
-
-Suggestions are collected centrally and reviewed by humans to improve the system.""",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "category": {
-                    "type": "string",
-                    "enum": ["tool_improvement", "new_tool", "documentation", "bug", "other"],
-                    "description": "Category of suggestion",
-                },
-                "title": {
-                    "type": "string",
-                    "description": "Brief title for the suggestion",
-                },
-                "description": {
-                    "type": "string",
-                    "description": "Detailed description of the suggestion",
-                },
-                "context": {
-                    "type": "string",
-                    "description": "What you were trying to do when you had this idea",
-                },
-            },
-            "required": ["category", "title", "description"],
-        },
-    ),
-    ToolDefinition(
         name="set_investigation_summary",
         description="""Set a title and summary for your investigation.
 
@@ -450,6 +419,130 @@ inline with your research notes.""",
             "required": ["graph_id"],
         },
     ),
+    ToolDefinition(
+        name="probe_component",
+        description="""Fast CI probing on custom text.
+
+Computes causal importance values and subcomponent activations for a specific component
+across all positions in the input text. Also returns next-token probabilities.
+
+Use this for quick, targeted analysis of how a component responds to specific inputs.""",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "The input text to probe",
+                },
+                "layer": {
+                    "type": "string",
+                    "description": "Canonical layer name (e.g., '0.mlp.up')",
+                },
+                "component_idx": {
+                    "type": "integer",
+                    "description": "Component index within the layer",
+                },
+            },
+            "required": ["text", "layer", "component_idx"],
+        },
+    ),
+    ToolDefinition(
+        name="get_component_activation_examples",
+        description="""Get activation examples from harvest data for a component.
+
+Returns examples showing token windows where the component fires, along with
+CI values and activation strengths at each position.
+
+Use this to understand what inputs activate a component.""",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "layer": {
+                    "type": "string",
+                    "description": "Canonical layer name (e.g., '0.mlp.up')",
+                },
+                "component_idx": {
+                    "type": "integer",
+                    "description": "Component index within the layer",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of examples to return (default: 10)",
+                    "default": 10,
+                },
+            },
+            "required": ["layer", "component_idx"],
+        },
+    ),
+    ToolDefinition(
+        name="get_component_attributions",
+        description="""Get dataset-level component dependencies from pre-computed attributions.
+
+Returns the top source and target components that this component attributes to/from,
+aggregated over the training dataset. Both positive and negative attributions are returned.
+
+Use this to understand a component's role in the broader network.""",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "layer": {
+                    "type": "string",
+                    "description": "Canonical layer name (e.g., '0.mlp.up') or 'output'",
+                },
+                "component_idx": {
+                    "type": "integer",
+                    "description": "Component index within the layer",
+                },
+                "k": {
+                    "type": "integer",
+                    "description": "Number of top attributions to return per direction (default: 10)",
+                    "default": 10,
+                },
+            },
+            "required": ["layer", "component_idx"],
+        },
+    ),
+    ToolDefinition(
+        name="get_model_info",
+        description="""Get architecture details about the pretrained model.
+
+Returns model type, summary, target model config, topology, and pretrain info.
+No parameters required.""",
+        inputSchema={
+            "type": "object",
+            "properties": {},
+        },
+    ),
+    ToolDefinition(
+        name="get_attribution_strength",
+        description="""Query the attribution strength between two specific components.
+
+Returns the dataset-aggregated attribution value from source to target.
+
+Use this to check if two components have a strong connection.""",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "source_layer": {
+                    "type": "string",
+                    "description": "Canonical layer name of source component (e.g., '0.mlp.up')",
+                },
+                "source_idx": {
+                    "type": "integer",
+                    "description": "Source component index",
+                },
+                "target_layer": {
+                    "type": "string",
+                    "description": "Canonical layer name of target component (e.g., '1.attn.q') or 'output'",
+                },
+                "target_idx": {
+                    "type": "integer",
+                    "description": "Target component index",
+                },
+            },
+            "required": ["source_layer", "source_idx", "target_layer", "target_idx"],
+        },
+    ),
 ]
 
 
@@ -464,6 +557,21 @@ def _get_state():
     if manager.run_state is None:
         raise ValueError("No run loaded. The backend must load a run first.")
     return manager, manager.run_state
+
+
+def _concrete_key(canonical_layer: str, component_idx: int, loaded: Any) -> str:
+    """Translate canonical layer + idx to concrete storage key."""
+    if canonical_layer == "output":
+        return f"output:{component_idx}"
+    concrete = loaded.topology.canon_to_target(canonical_layer)
+    return f"{concrete}:{component_idx}"
+
+
+def _canonicalize_layer(layer: str, loaded: Any) -> str:
+    """Translate concrete layer name to canonical, passing through 'output'."""
+    if layer == "output":
+        return layer
+    return loaded.topology.target_to_canon(layer)
 
 
 def _tool_optimize_graph(params: dict[str, Any]) -> Generator[dict[str, Any]]:
@@ -884,17 +992,17 @@ def _tool_create_prompt(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _require_swarm_config() -> SwarmConfig:
-    """Get swarm config, raising if not in swarm mode."""
-    assert _swarm_config is not None, "Not running in swarm mode"
-    return _swarm_config
+def _require_investigation_config() -> InvestigationConfig:
+    """Get investigation config, raising if not in investigation mode."""
+    assert _investigation_config is not None, "Not running in investigation mode"
+    return _investigation_config
 
 
 def _tool_update_research_log(params: dict[str, Any]) -> dict[str, Any]:
     """Append content to the research log."""
-    config = _require_swarm_config()
+    config = _require_investigation_config()
     content = params["content"]
-    research_log_path = config.task_dir / "research_log.md"
+    research_log_path = config.investigation_dir / "research_log.md"
 
     _log_event(
         "tool_call", f"update_research_log: {len(content)} chars", {"preview": content[:100]}
@@ -910,9 +1018,9 @@ def _tool_update_research_log(params: dict[str, Any]) -> dict[str, Any]:
 
 def _tool_save_explanation(params: dict[str, Any]) -> dict[str, Any]:
     """Save a behavior explanation to explanations.jsonl."""
-    from spd.agent_swarm.schemas import BehaviorExplanation, ComponentInfo, Evidence
+    from spd.investigate.schemas import BehaviorExplanation, ComponentInfo, Evidence
 
-    config = _require_swarm_config()
+    config = _require_investigation_config()
 
     _log_event(
         "tool_call",
@@ -949,7 +1057,7 @@ def _tool_save_explanation(params: dict[str, Any]) -> dict[str, Any]:
         limitations=params.get("limitations", []),
     )
 
-    explanations_path = config.task_dir / "explanations.jsonl"
+    explanations_path = config.investigation_dir / "explanations.jsonl"
     with open(explanations_path, "a") as f:
         f.write(explanation.model_dump_json() + "\n")
 
@@ -962,34 +1070,9 @@ def _tool_save_explanation(params: dict[str, Any]) -> dict[str, Any]:
     return {"status": "ok", "path": str(explanations_path)}
 
 
-def _tool_submit_suggestion(params: dict[str, Any]) -> dict[str, Any]:
-    """Submit a suggestion for system improvement."""
-    config = _require_swarm_config()
-
-    suggestion = {
-        "timestamp": datetime.now(UTC).isoformat(),
-        "category": params["category"],
-        "title": params["title"],
-        "description": params["description"],
-        "context": params.get("context"),
-    }
-
-    _log_event(
-        "tool_call",
-        f"submit_suggestion: [{params['category']}] {params['title']}",
-        suggestion,
-    )
-
-    config.suggestions_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(config.suggestions_path, "a") as f:
-        f.write(json.dumps(suggestion) + "\n")
-
-    return {"status": "ok", "message": "Suggestion recorded. Thank you!"}
-
-
 def _tool_set_investigation_summary(params: dict[str, Any]) -> dict[str, Any]:
     """Set the investigation title and summary."""
-    config = _require_swarm_config()
+    config = _require_investigation_config()
 
     summary = {
         "title": params["title"],
@@ -1004,7 +1087,7 @@ def _tool_set_investigation_summary(params: dict[str, Any]) -> dict[str, Any]:
         summary,
     )
 
-    summary_path = config.task_dir / "summary.json"
+    summary_path = config.investigation_dir / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2))
 
     return {"status": "ok", "path": str(summary_path)}
@@ -1019,7 +1102,7 @@ def _tool_save_graph_artifact(params: dict[str, Any]) -> dict[str, Any]:
     3. Filter edges to only active nodes
     4. Apply edge limit
     """
-    config = _require_swarm_config()
+    config = _require_investigation_config()
     manager, loaded = _get_state()
 
     graph_id = params["graph_id"]
@@ -1049,7 +1132,7 @@ def _tool_save_graph_artifact(params: dict[str, Any]) -> dict[str, Any]:
     num_tokens = len(tokens)
 
     # Create artifacts directory
-    artifacts_dir = config.task_dir / "artifacts"
+    artifacts_dir = config.investigation_dir / "artifacts"
     artifacts_dir.mkdir(exist_ok=True)
 
     # Generate artifact ID (find max existing number to avoid collisions)
@@ -1151,9 +1234,240 @@ def _tool_save_graph_artifact(params: dict[str, Any]) -> dict[str, Any]:
     return {"artifact_id": artifact_id, "path": str(artifact_path)}
 
 
+def _tool_probe_component(params: dict[str, Any]) -> dict[str, Any]:
+    """Fast CI probing on custom text for a specific component."""
+    manager, loaded = _get_state()
+
+    text = params["text"]
+    layer = params["layer"]
+    component_idx = params["component_idx"]
+
+    _log_event(
+        "tool_call",
+        f"probe_component: '{text[:50]}...' layer={layer} idx={component_idx}",
+        {"text": text, "layer": layer, "component_idx": component_idx},
+    )
+
+    token_ids = loaded.tokenizer.encode(text)
+    assert token_ids, "Text produced no tokens"
+    tokens_tensor = torch.tensor([token_ids], device=DEVICE)
+
+    concrete_layer = loaded.topology.canon_to_target(layer)
+
+    with manager.gpu_lock():
+        result = compute_ci_only(
+            model=loaded.model, tokens=tokens_tensor, sampling=loaded.config.sampling
+        )
+
+    ci_values = result.ci_lower_leaky[concrete_layer][0, :, component_idx].tolist()
+    subcomp_acts = result.component_acts[concrete_layer][0, :, component_idx].tolist()
+
+    # Get next token probs from target model output
+    next_token_probs = []
+    for i in range(len(token_ids) - 1):
+        next_token_id = token_ids[i + 1]
+        prob = result.target_out_probs[0, i, next_token_id].item()
+        next_token_probs.append(round(prob, 6))
+    next_token_probs.append(None)
+
+    token_strings = [loaded.tokenizer.get_tok_display(t) for t in token_ids]
+
+    return {
+        "tokens": token_strings,
+        "ci_values": ci_values,
+        "subcomp_acts": subcomp_acts,
+        "next_token_probs": next_token_probs,
+    }
+
+
+def _tool_get_component_activation_examples(params: dict[str, Any]) -> dict[str, Any]:
+    """Get activation examples from harvest data."""
+    _, loaded = _get_state()
+
+    layer = params["layer"]
+    component_idx = params["component_idx"]
+    limit = params.get("limit", 10)
+
+    concrete_layer = loaded.topology.canon_to_target(layer)
+    component_key = f"{concrete_layer}:{component_idx}"
+
+    _log_event(
+        "tool_call",
+        f"get_component_activation_examples: {component_key}",
+        {"layer": layer, "component_idx": component_idx, "limit": limit},
+    )
+
+    assert loaded.harvest is not None, "harvest data not loaded"
+    comp = loaded.harvest.get_component(component_key)
+    if comp is None:
+        return {"component_key": component_key, "examples": [], "total": 0}
+
+    examples = []
+    for ex in comp.activation_examples[:limit]:
+        token_strings = [loaded.tokenizer.get_tok_display(t) for t in ex.token_ids]
+        examples.append(
+            {
+                "tokens": token_strings,
+                "ci_values": ex.ci_values,
+                "component_acts": ex.component_acts,
+            }
+        )
+
+    return {
+        "component_key": component_key,
+        "examples": examples,
+        "total": len(comp.activation_examples),
+        "mean_ci": comp.mean_ci,
+    }
+
+
+def _tool_get_component_attributions(params: dict[str, Any]) -> dict[str, Any]:
+    """Get dataset-level component dependencies."""
+    _, loaded = _get_state()
+
+    layer = params["layer"]
+    component_idx = params["component_idx"]
+    k = params.get("k", 10)
+
+    assert loaded.attributions is not None, "dataset attributions not loaded"
+    storage = loaded.attributions.get_attributions()
+
+    concrete_layer = loaded.topology.canon_to_target(layer) if layer != "output" else "output"
+    component_key = f"{concrete_layer}:{component_idx}"
+
+    _log_event(
+        "tool_call",
+        f"get_component_attributions: {component_key}",
+        {"layer": layer, "component_idx": component_idx, "k": k},
+    )
+
+    is_source = storage.has_source(component_key)
+    is_target = storage.has_target(component_key)
+
+    assert is_source or is_target, f"Component {component_key} not found in attributions"
+
+    w_unembed = loaded.topology.get_unembed_weight() if is_source else None
+
+    def _entries_to_dicts(
+        entries: list[Any],
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "component_key": f"{_canonicalize_layer(e.layer, loaded)}:{e.component_idx}",
+                "layer": _canonicalize_layer(e.layer, loaded),
+                "component_idx": e.component_idx,
+                "value": e.value,
+            }
+            for e in entries
+        ]
+
+    positive_sources = (
+        _entries_to_dicts(storage.get_top_sources(component_key, k, "positive"))
+        if is_target
+        else []
+    )
+    negative_sources = (
+        _entries_to_dicts(storage.get_top_sources(component_key, k, "negative"))
+        if is_target
+        else []
+    )
+    positive_targets = (
+        _entries_to_dicts(
+            storage.get_top_targets(
+                component_key,
+                k,
+                "positive",
+                w_unembed=w_unembed,
+                include_outputs=w_unembed is not None,
+            )
+        )
+        if is_source
+        else []
+    )
+    negative_targets = (
+        _entries_to_dicts(
+            storage.get_top_targets(
+                component_key,
+                k,
+                "negative",
+                w_unembed=w_unembed,
+                include_outputs=w_unembed is not None,
+            )
+        )
+        if is_source
+        else []
+    )
+
+    return {
+        "component_key": component_key,
+        "positive_sources": positive_sources,
+        "negative_sources": negative_sources,
+        "positive_targets": positive_targets,
+        "negative_targets": negative_targets,
+    }
+
+
+def _tool_get_model_info(_params: dict[str, Any]) -> dict[str, Any]:
+    """Get architecture details about the pretrained model."""
+    _, loaded = _get_state()
+
+    _log_event("tool_call", "get_model_info", {})
+
+    info = _get_pretrain_info(loaded.config)
+    return info.model_dump()
+
+
+def _tool_get_attribution_strength(params: dict[str, Any]) -> dict[str, Any]:
+    """Query attribution between two specific components."""
+    _, loaded = _get_state()
+
+    source_layer = params["source_layer"]
+    source_idx = params["source_idx"]
+    target_layer = params["target_layer"]
+    target_idx = params["target_idx"]
+
+    assert loaded.attributions is not None, "dataset attributions not loaded"
+    storage = loaded.attributions.get_attributions()
+
+    source_key = _concrete_key(source_layer, source_idx, loaded)
+    target_key = _concrete_key(target_layer, target_idx, loaded)
+
+    _log_event(
+        "tool_call",
+        f"get_attribution_strength: {source_key} → {target_key}",
+        {"source": source_key, "target": target_key},
+    )
+
+    w_unembed = loaded.topology.get_unembed_weight() if target_layer == "output" else None
+    value = storage.get_attribution(source_key, target_key, w_unembed=w_unembed)
+
+    return {"value": value}
+
+
 # =============================================================================
 # MCP Protocol Handler
 # =============================================================================
+
+
+_STREAMING_TOOLS: dict[str, Callable[..., Generator[dict[str, Any]]]] = {
+    "optimize_graph": _tool_optimize_graph,
+}
+
+_SIMPLE_TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
+    "get_component_info": _tool_get_component_info,
+    "run_ablation": _tool_run_ablation,
+    "search_dataset": _tool_search_dataset,
+    "create_prompt": _tool_create_prompt,
+    "update_research_log": _tool_update_research_log,
+    "save_explanation": _tool_save_explanation,
+    "set_investigation_summary": _tool_set_investigation_summary,
+    "save_graph_artifact": _tool_save_graph_artifact,
+    "probe_component": _tool_probe_component,
+    "get_component_activation_examples": _tool_get_component_activation_examples,
+    "get_component_attributions": _tool_get_component_attributions,
+    "get_model_info": _tool_get_model_info,
+    "get_attribution_strength": _tool_get_attribution_strength,
+}
 
 
 def _handle_initialize(_params: dict[str, Any] | None) -> dict[str, Any]:
@@ -1177,71 +1491,14 @@ def _handle_tools_call(
     name = params.get("name")
     arguments = params.get("arguments", {})
 
-    if name == "optimize_graph":
-        # This tool streams progress
-        return _tool_optimize_graph(arguments)
-    elif name == "get_component_info":
-        return {
-            "content": [
-                {"type": "text", "text": json.dumps(_tool_get_component_info(arguments), indent=2)}
-            ]
-        }
-    elif name == "run_ablation":
-        return {
-            "content": [
-                {"type": "text", "text": json.dumps(_tool_run_ablation(arguments), indent=2)}
-            ]
-        }
-    elif name == "search_dataset":
-        return {
-            "content": [
-                {"type": "text", "text": json.dumps(_tool_search_dataset(arguments), indent=2)}
-            ]
-        }
-    elif name == "create_prompt":
-        return {
-            "content": [
-                {"type": "text", "text": json.dumps(_tool_create_prompt(arguments), indent=2)}
-            ]
-        }
-    elif name == "update_research_log":
-        return {
-            "content": [
-                {"type": "text", "text": json.dumps(_tool_update_research_log(arguments), indent=2)}
-            ]
-        }
-    elif name == "save_explanation":
-        return {
-            "content": [
-                {"type": "text", "text": json.dumps(_tool_save_explanation(arguments), indent=2)}
-            ]
-        }
-    elif name == "submit_suggestion":
-        return {
-            "content": [
-                {"type": "text", "text": json.dumps(_tool_submit_suggestion(arguments), indent=2)}
-            ]
-        }
-    elif name == "set_investigation_summary":
-        return {
-            "content": [
-                {
-                    "type": "text",
-                    "text": json.dumps(_tool_set_investigation_summary(arguments), indent=2),
-                }
-            ]
-        }
-    elif name == "save_graph_artifact":
-        return {
-            "content": [
-                {
-                    "type": "text",
-                    "text": json.dumps(_tool_save_graph_artifact(arguments), indent=2),
-                }
-            ]
-        }
-    else:
-        raise ValueError(f"Unknown tool: {name}")
+    if name in _STREAMING_TOOLS:
+        return _STREAMING_TOOLS[name](arguments)
+
+    if name in _SIMPLE_TOOLS:
+        result = _SIMPLE_TOOLS[name](arguments)
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
+    raise ValueError(f"Unknown tool: {name}")
 
 
 @router.post("/mcp")

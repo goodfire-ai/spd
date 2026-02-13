@@ -26,12 +26,12 @@
         }
     }
 
-    async function selectInvestigation(swarmId: string, taskId: number) {
+    async function selectInvestigation(invId: string) {
         selected = { status: "loading" };
         loadedArtifacts = {}; // Reset artifacts when selecting new investigation
         artifactsLoading = false;
         try {
-            const data = await api.getInvestigation(swarmId, taskId);
+            const data = await api.getInvestigation(invId);
             selected = { status: "loaded", data };
 
             // Load all artifacts for this investigation
@@ -41,7 +41,7 @@
                 await Promise.all(
                     data.artifact_ids.map(async (artifactId) => {
                         try {
-                            const artifact = await api.getArtifact(swarmId, taskId, artifactId);
+                            const artifact = await api.getArtifact(invId, artifactId);
                             artifacts[artifactId] = artifact;
                         } catch (e) {
                             console.error(`Failed to load artifact ${artifactId}:`, e);
@@ -69,8 +69,7 @@
     }
 
     function formatId(id: string): string {
-        // swarm-abc123/1 -> abc123/1
-        return id.replace("swarm-", "");
+        return id.replace("inv-", "");
     }
 
     function getEventTypeColor(eventType: string): string {
@@ -179,13 +178,16 @@
         {:else if investigations.status === "loaded"}
             <div class="investigations-list">
                 {#each investigations.data as inv (inv.id)}
-                    <button class="investigation-card" onclick={() => selectInvestigation(inv.swarm_id, inv.task_id)}>
+                    <button class="investigation-card" onclick={() => selectInvestigation(inv.id)}>
                         <div class="card-header">
                             <span class="investigation-id">{formatId(inv.id)}</span>
                             <span class="investigation-date">{formatDate(inv.created_at)}</span>
                         </div>
                         {#if inv.title}
                             <span class="investigation-title">{inv.title}</span>
+                        {/if}
+                        {#if inv.prompt}
+                            <span class="investigation-prompt">{inv.prompt}</span>
                         {/if}
                         {#if inv.wandb_path}
                             <span class="investigation-wandb">{inv.wandb_path}</span>
@@ -218,7 +220,9 @@
                         {/if}
                     </button>
                 {:else}
-                    <p class="empty-message">No investigations found. Run <code>spd-swarm</code> to create one.</p>
+                    <p class="empty-message">
+                        No investigations found. Run <code>spd-investigate</code> to create one.
+                    </p>
                 {/each}
             </div>
         {/if}
@@ -358,6 +362,18 @@
     .status-badge.warning {
         background: var(--accent-yellow-dim);
         color: var(--accent-yellow);
+    }
+
+    .investigation-prompt {
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+        font-style: italic;
+        line-height: 1.4;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
     }
 
     .investigation-title {
