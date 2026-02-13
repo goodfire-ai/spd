@@ -3,7 +3,6 @@
     import { computeMaxAbsComponentAct } from "../lib/colors";
     import { COMPONENT_CARD_CONSTANTS } from "../lib/componentCardConstants";
     import { anyCorrelationStatsEnabled, displaySettings } from "../lib/displaySettings.svelte";
-    import { getLayerAlias } from "../lib/layerAliasing";
     import type { ActivationContextsSummary, SubcomponentMetadata } from "../lib/promptAttributionsTypes";
     import { useComponentData } from "../lib/useComponentData.svelte";
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
@@ -288,7 +287,7 @@
             <label for="layer-select">Layer:</label>
             <select id="layer-select" value={selectedLayer} onchange={handleLayerChange}>
                 {#each availableLayers as layer (layer)}
-                    <option value={layer}>{getLayerAlias(layer)}</option>
+                    <option value={layer}>{layer}</option>
                 {/each}
             </select>
         </div>

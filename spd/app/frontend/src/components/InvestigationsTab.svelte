@@ -165,17 +165,15 @@
 
         <div class="tab-content">
             {#if activeTab === "research"}
-                <div class="research-log">
-                    {#if selected.data.research_log}
-                        <ResearchLogViewer
-                            markdown={selected.data.research_log}
-                            artifacts={loadedArtifacts}
-                            {artifactsLoading}
-                        />
-                    {:else}
-                        <p class="empty-message">No research log available</p>
-                    {/if}
-                </div>
+                {#if selected.data.research_log}
+                    <ResearchLogViewer
+                        markdown={selected.data.research_log}
+                        artifacts={loadedArtifacts}
+                        {artifactsLoading}
+                    />
+                {:else}
+                    <p class="empty-message">No research log available</p>
+                {/if}
             {:else}
                 <div class="events-list">
                     {#each selected.data.events as event, i (i)}
@@ -567,13 +565,6 @@
     .tab-content {
         flex: 1;
         overflow-y: auto;
-    }
-
-    .research-log {
-        background: var(--bg-surface);
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
-        padding: var(--space-3);
     }
 
     .events-list {
