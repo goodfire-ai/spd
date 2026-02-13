@@ -9,9 +9,9 @@ Usage:
     python -m spd.autointerp.scoring.scripts.run_scoring <wandb_path> --scorer detection
 """
 
-import asyncio
 import json
 import random
+from collections import defaultdict
 from dataclasses import asdict, dataclass
 
 from aiolimiter import AsyncLimiter
@@ -23,30 +23,29 @@ from spd.app.backend.utils import delimit_tokens
 from spd.autointerp.config import AutointerpEvalConfig
 from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import (
-    BudgetExceededError,
     CostTracker,
     GlobalBackoff,
     LLMClient,
+    LLMError,
+    LLMJob,
+    LLMResult,
     get_model_pricing,
-    make_response_format,
+    map_api_calls,
 )
 from spd.harvest.schemas import ActivationExample, ComponentData
 from spd.log import logger
 
-DETECTION_RESPONSE_FORMAT = make_response_format(
-    "detection_response",
-    {
-        "type": "object",
-        "properties": {
-            "activating": {
-                "type": "array",
-                "items": {"type": "integer"},
-                "description": "1-indexed example numbers that activate the component",
-            },
+DETECTION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "activating": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "1-indexed example numbers that activate the component",
         },
-        "required": ["activating"],
     },
-)
+    "required": ["activating"],
+}
 
 
 @dataclass
@@ -150,84 +149,11 @@ Based on the label, in which examples is the <<marked>> token one where this com
 Respond with the list of activating example numbers."""
 
 
-async def score_component(
-    llm: LLMClient,
-    model: str,
-    reasoning_effort: Effort,
-    component: ComponentData,
-    all_components: list[ComponentData],
-    app_tok: AppTokenizer,
-    label: str,
-    n_activating: int,
-    n_non_activating: int,
-    n_trials: int,
-) -> DetectionResult:
-    assert len(component.activation_examples) >= n_activating
-
-    rng = random.Random()
-    trials: list[DetectionTrial] = []
-    n_errors = 0
-
-    for trial_idx in range(n_trials):
-        activating = _sample_activating_examples(component, n_activating, rng)
-        non_activating = _sample_non_activating_examples(
-            component, all_components, n_non_activating, rng
-        )
-
-        formatted: list[tuple[str, bool]] = []
-        for ex in activating:
-            formatted.append((_format_example_with_center_token(ex, app_tok), True))
-        for ex in non_activating:
-            formatted.append((_format_example_with_center_token(ex, app_tok), False))
-
-        rng.shuffle(formatted)
-
-        prompt = _build_detection_prompt(label, formatted)
-
-        try:
-            response = await llm.chat(
-                model=model,
-                reasoning=Reasoning(effort=reasoning_effort),
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=5000,
-                context_label=f"{component.component_key}/trial{trial_idx}",
-                response_format=DETECTION_RESPONSE_FORMAT,
-            )
-            parsed = json.loads(response)
-            predicted_activating = set(int(x) for x in parsed["activating"])
-
-            actual_activating = set(i + 1 for i, (_, is_act) in enumerate(formatted) if is_act)
-            actual_non_activating = set(
-                i + 1 for i, (_, is_act) in enumerate(formatted) if not is_act
-            )
-
-            tp = len(predicted_activating & actual_activating)
-            tn = len(actual_non_activating - predicted_activating)
-            tpr = tp / len(actual_activating) if actual_activating else 0.0
-            tnr = tn / len(actual_non_activating) if actual_non_activating else 0.0
-            balanced_acc = (tpr + tnr) / 2
-
-            trials.append(
-                DetectionTrial(
-                    predicted_activating=sorted(predicted_activating),
-                    actual_activating=sorted(actual_activating),
-                    tpr=tpr,
-                    tnr=tnr,
-                    balanced_acc=balanced_acc,
-                )
-            )
-        except Exception as e:
-            logger.error(f"{component.component_key}/trial{trial_idx}: {type(e).__name__}: {e}")
-            n_errors += 1
-
-    score = sum(t.balanced_acc for t in trials) / len(trials) if trials else 0.0
-
-    return DetectionResult(
-        component_key=component.component_key,
-        score=score,
-        trials=trials,
-        n_errors=n_errors,
-    )
+@dataclass
+class _TrialGroundTruth:
+    component_key: str
+    actual_activating: set[int]
+    actual_non_activating: set[int]
 
 
 async def run_detection_scoring(
@@ -257,47 +183,51 @@ async def run_detection_scoring(
     if limit is not None:
         eligible = eligible[:limit]
 
-    results: list[DetectionResult] = []
-
     existing_scores = db.get_scores("detection")
     completed = set(existing_scores.keys())
     if completed:
         logger.info(f"Resuming: {len(completed)} already scored")
 
     remaining = [c for c in eligible if c.component_key not in completed]
-    logger.info(f"Scoring {len(remaining)} components")
+    logger.info(f"Scoring {len(remaining)} components ({len(remaining) * n_trials} trials)")
 
-    semaphore = asyncio.Semaphore(max_concurrent)
-    output_lock = asyncio.Lock()
+    rng = random.Random()
+    jobs: list[LLMJob] = []
+    ground_truth: dict[str, _TrialGroundTruth] = {}
 
-    async def process_one(component: ComponentData, index: int, llm: LLMClient) -> None:
-        async with semaphore:
-            try:
-                result = await score_component(
-                    llm,
-                    model,
-                    reasoning_effort,
-                    component,
-                    components,
-                    app_tok,
-                    labels[component.component_key],
-                    n_activating=n_activating,
-                    n_non_activating=n_non_activating,
-                    n_trials=n_trials,
+    for component in remaining:
+        label = labels[component.component_key]
+        for trial_idx in range(n_trials):
+            activating = _sample_activating_examples(component, n_activating, rng)
+            non_activating = _sample_non_activating_examples(
+                component, components, n_non_activating, rng
+            )
+
+            formatted: list[tuple[str, bool]] = []
+            for ex in activating:
+                formatted.append((_format_example_with_center_token(ex, app_tok), True))
+            for ex in non_activating:
+                formatted.append((_format_example_with_center_token(ex, app_tok), False))
+            rng.shuffle(formatted)
+
+            key = f"{component.component_key}/trial{trial_idx}"
+            actual_act = {i + 1 for i, (_, is_act) in enumerate(formatted) if is_act}
+            actual_non_act = {i + 1 for i, (_, is_act) in enumerate(formatted) if not is_act}
+            jobs.append(
+                LLMJob(
+                    prompt=_build_detection_prompt(label, formatted),
+                    schema=DETECTION_SCHEMA,
+                    key=key,
                 )
-            except BudgetExceededError:
-                return
-            except Exception as e:
-                logger.error(f"Skipping {component.component_key}: {type(e).__name__}: {e}")
-                return
-            async with output_lock:
-                results.append(result)
-                details = json.dumps(asdict(result))
-                db.save_score(result.component_key, "detection", result.score, details)
-                if index % 100 == 0:
-                    logger.info(
-                        f"[{index}] scored {len(results)}, ${llm.cost_tracker.cost_usd():.2f}"
-                    )
+            )
+            ground_truth[key] = _TrialGroundTruth(
+                component_key=component.component_key,
+                actual_activating=actual_act,
+                actual_non_activating=actual_non_act,
+            )
+
+    component_trials: defaultdict[str, list[DetectionTrial]] = defaultdict(list)
+    component_errors: defaultdict[str, int] = defaultdict(int)
 
     async with OpenRouter(api_key=openrouter_api_key) as api:
         input_price, output_price = await get_model_pricing(api, model)
@@ -313,9 +243,47 @@ async def run_detection_scoring(
             cost_tracker=cost_tracker,
         )
 
-        await asyncio.gather(*[process_one(c, i, llm) for i, c in enumerate(remaining)])
+        async for outcome in map_api_calls(
+            jobs,
+            llm,
+            model=model,
+            max_tokens=5000,
+            reasoning=Reasoning(effort=reasoning_effort),
+            max_concurrent=max_concurrent,
+        ):
+            match outcome:
+                case LLMResult(job=job, parsed=parsed):
+                    gt = ground_truth[job.key]
+                    predicted = {int(x) for x in parsed["activating"]}
+                    tp = len(predicted & gt.actual_activating)
+                    tn = len(gt.actual_non_activating - predicted)
+                    tpr = tp / len(gt.actual_activating) if gt.actual_activating else 0.0
+                    tnr = tn / len(gt.actual_non_activating) if gt.actual_non_activating else 0.0
+                    component_trials[gt.component_key].append(
+                        DetectionTrial(
+                            predicted_activating=sorted(predicted),
+                            actual_activating=sorted(gt.actual_activating),
+                            tpr=tpr,
+                            tnr=tnr,
+                            balanced_acc=(tpr + tnr) / 2,
+                        )
+                    )
+                case LLMError(job=job, error=e):
+                    gt = ground_truth[job.key]
+                    component_errors[gt.component_key] += 1
+                    logger.error(f"{job.key}: {type(e).__name__}: {e}")
 
         logger.info(f"Final cost: ${cost_tracker.cost_usd():.2f}")
+
+    results: list[DetectionResult] = []
+    for component in remaining:
+        ck = component.component_key
+        trials = component_trials.get(ck, [])
+        n_err = component_errors.get(ck, 0)
+        score = sum(t.balanced_acc for t in trials) / len(trials) if trials else 0.0
+        result = DetectionResult(component_key=ck, score=score, trials=trials, n_errors=n_err)
+        results.append(result)
+        db.save_score(ck, "detection", score, json.dumps(asdict(result)))
 
     logger.info(f"Scored {len(results)} components")
     return results

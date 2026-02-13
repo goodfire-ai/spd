@@ -1,8 +1,11 @@
 """LLM API client with rate limiting, cost tracking, and retry."""
 
 import asyncio
+import contextlib
+import json
 import random
 import time
+from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -34,6 +37,8 @@ MAX_RETRIES = 8
 BASE_DELAY_S = 0.5
 MAX_DELAY_S = 60.0
 JITTER_FACTOR = 0.5
+REQUEST_TIMEOUT_MS = 120_000
+JSON_PARSE_RETRIES = 3
 
 RETRYABLE_ERRORS = (
     TooManyRequestsResponseError,
@@ -176,6 +181,7 @@ class LLMClient:
                         model=model,
                         max_tokens=max_tokens,
                         messages=messages,
+                        timeout_ms=REQUEST_TIMEOUT_MS,
                     )
                     if response_format is not None:
                         kwargs["response_format"] = response_format
@@ -221,3 +227,105 @@ class LLMClient:
 
         assert last_error is not None
         raise RuntimeError(f"Max retries exceeded for {context_label}: {last_error}")
+
+
+@dataclass
+class LLMJob:
+    prompt: str
+    schema: dict[str, Any]
+    key: str
+
+
+@dataclass
+class LLMResult:
+    job: LLMJob
+    parsed: dict[str, Any]
+    raw: str
+
+
+@dataclass
+class LLMError:
+    job: LLMJob
+    error: Exception
+
+
+async def map_api_calls(
+    jobs: Sequence[LLMJob],
+    llm: LLMClient,
+    model: str,
+    max_tokens: int,
+    reasoning: Reasoning | None,
+    max_concurrent: int,
+) -> AsyncGenerator[LLMResult | LLMError]:
+    """Fan out LLM calls concurrently, yielding parsed results as they complete.
+
+    Handles rate limiting (via LLMClient), JSON parsing with retry, and progress logging.
+    Yields LLMResult on success, LLMError on failure. BudgetExceededError silently stops
+    remaining jobs.
+    """
+    queue: asyncio.Queue[LLMResult | LLMError | None] = asyncio.Queue()
+    semaphore = asyncio.Semaphore(max_concurrent)
+    n_total = len(jobs)
+    n_done = 0
+    budget_exceeded = False
+    response_format = make_response_format("response", jobs[0].schema) if jobs else None
+
+    async def process_one(job: LLMJob) -> None:
+        nonlocal n_done, budget_exceeded
+        if budget_exceeded:
+            return
+        async with semaphore:
+            try:
+                assert response_format is not None
+                raw = ""
+                parsed = None
+                for attempt in range(JSON_PARSE_RETRIES):
+                    raw = await llm.chat(
+                        model=model,
+                        messages=[{"role": "user", "content": job.prompt}],
+                        max_tokens=max_tokens,
+                        context_label=job.key,
+                        response_format=response_format,
+                        reasoning=reasoning,
+                    )
+                    try:
+                        parsed = json.loads(raw)
+                        break
+                    except json.JSONDecodeError:
+                        if attempt == JSON_PARSE_RETRIES - 1:
+                            raise
+                        logger.warning(
+                            f"{job.key}: invalid JSON "
+                            f"(attempt {attempt + 1}/{JSON_PARSE_RETRIES}), retrying"
+                        )
+                assert parsed is not None
+                await queue.put(LLMResult(job=job, parsed=parsed, raw=raw))
+            except BudgetExceededError:
+                budget_exceeded = True
+                return
+            except Exception as e:
+                await queue.put(LLMError(job=job, error=e))
+        n_done += 1
+        if n_done % 100 == 0 or n_done == n_total:
+            logger.info(
+                f"[{n_done}/{n_total}] ${llm.cost_tracker.cost_usd():.2f} "
+                f"({llm.cost_tracker.input_tokens:,} in, "
+                f"{llm.cost_tracker.output_tokens:,} out)"
+            )
+
+    async def run_all() -> None:
+        await asyncio.gather(*[process_one(job) for job in jobs])
+        await queue.put(None)
+
+    task = asyncio.create_task(run_all())
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield item
+    finally:
+        if not task.done():
+            task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
