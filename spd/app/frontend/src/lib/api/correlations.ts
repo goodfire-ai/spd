@@ -29,6 +29,8 @@ export async function getComponentTokenStats(
 export type InterpretationHeadline = {
     label: string;
     confidence: "low" | "medium" | "high";
+    detection_score: number | null;
+    fuzzing_score: number | null;
 };
 
 // Interpretation detail (fetched on-demand) - reasoning and prompt
@@ -39,6 +41,10 @@ export type InterpretationDetail = {
 
 export async function getAllInterpretations(): Promise<Record<string, InterpretationHeadline>> {
     return fetchJson<Record<string, InterpretationHeadline>>("/api/correlations/interpretations");
+}
+
+export async function getIntruderScores(): Promise<Record<string, number>> {
+    return fetchJson<Record<string, number>>("/api/correlations/intruder_scores");
 }
 
 export async function getInterpretationDetail(layer: string, componentIdx: number): Promise<InterpretationDetail> {

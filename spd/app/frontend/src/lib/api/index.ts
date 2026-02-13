@@ -26,13 +26,19 @@ export class ApiError extends Error {
 export async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     const response = await fetch(url, options);
     const text = await response.text();
-    const data = JSON.parse(text);
 
     if (!response.ok) {
-        throw new ApiError(data.detail || data.error || `HTTP ${response.status}`, response.status);
+        let message = `HTTP ${response.status}`;
+        try {
+            const data = JSON.parse(text);
+            message = data.detail || data.error || message;
+        } catch {
+            message = text.slice(0, 200) || message;
+        }
+        throw new ApiError(message, response.status);
     }
 
-    return data as T;
+    return JSON.parse(text) as T;
 }
 
 // Re-export all API modules
@@ -47,3 +53,5 @@ export * from "./dataset";
 export * from "./clusters";
 export * from "./componentData";
 export * from "./investigations";
+export * from "./dataSources";
+export * from "./pretrainInfo";

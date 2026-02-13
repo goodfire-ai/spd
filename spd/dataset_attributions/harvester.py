@@ -20,6 +20,7 @@ from tqdm.auto import tqdm
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
+from spd.utils.general_utils import bf16_autocast
 
 
 class AttributionHarvester:
@@ -52,6 +53,8 @@ class AttributionHarvester:
         source_alive: Bool[Tensor, " n_sources"],
         target_alive: Bool[Tensor, " n_components"],
         sampling: SamplingType,
+        embedding_module: nn.Embedding,
+        unembed_module: nn.Linear,
         device: torch.device,
         show_progress: bool = False,
     ):
@@ -62,6 +65,8 @@ class AttributionHarvester:
         self.source_alive = source_alive
         self.target_alive = target_alive
         self.sampling = sampling
+        self.embedding_module = embedding_module
+        self.unembed_module = unembed_module
         self.device = device
         self.show_progress = show_progress
 
@@ -73,12 +78,8 @@ class AttributionHarvester:
         self.comp_accumulator = torch.zeros(self.n_sources, n_components, device=device)
 
         # For output targets: store attributions to output residual dimensions
-        assert hasattr(model.target_model, "lm_head"), "Model must have lm_head"
-        lm_head = model.target_model.lm_head
-        assert isinstance(lm_head, nn.Linear), f"lm_head must be nn.Linear, got {type(lm_head)}"
-        self.d_model = lm_head.in_features
+        self.d_model = unembed_module.in_features
         self.out_residual_accumulator = torch.zeros(self.n_sources, self.d_model, device=device)
-        self.lm_head = lm_head
 
         # Build per-layer index ranges for sources
         self.component_layer_names = list(model.target_module_paths)
@@ -143,13 +144,11 @@ class AttributionHarvester:
             pre_unembed.clear()
             pre_unembed.append(args[0])
 
-        wte = self.model.target_model.wte
-        assert isinstance(wte, nn.Module)
-        h1 = wte.register_forward_hook(wte_hook, with_kwargs=True)
-        h2 = self.lm_head.register_forward_pre_hook(pre_unembed_hook, with_kwargs=True)
+        h1 = self.embedding_module.register_forward_hook(wte_hook, with_kwargs=True)
+        h2 = self.unembed_module.register_forward_pre_hook(pre_unembed_hook, with_kwargs=True)
 
         # Get masks with all components active
-        with torch.no_grad():
+        with torch.no_grad(), bf16_autocast():
             out = self.model(tokens, cache_type="input")
             ci = self.model.calc_causal_importances(
                 pre_weight_acts=out.cache, sampling=self.sampling, detach_inputs=False
@@ -160,7 +159,7 @@ class AttributionHarvester:
         )
 
         # Forward pass with gradients
-        with torch.enable_grad():
+        with torch.enable_grad(), bf16_autocast():
             comp_output: OutputWithCache = self.model(
                 tokens, mask_infos=mask_infos, cache_type="component_acts"
             )

@@ -53,7 +53,6 @@ slow_eval_freq: 5_000
 slow_eval_on_first_step: true
 save_freq: null
 ci_alive_threshold: 0.1
-n_examples_until_dead: 1_024_000
 eval_metric_configs:
   - classname: "CIHistograms"
     n_batches_accum: 5

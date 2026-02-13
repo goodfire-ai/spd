@@ -4,13 +4,14 @@ from typing import TYPE_CHECKING, Literal, override
 
 import einops
 import torch
+import torch.nn.functional as F
 from jaxtyping import Bool, Float, Int
 from torch import Tensor, nn
 
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
 if TYPE_CHECKING:
-    from spd.configs import TransitionAttnConfig
+    from spd.configs import AttnConfig
     from spd.spd_types import LayerwiseCiFnType
 
 
@@ -141,6 +142,39 @@ class SelfAttention(nn.Module):
         return self.out_proj(attn_out)
 
 
+class TransformerBlock(nn.Module):
+    """RMSNorm → self-attention → residual → RMSNorm → MLP → residual."""
+
+    def __init__(
+        self,
+        d_model: int,
+        n_heads: int,
+        mlp_hidden_dims: list[int],
+        max_len: int = 2048,
+        rope_base: float = 10000.0,
+    ):
+        super().__init__()
+        self.attn = SelfAttention(
+            d_model=d_model, n_heads=n_heads, max_len=max_len, rope_base=rope_base
+        )
+        self.d_model = d_model
+
+        mlp_layers = nn.Sequential()
+        in_dim = d_model
+        for hidden_dim in mlp_hidden_dims:
+            mlp_layers.append(Linear(in_dim, hidden_dim, nonlinearity="relu"))
+            mlp_layers.append(nn.GELU())
+            in_dim = hidden_dim
+        mlp_layers.append(Linear(in_dim, d_model, nonlinearity="linear"))
+        self.mlp = mlp_layers
+
+    @override
+    def forward(self, x: Float[Tensor, "... seq d_model"]) -> Float[Tensor, "... seq d_model"]:
+        x = x + self.attn(F.rms_norm(x, (self.d_model,)))
+        x = x + self.mlp(F.rms_norm(x, (self.d_model,)))
+        return x
+
+
 class MLPCiFn(nn.Module):
     """MLP-based function that creates a scalar output for each component."""
 
@@ -247,6 +281,89 @@ class GlobalSharedMLPCiFn(nn.Module):
         return {name: split_outputs[i] for i, name in enumerate(self.layer_order)}
 
 
+@dataclass
+class TargetLayerConfig:
+    input_dim: int
+    C: int
+
+
+class GlobalSharedTransformerCiFn(nn.Module):
+    """Global CI function that projects concatenated activations and attends over sequence."""
+
+    def __init__(
+        self,
+        target_model_layer_configs: dict[str, TargetLayerConfig],
+        d_model: int,
+        n_layers: int,
+        n_heads: int,
+        mlp_hidden_dims: list[int] | None = None,
+        max_len: int = 2048,
+        rope_base: float = 10000.0,
+    ):
+        super().__init__()
+
+        self.layer_order = sorted(target_model_layer_configs.keys())
+        self.target_model_layer_configs = target_model_layer_configs
+        self.split_sizes = [target_model_layer_configs[name].C for name in self.layer_order]
+        self.d_model = d_model
+        self.n_transformer_layers = n_layers
+        self.n_heads = n_heads
+
+        if mlp_hidden_dims is None:
+            mlp_hidden_dims = [4 * d_model]
+
+        total_input_dim = sum(config.input_dim for config in target_model_layer_configs.values())
+        total_c = sum(config.C for config in target_model_layer_configs.values())
+
+        self._input_projector = Linear(total_input_dim, d_model, nonlinearity="relu")
+        self._output_head = Linear(d_model, total_c, nonlinearity="linear")
+
+        self._blocks = nn.ModuleList(
+            [
+                TransformerBlock(
+                    d_model=d_model,
+                    n_heads=n_heads,
+                    mlp_hidden_dims=mlp_hidden_dims,
+                    max_len=max_len,
+                    rope_base=rope_base,
+                )
+                for _ in range(n_layers)
+            ]
+        )
+
+    @override
+    def forward(
+        self,
+        input_acts: dict[str, Float[Tensor, "... d_in"]],
+    ) -> dict[str, Float[Tensor, "... C"]]:
+        inputs_list = [
+            F.rms_norm(input_acts[name], (input_acts[name].shape[-1],)) for name in self.layer_order
+        ]
+        concatenated = torch.cat(inputs_list, dim=-1)
+        projected: Tensor = self._input_projector(concatenated)
+
+        # The transformer blocks expect a sequence dimension, so we add an extra dimension to our
+        # activations if we only have 2D acts (e.g. in TMS and resid_mlp).
+        added_seq_dim = False
+        if projected.ndim < 3:
+            projected = projected.unsqueeze(-2)
+            added_seq_dim = True
+
+        x = projected
+        for block in self._blocks:
+            x = block(x)
+
+        output = self._output_head(x)
+
+        if added_seq_dim:
+            output = output.squeeze(-2)
+
+        split_outputs = torch.split(output, self.split_sizes, dim=-1)
+        outputs = {name: split_outputs[i] for i, name in enumerate(self.layer_order)}
+
+        return outputs
+
+
 class GlobalReverseResidualCiFn(nn.Module):
     """Global CI function that processes blocks in reverse order with a residual stream.
 
@@ -258,8 +375,10 @@ class GlobalReverseResidualCiFn(nn.Module):
        - Project to d_resid_ci_fn and add to residual stream
        - RMSNorm → Reader MLP outputs CI values for all modules in block
        - Transition updates residual stream for next block (except after last block):
-         - If attn_config is provided: RMSNorm → attn → add → RMSNorm → MLP → add
-         - Otherwise: RMSNorm → MLP → add
+         - If attn_config is provided: RMSNorm → attn → add → RMSNorm → MLP(GeLU) → add
+         - Otherwise: RMSNorm → MLP(GeLU) → add
+         - If transition_hidden_dim is provided: MLP d_resid → hidden → d_resid with GeLU
+         - Otherwise: linear d_resid → d_resid
 
     """
 
@@ -268,7 +387,8 @@ class GlobalReverseResidualCiFn(nn.Module):
         block_configs: list[tuple[str, list[str], list[int], list[int]]],
         d_resid_ci_fn: int,
         reader_hidden_dims: list[int],
-        attn_config: "TransitionAttnConfig | None" = None,
+        transition_hidden_dim: int | None,
+        attn_config: "AttnConfig | None" = None,
     ):
         """Initialize the reverse residual CI function.
 
@@ -277,6 +397,7 @@ class GlobalReverseResidualCiFn(nn.Module):
                 Ordered in processing order (first block processed first).
             d_resid_ci_fn: Dimension of the residual stream.
             reader_hidden_dims: Hidden dimensions for reader MLPs.
+            transition_hidden_dim: Hidden dimension for transition MLPs.
             attn_config: Optional config for self-attention in transitions. If provided,
                 transitions use a transformer block (attention → residual → MLP → residual).
         """
@@ -332,19 +453,25 @@ class GlobalReverseResidualCiFn(nn.Module):
             self._reader_norms[safe_name] = nn.RMSNorm(d_resid_ci_fn)
 
             if block_idx < self.n_blocks - 1:
-                self._transitions[safe_name] = Linear(
-                    d_resid_ci_fn, d_resid_ci_fn, nonlinearity="relu"
-                )
+                if transition_hidden_dim is not None:
+                    transition = nn.Sequential(
+                        Linear(d_resid_ci_fn, transition_hidden_dim, nonlinearity="relu"),
+                        nn.GELU(),
+                        Linear(transition_hidden_dim, d_resid_ci_fn, nonlinearity="relu"),
+                    )
+                else:
+                    transition = Linear(d_resid_ci_fn, d_resid_ci_fn, nonlinearity="relu")
+                self._transitions[safe_name] = transition
                 self._transition_norms[safe_name] = nn.RMSNorm(d_resid_ci_fn)
                 if attn_config is not None:
                     assert self._attn_transitions is not None
-                    assert self._attn_norms is not None
                     self._attn_transitions[safe_name] = SelfAttention(
                         d_model=d_resid_ci_fn,
                         n_heads=attn_config.n_heads,
                         max_len=attn_config.max_len,
                         rope_base=attn_config.rope_base,
                     )
+                    assert self._attn_norms is not None
                     self._attn_norms[safe_name] = nn.RMSNorm(d_resid_ci_fn)
 
     @override
@@ -372,12 +499,6 @@ class GlobalReverseResidualCiFn(nn.Module):
             projection = self._inp_projectors[safe_name](concat_acts)
             residual = residual + projection
 
-            ci_output = self._readers[safe_name](self._reader_norms[safe_name](residual))
-
-            split_outputs = torch.split(ci_output, c_values, dim=-1)
-            for module_name, module_ci in zip(module_names, split_outputs, strict=True):
-                all_outputs[module_name] = module_ci
-
             if block_idx < self.n_blocks - 1:
                 # With attention: norm → attn → residual add → norm → MLP → residual add
                 # Without attention: norm → MLP → residual add
@@ -390,6 +511,11 @@ class GlobalReverseResidualCiFn(nn.Module):
 
                 mlp_out = self._transitions[safe_name](self._transition_norms[safe_name](residual))
                 residual = residual + mlp_out
+            ci_output = self._readers[safe_name](self._reader_norms[safe_name](residual))
+
+            split_outputs = torch.split(ci_output, c_values, dim=-1)
+            for module_name, module_ci in zip(module_names, split_outputs, strict=True):
+                all_outputs[module_name] = module_ci
 
         return all_outputs
 
@@ -464,7 +590,7 @@ class LinearComponents(Components):
 
     @override
     def get_component_acts(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
-        return einops.einsum(x, self.V, "... d_in, d_in C -> ... C")
+        return einops.einsum(x.to(self.V.dtype), self.V, "... d_in, d_in C -> ... C")
 
     @override
     def forward(
@@ -699,7 +825,7 @@ class GlobalCiFnWrapper(nn.Module):
 
     def __init__(
         self,
-        global_ci_fn: GlobalSharedMLPCiFn | GlobalReverseResidualCiFn,
+        global_ci_fn: GlobalSharedMLPCiFn | GlobalSharedTransformerCiFn | GlobalReverseResidualCiFn,
         components: dict[str, Components],
     ):
         super().__init__()

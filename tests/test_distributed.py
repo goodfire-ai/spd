@@ -50,7 +50,6 @@ TEST_CONFIG = {
     "slow_eval_on_first_step": True,
     "n_eval_steps": 2,
     "save_freq": None,  # Just save at the end
-    "n_examples_until_dead": 999999,  # We're not tracking this
     "eval_metrics": [
         {"classname": "CI_L0"},
         {"classname": "CEandKLLosses", "rounding_threshold": 0.1},
@@ -73,6 +72,8 @@ TEST_CONFIG = {
     },
     # --- Distributed ---
     "dist_backend": "gloo",  # Want to run this test on CPU
+    # We use float32 to avoid precision difference accumulations
+    "autocast_bf16": False,
 }
 
 

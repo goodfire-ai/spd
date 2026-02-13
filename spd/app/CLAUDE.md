@@ -5,6 +5,7 @@ Web-based visualization and analysis tool for exploring neural network component
 - **Backend**: Python FastAPI (`backend/`)
 - **Frontend**: Svelte 5 + TypeScript (`frontend/`)
 - **Database**: SQLite at `.data/app/prompt_attr.db` (relative to repo root)
+- **TODOs**: See `TODO.md` for open work items
 
 ## Project Context
 
@@ -32,15 +33,17 @@ This launches both backend (FastAPI/uvicorn) and frontend (Vite) dev servers.
 ```
 backend/
 ├── server.py              # FastAPI app, CORS, routers
-├── state.py               # Singleton StateManager + HarvestCache (lazy-loaded harvest data)
+├── state.py               # Singleton StateManager + HarvestRepo (lazy-loaded harvest data)
 ├── compute.py             # Core attribution computation
+├── app_tokenizer.py       # AppTokenizer: wraps HF tokenizers for display/encoding
+├── (topology lives at spd/topology.py — TransformerTopology)
 ├── schemas.py             # Pydantic API models
 ├── dependencies.py        # FastAPI dependency injection
 ├── utils.py               # Logging/timing utilities
 ├── database.py            # SQLite interface
 ├── optim_cis.py           # Sparse CI optimization
 └── routers/
-    ├── runs.py            # Load W&B runs
+    ├── runs.py            # Load W&B runs + GET /api/model_info
     ├── graphs.py          # Compute attribution graphs
     ├── prompts.py         # Prompt management
     ├── activation_contexts.py  # Serves pre-harvested activation contexts
@@ -49,7 +52,9 @@ backend/
     ├── clusters.py        # Component clustering
     ├── dataset_search.py  # SimpleStories dataset search
     ├── agents.py          # Various useful endpoints that AI agents should look at when helping
-    └── mcp.py             # MCP (Model Context Protocol) endpoint for Claude Code 
+    ├── mcp.py             # MCP (Model Context Protocol) endpoint for Claude Code 
+    ├── dataset_search.py  # Dataset search (reads dataset from run config)
+    └── agents.py          # Various useful endpoints that AI agents should look at when helping
 ```
 
 Note: Activation contexts, correlations, and token stats are now loaded from pre-harvested data (see `spd/harvest/`). The app no longer computes these on-the-fly.
@@ -71,6 +76,7 @@ frontend/src/
 │   │   ├── dataset.ts            # Dataset search
 │   │   └── clusters.ts           # Component clustering
 │   ├── index.ts                  # Shared utilities (Loadable<T> pattern)
+│   ├── graphLayout.ts               # Shared graph layout (parseLayer, row sorting)
 │   ├── promptAttributionsTypes.ts # TypeScript types
 │   ├── interventionTypes.ts
 │   ├── colors.ts                 # Color utilities
@@ -85,7 +91,7 @@ frontend/src/
     ├── ActivationContextsTab.svelte  # Component firing patterns tab
     ├── ActivationContextsViewer.svelte
     ├── ActivationContextsPagedTable.svelte
-    ├── DatasetSearchTab.svelte       # SimpleStories search UI
+    ├── DatasetSearchTab.svelte       # Dataset search UI
     ├── DatasetSearchResults.svelte
     ├── ClusterPathInput.svelte       # Cluster path selector
     ├── ComponentProbeInput.svelte    # Component probe UI
@@ -189,7 +195,7 @@ GraphData = {
    - `strength = grad * source_activation`
    - Create Edge for each alive source component
 
-**Cross-sequence edges**: `is_kv_to_o_pair()` detects k/v → o_proj in same attention block.
+**Cross-sequence edges**: `topology.is_cross_seq_pair()` detects k/v → o_proj in same attention block.
 These have gradients across sequence positions (causal attention pattern).
 
 ### Causal Importance (CI)
@@ -251,15 +257,15 @@ POST /api/intervention {text, nodes: ["h.0.attn.q_proj:3:5", ...]}
 
 ```
 GET /api/correlations/components/{layer}/{component_idx}
-  → Load from HarvestCache (pre-harvested data)
+  → Load from HarvestRepo (pre-harvested data)
   ← ComponentCorrelationsResponse (precision, recall, jaccard, pmi)
 
 GET /api/correlations/token_stats/{layer}/{component_idx}
-  → Load from HarvestCache
+  → Load from HarvestRepo
   ← TokenStatsResponse (input/output token associations)
 
 GET /api/correlations/interpretation/{layer}/{component_idx}
-  → Load from HarvestCache (autointerp results)
+  → Load from HarvestRepo (autointerp results)
   ← InterpretationResponse (label, confidence, reasoning)
 ```
 
@@ -267,11 +273,11 @@ GET /api/correlations/interpretation/{layer}/{component_idx}
 
 ```
 POST /api/dataset/search?query=...
-  → Search SimpleStories dataset
-  ← DatasetSearchMetadata
+  → Search the loaded run's training dataset (reads dataset_name from config)
+  ← DatasetSearchMetadata (includes dataset_name)
 
 GET /api/dataset/results?page=1&page_size=20
-  ← Paginated search results
+  ← Paginated search results (text + generic metadata dict)
 ```
 
 ---
@@ -300,13 +306,14 @@ StateManager.get() → AppState:
   - db: PromptAttrDB (always available)
   - run_state: RunState | None
       - model: ComponentModel
-      - tokenizer: PreTrainedTokenizerBase
+      - topology: TransformerTopology  # Model topology (embedding, unembed, cross-seq roles)
+      - tokenizer: AppTokenizer     # Token display, encoding, span construction
       - sources_by_target: dict[target_layer → source_layers]
-      - config, context_length, token_strings
-      - harvest: HarvestCache  # Lazy-loaded pre-harvested data
+      - config, context_length
+      - harvest: HarvestRepo       # Lazy-loaded pre-harvested data
   - dataset_search_state: DatasetSearchState | None  # Cached search results
 
-HarvestCache:  # Lazy-loads from SPD_OUT_DIR/harvest/<run_id>/
+HarvestRepo:  # Lazy-loads from SPD_OUT_DIR/harvest/<run_id>/
   - correlations: CorrelationStorage | None
   - token_stats: TokenStatsStorage | None
   - activation_contexts: dict[str, ComponentData] | None

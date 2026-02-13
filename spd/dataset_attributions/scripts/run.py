@@ -4,65 +4,65 @@ Called by SLURM jobs submitted via spd-attributions, or run directly for non-SLU
 
 Usage:
     # Single GPU
-    python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000
+    python -m spd.dataset_attributions.scripts.run <path> --config_json '...'
 
     # Multi-GPU (run in parallel)
-    python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000 --rank 0 --world_size 4
-    python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000 --rank 1 --world_size 4
+    python -m spd.dataset_attributions.scripts.run <path> --config_json '...' --rank 0 --world_size 4 --subrun_id da-20260211_120000
     ...
-    python -m spd.dataset_attributions.scripts.run <path> --merge
+    python -m spd.dataset_attributions.scripts.run <path> --merge --subrun_id da-20260211_120000
 """
 
+from datetime import datetime
+
+from spd.dataset_attributions.config import DatasetAttributionConfig
 from spd.dataset_attributions.harvest import (
-    DatasetAttributionConfig,
     harvest_attributions,
     merge_attributions,
 )
+from spd.dataset_attributions.repo import get_attributions_subrun_dir
+from spd.log import logger
+from spd.utils.wandb_utils import parse_wandb_run_path
 
 
 def main(
     wandb_path: str,
-    n_batches: int | None = None,
-    batch_size: int = 256,
-    ci_threshold: float = 0.0,
+    config_json: str | dict[str, object] | None = None,
     rank: int | None = None,
     world_size: int | None = None,
     merge: bool = False,
+    subrun_id: str | None = None,
 ) -> None:
-    """Compute dataset attributions, or merge results.
+    _, _, run_id = parse_wandb_run_path(wandb_path)
 
-    Args:
-        wandb_path: WandB run path for the target decomposition run.
-        n_batches: Number of batches to process. If None, processes entire training dataset.
-        batch_size: Batch size for processing.
-        ci_threshold: CI threshold for filtering components. Components with mean_ci <= threshold
-            are excluded. Default 0.0 includes all components.
-        rank: Worker rank for parallel execution (0 to world_size-1).
-        world_size: Total number of workers. If specified with rank, only processes
-            batches where batch_idx % world_size == rank.
-        merge: If True, merge partial results from workers.
-    """
+    if subrun_id is None:
+        subrun_id = "da-" + datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    output_dir = get_attributions_subrun_dir(run_id, subrun_id)
+
     if merge:
         assert rank is None and world_size is None, "Cannot specify rank/world_size with --merge"
-        print(f"Merging attribution results for {wandb_path}")
-        merge_attributions(wandb_path)
+        logger.info(f"Merging attribution results for {wandb_path} (subrun {subrun_id})")
+        merge_attributions(output_dir)
         return
 
     assert (rank is None) == (world_size is None), "rank and world_size must both be set or unset"
 
+    match config_json:
+        case str(json_str):
+            config = DatasetAttributionConfig.model_validate_json(json_str)
+        case dict(d):
+            config = DatasetAttributionConfig.model_validate(d)
+        case None:
+            config = DatasetAttributionConfig()
+
     if world_size is not None:
-        print(f"Distributed harvest: {wandb_path} (rank {rank}/{world_size})")
+        logger.info(
+            f"Distributed harvest: {wandb_path} (rank {rank}/{world_size}, subrun {subrun_id})"
+        )
     else:
-        print(f"Single-GPU harvest: {wandb_path}")
+        logger.info(f"Single-GPU harvest: {wandb_path} (subrun {subrun_id})")
 
-    config = DatasetAttributionConfig(
-        wandb_path=wandb_path,
-        n_batches=n_batches,
-        batch_size=batch_size,
-        ci_threshold=ci_threshold,
-    )
-
-    harvest_attributions(config, rank=rank, world_size=world_size)
+    harvest_attributions(wandb_path, config, output_dir, rank=rank, world_size=world_size)
 
 
 def cli() -> None:

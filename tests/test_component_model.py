@@ -28,9 +28,11 @@ from spd.models.components import (
     EmbeddingComponents,
     GlobalCiFnWrapper,
     GlobalSharedMLPCiFn,
+    GlobalSharedTransformerCiFn,
     LinearComponents,
     MLPCiFn,
     ParallelLinear,
+    TargetLayerConfig,
     VectorMLPCiFn,
     VectorSharedMLPCiFn,
     make_mask_infos,
@@ -154,7 +156,6 @@ def test_from_run_info():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
@@ -556,7 +557,6 @@ def test_checkpoint_ci_config_mismatch_global_to_layerwise():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
@@ -599,7 +599,6 @@ def test_checkpoint_ci_config_mismatch_global_to_layerwise():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
@@ -658,7 +657,6 @@ def test_checkpoint_ci_config_mismatch_layerwise_to_global():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
@@ -701,7 +699,6 @@ def test_checkpoint_ci_config_mismatch_layerwise_to_global():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
@@ -884,6 +881,68 @@ def test_global_shared_mlp_ci_fn_single_layer():
 
     assert outputs["only_layer"].shape == (BATCH_SIZE, 5)
     assert torch.isfinite(outputs["only_layer"]).all()
+
+
+def test_global_shared_transformer_ci_fn_shapes_and_values():
+    """Test GlobalSharedTransformerCiFn produces correct output shapes and valid values."""
+    layer_configs = {
+        "layer1": TargetLayerConfig(input_dim=10, C=5),
+        "layer2": TargetLayerConfig(input_dim=20, C=3),
+        "layer3": TargetLayerConfig(input_dim=15, C=7),
+    }
+    ci_fn = GlobalSharedTransformerCiFn(
+        target_model_layer_configs=layer_configs,
+        d_model=8,
+        n_layers=2,
+        n_heads=2,
+        mlp_hidden_dims=[16],
+    )
+
+    inputs = {
+        "layer1": torch.randn(BATCH_SIZE, 10),
+        "layer2": torch.randn(BATCH_SIZE, 20),
+        "layer3": torch.randn(BATCH_SIZE, 15),
+    }
+    outputs = ci_fn(inputs)
+
+    # Check shapes
+    assert outputs["layer1"].shape == (BATCH_SIZE, 5)
+    assert outputs["layer2"].shape == (BATCH_SIZE, 3)
+    assert outputs["layer3"].shape == (BATCH_SIZE, 7)
+
+    # Check values are valid (not NaN, not Inf)
+    for name, out in outputs.items():
+        assert torch.isfinite(out).all(), f"Output {name} contains NaN or Inf"
+
+
+def test_global_shared_transformer_ci_fn_with_seq_dim():
+    """Test GlobalSharedTransformerCiFn with sequence dimension produces valid outputs."""
+    seq_len = 5
+    layer_configs = {
+        "layer1": TargetLayerConfig(input_dim=10, C=4),
+        "layer2": TargetLayerConfig(input_dim=8, C=3),
+    }
+    ci_fn = GlobalSharedTransformerCiFn(
+        target_model_layer_configs=layer_configs,
+        d_model=8,
+        n_layers=3,
+        n_heads=2,
+        mlp_hidden_dims=[16],
+    )
+
+    inputs = {
+        "layer1": torch.randn(BATCH_SIZE, seq_len, 10),
+        "layer2": torch.randn(BATCH_SIZE, seq_len, 8),
+    }
+    outputs = ci_fn(inputs)
+
+    # Check shapes
+    assert outputs["layer1"].shape == (BATCH_SIZE, seq_len, 4)
+    assert outputs["layer2"].shape == (BATCH_SIZE, seq_len, 3)
+
+    # Check values are valid
+    for name, out in outputs.items():
+        assert torch.isfinite(out).all(), f"Output {name} contains NaN or Inf"
 
 
 def test_component_model_with_global_ci():
@@ -1261,7 +1320,6 @@ def test_global_ci_save_and_load():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,

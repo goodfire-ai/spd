@@ -64,7 +64,6 @@ slow_eval_on_first_step: true
 n_eval_steps: 5
 save_freq: null
 ci_alive_threshold: 0.0
-n_examples_until_dead: 1368400
 eval_metric_configs:
   - classname: "CIHistograms"
     n_batches_accum: 5
@@ -95,7 +94,7 @@ eval_metric_configs:
   - classname: "StochasticHiddenActsReconLoss"
 
 # --- Pretrained model info ---
-pretrained_model_class: simple_stories_train.models.gpt2_simple.GPT2Simple
+pretrained_model_class: spd.pretrain.models.gpt2_simple.GPT2Simple
 pretrained_model_name: wandb:goodfire/spd/runs/xi36b9az # No ln
 pretrained_model_output_attr: idx_0
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # We'll load this from wandb in future

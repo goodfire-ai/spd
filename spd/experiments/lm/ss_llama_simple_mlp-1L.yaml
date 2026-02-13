@@ -1,4 +1,4 @@
-# wandb_project: spd
+wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ''
 seed: 0
@@ -84,8 +84,7 @@ eval_metric_configs:
   mask_scope: shared_across_batch
   classname: PGDReconLoss
 ci_alive_threshold: 0.0
-n_examples_until_dead: 1368400
-pretrained_model_class: simple_stories_train.models.llama_simple_mlp.LlamaSimpleMLP
+pretrained_model_class: spd.pretrain.models.llama_simple_mlp.LlamaSimpleMLP
 pretrained_model_path: null
 pretrained_model_name: wandb:goodfire/spd/runs/gvbmdt9w
 pretrained_model_output_attr: idx_0

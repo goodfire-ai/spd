@@ -18,8 +18,8 @@ import { RUN_KEY, type InterpretationBackendState, type RunContext } from "./use
 
 /** Correlations are paginated in the UI, so fetch more */
 const CORRELATIONS_TOP_K = 100;
-/** Token stats are displayed directly (max 50 shown) */
-const TOKEN_STATS_TOP_K = 50;
+/** Token stats are paginated in the UI */
+const TOKEN_STATS_TOP_K = 200;
 /** Dataset attributions top-k */
 const DATASET_ATTRIBUTIONS_TOP_K = 20;
 
@@ -113,20 +113,24 @@ export function useComponentData() {
                 }
             });
 
-        // Fetch dataset attributions (404 = not available)
-        getComponentAttributions(layer, cIdx, DATASET_ATTRIBUTIONS_TOP_K)
-            .then((data) => {
-                if (isStale()) return;
-                datasetAttributions = { status: "loaded", data };
-            })
-            .catch((error) => {
-                if (isStale()) return;
-                if (error instanceof ApiError && error.status === 404) {
-                    datasetAttributions = { status: "loaded", data: null };
-                } else {
-                    datasetAttributions = { status: "error", error };
-                }
-            });
+        // Fetch dataset attributions (skip entirely if not available for this run)
+        if (runState.datasetAttributionsAvailable) {
+            getComponentAttributions(layer, cIdx, DATASET_ATTRIBUTIONS_TOP_K)
+                .then((data) => {
+                    if (isStale()) return;
+                    datasetAttributions = { status: "loaded", data };
+                })
+                .catch((error) => {
+                    if (isStale()) return;
+                    if (error instanceof ApiError && error.status === 404) {
+                        datasetAttributions = { status: "loaded", data: null };
+                    } else {
+                        datasetAttributions = { status: "error", error };
+                    }
+                });
+        } else {
+            datasetAttributions = { status: "loaded", data: null };
+        }
 
         // Fetch interpretation detail (404 = no interpretation for this component)
         getInterpretationDetail(layer, cIdx)

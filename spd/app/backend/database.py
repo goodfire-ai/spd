@@ -7,18 +7,18 @@ Interpretations are stored separately at SPD_OUT_DIR/autointerp/<run_id>/.
 """
 
 import hashlib
+import io
 import json
 import os
 import sqlite3
-from dataclasses import asdict
 from pathlib import Path
 from typing import Literal
 
+import torch
 from pydantic import BaseModel
 
 from spd.app.backend.compute import Edge, Node
 from spd.app.backend.optim_cis import CELossConfig, KLLossConfig, LossConfig, MaskType
-from spd.app.backend.schemas import OutputProbability
 from spd.settings import REPO_ROOT
 
 GraphType = Literal["standard", "optimized", "manual"]
@@ -87,7 +87,8 @@ class StoredGraph(BaseModel):
 
     # Core graph data (all types)
     edges: list[Edge]
-    out_probs: dict[str, OutputProbability]  # seq:c_idx -> {prob, target_prob, token}
+    ci_masked_out_logits: torch.Tensor  # [seq, vocab]
+    target_out_logits: torch.Tensor  # [seq, vocab]
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val (required for all graphs)
     node_subcomp_acts: dict[str, float] = {}  # layer:seq:c_idx -> subcomp act (v_i^T @ a)
 
@@ -205,8 +206,8 @@ class PromptAttrDB:
                 node_ci_vals TEXT NOT NULL,
                 -- Node subcomponent activations: "layer:seq:c_idx" -> v_i^T @ a
                 node_subcomp_acts TEXT NOT NULL DEFAULT '{}',
-                -- Output probabilities: "seq:c_idx" -> {prob, token}
-                output_probs_data TEXT NOT NULL,
+                -- Output logits: torch.save({ci_masked, target}) as blob
+                output_logits BLOB NOT NULL,
 
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -394,8 +395,33 @@ class PromptAttrDB:
         """
         conn = self._get_conn()
 
-        edges_json = json.dumps([asdict(e) for e in graph.edges])
-        probs_json = json.dumps({k: v.model_dump() for k, v in graph.out_probs.items()})
+        def _node_to_dict(n: Node) -> dict[str, str | int]:
+            return {
+                "layer": n.layer,
+                "seq_pos": n.seq_pos,
+                "component_idx": n.component_idx,
+            }
+
+        edges_json = json.dumps(
+            [
+                {
+                    "source": _node_to_dict(e.source),
+                    "target": _node_to_dict(e.target),
+                    "strength": e.strength,
+                    "is_cross_seq": e.is_cross_seq,
+                }
+                for e in graph.edges
+            ]
+        )
+        buf = io.BytesIO()
+        torch.save(
+            {
+                "ci_masked": graph.ci_masked_out_logits,
+                "target": graph.target_out_logits,
+            },
+            buf,
+        )
+        output_logits_blob = buf.getvalue()
         node_ci_vals_json = json.dumps(graph.node_ci_vals)
         node_subcomp_acts_json = json.dumps(graph.node_subcomp_acts)
 
@@ -432,7 +458,7 @@ class PromptAttrDB:
                     imp_min_coeff, steps, pnorm, beta, mask_type,
                     loss_config, loss_config_hash,
                     included_nodes, included_nodes_hash,
-                    edges_data, output_probs_data, node_ci_vals, node_subcomp_acts)
+                    edges_data, output_logits, node_ci_vals, node_subcomp_acts)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
@@ -447,7 +473,7 @@ class PromptAttrDB:
                     included_nodes_json,
                     included_nodes_hash,
                     edges_json,
-                    probs_json,
+                    output_logits_blob,
                     node_ci_vals_json,
                     node_subcomp_acts_json,
                 ),
@@ -483,18 +509,26 @@ class PromptAttrDB:
 
     def _row_to_stored_graph(self, row: sqlite3.Row) -> StoredGraph:
         """Convert a database row to a StoredGraph."""
+
+        def _node_from_dict(d: dict[str, str | int]) -> Node:
+            return Node(
+                layer=str(d["layer"]),
+                seq_pos=int(d["seq_pos"]),
+                component_idx=int(d["component_idx"]),
+            )
+
         edges = [
             Edge(
-                source=Node(**e["source"]),
-                target=Node(**e["target"]),
+                source=_node_from_dict(e["source"]),
+                target=_node_from_dict(e["target"]),
                 strength=float(e["strength"]),
                 is_cross_seq=bool(e["is_cross_seq"]),
             )
             for e in json.loads(row["edges_data"])
         ]
-        out_probs = {
-            k: OutputProbability(**v) for k, v in json.loads(row["output_probs_data"]).items()
-        }
+        logits_data = torch.load(io.BytesIO(row["output_logits"]), weights_only=True)
+        ci_masked_out_logits: torch.Tensor = logits_data["ci_masked"]
+        target_out_logits: torch.Tensor = logits_data["target"]
         node_ci_vals: dict[str, float] = json.loads(row["node_ci_vals"])
         node_subcomp_acts: dict[str, float] = json.loads(row["node_subcomp_acts"] or "{}")
 
@@ -526,7 +560,8 @@ class PromptAttrDB:
             id=row["id"],
             graph_type=row["graph_type"],
             edges=edges,
-            out_probs=out_probs,
+            ci_masked_out_logits=ci_masked_out_logits,
+            target_out_logits=target_out_logits,
             node_ci_vals=node_ci_vals,
             node_subcomp_acts=node_subcomp_acts,
             optimization_params=opt_params,
@@ -544,7 +579,7 @@ class PromptAttrDB:
         """
         conn = self._get_conn()
         rows = conn.execute(
-            """SELECT id, graph_type, edges_data, output_probs_data, node_ci_vals,
+            """SELECT id, graph_type, edges_data, output_logits, node_ci_vals,
                       node_subcomp_acts, imp_min_coeff, steps, pnorm, beta, mask_type,
                       loss_config, included_nodes
                FROM graphs
@@ -560,7 +595,7 @@ class PromptAttrDB:
         """Retrieve a single graph by its ID. Returns (graph, prompt_id) or None."""
         conn = self._get_conn()
         row = conn.execute(
-            """SELECT id, prompt_id, graph_type, edges_data, output_probs_data, node_ci_vals,
+            """SELECT id, prompt_id, graph_type, edges_data, output_logits, node_ci_vals,
                       node_subcomp_acts, imp_min_coeff, steps, pnorm, beta, mask_type,
                       loss_config, included_nodes
                FROM graphs

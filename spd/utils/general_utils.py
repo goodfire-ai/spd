@@ -34,6 +34,11 @@ COLOR_PALETTE = [
 ]
 
 
+def bf16_autocast(enabled: bool = True) -> torch.amp.autocast_mode.autocast:
+    device_type = "cuda" if torch.cuda.is_available() else "cpu"
+    return torch.autocast(device_type=device_type, dtype=torch.bfloat16, enabled=enabled)
+
+
 def set_seed(seed: int | None) -> None:
     """Set the random seed for random, PyTorch and NumPy"""
     if seed is not None:

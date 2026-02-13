@@ -24,6 +24,16 @@ const DEFAULT_ENTITY_PROJECT = "goodfire/spd";
  */
 export const CANONICAL_RUNS: RegistryEntry[] = [
     {
+        wandbRunId: "goodfire/spd/s-275c8f21",
+        modelName: "???",
+        notes: "Lucius' pile run Feb 11",
+    },
+    {
+        wandbRunId: "goodfire/spd/s-eab2ace8",
+        modelName: "ss_llama_simple_mlp-2L-wide",
+        notes: "Oli's PPGD run, great metrics",
+    },
+    {
         wandbRunId: "goodfire/spd/s-892f140b",
         modelName: "ss_llama_simple_mlp-2L-wide",
         notes: "Lucius run, Jan 22",

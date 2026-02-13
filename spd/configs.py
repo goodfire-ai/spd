@@ -42,16 +42,15 @@ class BlockGroupConfig(BaseConfig):
     )
 
 
-class TransitionAttnConfig(BaseConfig):
-    """Configuration for self-attention in global reverse residual transitions.
+class AttnConfig(BaseConfig):
+    """Configuration for self-attention.
 
-    When provided, transitions use a full transformer block: attention → residual → MLP → residual.
     Uses RoPE (Rotary Position Embeddings) for sequence length generalization.
     """
 
     n_heads: PositiveInt = Field(
         ...,
-        description="Number of attention heads. Must divide d_resid_ci_fn.",
+        description="Number of attention heads. Must divide the input dimension.",
     )
     max_len: PositiveInt = Field(
         default=2048,
@@ -63,17 +62,44 @@ class TransitionAttnConfig(BaseConfig):
     )
 
 
+class GlobalSharedTransformerCiConfig(BaseConfig):
+    d_model: PositiveInt
+    n_blocks: PositiveInt
+    mlp_hidden_dim: list[NonNegativeInt] = Field(
+        description="Hidden dimension for transformer MLP blocks. "
+        "If None, defaults to [4 * d_model].",
+    )
+    attn_config: AttnConfig
+
+    @model_validator(mode="after")
+    def validate_config(self) -> Self:
+        assert self.d_model % self.attn_config.n_heads == 0, (
+            f"d_model ({self.d_model}) must be divisible by "
+            f"attn_config.n_heads ({self.attn_config.n_heads})"
+        )
+        d_head = self.d_model // self.attn_config.n_heads
+        assert d_head % 2 == 0, (
+            f"d_head ({d_head}) must be even for RoPE. "
+            f"d_model={self.d_model}, "
+            f"n_heads={self.attn_config.n_heads}"
+        )
+        return self
+
+
 class GlobalCiConfig(BaseConfig):
     """Configuration for global CI function (single function for all layers).
 
     For fn_type='global_shared_mlp': Concatenates all activations, processes through MLP.
     For fn_type='global_reverse_residual': Processes blocks in reverse order with residual stream.
+    For fn_type='global_shared_transformer': Concatenates activations, projects to shared d_model,
+    and applies transformer blocks over the sequence dimension.
     """
 
     mode: Literal["global"] = "global"
     fn_type: GlobalCiFnType = Field(
         ...,
-        description="Type of global CI function: global_shared_mlp or global_reverse_residual",
+        description="Type of global CI function: global_shared_mlp, "
+        "global_reverse_residual, or global_shared_transformer",
     )
     hidden_dims: list[NonNegativeInt] | None = Field(
         default=None,
@@ -96,12 +122,19 @@ class GlobalCiConfig(BaseConfig):
         "Order determines processing sequence (first = processed first, typically unembed). "
         "Required when fn_type='global_reverse_residual', ignored otherwise.",
     )
-    transition_attn_config: TransitionAttnConfig | None = Field(
+    transition_attn_config: AttnConfig | None = Field(
         default=None,
         description="Self-attention config for transitions in global_reverse_residual. "
         "If None, uses MLP-only transitions (original behavior). "
         "Only applies when fn_type='global_reverse_residual'.",
     )
+    transition_hidden_dim: PositiveInt | None = Field(
+        default=None,
+        description="Hidden dimension for transition MLP in global_reverse_residual. "
+        "MLP structure: d_resid_ci_fn -> transition_hidden_dim -> d_resid_ci_fn with GeLU. "
+        "Required when fn_type='global_reverse_residual', ignored otherwise.",
+    )
+    simple_transformer_ci_cfg: GlobalSharedTransformerCiConfig | None = None
 
     @model_validator(mode="after")
     def validate_ci_config(self) -> Self:
@@ -127,6 +160,10 @@ class GlobalCiConfig(BaseConfig):
             )
             assert self.transition_attn_config is None, (
                 "transition_attn_config is only valid for global_reverse_residual"
+            )
+        elif self.fn_type == "global_shared_transformer":
+            assert self.simple_transformer_ci_cfg is not None, (
+                "simple_transformer_ci_cfg must be specified when fn_type='global_shared_transformer'"
             )
         return self
 
@@ -408,6 +445,126 @@ class PGDMultiBatchReconSubsetLossConfig(PGDMultiBatchConfig):
     ]
 
 
+class SignPGDConfig(BaseConfig):
+    type: Literal["sign"] = "sign"
+    step_size: float = Field(..., description="PGD step size for mask updates")
+
+
+class AdamPGDConfig(BaseConfig):
+    type: Literal["adam"] = "adam"
+    lr: float = Field(..., description="Learning rate for Adam PGD")
+    beta1: Probability = Field(default=0.9, description="Adam beta1 for masks")
+    beta2: Probability = Field(default=0.999, description="Adam beta2 for masks")
+    eps: NonNegativeFloat = Field(default=1e-8, description="Adam epsilon for masks")
+
+
+PGDOptimizerConfig = SignPGDConfig | AdamPGDConfig
+
+
+class SingleSourceScope(BaseConfig):
+    type: Literal["single_source"] = "single_source"
+
+
+class BroadcastAcrossBatchScope(BaseConfig):
+    type: Literal["broadcast_across_batch"] = "broadcast_across_batch"
+
+
+class RepeatAcrossBatchScope(BaseConfig):
+    """Sources of shape (N, S, C) where N divides both batch_size and eval_batch_size.
+
+    Repeated along batch dim at forward time: (N, S, C) -> (B, S, C).
+    """
+
+    type: Literal["repeat_across_batch"] = "repeat_across_batch"
+    n_sources: PositiveInt
+
+
+class PerBatchPerPositionScope(BaseConfig):
+    """Sources of shape (B, S, C) — one source per batch element per position, separate across
+    ranks.
+
+    Unlike other scopes, gradients are NOT all-reduced across ranks, so each rank
+    maintains fully independent sources for its own batch elements.
+    """
+
+    type: Literal["per_batch_per_position"] = "per_batch_per_position"
+
+
+PersistentPGDSourceScope = Annotated[
+    SingleSourceScope
+    | BroadcastAcrossBatchScope
+    | RepeatAcrossBatchScope
+    | PerBatchPerPositionScope,
+    Field(discriminator="type"),
+]
+
+
+def _coerce_ppgd_scope(config_dict: dict[str, Any]) -> None:
+    """Backwards compat: migrate old scope format/names to current names."""
+    scope = config_dict.get("scope")
+    if isinstance(scope, str):
+        scope = {"type": scope}
+        config_dict["scope"] = scope
+    if not isinstance(scope, dict):
+        return
+    match scope.get("type"):
+        case "single_mask":
+            scope["type"] = "single_source"
+        case "batch_invariant":
+            scope["type"] = "repeat_across_batch"
+            if "n_masks" in scope:
+                scope["n_sources"] = scope.pop("n_masks")
+        case "per_batch" | "unique_per_batch_per_token":
+            scope["type"] = "per_batch_per_position"
+        case _:
+            pass
+
+
+class PersistentPGDReconLossConfig(LossMetricConfig):
+    """Config for persistent PGD reconstruction loss.
+
+    Unlike standard PGD which reinitializes masks each step and runs N optimization steps,
+    PersistentPGD maintains persistent masks that receive one gradient update per training step.
+    This amortizes PGD optimization across training - getting the benefit of many PGD steps
+    without the per-step computational cost.
+    """
+
+    classname: Literal["PersistentPGDReconLoss"] = "PersistentPGDReconLoss"
+    optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
+    scope: PersistentPGDSourceScope
+    use_sigmoid_parameterization: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _compat_scope(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            _coerce_ppgd_scope(data)
+        return data
+
+
+class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
+    """Config for persistent PGD reconstruction loss with subset routing.
+
+    Like PersistentPGDReconLossConfig but routes to a subset of modules per position,
+    similar to how StochasticReconSubsetLoss relates to StochasticReconLoss.
+    """
+
+    classname: Literal["PersistentPGDReconSubsetLoss"] = "PersistentPGDReconSubsetLoss"
+    optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
+    scope: PersistentPGDSourceScope
+    use_sigmoid_parameterization: bool = False
+    routing: Annotated[
+        SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
+    ]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _compat_scope(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            _coerce_ppgd_scope(data)
+        return data
+
+
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
     classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
 
@@ -478,6 +635,8 @@ ReconLossConfigType = (
     | PGDReconSubsetLossConfig
     | PGDReconLayerwiseLossConfig
     | StochasticHiddenActsReconLossConfig
+    | PersistentPGDReconLossConfig
+    | PersistentPGDReconSubsetLossConfig
 )
 
 LossMetricConfigType = FaithfulnessLossConfig | ImportanceMinimalityLossConfig | ReconLossConfigType
@@ -519,12 +678,17 @@ class Config(BaseConfig):
 
     # --- General ---
     seed: int = Field(default=0, description="Random seed for reproducibility")
+    autocast_bf16: bool = Field(
+        default=True,
+        description="Whether to use torch.autocast with bfloat16 mixed precision",
+    )
     n_mask_samples: PositiveInt = Field(
         ...,
         description="Number of stochastic masks to sample when using stochastic recon losses",
     )
     ci_config: CiConfig = Field(
         ...,
+        discriminator="mode",
         description="Configuration for the causal importance function. "
         "Use LayerwiseCiConfig for per-layer CI functions or GlobalCiConfig for a single global CI function.",
     )
@@ -668,11 +832,6 @@ class Config(BaseConfig):
         default=0.0,
         description="Causal importance threshold above which a component is considered 'firing'",
     )
-    n_examples_until_dead: PositiveInt = Field(
-        ...,
-        description="Number of examples without firing before a component is considered dead. "
-        "Note that in LMs, an example is a token, not a sequence.",
-    )
 
     # --- Pretrained model info ---
     pretrained_model_class: str = Field(
@@ -730,6 +889,7 @@ class Config(BaseConfig):
         "dist_backend",
         "lr_exponential_halflife",
         "out_dir",
+        "n_examples_until_dead",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "grad_clip_norm": "grad_clip_norm_components",
@@ -766,6 +926,13 @@ class Config(BaseConfig):
                 # configs with it
                 new_vals = [cfg for cfg in val if "extra_init_kwargs" not in cfg]
                 config_dict[key] = new_vals
+
+        # Remap simple_stories_train → spd.pretrain (models moved in-tree)
+        pmc = config_dict.get("pretrained_model_class", "")
+        if pmc.startswith("simple_stories_train.models."):
+            config_dict["pretrained_model_class"] = pmc.replace(
+                "simple_stories_train.models.", "spd.pretrain.models.", 1
+            )
 
         if "eval_batch_size" not in config_dict:
             config_dict["eval_batch_size"] = config_dict["batch_size"]
@@ -859,6 +1026,14 @@ class Config(BaseConfig):
             assert self.gradient_accumulation_steps == 1, (
                 "gradient_accumulation_steps must be 1 if we are using PGD losses with "
                 "mask_scope='shared_across_batch'"
+            )
+
+        if any(
+            isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
+            for cfg in self.loss_metric_configs
+        ):
+            assert isinstance(self.task_config, LMTaskConfig), (
+                "Persistent PGD losses are only supported with LM tasks"
             )
 
         return self

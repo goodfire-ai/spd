@@ -82,7 +82,6 @@ eval_metric_configs:
     n_steps: 20
     mask_scope: shared_across_batch
 ci_alive_threshold: 0.1
-n_examples_until_dead: 1_024_000
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.resid_mlp.models.ResidMLP"

@@ -28,7 +28,7 @@ from spd.app.backend.compute import (
 )
 from spd.app.backend.database import StoredGraph
 from spd.app.backend.optim_cis import CELossConfig, OptimCIConfig
-from spd.app.backend.routers.graphs import build_out_probs
+from spd.app.backend.routers.graphs import _build_out_probs
 from spd.app.backend.state import StateManager
 from spd.configs import ImportanceMinimalityLossConfig
 from spd.harvest import analysis
@@ -476,12 +476,12 @@ def _tool_optimize_graph(params: dict[str, Any]) -> Generator[dict[str, Any]]:
     ci_threshold = params.get("ci_threshold", 0.5)
 
     # Tokenize prompt
-    token_ids = loaded.tokenizer.encode(prompt_text, add_special_tokens=False)
+    token_ids = loaded.tokenizer.encode(prompt_text)
     if not token_ids:
         raise ValueError("Prompt text produced no tokens")
 
     # Find target token ID
-    target_token_ids = loaded.tokenizer.encode(target_token, add_special_tokens=False)
+    target_token_ids = loaded.tokenizer.encode(target_token)
     if len(target_token_ids) != 1:
         raise ValueError(
             f"Target token '{target_token}' tokenizes to {len(target_token_ids)} tokens, expected 1. "
@@ -548,6 +548,7 @@ def _tool_optimize_graph(params: dict[str, Any]) -> Generator[dict[str, Any]]:
             with manager.gpu_lock():
                 result = compute_prompt_attributions_optimized(
                     model=loaded.model,
+                    topology=loaded.topology,
                     tokens=tokens_tensor,
                     sources_by_target=loaded.sources_by_target,
                     optim_config=optim_config,
@@ -593,14 +594,14 @@ def _tool_optimize_graph(params: dict[str, Any]) -> Generator[dict[str, Any]]:
 
     result = result_holder[0]
 
-    # Build output
-    out_probs = build_out_probs(
-        ci_masked_out_probs=result.ci_masked_out_probs.cpu(),
-        ci_masked_out_logits=result.ci_masked_out_logits.cpu(),
-        target_out_probs=result.target_out_probs.cpu(),
-        target_out_logits=result.target_out_logits.cpu(),
-        output_prob_threshold=0.01,
-        token_strings=loaded.token_strings,
+    ci_masked_out_logits = result.ci_masked_out_logits.cpu()
+    target_out_logits = result.target_out_logits.cpu()
+
+    # Build output probs for response
+    out_probs = _build_out_probs(
+        ci_masked_out_logits,
+        target_out_logits,
+        loaded.tokenizer.get_tok_display,
     )
 
     # Save graph to DB
@@ -619,7 +620,8 @@ def _tool_optimize_graph(params: dict[str, Any]) -> Generator[dict[str, Any]]:
         graph=StoredGraph(
             graph_type="optimized",
             edges=result.edges,
-            out_probs=out_probs,
+            ci_masked_out_logits=ci_masked_out_logits,
+            target_out_logits=target_out_logits,
             node_ci_vals=result.node_ci_vals,
             node_subcomp_acts=result.node_subcomp_acts,
             optimization_params=opt_params,
@@ -633,7 +635,7 @@ def _tool_optimize_graph(params: dict[str, Any]) -> Generator[dict[str, Any]]:
     target_key = f"{loss_position}:{label_token}"
     target_prob = out_probs.get(target_key)
 
-    token_strings = [loaded.token_strings[t] for t in token_ids]
+    token_strings = [loaded.tokenizer.get_tok_display(t) for t in token_ids]
 
     final_result = {
         "graph_id": graph_id,
@@ -674,46 +676,51 @@ def _tool_get_component_info(params: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {"component_key": component_key}
 
     # Get interpretation
-    interpretations = loaded.harvest.interpretations
-    if component_key in interpretations:
-        interp = interpretations[component_key]
-        result["interpretation"] = {
-            "label": interp.label,
-            "confidence": interp.confidence,
-            "reasoning": interp.reasoning,
-        }
+    if loaded.interp is not None:
+        interp = loaded.interp.get_interpretation(component_key)
+        if interp is not None:
+            result["interpretation"] = {
+                "label": interp.label,
+                "confidence": interp.confidence,
+                "reasoning": interp.reasoning,
+            }
+        else:
+            result["interpretation"] = None
     else:
         result["interpretation"] = None
 
     # Get token stats
-    token_stats = loaded.harvest.token_stats
-    input_stats = analysis.get_input_token_stats(
-        token_stats, component_key, loaded.tokenizer, top_k
-    )
-    output_stats = analysis.get_output_token_stats(
-        token_stats, component_key, loaded.tokenizer, top_k
-    )
-
-    if input_stats and output_stats:
-        result["token_stats"] = {
-            "input": {
-                "top_recall": input_stats.top_recall,
-                "top_precision": input_stats.top_precision,
-                "top_pmi": input_stats.top_pmi,
-            },
-            "output": {
-                "top_recall": output_stats.top_recall,
-                "top_precision": output_stats.top_precision,
-                "top_pmi": output_stats.top_pmi,
-                "bottom_pmi": output_stats.bottom_pmi,
-            },
-        }
+    assert loaded.harvest is not None, "harvest data not loaded"
+    token_stats = loaded.harvest.get_token_stats()
+    if token_stats is not None:
+        input_stats = analysis.get_input_token_stats(
+            token_stats, component_key, loaded.tokenizer, top_k
+        )
+        output_stats = analysis.get_output_token_stats(
+            token_stats, component_key, loaded.tokenizer, top_k
+        )
+        if input_stats and output_stats:
+            result["token_stats"] = {
+                "input": {
+                    "top_recall": input_stats.top_recall,
+                    "top_precision": input_stats.top_precision,
+                    "top_pmi": input_stats.top_pmi,
+                },
+                "output": {
+                    "top_recall": output_stats.top_recall,
+                    "top_precision": output_stats.top_precision,
+                    "top_pmi": output_stats.top_pmi,
+                    "bottom_pmi": output_stats.bottom_pmi,
+                },
+            }
+        else:
+            result["token_stats"] = None
     else:
         result["token_stats"] = None
 
     # Get correlations
-    correlations = loaded.harvest.correlations
-    if analysis.has_component(correlations, component_key):
+    correlations = loaded.harvest.get_correlations()
+    if correlations is not None and analysis.has_component(correlations, component_key):
         result["correlated_components"] = {
             "precision": [
                 {"key": c.component_key, "score": c.score}
@@ -748,7 +755,7 @@ def _tool_run_ablation(params: dict[str, Any]) -> dict[str, Any]:
         {"text": text, "n_nodes": len(selected_nodes)},
     )
 
-    token_ids = loaded.tokenizer.encode(text, add_special_tokens=False)
+    token_ids = loaded.tokenizer.encode(text)
     tokens = torch.tensor([token_ids], dtype=torch.long, device=DEVICE)
 
     # Parse node keys
@@ -843,7 +850,7 @@ def _tool_create_prompt(params: dict[str, Any]) -> dict[str, Any]:
 
     _log_event("tool_call", f"create_prompt: '{text[:50]}...'", {"text": text})
 
-    token_ids = loaded.tokenizer.encode(text, add_special_tokens=False)
+    token_ids = loaded.tokenizer.encode(text)
     if not token_ids:
         raise ValueError("Text produced no tokens")
 
@@ -866,7 +873,7 @@ def _tool_create_prompt(params: dict[str, Any]) -> dict[str, Any]:
         next_token_probs.append(round(prob, 6))
     next_token_probs.append(None)
 
-    token_strings = [loaded.token_strings[t] for t in token_ids]
+    token_strings = [loaded.tokenizer.get_tok_display(t) for t in token_ids]
 
     return {
         "prompt_id": prompt_id,
@@ -1038,7 +1045,7 @@ def _tool_save_graph_artifact(params: dict[str, Any]) -> dict[str, Any]:
     if prompt_record is None:
         raise ValueError(f"Prompt with id={prompt_id} not found")
 
-    tokens = [loaded.token_strings[tid] for tid in prompt_record.token_ids]
+    tokens = [loaded.tokenizer.get_tok_display(tid) for tid in prompt_record.token_ids]
     num_tokens = len(tokens)
 
     # Create artifacts directory
@@ -1056,6 +1063,13 @@ def _tool_save_graph_artifact(params: dict[str, Any]) -> dict[str, Any]:
     artifact_num = max(existing_nums, default=0) + 1
     artifact_id = f"graph_{artifact_num:03d}"
 
+    # Compute out_probs from stored logits
+    out_probs = _build_out_probs(
+        graph.ci_masked_out_logits,
+        graph.target_out_logits,
+        loaded.tokenizer.get_tok_display,
+    )
+
     # Step 1: Filter nodes by CI threshold (same as main graph API)
     filtered_ci_vals = {k: v for k, v in graph.node_ci_vals.items() if v > ci_threshold}
     l0_total = len(filtered_ci_vals)
@@ -1064,7 +1078,7 @@ def _tool_save_graph_artifact(params: dict[str, Any]) -> dict[str, Any]:
     node_ci_vals_with_pseudo = dict(filtered_ci_vals)
     for seq_pos in range(num_tokens):
         node_ci_vals_with_pseudo[f"wte:{seq_pos}:0"] = 1.0
-    for key, out_prob in graph.out_probs.items():
+    for key, out_prob in out_probs.items():
         seq_pos, token_id = key.split(":")
         node_ci_vals_with_pseudo[f"output:{seq_pos}:{token_id}"] = out_prob.prob
 
@@ -1115,7 +1129,7 @@ def _tool_save_graph_artifact(params: dict[str, Any]) -> dict[str, Any]:
                     "target_logit": v.target_logit,
                     "token": v.token,
                 }
-                for k, v in graph.out_probs.items()
+                for k, v in out_probs.items()
             },
             "nodeCiVals": node_ci_vals_with_pseudo,
             "nodeSubcompActs": filtered_subcomp_acts,

@@ -12,15 +12,13 @@ from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
-from simple_stories_train.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
 
-from spd.app.backend.compute import get_sources_by_target
+from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.database import PromptAttrDB
 from spd.app.backend.routers import graphs as graphs_router
-from spd.app.backend.routers import prompts as prompts_router
 from spd.app.backend.routers import runs as runs_router
 from spd.app.backend.server import app
-from spd.app.backend.state import HarvestCache, RunState, StateManager
+from spd.app.backend.state import RunState, StateManager
 from spd.configs import (
     Config,
     LayerwiseCiConfig,
@@ -29,6 +27,8 @@ from spd.configs import (
     ScheduleConfig,
 )
 from spd.models.component_model import ComponentModel
+from spd.pretrain.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
+from spd.topology import TransformerTopology, get_sources_by_target
 from spd.utils.module_utils import expand_module_patterns
 
 DEVICE = "cpu"
@@ -54,7 +54,6 @@ def app_with_state():
     # Patch DEVICE in all router modules to use CPU for tests
     with (
         mock.patch.object(graphs_router, "DEVICE", DEVICE),
-        mock.patch.object(prompts_router, "DEVICE", DEVICE),
         mock.patch.object(runs_router, "DEVICE", DEVICE),
     ):
         db = PromptAttrDB(db_path=Path(":memory:"), check_same_thread=False)
@@ -65,6 +64,7 @@ def app_with_state():
         assert run is not None
 
         model_config = GPT2SimpleConfig(
+            model_type="GPT2Simple",
             block_size=16,
             vocab_size=4019,  # Match tokenizer
             n_layer=1,
@@ -94,7 +94,7 @@ def app_with_state():
             module_info=[
                 ModulePatternInfoConfig(module_pattern=p, C=C) for p in target_module_patterns
             ],
-            pretrained_model_class="simple_stories_train.models.gpt2_simple.GPT2Simple",
+            pretrained_model_class="spd.pretrain.models.gpt2_simple.GPT2Simple",
             pretrained_model_output_attr="idx_0",
             tokenizer_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
             output_loss_type="kl",
@@ -106,7 +106,6 @@ def app_with_state():
             eval_freq=1,
             slow_eval_freq=1,
             train_log_freq=1,
-            n_examples_until_dead=1,
             task_config=LMTaskConfig(
                 task_name="lm",
                 max_seq_len=3,  # Short sequences
@@ -125,22 +124,29 @@ def app_with_state():
             sigmoid_type=config.sigmoid_type,
         )
         model.eval()
+        topology = TransformerTopology(model.target_model)
         sources_by_target = get_sources_by_target(
-            model=model, device=DEVICE, sampling=config.sampling
+            model=model, topology=topology, device=DEVICE, sampling=config.sampling
         )
 
-        # The model has vocab_size=4019, so create entries for all token IDs
-        token_strings = {i: f"tok_{i}" for i in range(model_config.vocab_size)}
+        from transformers import AutoTokenizer
+        from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+
+        hf_tokenizer = AutoTokenizer.from_pretrained("openai-community/gpt2")
+        assert isinstance(hf_tokenizer, PreTrainedTokenizerBase)
+        tokenizer = AppTokenizer(hf_tokenizer)
 
         run_state = RunState(
             run=run,
             model=model,
+            topology=topology,
             context_length=1,
-            tokenizer=None,  # pyright: ignore[reportArgumentType]
+            tokenizer=tokenizer,
             sources_by_target=sources_by_target,
             config=config,
-            token_strings=token_strings,
-            harvest=HarvestCache(run_id="test_run"),
+            harvest=None,
+            interp=None,
+            attributions=None,
         )
 
         manager = StateManager.get()
@@ -230,30 +236,11 @@ def test_compute_graph(app_with_prompt: tuple[TestClient, int]):
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.slow
-def test_generate_prompts_streaming(app_with_state: TestClient):
-    """Test streaming prompt generation with CI harvesting."""
-    response = app_with_state.post("/api/prompts/generate", params={"n_prompts": 2})
-    assert response.status_code == 200
-
-    # Parse SSE stream
-    lines = response.text.strip().split("\n")
-    events = [line for line in lines if line.startswith("data:")]
-
-    # Should have progress events and a complete event
-    assert len(events) >= 1
-
-    # Final event should be complete
-    final_data = json.loads(events[-1].replace("data: ", ""))
-    assert final_data["type"] == "complete"
-
-
 # -----------------------------------------------------------------------------
-# Prompts and Search
+# Prompts
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_get_prompts_initially_empty(app_with_state: TestClient):
     """Test that prompts list is initially empty."""
     response = app_with_state.get("/api/prompts")
@@ -262,33 +249,25 @@ def test_get_prompts_initially_empty(app_with_state: TestClient):
     assert len(prompts) == 0
 
 
-@pytest.mark.slow
-def test_get_prompts_after_generation(app_with_state: TestClient):
-    """Test getting prompts after generation."""
-    # Generate some prompts first
-    app_with_state.post("/api/prompts/generate", params={"n_prompts": 2})
+def test_get_prompts_after_adding(app_with_state: TestClient):
+    """Test getting prompts after adding via database."""
+    manager = StateManager.get()
+    assert manager.run_state is not None
+    manager.db.add_custom_prompt(
+        run_id=manager.run_state.run.id,
+        token_ids=[0, 2, 1],
+        context_length=manager.run_state.context_length,
+    )
+    manager.db.add_custom_prompt(
+        run_id=manager.run_state.run.id,
+        token_ids=[1, 3, 2],
+        context_length=manager.run_state.context_length,
+    )
 
     response = app_with_state.get("/api/prompts")
     assert response.status_code == 200
     prompts = response.json()
-    assert len(prompts) >= 2
-
-
-@pytest.mark.slow
-def test_search_prompts(app_with_state: TestClient):
-    """Test searching prompts by component keys."""
-    # Generate prompts first
-    app_with_state.post("/api/prompts/generate", params={"n_prompts": 2})
-
-    # Search for a component that should exist (wte:0 is always active)
-    response = app_with_state.get(
-        "/api/prompts/search",
-        params={"components": "wte:0", "mode": "any"},
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert "count" in data
-    assert data["count"] >= 0
+    assert len(prompts) == 2
 
 
 # -----------------------------------------------------------------------------
@@ -317,7 +296,9 @@ def test_compute_optimized_stream(app_with_prompt: tuple[TestClient, int]):
             "prompt_id": prompt_id,
             "label_token": 2,
             "imp_min_coeff": 0.01,
-            "ce_loss_coeff": 1.0,
+            "loss_type": "ce",
+            "loss_coeff": 1.0,
+            "loss_position": 2,
             "steps": 5,  # Very few steps for testing
             "pnorm": 0.5,
             "beta": 0.5,
@@ -325,7 +306,6 @@ def test_compute_optimized_stream(app_with_prompt: tuple[TestClient, int]):
             "ci_threshold": 0.0,
             "output_prob_threshold": 0.01,
             "mask_type": "stochastic",
-            "loss_seq_pos": 2,
         },
     )
     assert response.status_code == 200

@@ -39,7 +39,6 @@ ci_config:
   fn_type: vector_mlp
   hidden_dims: [128]
 
-n_examples_until_dead: 10000
 
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200

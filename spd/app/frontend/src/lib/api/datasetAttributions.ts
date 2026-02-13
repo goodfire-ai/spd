@@ -18,6 +18,14 @@ export type ComponentAttributions = {
     negative_targets: DatasetAttributionEntry[];
 };
 
+export type DatasetAttributionsMetadata = {
+    available: boolean;
+};
+
+export async function getDatasetAttributionsMetadata(): Promise<DatasetAttributionsMetadata> {
+    return fetchJson<DatasetAttributionsMetadata>(apiUrl("/api/dataset_attributions/metadata").toString());
+}
+
 export async function getComponentAttributions(
     layer: string,
     componentIdx: number,

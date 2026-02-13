@@ -1,16 +1,7 @@
 <script lang="ts">
     import { getContext } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
-    import type {
-        GraphData,
-        PinnedNode,
-        HoveredNode,
-        HoveredEdge,
-        LayerInfo,
-        NodePosition,
-    } from "../lib/promptAttributionsTypes";
-    import { formatNodeKeyForDisplay } from "../lib/promptAttributionsTypes";
-    import { getAliasedRowLabel } from "../lib/layerAliasing";
+    import type { GraphData, PinnedNode, HoveredNode, HoveredEdge, NodePosition } from "../lib/promptAttributionsTypes";
     import { colors, getEdgeColor, getSubcompActColor, rgbToCss, getNextTokenProbBgColor } from "../lib/colors";
     import { displaySettings } from "../lib/displaySettings.svelte";
     import {
@@ -27,6 +18,14 @@
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import { useZoomPan } from "../lib/useZoomPan.svelte";
     import ZoomControls from "../lib/ZoomControls.svelte";
+    import {
+        parseLayer,
+        getRowKey as _getRowKey,
+        getRowLabel as _getRowLabel,
+        sortRows,
+        getGroupProjections,
+        buildLayerAddress,
+    } from "../lib/graphLayout";
 
     const runState = getContext<RunContext>(RUN_KEY);
 
@@ -38,10 +37,6 @@
     const CLUSTER_BAR_HEIGHT = 3;
     const CLUSTER_BAR_GAP = 2;
     const LAYER_X_OFFSET = 3; // Horizontal offset per layer to avoid edge overlap
-
-    // Row order for layout (qkv share a row, lm_head before output)
-    const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "lm_head", "output"];
-    const QKV_SUBTYPES = ["q_proj", "k_proj", "v_proj"];
 
     type Props = {
         data: GraphData;
@@ -131,34 +126,12 @@
     // Zoom/pan
     const zoom = useZoomPan(() => innerContainer);
 
-    // Parse layer name into structured info
-    function parseLayer(name: string): LayerInfo {
-        if (name === "wte") {
-            return { name, block: -1, type: "embed", subtype: "wte" };
-        }
-        if (name === "lm_head") {
-            return { name, block: Infinity - 1, type: "mlp", subtype: "lm_head" };
-        }
-        if (name === "output") {
-            return { name, block: Infinity, type: "output", subtype: "output" };
-        }
-        const m = name.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
-        if (!m) throw new Error(`parseLayer: unrecognized layer name: ${name}`);
-        return { name, block: +m[1], type: m[2] as "attn" | "mlp", subtype: m[3] };
-    }
-
     function getRowKey(layer: string): string {
-        const info = parseLayer(layer);
-        if (QKV_SUBTYPES.includes(info.subtype)) {
-            return `h.${info.block}.qkv`;
-        }
-        return layer;
+        return _getRowKey(layer);
     }
 
     function getRowLabel(layer: string): string {
-        const rowKey = getRowKey(layer);
-        const isQkvGroup = rowKey.endsWith(".qkv");
-        return getAliasedRowLabel(layer, isQkvGroup);
+        return _getRowLabel(layer);
     }
 
     // Use pre-computed values from backend, derive max CI
@@ -213,27 +186,9 @@
         }
 
         // Sort rows for Y positioning
-        const parseRow = (r: string) => {
-            if (r === "wte") return { block: -1, subtype: "wte" };
-            if (r === "lm_head") return { block: Infinity - 1, subtype: "lm_head" };
-            if (r === "output") return { block: Infinity, subtype: "output" };
-            const mQkv = r.match(/h\.(\d+)\.qkv/);
-            if (mQkv) return { block: +mQkv[1], subtype: "qkv" };
-            const m = r.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
-            if (!m) throw new Error(`parseRow: unrecognized row key: ${r}`);
-            return { block: +m[1], subtype: m[3] };
-        };
+        const rows = sortRows(Array.from(allRows));
 
-        const rows = Array.from(allRows).sort((a, b) => {
-            const infoA = parseRow(a);
-            const infoB = parseRow(b);
-            if (infoA.block !== infoB.block) return infoA.block - infoB.block;
-            const idxA = ROW_ORDER.indexOf(infoA.subtype);
-            const idxB = ROW_ORDER.indexOf(infoB.subtype);
-            return idxA - idxB;
-        });
-
-        // Assign Y positions (output at top, wte at bottom)
+        // Assign Y positions (output at top, embed at bottom)
         const rowYPositions: Record<string, number> = {};
         for (let i = 0; i < rows.length; i++) {
             const distanceFromEnd = rows.length - 1 - i;
@@ -249,7 +204,7 @@
             layerYPositions[layer] = rowYPositions[rowKey];
             const rowIdx = rows.indexOf(rowKey);
             const distanceFromOutput = rows.length - 1 - rowIdx;
-            if (distanceFromOutput === 0 || layer === "wte") {
+            if (distanceFromOutput === 0 || layer === "embed") {
                 layerXOffsets[layer] = 0;
             } else {
                 layerXOffsets[layer] = distanceFromOutput % 2 === 1 ? LAYER_X_OFFSET : -LAYER_X_OFFSET;
@@ -261,27 +216,25 @@
         const maxComponentsPerSeq = tokens.map((_, seqIdx) => {
             let maxAtSeq = 0;
             for (const row of rows) {
-                if (row.endsWith(".qkv")) {
-                    const blockMatch = row.match(/h\.(\d+)/);
-                    if (blockMatch) {
-                        const block = blockMatch[1];
-                        let totalQkv = 0;
-                        for (const subtype of QKV_SUBTYPES) {
-                            const layer = `h.${block}.attn.${subtype}`;
-                            const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? [];
-                            totalQkv += nodes.length;
-                        }
-                        totalQkv += 2; // gaps between groups
-                        maxAtSeq = Math.max(maxAtSeq, totalQkv);
-                    }
-                } else {
-                    for (const layer of allLayers) {
-                        if (getRowKey(layer) === row) {
-                            const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? [];
-                            maxAtSeq = Math.max(maxAtSeq, nodes.length);
-                        }
+                // Count nodes in this row at this seq position
+                // Rows are "block.sublayer" — find all layers that belong to this row
+                let totalInRow = 0;
+                for (const layer of allLayers) {
+                    if (getRowKey(layer) === row) {
+                        const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? [];
+                        totalInRow += nodes.length;
                     }
                 }
+                // Add gaps between grouped projections (only for grouped rows)
+                const rowParts = row.split(".");
+                const isGroupedRow = rowParts.length >= 3 && rowParts[2].includes("_");
+                if (isGroupedRow) {
+                    const groupProjs = getGroupProjections(rowParts[1]);
+                    if (groupProjs && groupProjs.length > 1) {
+                        totalInRow += groupProjs.length - 1;
+                    }
+                }
+                maxAtSeq = Math.max(maxAtSeq, totalInRow);
             }
             return maxAtSeq;
         });
@@ -303,7 +256,8 @@
 
         for (const layer of allLayers) {
             const info = parseLayer(layer);
-            const isQkv = QKV_SUBTYPES.includes(info.subtype);
+            const groupProjs = info.sublayer ? getGroupProjections(info.sublayer) : null;
+            const isGrouped = groupProjs !== null && info.projection !== null && groupProjs.includes(info.projection);
 
             for (let seqIdx = 0; seqIdx < tokens.length; seqIdx++) {
                 const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`];
@@ -312,14 +266,13 @@
                 let baseX = seqXStarts[seqIdx] + COL_PADDING + layerXOffsets[layer];
                 const baseY = layerYPositions[layer];
 
-                // For qkv layers, offset X based on subtype
-                if (isQkv) {
-                    const subtypeIdx = QKV_SUBTYPES.indexOf(info.subtype);
-                    for (let i = 0; i < subtypeIdx; i++) {
-                        const prevLayer = `h.${info.block}.attn.${QKV_SUBTYPES[i]}`;
-                        const prevLayerNodes = nodesPerLayerSeq[`${prevLayer}:${seqIdx}`];
-                        const prevCount = prevLayerNodes?.length ?? 0;
-                        baseX += prevCount * (COMPONENT_SIZE + componentGap);
+                // For grouped projections (e.g. q/k/v), offset X based on position in group
+                if (isGrouped && groupProjs && info.projection) {
+                    const projIdx = groupProjs.indexOf(info.projection);
+                    for (let i = 0; i < projIdx; i++) {
+                        const prevLayer = buildLayerAddress(info.block, info.sublayer, groupProjs[i]);
+                        const prevLayerNodes = nodesPerLayerSeq[`${prevLayer}:${seqIdx}`] ?? [];
+                        baseX += prevLayerNodes.length * (COMPONENT_SIZE + componentGap);
                         baseX += QKV_GROUP_GAP;
                     }
                 }
@@ -377,16 +330,16 @@
     const EDGE_HIT_AREA_WIDTH = 4; // Wider invisible stroke for easier hover
 
     // Check if a node key matches the currently hovered component (same layer:cIdx, any seqIdx)
-    // For wte nodes: match by token value (highlight same tokens across positions)
+    // For embed nodes: match by token value (highlight same tokens across positions)
     // For other nodes: match by layer:cIdx (highlight same component across positions)
     function nodeMatchesHoveredComponent(nodeKey: string): boolean {
         if (!hoveredNode) return false;
         const [layer, seqIdxStr, cIdx] = nodeKey.split(":");
         const seqIdx = parseInt(seqIdxStr);
 
-        // For wte nodes, match by token value
-        if (hoveredNode.layer === "wte") {
-            if (layer !== "wte") return false;
+        // For embed nodes, match by token value
+        if (hoveredNode.layer === "embed") {
+            if (layer !== "embed") return false;
             return data.tokens[seqIdx] === data.tokens[hoveredNode.seqIdx];
         }
 
@@ -553,7 +506,7 @@
         }
 
         hoveredNode = { layer, seqIdx, cIdx };
-        const size = layer === "wte" || layer === "output" ? "small" : "large";
+        const size = layer === "embed" || layer === "output" ? "small" : "large";
         tooltipPos = calcTooltipPos(event.clientX, event.clientY, size);
     }
 
@@ -786,7 +739,13 @@
                             stroke={colors.textMuted}
                             stroke-width="0.5"
                         >
-                            <title>{maskedProb !== null ? `P(self): ${(maskedProb * 100).toFixed(1)}%` : isFirstToken ? "First token" : "P(self): <1%"}</title>
+                            <title
+                                >{maskedProb !== null
+                                    ? `P(self): ${(maskedProb * 100).toFixed(1)}%`
+                                    : isFirstToken
+                                      ? "First token"
+                                      : "P(self): <1%"}</title
+                            >
                         </circle>
                     {/each}
                 </g>
@@ -799,11 +758,11 @@
         <div class="edge-tooltip" style="left: {edgeTooltipPos.x}px; top: {edgeTooltipPos.y}px;">
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Src</span>
-                <code>{formatNodeKeyForDisplay(hoveredEdge.src)}</code>
+                <code>{hoveredEdge.src}</code>
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Tgt</span>
-                <code>{formatNodeKeyForDisplay(hoveredEdge.tgt)}</code>
+                <code>{hoveredEdge.tgt}</code>
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Val</span>

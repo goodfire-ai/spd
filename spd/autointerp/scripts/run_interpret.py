@@ -1,58 +1,65 @@
 """CLI for autointerp pipeline.
 
-Usage (direct execution):
-    python -m spd.autointerp.scripts.run_interpret <wandb_path>
-
-Usage (SLURM submission):
-    spd-autointerp <wandb_path>
+Usage:
+    python -m spd.autointerp.scripts.run_interpret <wandb_path> --config_json '...'
+    spd-autointerp <wandb_path>  # SLURM submission
 """
 
 import os
+from datetime import datetime
 
 from dotenv import load_dotenv
 
-from spd.autointerp.interpret import OpenRouterModelName, run_interpret
+from spd.autointerp.config import CompactSkepticalConfig
+from spd.autointerp.interpret import run_interpret
 from spd.autointerp.schemas import get_autointerp_dir
-from spd.harvest.schemas import get_activation_contexts_dir, get_correlations_dir
+from spd.harvest.repo import HarvestRepo
+from spd.log import logger
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
 def main(
     wandb_path: str,
-    model: OpenRouterModelName,
-    limit: int | None = None,
+    config_json: str | dict[str, object],
+    autointerp_run_id: str | None = None,
+    harvest_subrun_id: str | None = None,
 ) -> None:
-    """Interpret harvested components.
+    match config_json:
+        case str(json_str):
+            interp_config = CompactSkepticalConfig.model_validate_json(json_str)
+        case dict(d):
+            interp_config = CompactSkepticalConfig.model_validate(d)
 
-    Args:
-        wandb_path: WandB run path for the target decomposition run.
-        model: OpenRouter model to use for interpretation.
-        limit: Maximum number of components to interpret (highest mean CI first).
-    """
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
     load_dotenv()
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
-    activation_contexts_dir = get_activation_contexts_dir(run_id)
-    assert activation_contexts_dir.exists(), (
-        f"Activation contexts not found at {activation_contexts_dir}. Run harvest first."
-    )
+    harvest = HarvestRepo.open(run_id, subrun_id=harvest_subrun_id)
+    assert harvest is not None, f"No harvest data for {run_id}"
 
-    correlations_dir = get_correlations_dir(run_id)
+    # Create timestamped run directory
+    if autointerp_run_id is None:
+        autointerp_run_id = "a-" + datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = get_autointerp_dir(run_id) / autointerp_run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
 
-    autointerp_dir = get_autointerp_dir(run_id)
-    autointerp_dir.mkdir(parents=True, exist_ok=True)
+    # Save config for reproducibility
+    interp_config.to_file(run_dir / "config.yaml")
+
+    db_path = run_dir / "interp.db"
+
+    logger.info(f"Autointerp run: {run_dir}")
 
     run_interpret(
         wandb_path,
         openrouter_api_key,
-        model,
-        activation_contexts_dir,
-        correlations_dir,
-        autointerp_dir,
-        limit,
+        interp_config,
+        harvest,
+        db_path,
+        interp_config.limit,
+        interp_config.cost_limit_usd,
     )
 
 

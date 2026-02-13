@@ -13,12 +13,9 @@
 <div class="sample-card">
     <div class="sample-header">
         <span class="sample-index">#{index + 1}</span>
-        {#if sample.topic}
-            <span class="tag">{sample.topic}</span>
-        {/if}
-        {#if sample.theme}
-            <span class="tag">{sample.theme}</span>
-        {/if}
+        {#each Object.entries(sample.metadata) as [metaKey, metaVal] (metaKey)}
+            <span class="tag">{metaVal}</span>
+        {/each}
     </div>
     <div class="tokens-container">
         <ProbColoredTokens tokens={sample.tokens} nextTokenProbs={sample.next_token_probs} />

@@ -68,7 +68,7 @@ def pgd_masked_recon_loss_update(
             loss = sum_loss / n_examples
         grads = torch.autograd.grad(loss, list(adv_sources.values()))
         adv_sources_grads = {
-            k: all_reduce(g, op=ReduceOp.SUM)
+            k: all_reduce(g, op=ReduceOp.AVG)
             for k, g in zip(adv_sources.keys(), grads, strict=True)
         }
         with torch.no_grad():
@@ -257,7 +257,7 @@ def _multibatch_pgd_fwd_bwd(
         # important: take gradient wrt the UNEXPANDED adv_sources, not the expanded ones
         grads = torch.autograd.grad(batch_sum_loss, list(adv_sources.values()))
         for k, g in zip(adv_sources.keys(), grads, strict=True):
-            pgd_step_accum_grads[k] += all_reduce(g, op=ReduceOp.SUM).detach()
+            pgd_step_accum_grads[k] += all_reduce(g, op=ReduceOp.AVG).detach()
 
         del target_model_output, ci
 
@@ -295,7 +295,6 @@ def _interpolate_component_mask(
     component_masks: dict[str, Float[Tensor, "*batch_dims C"]] = {}
     for module_name in ci:
         adv_source = adv_sources_components[module_name]
-        assert torch.all(adv_source <= 1.0) and torch.all(adv_source >= 0.0)
         assert ci[module_name].shape[-1] == adv_source.shape[-1]
         scaled_noise_to_add = (1 - ci[module_name]) * adv_source
         component_masks[module_name] = ci[module_name] + scaled_noise_to_add

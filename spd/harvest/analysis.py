@@ -5,13 +5,13 @@ These functions operate on storage classes from harvest/storage.py.
 
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 import torch
 from jaxtyping import Float
 from torch import Tensor
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 
 Metric = Literal["precision", "recall", "jaccard", "pmi"]
@@ -114,37 +114,26 @@ def has_component(storage: CorrelationStorage, component_key: str) -> bool:
 def get_input_token_stats(
     storage: TokenStatsStorage,
     component_key: str,
-    tokenizer: PreTrainedTokenizerBase,
+    tok: AppTokenizer,
     top_k: int,
 ) -> TokenPRLift | None:
     """Compute P/R/lift/PMI for input tokens."""
     idx = storage.key_to_idx[component_key]
 
-    result = _compute_token_stats(
+    return _compute_token_stats(
         counts=storage.input_counts[idx],
         totals=storage.input_totals,
         n_tokens=storage.n_tokens,
         firing_count=storage.firing_counts[idx].item(),
-        tokenizer=tokenizer,
+        tok=tok,
         top_k=top_k,
-    )
-    if result is None:
-        return None
-
-    # Input stats don't have bottom PMI
-    return TokenPRLift(
-        top_recall=result.top_recall,
-        top_precision=result.top_precision,
-        top_lift=result.top_lift,
-        top_pmi=result.top_pmi,
-        bottom_pmi=None,
     )
 
 
 def get_output_token_stats(
     storage: TokenStatsStorage,
     component_key: str,
-    tokenizer: PreTrainedTokenizerBase,
+    tok: AppTokenizer,
     top_k: int,
 ) -> TokenPRLift | None:
     """Compute P/R/lift/PMI for output tokens."""
@@ -155,8 +144,8 @@ def get_output_token_stats(
         totals=storage.output_totals,
         n_tokens=storage.n_tokens,
         firing_count=storage.firing_counts[idx].item(),
-        tokenizer=tokenizer,
         top_k=top_k,
+        tok=tok,
     )
 
 
@@ -165,7 +154,7 @@ def _compute_token_stats(
     totals: Float[Tensor, " vocab"],
     n_tokens: int,
     firing_count: float,
-    tokenizer: PreTrainedTokenizerBase,
+    tok: AppTokenizer,
     top_k: int,
 ) -> TokenPRLift | None:
     """Compute P/R/lift/PMI from count tensors."""
@@ -193,13 +182,16 @@ def _compute_token_stats(
         top_vals, top_idx = torch.topk(
             masked, min(k, int(valid_mask.sum().item())), largest=largest
         )
-        result = []
-        for idx, val in zip(top_idx.tolist(), top_vals.tolist(), strict=True):
+
+        result: list[tuple[str, float]] = []
+
+        for idx, val in zip(
+            cast(list[int], top_idx.tolist()), cast(list[float], top_vals.tolist()), strict=True
+        ):
             if val == float("-inf"):
                 continue
             assert math.isfinite(val), f"Unexpected non-finite score {val} for token {idx}"
-            token_str = tokenizer.decode([idx])
-            result.append((token_str, round(val, 3 if abs(val) < 10 else 2)))
+            result.append((tok.get_tok_display(idx), round(val, 3 if abs(val) < 10 else 2)))
         return result
 
     return TokenPRLift(

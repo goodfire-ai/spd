@@ -1,8 +1,11 @@
 <script lang="ts">
+    import { getContext } from "svelte";
     import type { OutputProbability, PinnedNode, EdgeData } from "../../lib/promptAttributionsTypes";
-    import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
+    import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
+
+    const runState = getContext<RunContext>(RUN_KEY);
 
     type Props = {
         stagedNodes: PinnedNode[];
@@ -63,22 +66,28 @@
             {#each stagedNodes as node, idx (`${node.layer}:${node.seqIdx}:${node.cIdx}-${idx}`)}
                 {@const token = getTokenAtPosition(node.seqIdx)}
                 {@const isOutput = node.layer === "output"}
-                {@const isWte = node.layer === "wte"}
+                {@const isWte = node.layer === "embed"}
                 {@const isComponent = !isWte && !isOutput}
                 {@const nodeKey = `${node.layer}:${node.seqIdx}:${node.cIdx}`}
                 {@const ciVal = isComponent ? (nodeCiVals[nodeKey] ?? null) : null}
                 {@const subcompAct = isComponent ? (nodeSubcompActs[nodeKey] ?? null) : null}
+                {@const clusterId = isComponent ? runState.getClusterId(node.layer, node.cIdx) : undefined}
                 <div class="staged-item">
                     <div class="staged-header">
+                        <div class="node-info">
+                            <strong>{node.layer}:{node.seqIdx}:{node.cIdx}</strong>
+                            <span class="token-preview">"{token}"</span>
+                            {#if clusterId !== undefined}
+                                <span class="cluster-id">Cluster: {clusterId ?? "null"}</span>
+                            {/if}
+                        </div>
                         <button class="unstage-btn" onclick={() => unstageNode(node)}>✕</button>
                     </div>
 
                     {#if isWte}
-                        <h3>{getLayerDisplayName(node.layer)}:{node.seqIdx}:{node.cIdx}</h3>
                         <div class="token-display">"{token}"</div>
                         <p class="wte-info">Input embedding at position {node.seqIdx}</p>
                     {:else if isOutput}
-                        <h3>{getLayerDisplayName(node.layer)}:{node.seqIdx}:{node.cIdx}</h3>
                         <OutputNodeCard cIdx={node.cIdx} {outputProbs} seqIdx={node.seqIdx} />
                     {:else}
                         <ComponentNodeCard

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from spd.configs import Config
-from spd.utils.slurm import SlurmArrayConfig, generate_array_script
+from spd.utils.slurm import SlurmArrayConfig, generate_array_script, generate_git_snapshot_setup
 
 CUDA_FLAGS = {
     "NCCL_DEBUG": "WARN",
@@ -42,12 +42,31 @@ def _choose_master_port(run_id_local: str, idx: int) -> int:
     return base + (h % span)
 
 
+def _build_script_args(
+    run_id: str,
+    job: TrainingJob,
+    sweep_params: dict[str, Any] | None,
+) -> str:
+    """Build the common script arguments for training jobs."""
+    json_tagged_config = f"json:{json.dumps(job.config.model_dump(mode='json'))}"
+    args = (
+        f"--config_json {shlex.quote(json_tagged_config)} "
+        f"--sweep_id {run_id} "
+        f"--evals_id {job.experiment}"
+    )
+    if sweep_params is not None:
+        json_tagged_sweep_params = f"json:{json.dumps(sweep_params)}"
+        args += f" --sweep_params_json {shlex.quote(json_tagged_sweep_params)}"
+    return args
+
+
 def get_command(
     run_id: str,
     job: TrainingJob,
     job_idx: int,
     n_gpus: int | None,
     sweep_params: dict[str, Any] | None,
+    snapshot_branch: str,
 ) -> Command:
     """Build the command to run a training job.
 
@@ -58,62 +77,43 @@ def get_command(
         n_gpus: Number of GPUs. None or 1 means single GPU/CPU. 2-8 means single-node DDP.
                 >8 means multi-node DDP (must be divisible by 8).
         sweep_params: Optional sweep parameters to pass to the job.
+        snapshot_branch: Git branch to checkout (used for multi-node workspace setup).
     """
     port = _choose_master_port(run_id, job_idx)
+    script_args = _build_script_args(run_id, job, sweep_params)
 
-    json_tagged_config = f"json:{json.dumps(job.config.model_dump(mode='json'))}"
+    match n_gpus:
+        case None | 1:
+            command = f"python {job.script_path} {script_args}"
 
-    if n_gpus is None or n_gpus == 1:
-        # Single GPU or CPU
-        command = f"python {job.script_path} "
-    elif n_gpus <= GPUS_PER_NODE:
-        # Single-node DDP
-        command = f"torchrun --standalone --nproc_per_node={n_gpus} --master_port={port} {job.script_path} "
-    else:
-        # Multi-node DDP via srun + torchrun (static launch)
-        # SLURM_PROCID is set by srun and corresponds to the task ID (0, 1, ..., n-1)
-        # Build the torchrun command with $SLURM vars that will be evaluated on each node
-        n_nodes = n_gpus // GPUS_PER_NODE
+        case n if n <= GPUS_PER_NODE:
+            command = (
+                f"torchrun --standalone --nproc_per_node={n} --master_port={port} "
+                f"{job.script_path} {script_args}"
+            )
 
-        # Build torchrun command with shell variables that need to be evaluated on each node
-        torchrun_cmd = (
-            f"torchrun "
-            f"--nnodes={n_nodes} "
-            f"--node_rank=$SLURM_PROCID "  # Will be evaluated by bash -c on each node
-            f"--nproc_per_node={GPUS_PER_NODE} "
-            f'--master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1) '
-            f"--master_port={port} "
-            f"{job.script_path} "
-            f"--config_json {shlex.quote(json_tagged_config)} "
-            f"--sweep_id {run_id} "
-            f"--evals_id {job.experiment}"
-        )
+        case _:
+            # Multi-node DDP via srun + torchrun
+            # $SLURM_PROCID is the node rank (0, 1, ..., n-1), evaluated on each node by bash -c
+            n_nodes = n_gpus // GPUS_PER_NODE
+            torchrun_cmd = (
+                f"torchrun "
+                f"--nnodes={n_nodes} "
+                f"--node_rank=$SLURM_PROCID "
+                f"--nproc_per_node={GPUS_PER_NODE} "
+                f'--master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1) '
+                f"--master_port={port} "
+                f"{job.script_path} {script_args}"
+            )
 
-        if sweep_params is not None:
-            json_tagged_sweep_params = f"json:{json.dumps(sweep_params)}"
-            torchrun_cmd += f" --sweep_params_json {shlex.quote(json_tagged_sweep_params)}"
-
-        # Two things here:
-        # 1: We wrap in srun bash -c with proper shell quoting so that $SLURM_PROCID is evaluated on each
-        #    node.
-        # 2: We set --cpus-per-task=128 because:
-        #    Slurm automatically allocates 16 cpus per gpu. We have `DefCpuPerGPU=16` set
-        #    If you run srun bare, it allocates 1 cpu per task. For some reason, we've found that if
-        #    we set --cpus-per-task to anything other than 8 * 16 = 128, we get the error:
-        #    `srun: error: Unable to create step for job 52790: More processors requested than
-        #    permitted`
-        command = f"srun --cpus-per-task=128 bash -c {shlex.quote(torchrun_cmd)}"
-        return Command(env_vars=CUDA_FLAGS, command=command)
-
-    command += (
-        f"--config_json {shlex.quote(json_tagged_config)} "
-        f"--sweep_id {run_id} "
-        f"--evals_id {job.experiment} "
-    )
-
-    if sweep_params is not None:
-        json_tagged_sweep_params = f"json:{json.dumps(sweep_params)}"
-        command += f" --sweep_params_json {shlex.quote(json_tagged_sweep_params)} "
+            # Each node needs its own /tmp workspace since /tmp is node-local
+            work_dir = (
+                "/tmp/spd/workspace-${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}-node$SLURM_PROCID"
+            )
+            setup = generate_git_snapshot_setup(work_dir, snapshot_branch)
+            # Explicit srun flags ensure one task per node across all allocated nodes
+            srun_flags = f"--nodes={n_nodes} --ntasks={n_nodes} --ntasks-per-node=1"
+            command = f"srun {srun_flags} bash -c {shlex.quote(f'{setup}\n{torchrun_cmd}')}"
 
     return Command(env_vars=CUDA_FLAGS, command=command)
 
@@ -147,19 +147,24 @@ def create_slurm_array_script(
     # Convert TrainingJobs to command strings
     commands: list[str] = []
     for i, training_job in enumerate(training_jobs):
-        cmd = get_command(run_id, training_job, i, n_gpus, sweep_params)
+        cmd = get_command(
+            run_id,
+            training_job,
+            i,
+            n_gpus,
+            sweep_params,
+            snapshot_branch=snapshot_branch,
+        )
         commands.append(cmd.command)
 
-    # Compute SLURM resource allocation for multi-node DDP
-    if n_gpus is None or n_gpus == 1:
-        n_nodes = 1
-        gpus_per_node = 1
-    elif n_gpus <= GPUS_PER_NODE:
-        n_nodes = 1
-        gpus_per_node = n_gpus
-    else:
-        n_nodes = n_gpus // GPUS_PER_NODE
-        gpus_per_node = GPUS_PER_NODE
+    match n_gpus:
+        case None | 1:
+            n_nodes, gpus_per_node = 1, 1
+        case n if n <= GPUS_PER_NODE:
+            n_nodes, gpus_per_node = 1, n
+        case _:
+            n_nodes = n_gpus // GPUS_PER_NODE
+            gpus_per_node = GPUS_PER_NODE
 
     config = SlurmArrayConfig(
         job_name=slurm_job_name,

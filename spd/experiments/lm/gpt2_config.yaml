@@ -1,6 +1,5 @@
 # --- WandB ---
 wandb_project: spd
-# wandb_project: null
 wandb_run_name: null
 wandb_run_name_prefix: ""
 
@@ -53,7 +52,6 @@ slow_eval_on_first_step: true
 n_eval_steps: 5
 save_freq: null
 ci_alive_threshold: 0.0
-n_examples_until_dead: 3_276_800  # train_log_freq * batch_size * max_seq_len = 100 * 64 * 512
 eval_metric_configs:
   - classname: "CIHistograms"
     n_batches_accum: 5

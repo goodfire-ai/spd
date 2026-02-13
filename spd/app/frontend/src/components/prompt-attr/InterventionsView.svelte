@@ -4,14 +4,16 @@
     import { colors, getEdgeColor, getOutputHeaderColor, rgbaToCss } from "../../lib/colors";
     import type { Loadable } from "../../lib/index";
     import type { NormalizeType } from "../../lib/api";
-    import {
-        isInterventableNode,
-        type LayerInfo,
-        type NodePosition,
-        type TokenInfo,
-    } from "../../lib/promptAttributionsTypes";
-    import { getAliasedRowLabel } from "../../lib/layerAliasing";
+    import { isInterventableNode, type NodePosition, type TokenInfo } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
+    import {
+        parseLayer,
+        getRowKey as _getRowKey,
+        getRowLabel as _getRowLabel,
+        sortRows,
+        getGroupProjections,
+        buildLayerAddress,
+    } from "../../lib/graphLayout";
 
     const runState = getContext<RunContext>(RUN_KEY);
     import {
@@ -36,8 +38,6 @@
     const HIT_AREA_PADDING = 4;
     const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
     const LABEL_WIDTH = 100;
-    const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "lm_head", "output"];
-    const QKV_SUBTYPES = ["q_proj", "k_proj", "v_proj"];
     const CLUSTER_BAR_HEIGHT = 3;
     const CLUSTER_BAR_GAP = 2;
     const LAYER_X_OFFSET = 3; // Horizontal offset per layer to avoid edge overlap
@@ -211,20 +211,8 @@
     let dragCurrent = $state<{ x: number; y: number } | null>(null);
     let svgElement: SVGSVGElement | null = null;
 
-    // Parse layer name
-    function parseLayer(name: string): LayerInfo {
-        if (name === "wte") return { name, block: -1, type: "embed", subtype: "wte" };
-        if (name === "lm_head") return { name, block: Infinity - 1, type: "mlp", subtype: "lm_head" };
-        if (name === "output") return { name, block: Infinity, type: "output", subtype: "output" };
-        const m = name.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
-        if (!m) throw new Error(`parseLayer: unrecognized layer name: ${name}`);
-        return { name, block: +m[1], type: m[2] as "attn" | "mlp", subtype: m[3] };
-    }
-
     function getRowKey(layer: string): string {
-        const info = parseLayer(layer);
-        if (QKV_SUBTYPES.includes(info.subtype)) return `h.${info.block}.qkv`;
-        return layer;
+        return _getRowKey(layer);
     }
 
     // All nodes from the graph (for rendering)
@@ -269,23 +257,7 @@
         }
 
         // Sort rows
-        const parseRow = (r: string) => {
-            if (r === "wte") return { block: -1, subtype: "wte" };
-            if (r === "lm_head") return { block: Infinity - 1, subtype: "lm_head" };
-            if (r === "output") return { block: Infinity, subtype: "output" };
-            const mQkv = r.match(/h\.(\d+)\.qkv/);
-            if (mQkv) return { block: +mQkv[1], subtype: "qkv" };
-            const m = r.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
-            if (!m) return { block: 0, subtype: r };
-            return { block: +m[1], subtype: m[3] };
-        };
-
-        const rows: string[] = Array.from(allRows).sort((a, b) => {
-            const infoA = parseRow(a);
-            const infoB = parseRow(b);
-            if (infoA.block !== infoB.block) return infoA.block - infoB.block;
-            return ROW_ORDER.indexOf(infoA.subtype) - ROW_ORDER.indexOf(infoB.subtype);
-        });
+        const rows = sortRows(Array.from(allRows));
 
         const numTokens = tokens.length;
 
@@ -293,25 +265,21 @@
         const maxComponentsPerSeq = Array.from({ length: numTokens }, (_, seqIdx) => {
             let maxAtSeq = 1;
             for (const row of rows) {
-                if (row.endsWith(".qkv")) {
-                    const blockMatch = row.match(/h\.(\d+)/);
-                    if (blockMatch) {
-                        const block = blockMatch[1];
-                        let totalQkv = 0;
-                        for (const subtype of QKV_SUBTYPES) {
-                            const layer = `h.${block}.attn.${subtype}`;
-                            totalQkv += (nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? []).length;
-                        }
-                        totalQkv += 2;
-                        maxAtSeq = Math.max(maxAtSeq, totalQkv);
-                    }
-                } else {
-                    for (const layer of allLayers) {
-                        if (getRowKey(layer) === row) {
-                            maxAtSeq = Math.max(maxAtSeq, (nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? []).length);
-                        }
+                let totalInRow = 0;
+                for (const layer of allLayers) {
+                    if (getRowKey(layer) === row) {
+                        totalInRow += (nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? []).length;
                     }
                 }
+                const rowParts = row.split(".");
+                const isGroupedRow = rowParts.length >= 3 && rowParts[2].includes("_");
+                if (isGroupedRow) {
+                    const groupProjs = getGroupProjections(rowParts[1]);
+                    if (groupProjs && groupProjs.length > 1) {
+                        totalInRow += groupProjs.length - 1;
+                    }
+                }
+                maxAtSeq = Math.max(maxAtSeq, totalInRow);
             }
             return maxAtSeq;
         });
@@ -342,7 +310,7 @@
             layerYPositions[layer] = rowYPositions[rowKey];
             const rowIdx = rows.indexOf(rowKey);
             const distanceFromOutput = rows.length - 1 - rowIdx;
-            if (distanceFromOutput === 0 || layer === "wte") {
+            if (distanceFromOutput === 0 || layer === "embed") {
                 layerXOffsets[layer] = 0;
             } else {
                 layerXOffsets[layer] = distanceFromOutput % 2 === 1 ? LAYER_X_OFFSET : -LAYER_X_OFFSET;
@@ -354,7 +322,8 @@
         const allClusterSpans: ClusterSpan[] = [];
         for (const layer of allLayers) {
             const info = parseLayer(layer);
-            const isQkv = QKV_SUBTYPES.includes(info.subtype);
+            const groupProjs = info.sublayer ? getGroupProjections(info.sublayer) : null;
+            const isGrouped = groupProjs !== null && info.projection !== null && groupProjs.includes(info.projection);
 
             for (let seqIdx = 0; seqIdx < numTokens; seqIdx++) {
                 const layerNodes = nodesPerLayerSeq[`${layer}:${seqIdx}`];
@@ -363,10 +332,10 @@
                 let baseX = seqXStarts[seqIdx] + COL_PADDING + layerXOffsets[layer];
                 const baseY = layerYPositions[layer];
 
-                if (isQkv) {
-                    const subtypeIdx = QKV_SUBTYPES.indexOf(info.subtype);
-                    for (let i = 0; i < subtypeIdx; i++) {
-                        const prevLayer = `h.${info.block}.attn.${QKV_SUBTYPES[i]}`;
+                if (isGrouped && groupProjs && info.projection) {
+                    const projIdx = groupProjs.indexOf(info.projection);
+                    for (let i = 0; i < projIdx; i++) {
+                        const prevLayer = buildLayerAddress(info.block, info.sublayer, groupProjs[i]);
                         baseX +=
                             (nodesPerLayerSeq[`${prevLayer}:${seqIdx}`]?.length ?? 0) * (COMPONENT_SIZE + componentGap);
                         baseX += COMPONENT_SIZE + componentGap;
@@ -471,7 +440,7 @@
             hoverTimeout = null;
         }
         hoveredNode = { layer, seqIdx, cIdx };
-        const size = layer === "wte" || layer === "output" ? "small" : "large";
+        const size = layer === "embed" || layer === "output" ? "small" : "large";
         tooltipPos = calcTooltipPos(event.clientX, event.clientY, size);
     }
 
@@ -629,9 +598,7 @@
     }
 
     function getRowLabel(layer: string): string {
-        const rowKey = getRowKey(layer);
-        const isQkvGroup = rowKey.endsWith(".qkv");
-        return getAliasedRowLabel(layer, isQkvGroup);
+        return _getRowLabel(layer);
     }
 </script>
 

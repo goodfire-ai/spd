@@ -4,7 +4,6 @@
     import { COMPONENT_CARD_CONSTANTS } from "../../lib/componentCardConstants";
     import { anyCorrelationStatsEnabled, displaySettings } from "../../lib/displaySettings.svelte";
     import type { EdgeAttribution, EdgeData, OutputProbability } from "../../lib/promptAttributionsTypes";
-    import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import { useComponentDataExpectCached } from "../../lib/useComponentDataExpectCached.svelte";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
@@ -48,6 +47,7 @@
     }: Props = $props();
 
     const clusterId = $derived(runState.clusterMapping?.data[`${layer}:${cIdx}`]);
+    const intruderScore = $derived(runState.getIntruderScore(`${layer}:${cIdx}`));
 
     // Handle clicking a correlated component - parse key and pin it at same seqIdx
     function handleCorrelationClick(componentKey: string) {
@@ -73,20 +73,22 @@
         const tokenStats = componentData.tokenStats;
         if (tokenStats.status !== "loaded" || tokenStats.data === null) return null;
         return [
-            {
-                title: "Top Recall",
-                mathNotation: "P(token | component fires)",
-                items: tokenStats.data.input.top_recall
-                    .slice(0, COMPONENT_CARD_CONSTANTS.N_INPUT_TOKENS)
-                    .map(([token, value]) => ({ token, value })),
-                maxScale: 1,
-            },
+            // TODO clean this up, but for now Top Recall is honestly not useful
+            // {
+            //     title: "Top Recall",
+            //     mathNotation: "P(token | component fires)",
+            //     items: tokenStats.data.input.top_recall
+            //         .slice(0, COMPONENT_CARD_CONSTANTS.N_INPUT_TOKENS)
+            //         .map(([token, value]) => ({ token, value })),
+            //     maxScale: 1,
+            // },
             {
                 title: "Top Precision",
                 mathNotation: "P(component fires | token)",
-                items: tokenStats.data.input.top_precision
-                    .slice(0, COMPONENT_CARD_CONSTANTS.N_INPUT_TOKENS)
-                    .map(([token, value]) => ({ token, value })),
+                items: tokenStats.data.input.top_precision.map(([token, value]) => ({
+                    token,
+                    value,
+                })),
                 maxScale: 1,
             },
         ];
@@ -104,17 +106,16 @@
             {
                 title: "Top PMI",
                 mathNotation: "positive association with predictions",
-                items: tokenStats.data.output.top_pmi
-                    .slice(0, COMPONENT_CARD_CONSTANTS.N_OUTPUT_TOKENS)
-                    .map(([token, value]) => ({ token, value })),
+                items: tokenStats.data.output.top_pmi.map(([token, value]) => ({ token, value })),
                 maxScale: maxAbsPmi,
             },
             {
                 title: "Bottom PMI",
                 mathNotation: "negative association with predictions",
-                items: tokenStats.data.output.bottom_pmi
-                    .slice(0, COMPONENT_CARD_CONSTANTS.N_OUTPUT_TOKENS)
-                    .map(([token, value]) => ({ token, value })),
+                items: tokenStats.data.output.bottom_pmi.map(([token, value]) => ({
+                    token,
+                    value,
+                })),
                 maxScale: maxAbsPmi,
             },
         ];
@@ -186,7 +187,7 @@
 
 <div class="component-node-card">
     <div class="card-header">
-        <h3 class="node-identifier">{getLayerDisplayName(layer)}:{seqIdx}:{cIdx}</h3>
+        <h3 class="node-identifier">{layer}:{seqIdx}:{cIdx}</h3>
         <div class="token-display">"{token}"</div>
         <div class="header-metrics">
             {#if ciVal !== null}
@@ -200,6 +201,9 @@
             {/if}
             {#if componentData.componentDetail.status === "loaded"}
                 <span class="metric">Mean CI: {formatNumericalValue(componentData.componentDetail.data.mean_ci)}</span>
+            {/if}
+            {#if intruderScore !== null}
+                <span class="metric">Intruder: {Math.round(intruderScore * 100)}%</span>
             {/if}
         </div>
     </div>

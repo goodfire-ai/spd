@@ -7,10 +7,15 @@ import type {
     SubcomponentProbeResult,
     SubcomponentActivationContexts,
 } from "../promptAttributionsTypes";
-import { fetchJson } from "./index";
+import { ApiError, fetchJson } from "./index";
 
-export async function getActivationContextsSummary(): Promise<ActivationContextsSummary> {
-    return fetchJson<ActivationContextsSummary>("/api/activation_contexts/summary");
+export async function getActivationContextsSummary(): Promise<ActivationContextsSummary | null> {
+    try {
+        return await fetchJson<ActivationContextsSummary>("/api/activation_contexts/summary");
+    } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+    }
 }
 
 /** Default limit for initial load - 100 examples = 10 pages at 10 per page. */

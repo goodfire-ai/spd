@@ -4,12 +4,6 @@
  */
 
 export const COMPONENT_CARD_CONSTANTS = {
-    /** Maximum number of input tokens to display in token stats */
-    N_INPUT_TOKENS: 30,
-
-    /** Maximum number of output tokens to display in token stats */
-    N_OUTPUT_TOKENS: 30,
-
     /** Number of correlations per page */
     CORRELATIONS_PAGE_SIZE: 10,
 

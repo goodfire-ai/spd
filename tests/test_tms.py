@@ -84,7 +84,6 @@ def test_tms_decomposition_happy_path(tmp_path: Path) -> None:
         train_log_freq=2,
         save_freq=None,
         ci_alive_threshold=0.1,
-        n_examples_until_dead=8,  # print_freq * batch_size = 2 * 4
         eval_batch_size=4,
         eval_freq=10,
         slow_eval_freq=10,

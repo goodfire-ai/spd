@@ -9,18 +9,9 @@
         placeholder?: string;
     };
 
-    let { tokens, value, selectedTokenId, onSelect, placeholder = "Search tokens..." }: Props = $props();
+    let { tokens, value, onSelect, placeholder = "Search tokens..." }: Props = $props();
 
-    /** Format token for display: strip leading space, add ## prefix if no leading space */
-    function formatTokenDisplay(tokenString: string): string {
-        if (tokenString.startsWith(" ")) {
-            return tokenString.slice(1);
-        }
-        return "##" + tokenString;
-    }
-
-    // Only format when a token is actually selected; otherwise show raw user input
-    let inputValue = $derived(selectedTokenId !== null && value ? formatTokenDisplay(value) : value);
+    let inputValue = $derived(value);
     let isOpen = $state(false);
     let highlightedIndex = $state(0);
     let inputElement: HTMLInputElement | null = $state(null);
@@ -31,9 +22,7 @@
         const search = inputValue.toLowerCase();
         const matches: TokenInfo[] = [];
         for (const t of tokens) {
-            // Search on formatted display string so "##art" matches continuation tokens
-            const displayStr = formatTokenDisplay(t.string).toLowerCase();
-            if (displayStr.includes(search)) {
+            if (t.string.toLowerCase().includes(search)) {
                 matches.push(t);
                 if (matches.length >= 10) break;
             }
@@ -48,7 +37,6 @@
     }
 
     function handleSelect(token: TokenInfo) {
-        inputValue = formatTokenDisplay(token.string);
         onSelect(token.id, token.string);
         isOpen = false;
     }
@@ -133,7 +121,7 @@
                         onmousedown={() => handleSelect(token)}
                         onmouseenter={() => (highlightedIndex = i)}
                     >
-                        <span class="token-string">{formatTokenDisplay(token.string)}</span>
+                        <span class="token-string">{token.string}</span>
                         <span class="token-id">#{token.id}</span>
                     </button>
                 </li>

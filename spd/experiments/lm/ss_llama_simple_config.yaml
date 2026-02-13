@@ -70,7 +70,6 @@ slow_eval_on_first_step: true
 n_eval_steps: 5
 save_freq: null
 ci_alive_threshold: 0.0
-n_examples_until_dead: 1368400
 eval_metric_configs:
   - classname: "CIHistograms"
     n_batches_accum: 5
@@ -95,7 +94,7 @@ eval_metric_configs:
     mask_scope: "shared_across_batch"
 
 # --- Pretrained model info ---
-pretrained_model_class: simple_stories_train.models.llama_simple.LlamaSimple
+pretrained_model_class: spd.pretrain.models.llama_simple.LlamaSimple
 pretrained_model_name: wandb:goodfire/spd/runs/erq48r3w # 100k steps 4019 tok
 pretrained_model_output_attr: idx_0
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # 4019 tok: TODO: Load from wandb instead

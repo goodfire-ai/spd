@@ -12,9 +12,7 @@ Performance (SimpleStories, 600M tokens, batch_size=256):
 """
 
 import itertools
-import json
 import time
-from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import torch
@@ -23,18 +21,15 @@ from jaxtyping import Float
 from torch import Tensor
 
 from spd.data import train_loader_and_tokenizer
-from spd.harvest.lib.harvester import Harvester, HarvesterState
-from spd.harvest.schemas import (
-    ActivationExample,
-    ComponentData,
-    ComponentSummary,
-    ComponentTokenPMI,
-)
+from spd.harvest.config import HarvestConfig
+from spd.harvest.db import HarvestDB
+from spd.harvest.harvester import Harvester
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.topology import TransformerTopology
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import extract_batch_data
+from spd.utils.general_utils import bf16_autocast, extract_batch_data
 
 
 def _compute_u_norms(model: ComponentModel) -> dict[str, Float[Tensor, " C"]]:
@@ -64,89 +59,27 @@ def _normalize_component_acts(
     return normalized
 
 
-@dataclass
-class HarvestConfig:
-    wandb_path: str
-    n_batches: int | None
-    batch_size: int
-    ci_threshold: float
-    activation_examples_per_component: int
-    activation_context_tokens_per_side: int
-    pmi_token_top_k: int
-
-
-@dataclass
-class HarvestResult:
-    """Result of harvest containing components, correlations, and token stats."""
-
-    components: list[ComponentData]
-    correlations: CorrelationStorage
-    token_stats: TokenStatsStorage
-    config: HarvestConfig
-
-    def save(self, activation_contexts_dir: Path, correlations_dir: Path) -> None:
-        """Save harvest result to disk."""
-        # Save activation contexts (JSONL)
-        activation_contexts_dir.mkdir(parents=True, exist_ok=True)
-
-        config_path = activation_contexts_dir / "config.json"
-        config_path.write_text(json.dumps(asdict(self.config), indent=2))
-
-        components_path = activation_contexts_dir / "components.jsonl"
-        with open(components_path, "w") as f:
-            for comp in self.components:
-                f.write(json.dumps(asdict(comp)) + "\n")
-        logger.info(f"Saved {len(self.components)} components to {components_path}")
-
-        # Save lightweight summary for fast /summary endpoint
-        summaries = {
-            comp.component_key: ComponentSummary(
-                layer=comp.layer,
-                component_idx=comp.component_idx,
-                mean_ci=comp.mean_ci,
-            )
-            for comp in self.components
-        }
-        summary_path = activation_contexts_dir / "summary.json"
-        ComponentSummary.save_all(summaries, summary_path)
-        logger.info(f"Saved summary to {summary_path}")
-
-        # Save correlations (.pt)
-        self.correlations.save(correlations_dir / "component_correlations.pt")
-
-        # Save token stats (.pt)
-        self.token_stats.save(correlations_dir / "token_stats.pt")
-
-    @staticmethod
-    def load_components(activation_contexts_dir: Path) -> list[ComponentData]:
-        """Load components from disk."""
-        assert activation_contexts_dir.exists(), f"No harvest found at {activation_contexts_dir}"
-
-        components_path = activation_contexts_dir / "components.jsonl"
-        components = []
-        with open(components_path) as f:
-            for line in f:
-                data = json.loads(line)
-                data["activation_examples"] = [
-                    ActivationExample(**ex) for ex in data["activation_examples"]
-                ]
-                data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
-                data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
-                components.append(ComponentData(**data))
-
-        return components
-
-
-def _build_harvest_result(
+def _save_harvest_results(
     harvester: Harvester,
     config: HarvestConfig,
-) -> HarvestResult:
-    """Build HarvestResult from a harvester."""
-    logger.info("Building component results...")
-    components = harvester.build_results(pmi_top_k_tokens=config.pmi_token_top_k)
-    logger.info(f"Built {len(components)} components (skipped components with no firings)")
+    output_dir: Path,
+) -> None:
+    """Build and save all harvest results to disk.
 
-    # Build component keys list (same ordering as tensors)
+    Components are streamed to the DB one at a time to avoid holding all ~40K
+    ComponentData objects in memory simultaneously (~187 GB as Python objects).
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Building and saving component results...")
+    db_path = output_dir / "harvest.db"
+    db = HarvestDB(db_path)
+    db.save_config(config)
+    components_iter = harvester.build_results(pmi_top_k_tokens=config.pmi_token_top_k)
+    n_saved = db.save_components_iter(components_iter)
+    db.close()
+    logger.info(f"Saved {n_saved} components to {db_path}")
+
     component_keys = [
         f"{layer}:{c}"
         for layer in harvester.layer_names
@@ -156,42 +89,37 @@ def _build_harvest_result(
     correlations = CorrelationStorage(
         component_keys=component_keys,
         count_i=harvester.firing_counts.long().cpu(),
-        count_ij=harvester.count_ij.long().cpu(),
+        count_ij=harvester.cooccurrence_counts.long().cpu(),
         count_total=harvester.total_tokens_processed,
     )
+    correlations.save(output_dir / "component_correlations.pt")
 
     token_stats = TokenStatsStorage(
         component_keys=component_keys,
         vocab_size=harvester.vocab_size,
         n_tokens=harvester.total_tokens_processed,
-        input_counts=harvester.input_token_counts.cpu(),
-        input_totals=harvester.input_token_totals.float().cpu(),
-        output_counts=harvester.output_token_prob_mass.cpu(),
-        output_totals=harvester.output_token_prob_totals.cpu(),
+        input_counts=harvester.input_cooccurrence.cpu(),
+        input_totals=harvester.input_marginals.float().cpu(),
+        output_counts=harvester.output_cooccurrence.cpu(),
+        output_totals=harvester.output_marginals.cpu(),
         firing_counts=harvester.firing_counts.cpu(),
     )
-
-    return HarvestResult(
-        components=components,
-        correlations=correlations,
-        token_stats=token_stats,
-        config=config,
-    )
+    token_stats.save(output_dir / "token_stats.pt")
 
 
 def harvest_activation_contexts(
+    wandb_path: str,
     config: HarvestConfig,
-    activation_contexts_dir: Path,
-    correlations_dir: Path,
+    output_dir: Path,
     rank: int | None = None,
     world_size: int | None = None,
 ) -> None:
     """Single-pass harvest of token stats, activation contexts, and correlations.
 
     Args:
+        wandb_path: WandB run path for the target decomposition run.
         config: Harvest configuration.
-        activation_contexts_dir: Directory to save activation contexts.
-        correlations_dir: Directory to save correlations.
+        output_dir: Directory to save harvest outputs.
         rank: Worker rank for parallel execution (0 to world_size-1).
         world_size: Total number of workers. If specified with rank, only processes
             batches where batch_idx % world_size == rank.
@@ -201,16 +129,16 @@ def harvest_activation_contexts(
     device = torch.device(get_device())
     logger.info(f"Loading model on {device}")
 
-    run_info = SPDRunInfo.from_path(config.wandb_path)
+    run_info = SPDRunInfo.from_path(wandb_path)
     model = ComponentModel.from_run_info(run_info).to(device)
     model.eval()
 
     spd_config = run_info.config
-    train_loader, tokenizer = train_loader_and_tokenizer(spd_config, config.batch_size)
+    train_loader, _ = train_loader_and_tokenizer(spd_config, config.batch_size)
 
     layer_names = list(model.target_module_paths)
-    vocab_size = tokenizer.vocab_size
-    assert isinstance(vocab_size, int)
+    topology = TransformerTopology(model.target_model)
+    vocab_size = topology.unembed_module.out_features
 
     # Precompute U norms for normalizing component activations
     u_norms = _compute_u_norms(model)
@@ -222,13 +150,19 @@ def harvest_activation_contexts(
         ci_threshold=config.ci_threshold,
         max_examples_per_component=config.activation_examples_per_component,
         context_tokens_per_side=config.activation_context_tokens_per_side,
+        max_examples_per_batch_per_component=config.max_examples_per_batch_per_component,
         device=device,
     )
 
     train_iter = iter(train_loader)
     batches_processed = 0
     last_log_time = time.time()
-    batch_range = range(config.n_batches) if config.n_batches is not None else itertools.count()
+    match config.n_batches:
+        case int(n_batches):
+            batch_range = range(n_batches)
+        case "whole_dataset":
+            batch_range = itertools.count()
+
     for batch_idx in tqdm.tqdm(batch_range, desc="Harvesting", disable=rank is not None):
         try:
             batch_data = extract_batch_data(next(train_iter))
@@ -241,7 +175,7 @@ def harvest_activation_contexts(
             continue
 
         batch = batch_data.to(device)
-        with torch.no_grad():
+        with torch.no_grad(), bf16_autocast():
             out = model(batch, cache_type="input")
             probs = torch.softmax(out.output, dim=-1)
 
@@ -257,14 +191,14 @@ def harvest_activation_contexts(
             expected_n_comp = sum(model.module_to_c[layer] for layer in layer_names)
             assert ci.shape[2] == expected_n_comp
 
-            component_acts = model.get_all_component_acts(out.cache)
-            normalized_acts = _normalize_component_acts(component_acts, u_norms)
-            subcomp_acts: Float[Tensor, "B S n_comp"] = torch.cat(
+            per_layer_acts = model.get_all_component_acts(out.cache)
+            normalized_acts = _normalize_component_acts(per_layer_acts, u_norms)
+            component_acts: Float[Tensor, "B S n_comp"] = torch.cat(
                 [normalized_acts[layer] for layer in layer_names],
                 dim=2,
             )
 
-            harvester.process_batch(batch, ci, probs, subcomp_acts)
+            harvester.process_batch(batch, ci, probs, component_acts)
 
         batches_processed += 1
         now = time.time()
@@ -281,71 +215,55 @@ def harvest_activation_contexts(
     # Save results (with rank suffix if distributed)
     if rank is not None:
         # Distributed: save worker state
-        state = harvester.get_state()
-        state_dir = activation_contexts_dir.parent / "worker_states"
+        state_dir = output_dir / "worker_states"
         state_dir.mkdir(parents=True, exist_ok=True)
         state_path = state_dir / f"worker_{rank}.pt"
-        torch.save(state, state_path)
+        harvester.save(state_path)
         logger.info(f"[Worker {rank}] Saved state to {state_path}")
     else:
         # Single GPU: save full result
-        result = _build_harvest_result(harvester, config)
-        result.save(activation_contexts_dir, correlations_dir)
-        logger.info(f"Saved results to {activation_contexts_dir} and {correlations_dir}")
+        _save_harvest_results(harvester, config, output_dir)
+        logger.info(f"Saved results to {output_dir}")
 
 
-def merge_activation_contexts(wandb_path: str) -> None:
+def merge_activation_contexts(output_dir: Path) -> None:
     """Merge partial harvest results from parallel workers.
 
-    Looks for worker_*.pt state files and merges them into final harvest results.
-
-    Uses streaming merge to avoid OOM - loads one file at a time instead of all at once.
+    Looks for worker_*.pt state files in output_dir/worker_states/ and merges them
+    into final harvest results written to output_dir.
     """
-    from spd.harvest.schemas import get_activation_contexts_dir, get_correlations_dir
-    from spd.utils.wandb_utils import parse_wandb_run_path
 
-    _, _, run_id = parse_wandb_run_path(wandb_path)
-    activation_contexts_dir = get_activation_contexts_dir(run_id)
-    correlations_dir = get_correlations_dir(run_id)
-    state_dir = activation_contexts_dir.parent / "worker_states"
+    state_dir = output_dir / "worker_states"
 
-    # Find all worker state files
     worker_files = sorted(state_dir.glob("worker_*.pt"))
     assert worker_files, f"No worker state files found in {state_dir}"
     logger.info(f"Found {len(worker_files)} worker state files to merge")
 
-    # Load first file to initialize merged state
-    logger.info(f"Loading worker 0: {worker_files[0].name}")
-    merged_state: HarvesterState = torch.load(worker_files[0], weights_only=False)
-    logger.info(f"Loaded worker 0: {merged_state.total_tokens_processed:,} tokens")
+    first_worker_file, *rest_worker_files = worker_files
 
-    # Stream remaining files one at a time
-    for worker_file in tqdm.tqdm(worker_files[1:], desc="Merging worker states"):
-        state = torch.load(worker_file, weights_only=False)
-        merged_state.merge_into(state)
-        # state will be garbage collected here before loading the next file
+    logger.info(f"Loading worker 0: {first_worker_file.name}")
+    harvester = Harvester.load(first_worker_file, device=torch.device("cpu"))
+    logger.info(f"Loaded worker 0: {harvester.total_tokens_processed:,} tokens")
 
-    logger.info(f"Merge complete. Total tokens: {merged_state.total_tokens_processed:,}")
+    for worker_file in tqdm.tqdm(rest_worker_files, desc="Merging worker states"):
+        other = Harvester.load(worker_file, device=torch.device("cpu"))
+        harvester.merge(other)
+        del other
 
-    # Build harvester from merged state and generate results
-    harvester = Harvester.from_state(merged_state, torch.device("cpu"))
+    logger.info(f"Merge complete. Total tokens: {harvester.total_tokens_processed:,}")
 
-    # Load config from merged state (all workers use same config)
     config = HarvestConfig(
-        wandb_path=wandb_path,
-        n_batches=None,  # Not applicable for merge
-        batch_size=0,  # Not applicable for merge
-        ci_threshold=merged_state.ci_threshold,
-        activation_examples_per_component=merged_state.max_examples_per_component,
-        activation_context_tokens_per_side=merged_state.context_tokens_per_side,
-        pmi_token_top_k=40,  # Standard value
+        ci_threshold=harvester.ci_threshold,
+        activation_examples_per_component=harvester.max_examples_per_component,
+        activation_context_tokens_per_side=harvester.context_tokens_per_side,
     )
 
-    result = _build_harvest_result(harvester, config)
-    result.save(activation_contexts_dir, correlations_dir)
-    logger.info(f"Saved merged results to {activation_contexts_dir} and {correlations_dir}")
+    _save_harvest_results(harvester, config, output_dir)
+    db_path = output_dir / "harvest.db"
+    assert db_path.exists() and db_path.stat().st_size > 0, f"Merge output is empty: {db_path}"
+    logger.info(f"Saved merged results to {output_dir}")
 
-    # Clean up worker state files
     for worker_file in worker_files:
         worker_file.unlink()
+    state_dir.rmdir()
     logger.info(f"Deleted {len(worker_files)} worker state files")

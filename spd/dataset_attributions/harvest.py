@@ -13,7 +13,6 @@ See CLAUDE.md in this directory for usage instructions.
 """
 
 import itertools
-from dataclasses import dataclass
 from pathlib import Path
 
 import torch
@@ -21,25 +20,17 @@ import tqdm
 from jaxtyping import Bool
 from torch import Tensor
 
-from spd.app.backend.compute import get_sources_by_target
 from spd.data import train_loader_and_tokenizer
+from spd.dataset_attributions.config import DatasetAttributionConfig
 from spd.dataset_attributions.harvester import AttributionHarvester
-from spd.dataset_attributions.loaders import get_attributions_dir
 from spd.dataset_attributions.storage import DatasetAttributionStorage
-from spd.harvest.loaders import load_activation_contexts_summary
+from spd.harvest.repo import HarvestRepo
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.topology import TransformerTopology, get_sources_by_target
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import extract_batch_data
 from spd.utils.wandb_utils import parse_wandb_run_path
-
-
-@dataclass
-class DatasetAttributionConfig:
-    wandb_path: str
-    n_batches: int | None
-    batch_size: int
-    ci_threshold: float
 
 
 def _build_component_layer_keys(model: ComponentModel) -> list[str]:
@@ -71,7 +62,8 @@ def _build_alive_masks(
     - Sources: [0, vocab_size) = wte tokens, [vocab_size, vocab_size + n_components) = component layers
     - Targets: [0, n_components) = component layers (output handled via out_residual)
     """
-    summary = load_activation_contexts_summary(run_id)
+    harvest = HarvestRepo.open(run_id)
+    summary = harvest.get_summary() if harvest is not None else None
 
     n_sources = vocab_size + n_components
 
@@ -110,23 +102,19 @@ def _build_alive_masks(
     return source_alive, target_alive
 
 
-def _get_output_path(run_id: str, rank: int | None) -> Path:
-    """Get output path for attributions."""
-    output_dir = get_attributions_dir(run_id)
-    if rank is not None:
-        return output_dir / f"dataset_attributions_rank_{rank}.pt"
-    return output_dir / "dataset_attributions.pt"
-
-
 def harvest_attributions(
+    wandb_path: str,
     config: DatasetAttributionConfig,
+    output_dir: Path,
     rank: int | None = None,
     world_size: int | None = None,
 ) -> None:
     """Compute dataset attributions over the training dataset.
 
     Args:
+        wandb_path: WandB run path for the target decomposition run.
         config: Configuration for attribution harvesting.
+        output_dir: Directory to write results into.
         rank: Worker rank for parallel execution (0 to world_size-1).
         world_size: Total number of workers. If specified with rank, only processes
             batches where batch_idx % world_size == rank.
@@ -137,9 +125,9 @@ def harvest_attributions(
     device = torch.device(get_device())
     logger.info(f"Loading model on {device}")
 
-    _, _, run_id = parse_wandb_run_path(config.wandb_path)
+    _, _, run_id = parse_wandb_run_path(wandb_path)
 
-    run_info = SPDRunInfo.from_path(config.wandb_path)
+    run_info = SPDRunInfo.from_path(wandb_path)
     model = ComponentModel.from_run_info(run_info).to(device)
     model.eval()
 
@@ -163,7 +151,8 @@ def harvest_attributions(
 
     # Get gradient connectivity
     logger.info("Computing sources_by_target...")
-    sources_by_target_raw = get_sources_by_target(model, str(device), spd_config.sampling)
+    topology = TransformerTopology(model.target_model)
+    sources_by_target_raw = get_sources_by_target(model, topology, str(device), spd_config.sampling)
 
     # Filter sources_by_target:
     # - Valid targets: component layers + output
@@ -190,13 +179,19 @@ def harvest_attributions(
         source_alive=source_alive,
         target_alive=target_alive,
         sampling=spd_config.sampling,
+        embedding_module=topology.embedding_module,
+        unembed_module=topology.unembed_module,
         device=device,
         show_progress=True,
     )
 
     # Process batches
     train_iter = iter(train_loader)
-    batch_range = range(config.n_batches) if config.n_batches is not None else itertools.count()
+    match config.n_batches:
+        case int(n_batches):
+            batch_range = range(n_batches)
+        case "whole_dataset":
+            batch_range = itertools.count()
     for batch_idx in tqdm.tqdm(batch_range, desc="Attribution batches"):
         try:
             batch_data = next(train_iter)
@@ -229,25 +224,28 @@ def harvest_attributions(
         ci_threshold=config.ci_threshold,
     )
 
-    output_path = _get_output_path(run_id, rank)
+    if rank is not None:
+        worker_dir = output_dir / "worker_states"
+        worker_dir.mkdir(parents=True, exist_ok=True)
+        output_path = worker_dir / f"dataset_attributions_rank_{rank}.pt"
+    else:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "dataset_attributions.pt"
     storage.save(output_path)
     logger.info(f"Saved dataset attributions to {output_path}")
 
 
-def merge_attributions(wandb_path: str) -> None:
+def merge_attributions(output_dir: Path) -> None:
     """Merge partial attribution files from parallel workers.
 
-    Looks for dataset_attributions_rank_*.pt files and merges them into
-    dataset_attributions.pt.
+    Looks for worker_states/dataset_attributions_rank_*.pt files and merges them
+    into dataset_attributions.pt in the output_dir.
 
     Uses streaming merge to avoid OOM - loads one file at a time instead of all at once.
     """
-    _, _, run_id = parse_wandb_run_path(wandb_path)
-    output_dir = get_attributions_dir(run_id)
-
-    # Find all rank files
-    rank_files = sorted(output_dir.glob("dataset_attributions_rank_*.pt"))
-    assert rank_files, f"No rank files found in {output_dir}"
+    worker_dir = output_dir / "worker_states"
+    rank_files = sorted(worker_dir.glob("dataset_attributions_rank_*.pt"))
+    assert rank_files, f"No rank files found in {worker_dir}"
     logger.info(f"Found {len(rank_files)} rank files to merge")
 
     # Load first file to get metadata and initialize accumulators
@@ -295,10 +293,11 @@ def merge_attributions(wandb_path: str) -> None:
 
     output_path = output_dir / "dataset_attributions.pt"
     merged.save(output_path)
+    assert output_path.stat().st_size > 0, f"Merge output is empty: {output_path}"
     logger.info(f"Merged {len(rank_files)} files -> {output_path}")
     logger.info(f"Total: {total_batches} batches, {total_tokens:,} tokens")
 
-    # Clean up per-rank files after successful merge
     for rank_file in rank_files:
         rank_file.unlink()
-    logger.info(f"Deleted {len(rank_files)} per-rank files")
+    worker_dir.rmdir()
+    logger.info(f"Deleted {len(rank_files)} per-rank files and worker_states/")

@@ -60,7 +60,7 @@ check-pre-commit:
 
 .PHONY: test
 test:
-	uv run pytest tests/ --durations 10
+	uv run pytest tests/ --testmon --durations 10
 
 # Use min(4, nproc) for numprocesses. Any more and it slows down the tests.
 NUM_PROCESSES ?= $(shell nproc | awk '{print ($$1<4?$$1:4)}')
