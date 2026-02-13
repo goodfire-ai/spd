@@ -720,7 +720,7 @@ class TestPersistentPGDReconLoss:
         # Initialize state
         state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            seq_len=batch.shape[-1],
+            batch_dims=(1, 2),
             device="cpu",
             use_delta_component=False,
             cfg=cfg,
@@ -771,7 +771,7 @@ class TestPersistentPGDReconLoss:
 
         state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            seq_len=batch.shape[-1],
+            batch_dims=(1, 2),
             device="cpu",
             use_delta_component=False,
             cfg=cfg,
@@ -825,7 +825,7 @@ class TestPersistentPGDReconLoss:
         # Initialize state with delta component
         state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            seq_len=batch_dims[-1],
+            batch_dims=batch_dims,
             device="cpu",
             use_delta_component=True,
             cfg=cfg,
@@ -888,7 +888,7 @@ class TestPersistentPGDReconLoss:
 
         state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            seq_len=batch_dims[-1],
+            batch_dims=batch_dims,
             device="cpu",
             use_delta_component=False,
             cfg=cfg,
@@ -928,7 +928,7 @@ class TestPersistentPGDReconLoss:
 
         state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            seq_len=batch.shape[-1],
+            batch_dims=(1, 2),
             device="cpu",
             use_delta_component=False,
             cfg=cfg,
