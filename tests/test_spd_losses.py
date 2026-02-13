@@ -739,7 +739,7 @@ class TestPersistentPGDReconLoss:
             target_out=target_out,
             output_loss_type="mse",
         )
-        grad = state.get_grads(loss)
+        grad, _ = state.get_grads(loss)
 
         # Apply PGD step
         state.step(grad)
@@ -790,7 +790,7 @@ class TestPersistentPGDReconLoss:
                 target_out=target_out,
                 output_loss_type="mse",
             )
-            grad = state.get_grads(loss)
+            grad, _ = state.get_grads(loss)
             state.step(grad)
             assert loss >= 0.0
 
@@ -843,7 +843,8 @@ class TestPersistentPGDReconLoss:
             target_out=target_out,
             output_loss_type="mse",
         )
-        grad = state.get_grads(loss)
+        grad, r1 = state.get_grads(loss)
+        assert r1 == 0.0
         state.step(grad)
 
         assert loss >= 0.0
@@ -906,7 +907,8 @@ class TestPersistentPGDReconLoss:
             target_out=target_out,
             output_loss_type="mse",
         )
-        grad = state.get_grads(loss)
+        grad, r1 = state.get_grads(loss)
+        assert r1 == 0.0
         state.step(grad)
 
         assert loss >= 0.0
@@ -943,7 +945,57 @@ class TestPersistentPGDReconLoss:
             target_out=target_out,
             output_loss_type="mse",
         )
-        grad = state.get_grads(loss)
+        grad, r1 = state.get_grads(loss)
+        assert r1 == 0.0
         state.step(grad)
 
         assert loss >= 0.0
+
+    def test_r1_gradient_penalty(self: object) -> None:
+        """Test R1 gradient penalty damps source grads."""
+        fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+
+        batch = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+        target_out = torch.tensor([[0.5, 1.5]], dtype=torch.float32)
+        ci = {"fc": torch.tensor([[[0.4], [0.4]]], dtype=torch.float32)}
+
+        cfg = PersistentPGDReconLossConfig(
+            optimizer=SignPGDConfig(step_size=0.1), scope=SingleSourceScope()
+        )
+
+        state = PersistentPGDState(
+            module_to_c=model.module_to_c,
+            seq_len=batch.shape[-1],
+            device="cpu",
+            use_delta_component=False,
+            cfg=cfg,
+        )
+
+        def compute_loss() -> Float[Tensor, ""]:
+            return persistent_pgd_recon_loss(
+                model=model,
+                batch=batch,
+                ppgd_sources=state.sources,
+                ci=ci,
+                weight_deltas=None,
+                target_out=target_out,
+                output_loss_type="mse",
+            )
+
+        # r1_coeff=0 returns 0.0
+        grads_raw, r1_zero = state.get_grads(compute_loss(), r1_coeff=0.0)
+        assert r1_zero == 0.0
+
+        # r1_coeff > 0 returns positive penalty and damped grads
+        grads_damped, r1_val = state.get_grads(compute_loss(), r1_coeff=0.5)
+        assert r1_val > 0.0
+
+        # Damped grads should have smaller magnitude than raw grads
+        raw_norm = sum(g.pow(2).sum().item() for g in grads_raw.values())
+        damped_norm = sum(g.pow(2).sum().item() for g in grads_damped.values())
+        assert damped_norm < raw_norm
+
+        # Source grads are detached (no grad_fn)
+        for g in grads_damped.values():
+            assert g.grad_fn is None

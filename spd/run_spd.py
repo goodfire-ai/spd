@@ -323,10 +323,16 @@ def optimize(
                 if isinstance(
                     loss_cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
                 ):
-                    ppgd_grads = ppgd_states[loss_cfg].get_grads(loss_val)
+                    ppgd_grads, r1_val = ppgd_states[loss_cfg].get_grads(
+                        loss_val, r1_coeff=loss_cfg.r1_coeff
+                    )
                     for module_name, grad in ppgd_grads.items():
                         ppgd_batch_grads[loss_cfg][module_name] += (
                             grad / config.gradient_accumulation_steps
+                        )
+                    if r1_val > 0.0:
+                        batch_log_data[f"train/loss/{loss_cfg.classname}/r1_penalty"] += (
+                            r1_val / config.gradient_accumulation_steps
                         )
 
             batch_log_data["train/loss/total"] += (
