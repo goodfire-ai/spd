@@ -10,6 +10,7 @@ from spd.log import logger
 from spd.settings import SPD_OUT_DIR
 from spd.utils.git_utils import create_git_snapshot
 from spd.utils.slurm import SlurmConfig, generate_script, submit_slurm_job
+from spd.utils.wandb_utils import parse_wandb_run_path
 
 
 @dataclass
@@ -37,6 +38,10 @@ def launch_investigation(
     Creates a SLURM job that starts an isolated app backend, loads the SPD run,
     and launches a Claude Code agent with the given research question.
     """
+    # Normalize wandb_path to canonical form (entity/project/run_id)
+    entity, project, run_id = parse_wandb_run_path(wandb_path)
+    canonical_wandb_path = f"{entity}/{project}/{run_id}"
+
     inv_id = f"inv-{secrets.token_hex(4)}"
     output_dir = get_investigation_output_dir(inv_id)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -48,7 +53,7 @@ def launch_investigation(
 
     metadata = {
         "inv_id": inv_id,
-        "wandb_path": wandb_path,
+        "wandb_path": canonical_wandb_path,
         "prompt": prompt,
         "context_length": context_length,
         "max_turns": max_turns,
@@ -80,7 +85,7 @@ def launch_investigation(
         {
             "Investigation ID": inv_id,
             "Job ID": result.job_id,
-            "WandB path": wandb_path,
+            "WandB path": canonical_wandb_path,
             "Prompt": prompt[:100] + ("..." if len(prompt) > 100 else ""),
             "Output directory": str(output_dir),
             "Logs": result.log_pattern,

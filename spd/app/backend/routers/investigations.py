@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.settings import SPD_OUT_DIR
+from spd.utils.wandb_utils import parse_wandb_run_path
 
 router = APIRouter(prefix="/api/investigations", tags=["investigations"])
 
@@ -159,7 +160,15 @@ def list_investigations(loaded: DepLoadedRun) -> list[InvestigationSummary]:
         metadata = _parse_metadata(inv_path)
 
         meta_wandb_path = metadata.get("wandb_path") if metadata else None
-        if meta_wandb_path != wandb_path:
+        if meta_wandb_path is None:
+            continue
+        # Normalize to canonical form for comparison (strips "runs/", "wandb:" prefix, etc.)
+        try:
+            e, p, r = parse_wandb_run_path(meta_wandb_path)
+            canonical_meta_path = f"{e}/{p}/{r}"
+        except ValueError:
+            continue
+        if canonical_meta_path != wandb_path:
             continue
 
         events_path = inv_path / "events.jsonl"
