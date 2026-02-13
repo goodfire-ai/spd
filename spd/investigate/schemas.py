@@ -1,4 +1,4 @@
-"""Schemas for agent swarm outputs.
+"""Schemas for investigation outputs.
 
 All agent outputs are append-only JSONL files. Each line is a JSON object
 conforming to one of the schemas defined here.
@@ -83,7 +83,7 @@ class BehaviorExplanation(BaseModel):
     )
 
 
-class SwarmEvent(BaseModel):
+class InvestigationEvent(BaseModel):
     """A generic event logged by an agent during investigation.
 
     Used for logging progress, observations, and other non-explanation events.

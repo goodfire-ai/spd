@@ -1,11 +1,11 @@
 """Worker script that runs inside each SLURM job.
 
 This script:
-1. Creates an isolated output directory for this agent
+1. Reads the research question from the investigation metadata
 2. Starts the app backend with an isolated database
-3. Loads the SPD run
+3. Loads the SPD run and fetches model architecture info
 4. Configures MCP server for Claude Code
-5. Launches Claude Code with investigation instructions
+5. Launches Claude Code with the investigation question
 6. Handles cleanup on exit
 """
 
@@ -18,17 +18,18 @@ import sys
 import time
 from pathlib import Path
 from types import FrameType
+from typing import Any
 
 import fire
 import requests
 
-from spd.agent_swarm.agent_prompt import get_agent_prompt
-from spd.agent_swarm.schemas import SwarmEvent
-from spd.agent_swarm.scripts.run_slurm import get_swarm_output_dir
+from spd.investigate.agent_prompt import get_agent_prompt
+from spd.investigate.schemas import InvestigationEvent
+from spd.investigate.scripts.run_slurm import get_investigation_output_dir
 from spd.log import logger
 
 
-def write_mcp_config(task_dir: Path, port: int) -> Path:
+def write_mcp_config(inv_dir: Path, port: int) -> Path:
     """Write MCP configuration file for Claude Code."""
     mcp_config = {
         "mcpServers": {
@@ -38,14 +39,14 @@ def write_mcp_config(task_dir: Path, port: int) -> Path:
             }
         }
     }
-    config_path = task_dir / "mcp_config.json"
+    config_path = inv_dir / "mcp_config.json"
     config_path.write_text(json.dumps(mcp_config, indent=2))
     return config_path
 
 
-def write_claude_settings(task_dir: Path) -> None:
+def write_claude_settings(inv_dir: Path) -> None:
     """Write Claude Code settings to pre-grant MCP tool permissions."""
-    claude_dir = task_dir / ".claude"
+    claude_dir = inv_dir / ".claude"
     claude_dir.mkdir(exist_ok=True)
     settings = {"permissions": {"allow": ["mcp__spd__*"]}}
     (claude_dir / "settings.json").write_text(json.dumps(settings, indent=2))
@@ -91,7 +92,15 @@ def load_run(port: int, wandb_path: str, context_length: int) -> None:
     )
 
 
-def log_event(events_path: Path, event: SwarmEvent) -> None:
+def fetch_model_info(port: int) -> dict[str, Any]:
+    """Fetch model architecture info from the backend."""
+    resp = requests.get(f"http://localhost:{port}/api/pretrain_info/loaded", timeout=30)
+    assert resp.status_code == 200, f"Failed to fetch model info: {resp.status_code} {resp.text}"
+    result: dict[str, Any] = resp.json()
+    return result
+
+
+def log_event(events_path: Path, event: InvestigationEvent) -> None:
     """Append an event to the events log."""
     with open(events_path, "a") as f:
         f.write(event.model_dump_json() + "\n")
@@ -99,8 +108,7 @@ def log_event(events_path: Path, event: SwarmEvent) -> None:
 
 def run_agent(
     wandb_path: str,
-    task_id: int,
-    swarm_id: str,
+    inv_id: str,
     context_length: int = 128,
     max_turns: int = 50,
 ) -> None:
@@ -108,48 +116,46 @@ def run_agent(
 
     Args:
         wandb_path: WandB path of the SPD run.
-        task_id: SLURM task ID (1-indexed).
-        swarm_id: Unique identifier for this swarm.
+        inv_id: Unique identifier for this investigation.
         context_length: Context length for prompts.
         max_turns: Maximum agentic turns before stopping (prevents runaway agents).
     """
-    # Setup output directory
-    swarm_dir = get_swarm_output_dir(swarm_id)
-    task_dir = swarm_dir / f"task_{task_id}"
-    task_dir.mkdir(parents=True, exist_ok=True)
+    inv_dir = get_investigation_output_dir(inv_id)
+    assert inv_dir.exists(), f"Investigation directory does not exist: {inv_dir}"
 
-    # Pre-grant MCP tool permissions
-    write_claude_settings(task_dir)
+    # Read prompt from metadata
+    metadata: dict[str, Any] = json.loads((inv_dir / "metadata.json").read_text())
+    prompt = metadata["prompt"]
 
-    events_path = task_dir / "events.jsonl"
-    (task_dir / "explanations.jsonl").touch()
+    write_claude_settings(inv_dir)
+
+    events_path = inv_dir / "events.jsonl"
+    (inv_dir / "explanations.jsonl").touch()
 
     log_event(
         events_path,
-        SwarmEvent(
+        InvestigationEvent(
             event_type="start",
-            message=f"Agent {task_id} starting",
-            details={"wandb_path": wandb_path, "swarm_id": swarm_id},
+            message=f"Investigation {inv_id} starting",
+            details={"wandb_path": wandb_path, "inv_id": inv_id, "prompt": prompt},
         ),
     )
 
-    # Find available port (offset by task_id to reduce collisions)
-    port = find_available_port(start_port=8000 + (task_id - 1) * 10)
-    logger.info(f"[Task {task_id}] Using port {port}")
+    port = find_available_port()
+    logger.info(f"[{inv_id}] Using port {port}")
 
     log_event(
         events_path,
-        SwarmEvent(
+        InvestigationEvent(
             event_type="progress",
             message=f"Starting backend on port {port}",
             details={"port": port},
         ),
     )
 
-    # Start backend with swarm configuration (paths derived from task_dir)
+    # Start backend with investigation configuration
     env = os.environ.copy()
-    env["SPD_SWARM_TASK_DIR"] = str(task_dir)
-    env["SPD_SWARM_SUGGESTIONS_PATH"] = str(swarm_dir.parent / "suggestions.jsonl")
+    env["SPD_INVESTIGATION_DIR"] = str(inv_dir)
 
     backend_cmd = [
         sys.executable,
@@ -159,9 +165,7 @@ def run_agent(
         str(port),
     ]
 
-    # Write backend logs to file instead of piping to avoid buffer deadlock
-    # (if we pipe and don't drain, the buffer fills and blocks the backend)
-    backend_log_path = task_dir / "backend.log"
+    backend_log_path = inv_dir / "backend.log"
     backend_log = open(backend_log_path, "w")  # noqa: SIM115 - managed manually
     backend_proc = subprocess.Popen(
         backend_cmd,
@@ -170,10 +174,9 @@ def run_agent(
         stderr=subprocess.STDOUT,
     )
 
-    # Setup cleanup handler
     def cleanup(signum: int | None = None, frame: FrameType | None = None) -> None:
-        _ = frame  # Unused but required by signal handler signature
-        logger.info(f"[Task {task_id}] Cleaning up...")
+        _ = frame
+        logger.info(f"[{inv_id}] Cleaning up...")
         if backend_proc.poll() is None:
             backend_proc.terminate()
             try:
@@ -188,57 +191,45 @@ def run_agent(
     signal.signal(signal.SIGINT, cleanup)
 
     try:
-        # Wait for backend to be ready
-        logger.info(f"[Task {task_id}] Waiting for backend...")
+        logger.info(f"[{inv_id}] Waiting for backend...")
         if not wait_for_backend(port):
             log_event(
                 events_path,
-                SwarmEvent(
-                    event_type="error",
-                    message="Backend failed to start",
-                ),
+                InvestigationEvent(event_type="error", message="Backend failed to start"),
             )
             raise RuntimeError("Backend failed to start")
 
-        logger.info(f"[Task {task_id}] Backend ready, loading run...")
+        logger.info(f"[{inv_id}] Backend ready, loading run...")
         log_event(
             events_path,
-            SwarmEvent(
-                event_type="progress",
-                message="Backend ready, loading run",
-            ),
+            InvestigationEvent(event_type="progress", message="Backend ready, loading run"),
         )
 
-        # Load the SPD run
         load_run(port, wandb_path, context_length)
 
-        logger.info(f"[Task {task_id}] Run loaded, launching Claude Code...")
+        logger.info(f"[{inv_id}] Run loaded, fetching model info...")
+        model_info = fetch_model_info(port)
+
+        logger.info(f"[{inv_id}] Launching Claude Code...")
         log_event(
             events_path,
-            SwarmEvent(
-                event_type="progress",
-                message="Run loaded, launching Claude Code agent",
+            InvestigationEvent(
+                event_type="progress", message="Run loaded, launching Claude Code agent"
             ),
         )
 
-        # Generate agent prompt
         agent_prompt = get_agent_prompt(
-            port=port,
             wandb_path=wandb_path,
-            task_id=task_id,
-            output_dir=str(task_dir),
+            prompt=prompt,
+            model_info=model_info,
         )
 
-        # Write prompt to file for reference
-        prompt_path = task_dir / "agent_prompt.md"
-        prompt_path.write_text(agent_prompt)
+        (inv_dir / "agent_prompt.md").write_text(agent_prompt)
 
-        # Write MCP config for Claude Code
-        mcp_config_path = write_mcp_config(task_dir, port)
-        logger.info(f"[Task {task_id}] MCP config written to {mcp_config_path}")
+        mcp_config_path = write_mcp_config(inv_dir, port)
+        logger.info(f"[{inv_id}] MCP config written to {mcp_config_path}")
 
-        # Launch Claude Code with streaming JSON output and MCP
-        claude_output_path = task_dir / "claude_output.jsonl"
+        claude_output_path = inv_dir / "claude_output.jsonl"
         claude_cmd = [
             "claude",
             "--print",
@@ -251,13 +242,9 @@ def run_agent(
             str(mcp_config_path),
         ]
 
-        logger.info(f"[Task {task_id}] Starting Claude Code (max_turns={max_turns})...")
-        logger.info(f"[Task {task_id}] Monitor with: tail -f {claude_output_path}")
-        logger.info(
-            f"[Task {task_id}] Parse with: tail -f {claude_output_path} | jq -r '.result // empty'"
-        )
+        logger.info(f"[{inv_id}] Starting Claude Code (max_turns={max_turns})...")
+        logger.info(f"[{inv_id}] Monitor with: tail -f {claude_output_path}")
 
-        # Open output file for streaming writes
         with open(claude_output_path, "w") as output_file:
             claude_proc = subprocess.Popen(
                 claude_cmd,
@@ -265,56 +252,36 @@ def run_agent(
                 stdout=output_file,
                 stderr=subprocess.STDOUT,
                 text=True,
-                cwd=str(task_dir),
+                cwd=str(inv_dir),
             )
 
-            # Send the investigation prompt and close stdin
-            investigation_request = f"""
-{agent_prompt}
-
----
-
-Please begin your investigation:
-
-1. **FIRST**: Use the `update_research_log` tool to create your research log with a header like:
-   "# Research Log - Task {task_id}\\n\\nStarting investigation of {wandb_path}\\n\\n"
-2. Explore component interpretations using `get_component_info`
-3. Find an interesting behavior to investigate with `optimize_graph`
-4. **Use `update_research_log` frequently** to document your progress, findings, and next steps
-
-Remember:
-- The research log is your PRIMARY output - use `update_research_log` every few minutes
-- Use `save_explanation` to record complete, validated explanations
-- Use `submit_suggestion` if you have ideas for improving the tools or system
-"""
             assert claude_proc.stdin is not None
-            claude_proc.stdin.write(investigation_request)
+            claude_proc.stdin.write(agent_prompt)
             claude_proc.stdin.close()
 
-            # Wait for Claude to finish (output streams to file in real-time)
             claude_proc.wait()
 
         log_event(
             events_path,
-            SwarmEvent(
+            InvestigationEvent(
                 event_type="complete",
                 message="Investigation complete",
                 details={"exit_code": claude_proc.returncode},
             ),
         )
 
-        logger.info(f"[Task {task_id}] Investigation complete")
+        logger.info(f"[{inv_id}] Investigation complete")
 
     except Exception as e:
         log_event(
             events_path,
-            SwarmEvent(
+            InvestigationEvent(
                 event_type="error",
                 message=f"Agent failed: {e}",
                 details={"error_type": type(e).__name__},
             ),
         )
-        logger.error(f"[Task {task_id}] Failed: {e}")
+        logger.error(f"[{inv_id}] Failed: {e}")
         raise
     finally:
         cleanup()

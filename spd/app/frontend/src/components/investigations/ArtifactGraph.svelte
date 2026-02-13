@@ -158,7 +158,13 @@
                 const baseX = seqXStarts[seqIdx] + COL_PADDING;
                 const baseY = layerYPositions[layer];
 
-                const sorted = sortComponentsByImportance(nodes, layer, seqIdx, graphData.nodeCiVals, graphData.outputProbs);
+                const sorted = sortComponentsByImportance(
+                    nodes,
+                    layer,
+                    seqIdx,
+                    graphData.nodeCiVals,
+                    graphData.outputProbs,
+                );
                 const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, compGap);
 
                 for (const cIdx of nodes) {
@@ -414,7 +420,7 @@
     .artifact-graph {
         border: 1px solid var(--border-default);
         border-radius: var(--radius-md);
-        overflow: hidden;
+        overflow: visible;
         margin: var(--space-3) 0;
         background: var(--bg-surface);
     }
@@ -430,9 +436,8 @@
 
     .graph-wrapper {
         display: flex;
-        overflow: hidden;
+        overflow: visible;
         position: relative;
-        height: 400px;
     }
 
     .graph-wrapper.panning {
@@ -449,7 +454,7 @@
     }
 
     .graph-container {
-        overflow: auto;
+        overflow: visible;
         flex: 1;
         position: relative;
         background: var(--bg-inset);

@@ -1,6 +1,11 @@
 <script lang="ts">
     import * as api from "../lib/api";
-    import type { InvestigationSummary, InvestigationDetail, GraphArtifact } from "../lib/api/investigations";
+    import type {
+        InvestigationSummary,
+        InvestigationDetail,
+        GraphArtifact,
+        LaunchResponse,
+    } from "../lib/api/investigations";
     import type { Loadable } from "../lib";
     import ResearchLogViewer from "./investigations/ResearchLogViewer.svelte";
 
@@ -10,6 +15,24 @@
     let activeTab = $state<"research" | "events">("research");
     let loadedArtifacts = $state<Record<string, GraphArtifact>>({});
     let artifactsLoading = $state(false);
+
+    // Launch state
+    let launchPrompt = $state("");
+    let launchState = $state<Loadable<LaunchResponse>>({ status: "uninitialized" });
+
+    async function handleLaunch() {
+        if (!launchPrompt.trim()) return;
+        launchState = { status: "loading" };
+        try {
+            const result = await api.launchInvestigation(launchPrompt.trim());
+            launchState = { status: "loaded", data: result };
+            launchPrompt = "";
+            await loadInvestigations();
+            selectInvestigation(result.inv_id);
+        } catch (e) {
+            launchState = { status: "error", error: e };
+        }
+    }
 
     // Load investigations on mount
     $effect(() => {
@@ -26,12 +49,19 @@
         }
     }
 
-    async function selectInvestigation(swarmId: string, taskId: number) {
+    let selectedInvId = $state<string | null>(null);
+
+    async function selectInvestigation(invId: string) {
+        selectedInvId = invId;
         selected = { status: "loading" };
-        loadedArtifacts = {}; // Reset artifacts when selecting new investigation
+        loadedArtifacts = {};
         artifactsLoading = false;
+        await fetchInvestigation(invId);
+    }
+
+    async function fetchInvestigation(invId: string) {
         try {
-            const data = await api.getInvestigation(swarmId, taskId);
+            const data = await api.getInvestigation(invId);
             selected = { status: "loaded", data };
 
             // Load all artifacts for this investigation
@@ -41,7 +71,7 @@
                 await Promise.all(
                     data.artifact_ids.map(async (artifactId) => {
                         try {
-                            const artifact = await api.getArtifact(swarmId, taskId, artifactId);
+                            const artifact = await api.getArtifact(invId, artifactId);
                             artifacts[artifactId] = artifact;
                         } catch (e) {
                             console.error(`Failed to load artifact ${artifactId}:`, e);
@@ -57,8 +87,13 @@
         }
     }
 
+    function refreshSelected() {
+        if (selectedInvId) fetchInvestigation(selectedInvId);
+    }
+
     function goBack() {
         selected = null;
+        selectedInvId = null;
         loadedArtifacts = {};
         artifactsLoading = false;
     }
@@ -69,8 +104,7 @@
     }
 
     function formatId(id: string): string {
-        // swarm-abc123/1 -> abc123/1
-        return id.replace("swarm-", "");
+        return id.replace("inv-", "");
     }
 
     function getEventTypeColor(eventType: string): string {
@@ -96,6 +130,7 @@
         <div class="detail-header">
             <button class="back-button" onclick={goBack}>← Back</button>
             <h2>{selected.data.title || formatId(selected.data.id)}</h2>
+            <button class="refresh-button" onclick={refreshSelected}>↻ Refresh</button>
             {#if selected.data.status}
                 <span
                     class="status-pill"
@@ -172,6 +207,32 @@
             <button class="refresh-button" onclick={loadInvestigations}>↻ Refresh</button>
         </div>
 
+        <form
+            class="launch-form"
+            onsubmit={(e) => {
+                e.preventDefault();
+                handleLaunch();
+            }}
+        >
+            <input
+                class="launch-input"
+                type="text"
+                placeholder="Ask a research question..."
+                bind:value={launchPrompt}
+                disabled={launchState.status === "loading"}
+            />
+            <button
+                class="launch-button"
+                type="submit"
+                disabled={launchState.status === "loading" || !launchPrompt.trim()}
+            >
+                {launchState.status === "loading" ? "Launching..." : "Investigate"}
+            </button>
+        </form>
+        {#if launchState.status === "error"}
+            <div class="launch-error">{launchState.error}</div>
+        {/if}
+
         {#if investigations.status === "loading"}
             <div class="loading">Loading investigations...</div>
         {:else if investigations.status === "error"}
@@ -179,13 +240,16 @@
         {:else if investigations.status === "loaded"}
             <div class="investigations-list">
                 {#each investigations.data as inv (inv.id)}
-                    <button class="investigation-card" onclick={() => selectInvestigation(inv.swarm_id, inv.task_id)}>
+                    <button class="investigation-card" onclick={() => selectInvestigation(inv.id)}>
                         <div class="card-header">
                             <span class="investigation-id">{formatId(inv.id)}</span>
                             <span class="investigation-date">{formatDate(inv.created_at)}</span>
                         </div>
                         {#if inv.title}
                             <span class="investigation-title">{inv.title}</span>
+                        {/if}
+                        {#if inv.prompt}
+                            <span class="investigation-prompt">{inv.prompt}</span>
                         {/if}
                         {#if inv.wandb_path}
                             <span class="investigation-wandb">{inv.wandb_path}</span>
@@ -218,7 +282,9 @@
                         {/if}
                     </button>
                 {:else}
-                    <p class="empty-message">No investigations found. Run <code>spd-swarm</code> to create one.</p>
+                    <p class="empty-message">
+                        No investigations found. Run <code>spd-investigate</code> to create one.
+                    </p>
                 {/each}
             </div>
         {/if}
@@ -274,6 +340,58 @@
 
     .refresh-button:hover {
         background: var(--bg-surface);
+    }
+
+    .launch-form {
+        display: flex;
+        gap: var(--space-2);
+        margin-bottom: var(--space-4);
+    }
+
+    .launch-input {
+        flex: 1;
+        padding: var(--space-2) var(--space-3);
+        background: var(--bg-surface);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+    }
+
+    .launch-input:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+    }
+
+    .launch-input:disabled {
+        opacity: 0.5;
+    }
+
+    .launch-button {
+        padding: var(--space-2) var(--space-3);
+        background: var(--accent-primary);
+        border: none;
+        border-radius: var(--radius-md);
+        color: var(--bg-base);
+        font-size: var(--text-sm);
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .launch-button:hover:not(:disabled) {
+        opacity: 0.9;
+    }
+
+    .launch-button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .launch-error {
+        color: var(--accent-red);
+        font-size: var(--text-sm);
+        margin-bottom: var(--space-3);
     }
 
     .wandb-path,
@@ -360,6 +478,18 @@
         color: var(--accent-yellow);
     }
 
+    .investigation-prompt {
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+        font-style: italic;
+        line-height: 1.4;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+
     .investigation-title {
         font-size: var(--text-sm);
         font-weight: 600;
@@ -444,8 +574,6 @@
         border: 1px solid var(--border-default);
         border-radius: var(--radius-md);
         padding: var(--space-3);
-        max-height: 70vh;
-        overflow-y: auto;
     }
 
     .events-list {

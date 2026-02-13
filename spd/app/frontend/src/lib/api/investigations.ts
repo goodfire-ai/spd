@@ -1,13 +1,11 @@
 /**
- * API client for investigations (agent swarm results).
- * Investigations are flattened across swarms - each task is independent.
+ * API client for investigation results.
  */
 
 export interface InvestigationSummary {
-    id: string; // swarm_id/task_id
-    swarm_id: string;
-    task_id: number;
+    id: string; // inv_id (e.g., "inv-abc12345")
     wandb_path: string | null;
+    prompt: string | null;
     created_at: string;
     has_research_log: boolean;
     has_explanations: boolean;
@@ -29,9 +27,8 @@ export interface EventEntry {
 
 export interface InvestigationDetail {
     id: string;
-    swarm_id: string;
-    task_id: number;
     wandb_path: string | null;
+    prompt: string | null;
     created_at: string;
     research_log: string | null;
     events: EventEntry[];
@@ -64,26 +61,41 @@ export interface GraphArtifact {
     data: ArtifactGraphData;
 }
 
+export interface LaunchResponse {
+    inv_id: string;
+    job_id: string;
+}
+
+export async function launchInvestigation(prompt: string): Promise<LaunchResponse> {
+    const res = await fetch("/api/investigations/launch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+    });
+    if (!res.ok) throw new Error(`Failed to launch investigation: ${res.statusText}`);
+    return res.json();
+}
+
 export async function listInvestigations(): Promise<InvestigationSummary[]> {
     const res = await fetch("/api/investigations");
     if (!res.ok) throw new Error(`Failed to list investigations: ${res.statusText}`);
     return res.json();
 }
 
-export async function getInvestigation(swarmId: string, taskId: number): Promise<InvestigationDetail> {
-    const res = await fetch(`/api/investigations/${swarmId}/${taskId}`);
+export async function getInvestigation(invId: string): Promise<InvestigationDetail> {
+    const res = await fetch(`/api/investigations/${invId}`);
     if (!res.ok) throw new Error(`Failed to get investigation: ${res.statusText}`);
     return res.json();
 }
 
-export async function listArtifacts(swarmId: string, taskId: number): Promise<string[]> {
-    const res = await fetch(`/api/investigations/${swarmId}/${taskId}/artifacts`);
+export async function listArtifacts(invId: string): Promise<string[]> {
+    const res = await fetch(`/api/investigations/${invId}/artifacts`);
     if (!res.ok) throw new Error(`Failed to list artifacts: ${res.statusText}`);
     return res.json();
 }
 
-export async function getArtifact(swarmId: string, taskId: number, artifactId: string): Promise<GraphArtifact> {
-    const res = await fetch(`/api/investigations/${swarmId}/${taskId}/artifacts/${artifactId}`);
+export async function getArtifact(invId: string, artifactId: string): Promise<GraphArtifact> {
+    const res = await fetch(`/api/investigations/${invId}/artifacts/${artifactId}`);
     if (!res.ok) throw new Error(`Failed to get artifact: ${res.statusText}`);
     return res.json();
 }
