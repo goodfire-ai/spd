@@ -533,6 +533,7 @@ class PersistentPGDReconLossConfig(LossMetricConfig):
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
     scope: PersistentPGDSourceScope
     use_sigmoid_parameterization: bool = False
+    r1_coeff: float = 0.0
 
     @model_validator(mode="before")
     @classmethod
@@ -553,6 +554,7 @@ class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
     scope: PersistentPGDSourceScope
     use_sigmoid_parameterization: bool = False
+    r1_coeff: float = 0.0
     routing: Annotated[
         SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
     ]
