@@ -240,6 +240,10 @@ def run_agent(
             str(max_turns),
             "--mcp-config",
             str(mcp_config_path),
+            "--permission-mode",
+            "dontAsk",
+            "--allowedTools",
+            "mcp__spd__*",
         ]
 
         logger.info(f"[{inv_id}] Starting Claude Code (max_turns={max_turns})...")

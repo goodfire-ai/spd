@@ -19,12 +19,13 @@ from pydantic import BaseModel
 
 from spd.app.backend.compute import Edge, Node
 from spd.app.backend.optim_cis import CELossConfig, KLLossConfig, LossConfig, MaskType
-from spd.settings import SPD_OUT_DIR
+from spd.settings import REPO_ROOT
 
 GraphType = Literal["standard", "optimized", "manual"]
 
-# Default DB path: SPD_OUT_DIR/app/prompt_attr.db
-_DEFAULT_DB_PATH = SPD_OUT_DIR / "app" / "prompt_attr.db"
+# Persistent data directories
+_APP_DATA_DIR = REPO_ROOT / ".data" / "app"
+_DEFAULT_DB_PATH = _APP_DATA_DIR / "prompt_attr.db"
 
 
 def get_default_db_path() -> Path:
@@ -33,7 +34,7 @@ def get_default_db_path() -> Path:
     Checks env vars in order:
     1. SPD_INVESTIGATION_DIR - investigation mode, db at dir/app.db
     2. SPD_APP_DB_PATH - explicit override
-    3. Default: SPD_OUT_DIR/app/prompt_attr.db
+    3. Default: .data/app/prompt_attr.db
     """
     investigation_dir = os.environ.get("SPD_INVESTIGATION_DIR")
     if investigation_dir:
