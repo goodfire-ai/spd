@@ -238,12 +238,19 @@ def run_agent(
             "stream-json",
             "--max-turns",
             str(max_turns),
+            # MCP: only our backend, no inherited servers
             "--mcp-config",
             str(mcp_config_path),
+            # Permissions: only MCP tools, deny everything else
             "--permission-mode",
             "dontAsk",
             "--allowedTools",
             "mcp__spd__*",
+            # Isolation: skip all user/project settings (no plugins, no inherited config)
+            "--setting-sources",
+            "",
+            "--model",
+            "opus",
         ]
 
         logger.info(f"[{inv_id}] Starting Claude Code (max_turns={max_turns})...")
