@@ -159,6 +159,13 @@ def optimize(
         pretrained_model_output_attr=config.pretrained_model_output_attr,
     )
 
+    if config.init_spd_checkpoint is not None:
+        checkpoint_path = Path(config.init_spd_checkpoint)
+        assert checkpoint_path.exists(), f"SPD checkpoint not found: {checkpoint_path}"
+        weights = torch.load(checkpoint_path, map_location=device, weights_only=True)
+        model.load_state_dict(weights)
+        logger.info(f"Loaded SPD checkpoint from {checkpoint_path}")
+
     model.to(device)
 
     # Wrap model with DDP if distributed

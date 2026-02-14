@@ -833,6 +833,13 @@ class Config(BaseConfig):
         description="Causal importance threshold above which a component is considered 'firing'",
     )
 
+    # --- SPD checkpoint initialization ---
+    init_spd_checkpoint: str | None = Field(
+        default=None,
+        description="Path to a .pth checkpoint from a prior SPD run. If set, component and CI "
+        "weights are loaded from this checkpoint instead of being randomly initialized.",
+    )
+
     # --- Pretrained model info ---
     pretrained_model_class: str = Field(
         ...,
