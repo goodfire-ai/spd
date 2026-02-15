@@ -47,7 +47,7 @@ def pgd_masked_recon_loss_update(
                 shape = torch.Size([*singleton_batch_dims, mask_c])
                 source = call_on_rank0_then_broadcast(
                     _get_pgd_init_tensor, pgd_config.init, shape, batch.device
-                )
+                ).to(batch.device)
         adv_sources[module_name] = source.requires_grad_(True)
 
     fwd_pass = partial(
@@ -131,7 +131,7 @@ def calc_multibatch_pgd_masked_recon_loss(
         shape = torch.Size([*singleton_batch_dims, mask_c])
         adv_sources[module_name] = call_on_rank0_then_broadcast(
             _get_pgd_init_tensor, pgd_config.init, shape, device
-        ).requires_grad_(True)
+        ).to(device).requires_grad_(True)
 
     fwd_bwd_fn = partial(
         _multibatch_pgd_fwd_bwd,
