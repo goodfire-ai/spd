@@ -5,7 +5,7 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import torch
 import torch.distributed as dist
@@ -187,23 +187,11 @@ def all_reduce(
     return tensor
 
 
-def broadcast_obj[T](value: T) -> T:
-    """Broadcast an object from rank 0 to all ranks."""
-    assert is_distributed()
-    payload: list[object] = [value if is_main_process() else None]
-    dist.broadcast_object_list(payload, src=0)
-    return cast(T, payload[0])
-
-
-def call_on_rank0_then_broadcast[**P, T](
-    fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs
-) -> T:
-    """Call `fn` only on rank 0 and broadcast the result to all ranks."""
+def broadcast_tensor(tensor: Tensor) -> Tensor:
+    """Broadcast tensor data from rank 0 to all ranks, in-place."""
     if is_distributed():
-        result = fn(*args, **kwargs) if is_main_process() else None
-        result = broadcast_obj(result)
-        return cast(T, result)
-    return fn(*args, **kwargs)
+        dist.broadcast(tensor, src=0)
+    return tensor
 
 
 def ensure_cached_and_call[**P, T](fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
