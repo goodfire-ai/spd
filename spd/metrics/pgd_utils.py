@@ -41,12 +41,14 @@ def pgd_masked_recon_loss_update(
         match pgd_config.mask_scope:
             case "unique_per_datapoint":
                 shape = torch.Size([*batch_dims, mask_c])
+                source = _get_pgd_init_tensor(pgd_config.init, shape, batch.device)
             case "shared_across_batch":
                 singleton_batch_dims = [1 for _ in batch_dims]
                 shape = torch.Size([*singleton_batch_dims, mask_c])
-        adv_sources[module_name] = call_on_rank0_then_broadcast(
-            _get_pgd_init_tensor, pgd_config.init, shape, batch.device
-        ).requires_grad_(True)
+                source = call_on_rank0_then_broadcast(
+                    _get_pgd_init_tensor, pgd_config.init, shape, batch.device
+                )
+        adv_sources[module_name] = source.requires_grad_(True)
 
     fwd_pass = partial(
         _forward_with_adv_sources,
@@ -67,10 +69,14 @@ def pgd_masked_recon_loss_update(
             sum_loss, n_examples = fwd_pass()
             loss = sum_loss / n_examples
         grads = torch.autograd.grad(loss, list(adv_sources.values()))
-        adv_sources_grads = {
-            k: all_reduce(g, op=ReduceOp.AVG)
-            for k, g in zip(adv_sources.keys(), grads, strict=True)
-        }
+        match pgd_config.mask_scope:
+            case "shared_across_batch":
+                adv_sources_grads = {
+                    k: all_reduce(g, op=ReduceOp.AVG)
+                    for k, g in zip(adv_sources.keys(), grads, strict=True)
+                }
+            case "unique_per_datapoint":
+                adv_sources_grads = dict(zip(adv_sources.keys(), grads, strict=True))
         with torch.no_grad():
             for k in adv_sources:
                 adv_sources[k].add_(pgd_config.step_size * adv_sources_grads[k].sign())
