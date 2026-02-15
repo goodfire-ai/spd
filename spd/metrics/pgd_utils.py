@@ -12,7 +12,7 @@ from spd.log import logger
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import RoutingMasks, make_mask_infos
 from spd.routing import Router
-from spd.utils.distributed_utils import all_reduce, call_on_rank0_then_broadcast
+from spd.utils.distributed_utils import all_reduce, broadcast_tensor
 from spd.utils.general_utils import calc_sum_recon_loss_lm, extract_batch_data
 
 
@@ -45,8 +45,8 @@ def pgd_masked_recon_loss_update(
             case "shared_across_batch":
                 singleton_batch_dims = [1 for _ in batch_dims]
                 shape = torch.Size([*singleton_batch_dims, mask_c])
-                source = call_on_rank0_then_broadcast(
-                    _get_pgd_init_tensor, pgd_config.init, shape, batch.device
+                source = broadcast_tensor(
+                    _get_pgd_init_tensor(pgd_config.init, shape, batch.device)
                 )
         adv_sources[module_name] = source.requires_grad_(True)
 
@@ -129,8 +129,8 @@ def calc_multibatch_pgd_masked_recon_loss(
         module_c = model.module_to_c[module_name]
         mask_c = module_c if not use_delta_component else module_c + 1
         shape = torch.Size([*singleton_batch_dims, mask_c])
-        adv_sources[module_name] = call_on_rank0_then_broadcast(
-            _get_pgd_init_tensor, pgd_config.init, shape, device
+        adv_sources[module_name] = broadcast_tensor(
+            _get_pgd_init_tensor(pgd_config.init, shape, device)
         ).requires_grad_(True)
 
     fwd_bwd_fn = partial(
