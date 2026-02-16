@@ -225,14 +225,13 @@
         return nodes;
     });
 
-    // Filter edges for rendering (topK by magnitude, optionally hide edges not connected to selected nodes)
+    // Filter edges for rendering (topK by magnitude, optionally hide edges not connected to selected nodes).
+    // Edges arrive pre-sorted by abs(val) desc from backend, so filter preserves order and we just slice.
     const filteredEdges = $derived.by(() => {
-        let edges = [...graph.data.edges];
-        // If hideUnpinnedEdges is true and we have selected nodes, filter to only edges connected to them
+        let edges = graph.data.edges;
         if (hideUnpinnedEdges && composerSelection.size > 0) {
             edges = edges.filter((e) => composerSelection.has(e.src) || composerSelection.has(e.tgt));
         }
-        edges.sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
         return edges.slice(0, topK);
     });
 

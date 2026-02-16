@@ -178,12 +178,8 @@
         return runState.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
     });
 
-    // Filter edges by topK (for rendering)
-    const filteredEdges = $derived.by(() => {
-        const edgesCopy = [...data.edges];
-        const sortedEdges = edgesCopy.sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
-        return sortedEdges.slice(0, topK);
-    });
+    // Filter edges by topK (for rendering). Edges arrive pre-sorted by abs(val) desc from backend.
+    const filteredEdges = $derived(data.edges.slice(0, topK));
 
     // Build layout
     const { nodePositions, layerYPositions, seqXStarts, width, height, clusterSpans } = $derived.by(() => {

@@ -201,7 +201,7 @@ router = APIRouter(prefix="/api/graphs", tags=["graphs"])
 DEVICE = get_device()
 
 # This is a bit of a hack. We want to limit the number of edges returned to avoid overwhelming the frontend.
-GLOBAL_EDGE_LIMIT = 5_000
+GLOBAL_EDGE_LIMIT = 50_000
 
 
 ProgressCallback = Callable[[int, int, str], None]
@@ -760,9 +760,12 @@ def filter_graph_for_display(
     edges = _normalize_edges(edges=edges, normalize=normalize)
     max_abs_attr = compute_max_abs_attr(edges=edges)
 
+    # Always sort by abs(strength) desc so frontend can just slice(0, topK) without re-sorting
+    edges = sorted(edges, key=lambda e: abs(e.strength), reverse=True)
+
     if len(edges) > edge_limit:
         logger.warning(f"Edge limit {edge_limit} exceeded ({len(edges)} edges), truncating")
-        edges = sorted(edges, key=lambda e: abs(e.strength), reverse=True)[:edge_limit]
+        edges = edges[:edge_limit]
 
     return FilteredGraph(
         edges=[_edge_to_edge_data(e) for e in edges],
