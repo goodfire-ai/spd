@@ -10,12 +10,16 @@ from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.autointerp.config import AutointerpConfig
 from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import (
-    BudgetExceededError,
+    JSON_PARSE_RETRIES,
     CostTracker,
     GlobalBackoff,
     LLMClient,
+    LLMError,
+    LLMJob,
+    LLMResult,
     get_model_pricing,
     make_response_format,
+    map_api_calls,
 )
 from spd.autointerp.schemas import ArchitectureInfo, InterpretationResult
 from spd.autointerp.strategies.dispatch import format_prompt, get_response_schema
@@ -39,7 +43,7 @@ async def interpret_component(
     output_token_stats: TokenPRLift,
     ci_threshold: float,
 ) -> InterpretationResult:
-    """Interpret a single component. Raises on failure."""
+    """Interpret a single component. Used by the app for on-demand interpretation."""
     prompt = format_prompt(
         config=config,
         component=component,
@@ -50,17 +54,30 @@ async def interpret_component(
         ci_threshold=ci_threshold,
     )
 
-    raw = await llm.chat(
-        model=config.model,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=8000,
-        context_label=component.component_key,
-        response_format=make_response_format("interpretation", get_response_schema(config)),
-        reasoning=Reasoning(effort=config.reasoning_effort),
-    )
-
-    parsed = json.loads(raw)
-    assert len(parsed) == 3, f"Expected 3 fields, got {len(parsed)}"
+    schema = get_response_schema(config)
+    response_format = make_response_format("interpretation", schema)
+    raw = ""
+    parsed = None
+    for attempt in range(JSON_PARSE_RETRIES):
+        raw = await llm.chat(
+            model=config.model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=8000,
+            context_label=component.component_key,
+            response_format=response_format,
+            reasoning=Reasoning(effort=config.reasoning_effort),
+        )
+        try:
+            parsed = json.loads(raw)
+            break
+        except json.JSONDecodeError:
+            if attempt == JSON_PARSE_RETRIES - 1:
+                raise
+            logger.warning(
+                f"{component.component_key}: invalid JSON "
+                f"(attempt {attempt + 1}/{JSON_PARSE_RETRIES}), retrying"
+            )
+    assert parsed is not None and len(parsed) == 3, f"Expected 3 fields, got {parsed}"
     label = parsed["label"]
     confidence = parsed["confidence"]
     reasoning_text = parsed["reasoning"]
@@ -102,8 +119,6 @@ def run_interpret(
 
     async def _run() -> list[InterpretationResult]:
         db = InterpDB(db_path)
-        results: list[InterpretationResult] = []
-        n_errors = 0
 
         completed = db.get_completed_keys()
         if completed:
@@ -112,46 +127,30 @@ def run_interpret(
         remaining = [c for c in eligible if c.component_key not in completed]
         logger.info(f"Interpreting {len(remaining)} components")
 
-        semaphore = asyncio.Semaphore(MAX_CONCURRENT)
-        output_lock = asyncio.Lock()
+        schema = get_response_schema(config)
+        jobs: list[LLMJob] = []
+        for component in remaining:
+            input_stats = get_input_token_stats(
+                token_stats, component.component_key, app_tok, top_k=20
+            )
+            output_stats = get_output_token_stats(
+                token_stats, component.component_key, app_tok, top_k=50
+            )
+            assert input_stats is not None
+            assert output_stats is not None
+            prompt = format_prompt(
+                config=config,
+                component=component,
+                arch=arch,
+                app_tok=app_tok,
+                input_token_stats=input_stats,
+                output_token_stats=output_stats,
+                ci_threshold=ci_threshold,
+            )
+            jobs.append(LLMJob(prompt=prompt, schema=schema, key=component.component_key))
 
-        async def process_one(component: ComponentData, index: int, llm: LLMClient) -> None:
-            async with semaphore:
-                try:
-                    input_stats = get_input_token_stats(
-                        token_stats, component.component_key, app_tok, top_k=20
-                    )
-                    output_stats = get_output_token_stats(
-                        token_stats, component.component_key, app_tok, top_k=50
-                    )
-                    assert input_stats is not None
-                    assert output_stats is not None
-                    result = await interpret_component(
-                        llm,
-                        config,
-                        component,
-                        arch,
-                        app_tok,
-                        input_stats,
-                        output_stats,
-                        ci_threshold,
-                    )
-                except BudgetExceededError:
-                    return
-                except Exception as e:
-                    nonlocal n_errors
-                    n_errors += 1
-                    logger.error(f"Skipping {component.component_key}: {type(e).__name__}: {e}")
-                    return
-                async with output_lock:
-                    results.append(result)
-                    db.save_interpretation(result)
-                    if index % 100 == 0:
-                        logger.info(
-                            f"[{index}] ${llm.cost_tracker.cost_usd():.2f} "
-                            f"({llm.cost_tracker.input_tokens:,} in, "
-                            f"{llm.cost_tracker.output_tokens:,} out)"
-                        )
+        results: list[InterpretationResult] = []
+        n_errors = 0
 
         async with OpenRouter(api_key=openrouter_api_key) as api:
             input_price, output_price = await get_model_pricing(api, config.model)
@@ -167,7 +166,38 @@ def run_interpret(
                 cost_tracker=cost_tracker,
             )
 
-            await asyncio.gather(*[process_one(c, i, llm) for i, c in enumerate(remaining)])
+            async for outcome in map_api_calls(
+                jobs,
+                llm,
+                model=config.model,
+                max_tokens=8000,
+                reasoning=Reasoning(effort=config.reasoning_effort),
+                max_concurrent=MAX_CONCURRENT,
+            ):
+                match outcome:
+                    case LLMResult(job=job, parsed=parsed, raw=raw):
+                        assert len(parsed) == 3, f"Expected 3 fields, got {len(parsed)}"
+                        label = parsed["label"]
+                        confidence = parsed["confidence"]
+                        reasoning_text = parsed["reasoning"]
+                        assert (
+                            isinstance(label, str)
+                            and isinstance(confidence, str)
+                            and isinstance(reasoning_text, str)
+                        )
+                        result = InterpretationResult(
+                            component_key=job.key,
+                            label=label,
+                            confidence=confidence,
+                            reasoning=reasoning_text,
+                            raw_response=raw,
+                            prompt=job.prompt,
+                        )
+                        results.append(result)
+                        db.save_interpretation(result)
+                    case LLMError(job=job, error=e):
+                        n_errors += 1
+                        logger.error(f"Skipping {job.key}: {type(e).__name__}: {e}")
 
             logger.info(f"Final cost: ${cost_tracker.cost_usd():.2f}")
 
