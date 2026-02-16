@@ -79,11 +79,15 @@ class HarvestRepo:
     def get_components_bulk(self, component_keys: list[str]) -> dict[str, ComponentData]:
         return self._db.get_components_bulk(component_keys)
 
-    def get_ci_threshold(self) -> float:
-        return self._db.get_ci_threshold()
+    def get_activation_threshold(self) -> float:
+        return self._db.get_activation_threshold()
 
     def get_all_components(self) -> list[ComponentData]:
-        return self._db.get_all_components(self._db.get_ci_threshold())
+        return self._db.get_all_components(self._db.get_activation_threshold())
+
+    def get_ci_threshold(self) -> float:
+        """Backward-compatible alias for activation_threshold."""
+        return self.get_activation_threshold()
 
     # -- Correlations & token stats (tensor data) ------------------------------
 

@@ -21,7 +21,7 @@ class ActivationExamplesReservoir:
     """Fixed-capacity reservoir of activation example windows per component.
 
     Each component slot holds up to `k` windows of size `w`, where each window
-    contains (token_ids, ci_values, component_acts) aligned by position.
+    contains (token_ids, activation_values, component_acts) aligned by position.
 
     Use create() for fresh allocation, from_state_dict() for deserialization.
     """
@@ -33,7 +33,7 @@ class ActivationExamplesReservoir:
         window: int,
         device: torch.device,
         tokens: Int[Tensor, "C k w"],
-        ci: Float[Tensor, "C k w"],
+        activation: Float[Tensor, "C k w"],
         acts: Float[Tensor, "C k w"],
         n_items: Int[Tensor, " C"],
         n_seen: Int[Tensor, " C"],
@@ -43,7 +43,7 @@ class ActivationExamplesReservoir:
         self.window = window
         self.device = device
         self.tokens = tokens
-        self.ci = ci
+        self.activation = activation
         self.acts = acts
         self.n_items = n_items
         self.n_seen = n_seen
@@ -60,7 +60,7 @@ class ActivationExamplesReservoir:
             tokens=torch.full(
                 (n_components, k, window), WINDOW_PAD_SENTINEL, dtype=torch.long, device=device
             ),
-            ci=torch.zeros(n_components, k, window, device=device),
+            activation=torch.zeros(n_components, k, window, device=device),
             acts=torch.zeros(n_components, k, window, device=device),
             n_items=torch.zeros(n_components, dtype=torch.long, device=device),
             n_seen=torch.zeros(n_components, dtype=torch.long, device=device),
@@ -71,13 +71,14 @@ class ActivationExamplesReservoir:
         cls, d: dict[str, object], device: torch.device
     ) -> "ActivationExamplesReservoir":
         tokens = runtime_cast(Tensor, d["tokens"])
+        activation_key = "activation" if "activation" in d else "ci"
         return cls(
             n_components=tokens.shape[0],
             k=runtime_cast(int, d["k"]),
             window=runtime_cast(int, d["window"]),
             device=device,
             tokens=tokens.to(device),
-            ci=runtime_cast(Tensor, d["ci"]).to(device),
+            activation=runtime_cast(Tensor, d[activation_key]).to(device),
             acts=runtime_cast(Tensor, d["acts"]).to(device),
             n_items=runtime_cast(Tensor, d["n_items"]).to(device),
             n_seen=runtime_cast(Tensor, d["n_seen"]).to(device),
@@ -87,7 +88,7 @@ class ActivationExamplesReservoir:
         self,
         comp_idx: Int[Tensor, " N"],
         token_windows: Int[Tensor, "N W"],
-        ci_windows: Float[Tensor, "N W"],
+        activation_windows: Float[Tensor, "N W"],
         act_windows: Float[Tensor, "N W"],
     ) -> None:
         """Add firing windows via Algorithm R.
@@ -126,7 +127,7 @@ class ActivationExamplesReservoir:
             s_t = torch.tensor(write_slots, dtype=torch.long, device=device)
             f_t = torch.tensor(write_srcs, dtype=torch.long, device=device)
             self.tokens[c_t, s_t] = token_windows[f_t]
-            self.ci[c_t, s_t] = ci_windows[f_t]
+            self.activation[c_t, s_t] = activation_windows[f_t]
             self.acts[c_t, s_t] = act_windows[f_t]
 
     def merge(self, other: "ActivationExamplesReservoir") -> None:
@@ -165,19 +166,21 @@ class ActivationExamplesReservoir:
         mask = repeat(from_self, "c k -> c k w", w=self.window)
 
         self.tokens = torch.where(mask, self.tokens.gather(1, si), other.tokens.gather(1, oi))
-        self.ci = torch.where(mask, self.ci.gather(1, si), other.ci.gather(1, oi))
+        self.activation = torch.where(
+            mask, self.activation.gather(1, si), other.activation.gather(1, oi)
+        )
         self.acts = torch.where(mask, self.acts.gather(1, si), other.acts.gather(1, oi))
 
         self.n_items = valid.sum(dim=1).clamp(max=self.k)
         self.n_seen = self.n_seen + other.n_seen
 
     def examples(self, component: int) -> Iterator[tuple[Tensor, Tensor, Tensor]]:
-        """Yield (token_ids, ci_values, component_acts) for each stored example, sentinel-filtered."""
+        """Yield (token_ids, activation_values, component_acts), sentinel-filtered."""
         n = int(self.n_items[component])
         for j in range(n):
             toks = self.tokens[component, j]
             mask = toks != WINDOW_PAD_SENTINEL
-            yield toks[mask], self.ci[component, j][mask], self.acts[component, j][mask]
+            yield toks[mask], self.activation[component, j][mask], self.acts[component, j][mask]
 
     def to(self, device: torch.device) -> "ActivationExamplesReservoir":
         return ActivationExamplesReservoir(
@@ -186,7 +189,7 @@ class ActivationExamplesReservoir:
             window=self.window,
             device=device,
             tokens=self.tokens.to(device),
-            ci=self.ci.to(device),
+            activation=self.activation.to(device),
             acts=self.acts.to(device),
             n_items=self.n_items.to(device),
             n_seen=self.n_seen.to(device),
@@ -197,8 +200,17 @@ class ActivationExamplesReservoir:
             "k": self.k,
             "window": self.window,
             "tokens": self.tokens.cpu(),
-            "ci": self.ci.cpu(),
+            "activation": self.activation.cpu(),
             "acts": self.acts.cpu(),
             "n_items": self.n_items.cpu(),
             "n_seen": self.n_seen.cpu(),
         }
+
+    @property
+    def ci(self) -> Tensor:
+        """Backward-compatible alias for activation."""
+        return self.activation
+
+    @ci.setter
+    def ci(self, value: Tensor) -> None:
+        self.activation = value

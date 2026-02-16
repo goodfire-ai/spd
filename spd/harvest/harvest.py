@@ -3,7 +3,7 @@
 Collects per-component statistics in a single pass over the data:
 - Input/output token PMI (pointwise mutual information)
 - Activation examples with context windows
-- Firing counts and CI sums
+- Firing counts and activation sums
 - Component co-occurrence counts
 
 Performance (SimpleStories, 600M tokens, batch_size=256):
@@ -80,11 +80,7 @@ def _save_harvest_results(
     db.close()
     logger.info(f"Saved {n_saved} components to {db_path}")
 
-    component_keys = [
-        f"{layer}:{c}"
-        for layer in harvester.layer_names
-        for c in range(harvester.c_per_layer[layer])
-    ]
+    component_keys = list(harvester.component_keys)
 
     correlations = CorrelationStorage(
         component_keys=component_keys,
@@ -147,7 +143,7 @@ def harvest_activation_contexts(
         layer_names=layer_names,
         c_per_layer=model.module_to_c,
         vocab_size=vocab_size,
-        ci_threshold=config.ci_threshold,
+        activation_threshold=config.activation_threshold,
         max_examples_per_component=config.activation_examples_per_component,
         context_tokens_per_side=config.activation_context_tokens_per_side,
         max_examples_per_batch_per_component=config.max_examples_per_batch_per_component,
@@ -185,11 +181,11 @@ def harvest_activation_contexts(
                 sampling=spd_config.sampling,
             ).lower_leaky
 
-            ci: Float[Tensor, "B S n_comp"] = torch.cat(
+            activation: Float[Tensor, "B S n_comp"] = torch.cat(
                 [ci_dict[layer] for layer in layer_names], dim=2
             )
             expected_n_comp = sum(model.module_to_c[layer] for layer in layer_names)
-            assert ci.shape[2] == expected_n_comp
+            assert activation.shape[2] == expected_n_comp
 
             per_layer_acts = model.get_all_component_acts(out.cache)
             normalized_acts = _normalize_component_acts(per_layer_acts, u_norms)
@@ -198,7 +194,7 @@ def harvest_activation_contexts(
                 dim=2,
             )
 
-            harvester.process_batch(batch, ci, probs, component_acts)
+            harvester.process_batch(batch, activation, probs, component_acts)
 
         batches_processed += 1
         now = time.time()
@@ -253,7 +249,7 @@ def merge_activation_contexts(output_dir: Path) -> None:
     logger.info(f"Merge complete. Total tokens: {harvester.total_tokens_processed:,}")
 
     config = HarvestConfig(
-        ci_threshold=harvester.ci_threshold,
+        activation_threshold=harvester.activation_threshold,
         activation_examples_per_component=harvester.max_examples_per_component,
         activation_context_tokens_per_side=harvester.context_tokens_per_side,
     )

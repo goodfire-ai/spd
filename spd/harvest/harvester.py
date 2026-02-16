@@ -21,7 +21,7 @@ from spd.log import logger
 
 def extract_firing_windows(
     batch: Int[Tensor, "B S"],
-    ci: Float[Tensor, "B S C"],
+    activation: Float[Tensor, "B S C"],
     component_acts: Float[Tensor, "B S C"],
     batch_idx: Int[Tensor, " n_firings"],
     seq_idx: Int[Tensor, " n_firings"],
@@ -38,7 +38,7 @@ def extract_firing_windows(
     of 2*context_tokens_per_side+1 tokens centered on seq_idx[i]. Positions outside
     sequence bounds are padded with WINDOW_PAD_SENTINEL / 0.0.
 
-    Returns (token_windows, ci_windows, act_windows), each [N, W].
+    Returns (token_windows, activation_windows, act_windows), each [N, W].
     """
     seq_len = batch.shape[1]
     offsets = torch.arange(
@@ -59,13 +59,13 @@ def extract_firing_windows(
     token_windows = batch[batch_idx_rep, clamped]
     token_windows[~in_bounds] = WINDOW_PAD_SENTINEL
 
-    ci_windows = ci[batch_idx_rep, clamped, c_idx_rep]
-    ci_windows[~in_bounds] = 0.0
+    activation_windows = activation[batch_idx_rep, clamped, c_idx_rep]
+    activation_windows[~in_bounds] = 0.0
 
     act_windows = component_acts[batch_idx_rep, clamped, c_idx_rep]
     act_windows[~in_bounds] = 0.0
 
-    return token_windows, ci_windows, act_windows
+    return token_windows, activation_windows, act_windows
 
 
 class Harvester:
@@ -80,16 +80,20 @@ class Harvester:
         layer_names: list[str],
         c_per_layer: dict[str, int],
         vocab_size: int,
-        ci_threshold: float,
         max_examples_per_component: int,
         context_tokens_per_side: int,
         max_examples_per_batch_per_component: int,
         device: torch.device,
+        activation_threshold: float | None = None,
+        ci_threshold: float | None = None,
+        component_keys: list[str] | None = None,
     ):
+        threshold = activation_threshold if activation_threshold is not None else ci_threshold
+        assert threshold is not None, "activation_threshold (or legacy ci_threshold) is required"
         self.layer_names = layer_names
         self.c_per_layer = c_per_layer
         self.vocab_size = vocab_size
-        self.ci_threshold = ci_threshold
+        self.activation_threshold = threshold
         self.max_examples_per_component = max_examples_per_component
         self.context_tokens_per_side = context_tokens_per_side
         self.max_examples_per_batch_per_component = max_examples_per_batch_per_component
@@ -102,11 +106,25 @@ class Harvester:
             offset += c_per_layer[layer]
 
         n_components = sum(c_per_layer[layer] for layer in layer_names)
+        if component_keys is None:
+            self.component_keys = [
+                f"{layer}:{comp_idx}"
+                for layer in layer_names
+                for comp_idx in range(c_per_layer[layer])
+            ]
+        else:
+            assert len(component_keys) == n_components
+            self.component_keys = component_keys
+
+        self._flat_component_meta = [
+            _component_meta_from_key(key, default_idx=flat_idx)
+            for flat_idx, key in enumerate(self.component_keys)
+        ]
         window_size = 2 * context_tokens_per_side + 1
 
         # Per-component firing stats
         self.firing_counts = torch.zeros(n_components, device=device)
-        self.ci_sums = torch.zeros(n_components, device=device)
+        self.activation_sums = torch.zeros(n_components, device=device)
         self.cooccurrence_counts: Float[Tensor, "C C"] = torch.zeros(
             n_components, n_components, device=device, dtype=torch.float32
         )
@@ -135,22 +153,22 @@ class Harvester:
     def process_batch(
         self,
         batch: Int[Tensor, "B S"],
-        ci: Float[Tensor, "B S C"],
+        activation: Float[Tensor, "B S C"],
         output_probs: Float[Tensor, "B S V"],
         component_acts: Float[Tensor, "B S C"],
     ) -> None:
         self.total_tokens_processed += batch.numel()
 
-        firing = (ci > self.ci_threshold).float()
+        firing = (activation > self.activation_threshold).float()
         firing_flat = rearrange(firing, "b s c -> (b s) c")
         tokens_flat = rearrange(batch, "b s -> (b s)")
         probs_flat = rearrange(output_probs, "b s v -> (b s) v")
 
         self.firing_counts += reduce(firing, "b s c -> c", "sum")
-        self.ci_sums += reduce(ci, "b s c -> c", "sum")
+        self.activation_sums += reduce(activation, "b s c -> c", "sum")
         self.cooccurrence_counts += einsum(firing_flat, firing_flat, "S c1, S c2 -> c1 c2")
         self._accumulate_token_stats(tokens_flat, probs_flat, firing_flat)
-        self._collect_activation_examples(batch, ci, component_acts)
+        self._collect_activation_examples(batch, activation, component_acts)
 
     def _accumulate_token_stats(
         self,
@@ -178,34 +196,43 @@ class Harvester:
     def _collect_activation_examples(
         self,
         batch: Int[Tensor, "B S"],
-        ci: Float[Tensor, "B S C"],
+        activation: Float[Tensor, "B S C"],
         component_acts: Float[Tensor, "B S C"],
     ) -> None:
-        batch_idx, seq_idx, comp_idx = torch.where(ci > self.ci_threshold)
+        batch_idx, seq_idx, comp_idx = torch.where(activation > self.activation_threshold)
         if len(batch_idx) == 0:
             return
 
         keep = sample_at_most_n_per_group(comp_idx, self.max_examples_per_batch_per_component)
         batch_idx, seq_idx, comp_idx = batch_idx[keep], seq_idx[keep], comp_idx[keep]
 
-        token_w, ci_w, act_w = extract_firing_windows(
-            batch, ci, component_acts, batch_idx, seq_idx, comp_idx, self.context_tokens_per_side
+        token_w, activation_w, act_w = extract_firing_windows(
+            batch,
+            activation,
+            component_acts,
+            batch_idx,
+            seq_idx,
+            comp_idx,
+            self.context_tokens_per_side,
         )
-        self.reservoir.add(comp_idx, token_w, ci_w, act_w)
+        self.reservoir.add(comp_idx, token_w, activation_w, act_w)
 
     def save(self, path: Path) -> None:
         data: dict[str, object] = {
             "layer_names": self.layer_names,
             "c_per_layer": self.c_per_layer,
+            "component_keys": self.component_keys,
             "vocab_size": self.vocab_size,
-            "ci_threshold": self.ci_threshold,
+            "activation_threshold": self.activation_threshold,
+            "ci_threshold": self.activation_threshold,
             "max_examples_per_component": self.max_examples_per_component,
             "context_tokens_per_side": self.context_tokens_per_side,
             "max_examples_per_batch_per_component": self.max_examples_per_batch_per_component,
             "total_tokens_processed": self.total_tokens_processed,
             "reservoir": self.reservoir.state_dict(),
             "firing_counts": self.firing_counts.cpu(),
-            "ci_sums": self.ci_sums.cpu(),
+            "activation_sums": self.activation_sums.cpu(),
+            "ci_sums": self.activation_sums.cpu(),
             "cooccurrence_counts": self.cooccurrence_counts.cpu(),
             "input_cooccurrence": self.input_cooccurrence.cpu(),
             "input_marginals": self.input_marginals.cpu(),
@@ -217,19 +244,24 @@ class Harvester:
     @staticmethod
     def load(path: Path, device: torch.device) -> "Harvester":
         d: dict[str, Any] = torch.load(path, weights_only=False)
+        activation_threshold = d.get("activation_threshold", d.get("ci_threshold"))
+        assert activation_threshold is not None
         h = Harvester(
             layer_names=d["layer_names"],
             c_per_layer=d["c_per_layer"],
             vocab_size=d["vocab_size"],
-            ci_threshold=d["ci_threshold"],
+            activation_threshold=activation_threshold,
             max_examples_per_component=d["max_examples_per_component"],
             context_tokens_per_side=d["context_tokens_per_side"],
             max_examples_per_batch_per_component=d.get("max_examples_per_batch_per_component", 5),
             device=device,
+            component_keys=d.get("component_keys"),
         )
         h.total_tokens_processed = d["total_tokens_processed"]
         h.firing_counts = d["firing_counts"].to(device)
-        h.ci_sums = d["ci_sums"].to(device)
+        activation_sums = d.get("activation_sums", d.get("ci_sums"))
+        assert activation_sums is not None
+        h.activation_sums = activation_sums.to(device)
         h.cooccurrence_counts = d["cooccurrence_counts"].to(device)
         h.input_cooccurrence = d["input_cooccurrence"].to(device)
         h.input_marginals = d["input_marginals"].to(device)
@@ -241,11 +273,12 @@ class Harvester:
     def merge(self, other: "Harvester") -> None:
         assert other.layer_names == self.layer_names
         assert other.c_per_layer == self.c_per_layer
+        assert other.component_keys == self.component_keys
         assert other.vocab_size == self.vocab_size
-        assert other.ci_threshold == self.ci_threshold
+        assert other.activation_threshold == self.activation_threshold
 
         self.firing_counts += other.firing_counts
-        self.ci_sums += other.ci_sums
+        self.activation_sums += other.activation_sums
         self.cooccurrence_counts += other.cooccurrence_counts
         self.input_cooccurrence += other.input_cooccurrence
         self.input_marginals += other.input_marginals
@@ -260,7 +293,7 @@ class Harvester:
     def build_results(self, pmi_top_k_tokens: int) -> Iterator[ComponentData]:
         """Yield ComponentData objects one at a time (constant memory)."""
         logger.info("  Moving tensors to CPU...")
-        mean_ci = (self.ci_sums / self.total_tokens_processed).cpu()
+        mean_activation = (self.activation_sums / self.total_tokens_processed).cpu()
         firing_counts = self.firing_counts.cpu()
         input_cooccurrence = self.input_cooccurrence.cpu()
         input_marginals = self.input_marginals.cpu()
@@ -271,51 +304,64 @@ class Harvester:
 
         _log_base_rate_summary(firing_counts, input_marginals)
 
-        n_total = sum(self.c_per_layer[layer] for layer in self.layer_names)
+        n_total = len(self.component_keys)
         logger.info(
             f"  Computing stats for {n_total} components across {len(self.layer_names)} layers..."
         )
-        for layer_name in tqdm.tqdm(self.layer_names, desc="Building components"):
-            layer_offset = self.layer_offsets[layer_name]
-            layer_n = self.c_per_layer[layer_name]
+        for flat_idx in tqdm.tqdm(range(n_total), desc="Building components"):
+            n_firings = float(firing_counts[flat_idx])
+            if n_firings == 0:
+                continue
 
-            for comp_idx in range(layer_n):
-                flat_idx = layer_offset + comp_idx
-
-                n_firings = float(firing_counts[flat_idx])
-                if n_firings == 0:
-                    continue
-
-                examples = [
-                    ActivationExample(
-                        token_ids=toks.tolist(),
-                        ci_values=ci_vals.tolist(),
-                        component_acts=acts.tolist(),
-                    )
-                    for toks, ci_vals, acts in reservoir_cpu.examples(flat_idx)
-                ]
-
-                yield ComponentData(
-                    component_key=f"{layer_name}:{comp_idx}",
-                    layer=layer_name,
-                    component_idx=comp_idx,
-                    mean_ci=float(mean_ci[flat_idx]),
-                    activation_examples=examples,
-                    input_token_pmi=_compute_token_pmi(
-                        input_cooccurrence[flat_idx],
-                        input_marginals,
-                        n_firings,
-                        self.total_tokens_processed,
-                        pmi_top_k_tokens,
-                    ),
-                    output_token_pmi=_compute_token_pmi(
-                        output_cooccurrence[flat_idx],
-                        output_marginals,
-                        n_firings,
-                        self.total_tokens_processed,
-                        pmi_top_k_tokens,
-                    ),
+            layer_name, comp_idx, component_key = self._flat_component_meta[flat_idx]
+            examples = [
+                ActivationExample(
+                    token_ids=toks.tolist(),
+                    activation_values=activation_vals.tolist(),
+                    component_acts=acts.tolist(),
                 )
+                for toks, activation_vals, acts in reservoir_cpu.examples(flat_idx)
+            ]
+
+            yield ComponentData(
+                component_key=component_key,
+                layer=layer_name,
+                component_idx=comp_idx,
+                mean_activation=float(mean_activation[flat_idx]),
+                activation_examples=examples,
+                input_token_pmi=_compute_token_pmi(
+                    input_cooccurrence[flat_idx],
+                    input_marginals,
+                    n_firings,
+                    self.total_tokens_processed,
+                    pmi_top_k_tokens,
+                ),
+                output_token_pmi=_compute_token_pmi(
+                    output_cooccurrence[flat_idx],
+                    output_marginals,
+                    n_firings,
+                    self.total_tokens_processed,
+                    pmi_top_k_tokens,
+                ),
+            )
+
+    @property
+    def ci_threshold(self) -> float:
+        """Backward-compatible alias for activation_threshold."""
+        return self.activation_threshold
+
+    @ci_threshold.setter
+    def ci_threshold(self, value: float) -> None:
+        self.activation_threshold = value
+
+    @property
+    def ci_sums(self) -> Tensor:
+        """Backward-compatible alias for activation_sums."""
+        return self.activation_sums
+
+    @ci_sums.setter
+    def ci_sums(self, value: Tensor) -> None:
+        self.activation_sums = value
 
 
 # ---------------------------------------------------------------------------
@@ -382,3 +428,12 @@ def _compute_token_pmi(
         top_k=top_k,
     )
     return ComponentTokenPMI(top=top, bottom=bottom)
+
+
+def _component_meta_from_key(key: str, default_idx: int) -> tuple[str, int, str]:
+    """Parse component key into (layer, component_idx, key) with fallback."""
+    if ":" in key:
+        layer, idx_str = key.rsplit(":", 1)
+        if idx_str.isdigit():
+            return layer, int(idx_str), key
+    return key, default_idx, key
