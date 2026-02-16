@@ -8,7 +8,6 @@
         type GraphData,
         type PinnedNode,
         type PromptPreview,
-        type TokenInfo,
     } from "../lib/promptAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import ComputeProgressOverlay from "./prompt-attr/ComputeProgressOverlay.svelte";
@@ -52,10 +51,9 @@
 
     type Props = {
         prompts: PromptPreview[];
-        allTokens: TokenInfo[];
     };
 
-    let { prompts, allTokens }: Props = $props();
+    let { prompts }: Props = $props();
 
     // Prompt cards state
     let promptCards = $state<PromptCard[]>([]);
@@ -937,7 +935,6 @@
                                     activeRunId={activeComposerState.activeRunId}
                                     tokens={activeCard.tokens}
                                     tokenIds={activeCard.tokenIds}
-                                    {allTokens}
                                     topK={activeGraph.viewSettings.topK}
                                     componentGap={activeGraph.viewSettings.componentGap}
                                     layerGap={activeGraph.viewSettings.layerGap}
@@ -999,7 +996,6 @@
                                             <OptimizationSettings
                                                 config={activeCard.newGraphConfig}
                                                 tokens={activeCard.tokens}
-                                                {allTokens}
                                                 onChange={handleOptimizeConfigChange}
                                                 cardId={activeCard.id}
                                             />

@@ -129,10 +129,12 @@ export function useRun() {
         run = { status: "loading" };
         try {
             await api.loadRun(wandbPath, contextLength);
-            const [status] = await Promise.all([api.getStatus(), fetchTokens()]).then(([s]) => [s] as const);
+            const status = await api.getStatus();
             if (status) {
                 run = { status: "loaded", data: status };
                 fetchRunScopedData();
+                // Fetch tokens in background (no longer blocks UI - used only by token search)
+                fetchTokens();
             } else {
                 run = { status: "error", error: "Failed to load run" };
             }

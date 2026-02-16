@@ -330,12 +330,36 @@ def tokenize_text(text: str, loaded: DepLoadedRun) -> TokenizeResponse:
 @log_errors
 def get_all_tokens(loaded: DepLoadedRun) -> TokensResponse:
     """Get all tokens in the tokenizer vocabulary for client-side search."""
-    return TokensResponse(
-        tokens=[
-            TokenInfo(id=tid, string=loaded.tokenizer.get_tok_display(tid))
-            for tid in range(loaded.tokenizer.vocab_size)
-        ]
-    )
+    tokens = [
+        TokenInfo(id=tid, string=loaded.tokenizer.get_tok_display(tid))
+        for tid in range(loaded.tokenizer.vocab_size)
+    ]
+    return TokensResponse(tokens=tokens)
+
+
+class TokenSearchResponse(BaseModel):
+    """Response from token search endpoint."""
+
+    tokens: list[TokenInfo]
+
+
+@router.get("/tokens/search")
+@log_errors
+def search_tokens(
+    q: Annotated[str, Query(min_length=1)],
+    loaded: DepLoadedRun,
+    limit: Annotated[int, Query(ge=1, le=50)] = 10,
+) -> TokenSearchResponse:
+    """Search tokens by substring match. Returns up to `limit` results."""
+    query = q.lower()
+    matches: list[TokenInfo] = []
+    for tid in range(loaded.tokenizer.vocab_size):
+        string = loaded.tokenizer.get_tok_display(tid)
+        if query in string.lower():
+            matches.append(TokenInfo(id=tid, string=string))
+            if len(matches) >= limit:
+                break
+    return TokenSearchResponse(tokens=matches)
 
 
 NormalizeType = Literal["none", "target", "layer"]

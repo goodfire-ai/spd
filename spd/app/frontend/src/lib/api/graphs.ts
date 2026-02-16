@@ -181,3 +181,11 @@ export async function getAllTokens(): Promise<TokenInfo[]> {
     const response = await fetchJson<{ tokens: TokenInfo[] }>("/api/graphs/tokens");
     return response.tokens;
 }
+
+export async function searchTokens(query: string, limit: number = 10): Promise<TokenInfo[]> {
+    const url = apiUrl("/api/graphs/tokens/search");
+    url.searchParams.set("q", query);
+    url.searchParams.set("limit", String(limit));
+    const response = await fetchJson<{ tokens: TokenInfo[] }>(url.toString());
+    return response.tokens;
+}
