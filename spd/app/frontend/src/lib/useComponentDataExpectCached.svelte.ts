@@ -1,8 +1,7 @@
 /**
- * Hook for reading component data from prefetched cache.
+ * Hook for reading component data from prefetch cache (with loading fallback).
  *
- * prefetchComponentData() must be called before using this hook.
- * Activation contexts, correlations, and token stats are read from cache.
+ * Activation contexts, correlations, and token stats come from prefetch cache.
  * Dataset attributions and interpretation details are fetched on-demand.
  */
 
@@ -43,23 +42,26 @@ export function useComponentDataExpectCached() {
     let currentCoords = $state<ComponentCoords | null>(null);
     let requestId = 0;
 
-    function load(layer: string, cIdx: number) {
-        currentCoords = { layer, cIdx };
-        const thisRequestId = ++requestId;
-        const componentKey = `${layer}:${cIdx}`;
-
-        const isStale = () => requestId !== thisRequestId;
-
-        const cachedDetail = runState.expectCachedComponentDetail(componentKey);
-        componentDetail = { status: "loaded", data: cachedDetail };
+    /** Try to populate state from cache. Returns cached detail on hit, null on miss. */
+    function tryLoadFromCache(componentKey: string): SubcomponentActivationContexts | null {
+        const detail = runState.getCachedComponentDetail(componentKey);
+        if (!detail) return null;
+        componentDetail = { status: "loaded", data: detail };
         correlations = { status: "loaded", data: runState.expectCachedCorrelations(componentKey) };
         tokenStats = { status: "loaded", data: runState.expectCachedTokenStats(componentKey) };
+        return detail;
+    }
 
-        // Fetch more activation examples in background (overwrites cached data when complete)
+    /** Fetch full activation examples in background (overwrites cached data when complete). */
+    function startBackgroundFetch(
+        layer: string,
+        cIdx: number,
+        cachedDetail: SubcomponentActivationContexts,
+        isStale: () => boolean,
+    ) {
         getActivationContextDetail(layer, cIdx, ACTIVATION_EXAMPLES_FULL_LIMIT)
             .then((data) => {
                 if (isStale()) return;
-                // Only update if we got more examples than cached
                 if (data.example_tokens.length > cachedDetail.example_tokens.length) {
                     componentDetail = { status: "loaded", data };
                 }
@@ -68,7 +70,10 @@ export function useComponentDataExpectCached() {
                 if (isStale()) return;
                 componentDetail = { status: "error", error };
             });
+    }
 
+    /** Start on-demand fetches (dataset attributions, interpretation detail). */
+    function startOnDemandFetches(layer: string, cIdx: number, isStale: () => boolean) {
         // Skip fetch entirely if dataset attributions not available for this run
         if (runState.datasetAttributionsAvailable) {
             datasetAttributions = { status: "loading" };
@@ -105,6 +110,40 @@ export function useComponentDataExpectCached() {
                 }
             });
     }
+
+    function load(layer: string, cIdx: number) {
+        currentCoords = { layer, cIdx };
+        const thisRequestId = ++requestId;
+        const componentKey = `${layer}:${cIdx}`;
+
+        const isStale = () => requestId !== thisRequestId;
+
+        const cached = tryLoadFromCache(componentKey);
+        if (cached) {
+            startBackgroundFetch(layer, cIdx, cached, isStale);
+        } else {
+            // Cache not populated yet -- prefetch still in-flight
+            componentDetail = { status: "loading" };
+            correlations = { status: "loading" };
+            tokenStats = { status: "loading" };
+        }
+
+        startOnDemandFetches(layer, cIdx, isStale);
+    }
+
+    // Re-check cache when prefetch completes
+    $effect(() => {
+        if (runState.prefetchVersion === 0) return;
+        if (!currentCoords) return;
+        if (componentDetail.status !== "loading") return;
+        const { layer, cIdx } = currentCoords;
+        const thisRequestId = requestId;
+        const cached = tryLoadFromCache(`${layer}:${cIdx}`);
+        if (cached) {
+            const isStale = () => requestId !== thisRequestId;
+            startBackgroundFetch(layer, cIdx, cached, isStale);
+        }
+    });
 
     function reset() {
         requestId++;

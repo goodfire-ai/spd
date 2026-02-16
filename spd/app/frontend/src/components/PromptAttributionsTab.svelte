@@ -194,11 +194,11 @@
             }),
         );
 
-        // Prefetch component data for all components in loaded graphs
+        // Prefetch component data in background (graph renders immediately)
         const allComponentKeys = graphs.flatMap((g) => extractComponentKeys(g.data));
         const uniqueKeys = [...new Set(allComponentKeys)];
         if (uniqueKeys.length > 0) {
-            await runState.prefetchComponentData(uniqueKeys);
+            runState.prefetchComponentData(uniqueKeys);
         }
 
         const newCard: PromptCard = {
@@ -545,9 +545,9 @@
             // Initialize composer state for the new graph
             getComposerState(data.id, Object.keys(data.nodeCiVals));
 
-            // Prefetch component data for all components in the subgraph
+            // Prefetch component data in background (graph renders immediately)
             const componentKeys = extractComponentKeys(data);
-            await runState.prefetchComponentData(componentKeys);
+            runState.prefetchComponentData(componentKeys);
 
             promptCards = promptCards.map((card) => {
                 if (card.id !== cardId) return card;
@@ -665,9 +665,9 @@
             // Initialize composer state for the new graph
             getComposerState(data.id, Object.keys(data.nodeCiVals));
 
-            // Prefetch component data BEFORE state update so cache is populated when components mount
+            // Prefetch component data in background (graph renders immediately)
             const componentKeys = extractComponentKeys(data);
-            await runState.prefetchComponentData(componentKeys);
+            runState.prefetchComponentData(componentKeys);
 
             promptCards = promptCards.map((card) => {
                 if (card.id !== cardId) return card;

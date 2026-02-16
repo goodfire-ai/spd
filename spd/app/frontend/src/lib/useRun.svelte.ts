@@ -68,6 +68,8 @@ export function useRun() {
     let _componentDetailsCache: Record<string, SubcomponentActivationContexts> = {};
     let _correlationsCache: Record<string, SubcomponentCorrelationsResponse> = {};
     let _tokenStatsCache: Record<string, TokenStatsResponse> = {};
+    // Reactive signal incremented when prefetch completes, so consumers can re-check cache
+    let _prefetchVersion = $state(0);
 
     // Prefetch parameters for bulk component data
     const PREFETCH_ACTIVATION_CONTEXTS_LIMIT = 10;
@@ -84,6 +86,7 @@ export function useRun() {
         _componentDetailsCache = {};
         _correlationsCache = {};
         _tokenStatsCache = {};
+        _prefetchVersion = 0;
         clusterMapping = null;
     }
 
@@ -233,15 +236,14 @@ export function useRun() {
         Object.assign(_componentDetailsCache, response.activation_contexts);
         Object.assign(_correlationsCache, response.correlations);
         Object.assign(_tokenStatsCache, response.token_stats);
+        _prefetchVersion++;
     }
 
     /**
-     * Read cached component detail. Throws if not prefetched.
+     * Read cached component detail. Returns null if not yet prefetched.
      */
-    function expectCachedComponentDetail(componentKey: string): SubcomponentActivationContexts {
-        const cached = _componentDetailsCache[componentKey];
-        if (!cached) throw new Error(`Component detail not prefetched: ${componentKey}`);
-        return cached;
+    function getCachedComponentDetail(componentKey: string): SubcomponentActivationContexts | null {
+        return _componentDetailsCache[componentKey] ?? null;
     }
 
     /**
@@ -316,9 +318,12 @@ export function useRun() {
         getIntruderScore,
         getActivationContextDetail,
         prefetchComponentData,
-        expectCachedComponentDetail,
+        getCachedComponentDetail,
         expectCachedCorrelations,
         expectCachedTokenStats,
+        get prefetchVersion() {
+            return _prefetchVersion;
+        },
         loadActivationContextsSummary,
         setClusterMapping,
         clearClusterMapping,
