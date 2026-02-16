@@ -890,6 +890,7 @@ class Config(BaseConfig):
         "lr_exponential_halflife",
         "out_dir",
         "n_examples_until_dead",
+        "init_spd_checkpoint",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "grad_clip_norm": "grad_clip_norm_components",
