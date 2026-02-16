@@ -7,45 +7,44 @@ Catches labels that are too vague or generic.
 Based on: EleutherAI's sae-auto-interp (https://blog.eleuther.ai/autointerp/).
 """
 
-import asyncio
 import json
 import random
+from collections import defaultdict
 from dataclasses import asdict, dataclass
 
 from aiolimiter import AsyncLimiter
 from openrouter import OpenRouter
-from openrouter.components import Effort, Reasoning
+from openrouter.components import Reasoning
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
 from spd.autointerp.config import AutointerpEvalConfig
 from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import (
-    BudgetExceededError,
     CostTracker,
     GlobalBackoff,
     LLMClient,
+    LLMError,
+    LLMJob,
+    LLMResult,
     get_model_pricing,
-    make_response_format,
+    map_api_calls,
 )
 from spd.harvest.schemas import ActivationExample, ComponentData
 from spd.log import logger
 
-FUZZING_RESPONSE_FORMAT = make_response_format(
-    "fuzzing_response",
-    {
-        "type": "object",
-        "properties": {
-            "correct_examples": {
-                "type": "array",
-                "items": {"type": "integer"},
-                "description": "1-indexed example numbers with correct highlighting",
-            },
-            "reasoning": {"type": "string", "description": "Brief explanation"},
+FUZZING_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "correct_examples": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "1-indexed example numbers with correct highlighting",
         },
-        "required": ["correct_examples", "reasoning"],
+        "reasoning": {"type": "string", "description": "Brief explanation"},
     },
-)
+    "required": ["correct_examples", "reasoning"],
+}
 
 
 @dataclass
@@ -134,99 +133,11 @@ Respond with the list of correctly-highlighted example numbers and brief reasoni
 """
 
 
-async def score_component(
-    llm: LLMClient,
-    model: str,
-    reasoning_effort: Effort,
-    component: ComponentData,
-    app_tok: AppTokenizer,
-    label: str,
-    ci_threshold: float,
-    n_correct: int,
-    n_incorrect: int,
-    n_trials: int,
-) -> FuzzingResult:
-    min_examples = n_correct + n_incorrect
-    assert len(component.activation_examples) >= min_examples
-
-    rng = random.Random()
-    trials: list[FuzzingTrial] = []
-    n_errors = 0
-    total_tp = 0
-    total_tn = 0
-    total_pos = 0
-    total_neg = 0
-
-    for trial_idx in range(n_trials):
-        sampled = rng.sample(component.activation_examples, n_correct + n_incorrect)
-        correct_examples = sampled[:n_correct]
-        incorrect_examples = sampled[n_correct:]
-
-        formatted: list[tuple[str, bool]] = []
-
-        for ex in correct_examples:
-            text, _ = _delimit_high_ci_tokens(ex, app_tok, ci_threshold)
-            formatted.append((text, True))
-
-        for ex in incorrect_examples:
-            _, n_delimited = _delimit_high_ci_tokens(ex, app_tok, ci_threshold)
-            n_to_delimit = max(n_delimited, 1)
-            text = _delimit_random_low_ci_tokens(ex, app_tok, n_to_delimit, rng, ci_threshold)
-            formatted.append((text, False))
-
-        rng.shuffle(formatted)
-
-        correct_positions = {i + 1 for i, (_, is_correct) in enumerate(formatted) if is_correct}
-        incorrect_positions = {
-            i + 1 for i, (_, is_correct) in enumerate(formatted) if not is_correct
-        }
-
-        prompt = _build_fuzzing_prompt(label, formatted)
-
-        try:
-            response = await llm.chat(
-                model=model,
-                reasoning=Reasoning(effort=reasoning_effort),
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=5000,
-                context_label=f"{component.component_key}/trial{trial_idx}",
-                response_format=FUZZING_RESPONSE_FORMAT,
-            )
-            parsed = json.loads(response)
-            predicted_correct = set(parsed["correct_examples"])
-
-            tp = len(correct_positions & predicted_correct)
-            tn = len(incorrect_positions - predicted_correct)
-
-            total_tp += tp
-            total_tn += tn
-            total_pos += len(correct_positions)
-            total_neg += len(incorrect_positions)
-
-            trials.append(
-                FuzzingTrial(
-                    correct_positions=sorted(correct_positions),
-                    predicted_correct=sorted(predicted_correct),
-                    tp=tp,
-                    tn=tn,
-                    n_correct=len(correct_positions),
-                    n_incorrect=len(incorrect_positions),
-                )
-            )
-        except Exception as e:
-            logger.error(f"{component.component_key}/trial{trial_idx}: {type(e).__name__}: {e}")
-            n_errors += 1
-
-    tpr = total_tp / total_pos if total_pos > 0 else 0.0
-    tnr = total_tn / total_neg if total_neg > 0 else 0.0
-    score = (tpr + tnr) / 2 if (total_pos > 0 and total_neg > 0) else 0.0
-
-    return FuzzingResult(
-        component_key=component.component_key,
-        score=score,
-        trials=trials,
-        n_errors=n_errors,
-    )
+@dataclass
+class _TrialGroundTruth:
+    component_key: str
+    correct_positions: set[int]
+    incorrect_positions: set[int]
 
 
 async def run_fuzzing_scoring(
@@ -257,47 +168,52 @@ async def run_fuzzing_scoring(
     if limit is not None:
         eligible = eligible[:limit]
 
-    results: list[FuzzingResult] = []
-
     existing_scores = db.get_scores("fuzzing")
     completed = set(existing_scores.keys())
     if completed:
         logger.info(f"Resuming: {len(completed)} already scored")
 
     remaining = [c for c in eligible if c.component_key not in completed]
-    logger.info(f"Scoring {len(remaining)} components")
+    logger.info(f"Scoring {len(remaining)} components ({len(remaining) * n_trials} trials)")
 
-    semaphore = asyncio.Semaphore(max_concurrent)
-    output_lock = asyncio.Lock()
+    rng = random.Random()
+    jobs: list[LLMJob] = []
+    ground_truth: dict[str, _TrialGroundTruth] = {}
 
-    async def process_one(component: ComponentData, index: int, llm: LLMClient) -> None:
-        async with semaphore:
-            try:
-                result = await score_component(
-                    llm,
-                    model,
-                    eval_config.reasoning_effort,
-                    component,
-                    app_tok,
-                    labels[component.component_key],
-                    ci_threshold,
-                    n_correct=n_correct,
-                    n_incorrect=n_incorrect,
-                    n_trials=n_trials,
+    for component in remaining:
+        label = labels[component.component_key]
+        for trial_idx in range(n_trials):
+            sampled = rng.sample(component.activation_examples, n_correct + n_incorrect)
+            correct_examples = sampled[:n_correct]
+            incorrect_examples = sampled[n_correct:]
+
+            formatted: list[tuple[str, bool]] = []
+            for ex in correct_examples:
+                text, _ = _delimit_high_ci_tokens(ex, app_tok, ci_threshold)
+                formatted.append((text, True))
+            for ex in incorrect_examples:
+                _, n_delimited = _delimit_high_ci_tokens(ex, app_tok, ci_threshold)
+                n_to_delimit = max(n_delimited, 1)
+                text = _delimit_random_low_ci_tokens(ex, app_tok, n_to_delimit, rng, ci_threshold)
+                formatted.append((text, False))
+            rng.shuffle(formatted)
+
+            key = f"{component.component_key}/trial{trial_idx}"
+            correct_pos = {i + 1 for i, (_, is_correct) in enumerate(formatted) if is_correct}
+            incorrect_pos = {i + 1 for i, (_, is_correct) in enumerate(formatted) if not is_correct}
+            jobs.append(
+                LLMJob(
+                    prompt=_build_fuzzing_prompt(label, formatted), schema=FUZZING_SCHEMA, key=key
                 )
-            except BudgetExceededError:
-                return
-            except Exception as e:
-                logger.error(f"Skipping {component.component_key}: {type(e).__name__}: {e}")
-                return
-            async with output_lock:
-                results.append(result)
-                details = json.dumps(asdict(result))
-                db.save_score(result.component_key, "fuzzing", result.score, details)
-                if index % 100 == 0:
-                    logger.info(
-                        f"[{index}] scored {len(results)}, ${llm.cost_tracker.cost_usd():.2f}"
-                    )
+            )
+            ground_truth[key] = _TrialGroundTruth(
+                component_key=component.component_key,
+                correct_positions=correct_pos,
+                incorrect_positions=incorrect_pos,
+            )
+
+    component_trials: defaultdict[str, list[FuzzingTrial]] = defaultdict(list)
+    component_errors: defaultdict[str, int] = defaultdict(int)
 
     async with OpenRouter(api_key=openrouter_api_key) as api:
         input_price, output_price = await get_model_pricing(api, model)
@@ -313,9 +229,52 @@ async def run_fuzzing_scoring(
             cost_tracker=cost_tracker,
         )
 
-        await asyncio.gather(*[process_one(c, i, llm) for i, c in enumerate(remaining)])
+        async for outcome in map_api_calls(
+            jobs,
+            llm,
+            model=model,
+            max_tokens=5000,
+            reasoning=Reasoning(effort=eval_config.reasoning_effort),
+            max_concurrent=max_concurrent,
+        ):
+            match outcome:
+                case LLMResult(job=job, parsed=parsed):
+                    gt = ground_truth[job.key]
+                    predicted_correct = set(parsed["correct_examples"])
+                    tp = len(gt.correct_positions & predicted_correct)
+                    tn = len(gt.incorrect_positions - predicted_correct)
+                    component_trials[gt.component_key].append(
+                        FuzzingTrial(
+                            correct_positions=sorted(gt.correct_positions),
+                            predicted_correct=sorted(predicted_correct),
+                            tp=tp,
+                            tn=tn,
+                            n_correct=len(gt.correct_positions),
+                            n_incorrect=len(gt.incorrect_positions),
+                        )
+                    )
+                case LLMError(job=job, error=e):
+                    gt = ground_truth[job.key]
+                    component_errors[gt.component_key] += 1
+                    logger.error(f"{job.key}: {type(e).__name__}: {e}")
 
         logger.info(f"Final cost: ${cost_tracker.cost_usd():.2f}")
+
+    results: list[FuzzingResult] = []
+    for component in remaining:
+        ck = component.component_key
+        trials = component_trials.get(ck, [])
+        n_err = component_errors.get(ck, 0)
+        total_tp = sum(t.tp for t in trials)
+        total_tn = sum(t.tn for t in trials)
+        total_pos = sum(t.n_correct for t in trials)
+        total_neg = sum(t.n_incorrect for t in trials)
+        tpr = total_tp / total_pos if total_pos > 0 else 0.0
+        tnr = total_tn / total_neg if total_neg > 0 else 0.0
+        score = (tpr + tnr) / 2 if (total_pos > 0 and total_neg > 0) else 0.0
+        result = FuzzingResult(component_key=ck, score=score, trials=trials, n_errors=n_err)
+        results.append(result)
+        db.save_score(ck, "fuzzing", score, json.dumps(asdict(result)))
 
     logger.info(f"Scored {len(results)} components")
     return results

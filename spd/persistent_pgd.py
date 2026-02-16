@@ -32,7 +32,7 @@ from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import ComponentsMaskInfo, RoutingMasks, make_mask_infos
 from spd.routing import AllLayersRouter, Router, get_subset_router
-from spd.utils.distributed_utils import all_reduce, call_on_rank0_then_broadcast
+from spd.utils.distributed_utils import all_reduce, broadcast_tensor
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 PPGDSources = dict[str, Float[Tensor, " source_c"]]
@@ -158,8 +158,8 @@ class PersistentPGDState:
         for module_name, module_c in module_to_c.items():
             source_c = module_c + 1 if use_delta_component else module_c
             source_shape = source_leading_dims + [source_c]
-            source_data = call_on_rank0_then_broadcast(init_fn, source_shape)
-            self.sources[module_name] = source_data.to(device=device).requires_grad_(True)
+            source_data = broadcast_tensor(init_fn(source_shape, device=device))
+            self.sources[module_name] = source_data.requires_grad_(True)
 
         self.optimizer.init_state(self.sources)
 
