@@ -4,7 +4,7 @@
     import { colors, getEdgeColor, getOutputHeaderColor, rgbaToCss } from "../../lib/colors";
     import type { Loadable } from "../../lib/index";
     import type { NormalizeType } from "../../lib/api";
-    import { isInterventableNode, type NodePosition, type TokenInfo } from "../../lib/promptAttributionsTypes";
+    import { isInterventableNode, type NodePosition } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import {
         parseLayer,
@@ -28,7 +28,7 @@
     } from "./graphUtils";
     import NodeTooltip from "./NodeTooltip.svelte";
     import TokenDropdown from "./TokenDropdown.svelte";
-    import type { StoredGraph } from "./types";
+    import type { LoadedStoredGraph } from "./types";
     import ViewControls from "./ViewControls.svelte";
     import { useZoomPan } from "../../lib/useZoomPan.svelte";
     import ZoomControls from "../../lib/ZoomControls.svelte";
@@ -48,12 +48,11 @@
     import type { ForkedInterventionRunSummary } from "../../lib/interventionTypes";
 
     type Props = {
-        graph: StoredGraph;
+        graph: LoadedStoredGraph;
         composerSelection: Set<string>;
         activeRunId: number | null;
         tokens: string[];
         tokenIds: number[];
-        allTokens: TokenInfo[];
         // View settings (shared with main graph)
         topK: number;
         componentGap: number;
@@ -87,7 +86,6 @@
         activeRunId,
         tokens,
         tokenIds,
-        allTokens,
         topK,
         componentGap,
         layerGap,
@@ -1072,7 +1070,6 @@
                             <div class="token-slot" class:replaced={isReplaced}>
                                 <span class="token-label">pos {idx}: "{tokens[idx]}"</span>
                                 <TokenDropdown
-                                    tokens={allTokens}
                                     value={slot.value}
                                     selectedTokenId={slot.tokenId}
                                     onSelect={(tokenId, tokenString) => handleForkSlotSelect(idx, tokenId, tokenString)}

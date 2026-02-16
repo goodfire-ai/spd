@@ -14,14 +14,17 @@ export type ViewSettings = {
     ciThreshold: number;
 };
 
-/** Persisted graph data from the database */
+/** Persisted graph data from the database. `data` is null when the graph hasn't been loaded yet (lazy loading). */
 export type StoredGraph = {
     id: number; // database ID
     label: string;
-    data: GraphData;
+    data: GraphData | null;
     viewSettings: ViewSettings;
     interventionRuns: InterventionRunSummary[];
 };
+
+/** A StoredGraph with loaded data - used by components that require graph data to be present. */
+export type LoadedStoredGraph = StoredGraph & { data: GraphData };
 
 /** Transient UI state for the intervention composer, keyed by graph ID */
 export type ComposerState = {

@@ -11,7 +11,7 @@ import io
 import json
 import sqlite3
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 from pydantic import BaseModel
@@ -567,6 +567,22 @@ class PromptAttrDB:
             (prompt_id,),
         ).fetchall()
         return [self._row_to_stored_graph(row) for row in rows]
+
+    def get_graph_summaries(self, prompt_id: int) -> list[dict[str, Any]]:
+        """Get lightweight summaries of all graphs for a prompt (no edge/logit data)."""
+        conn = self._get_conn()
+        rows = conn.execute(
+            """SELECT id, graph_type, length(edges_data) as edges_size,
+                      imp_min_coeff, steps, pnorm, beta, mask_type, loss_config,
+                      included_nodes
+               FROM graphs
+               WHERE prompt_id = ?
+               ORDER BY
+                   CASE graph_type WHEN 'standard' THEN 0 WHEN 'optimized' THEN 1 ELSE 2 END,
+                   created_at""",
+            (prompt_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def get_graph(self, graph_id: int) -> tuple[StoredGraph, int] | None:
         """Retrieve a single graph by its ID. Returns (graph, prompt_id) or None."""

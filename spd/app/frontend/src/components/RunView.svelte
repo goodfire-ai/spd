@@ -93,10 +93,10 @@
                 {runState.run.error}
             </div>
         {/if}
-        {#if runState.prompts.status === "loaded" && runState.allTokens.status === "loaded"}
+        {#if runState.prompts.status === "loaded"}
             <!-- Use hidden class instead of conditional rendering to preserve state -->
             <div class="tab-content" class:hidden={activeTab !== "prompts"}>
-                <PromptAttributionsTab prompts={runState.prompts.data} allTokens={runState.allTokens.data} />
+                <PromptAttributionsTab prompts={runState.prompts.data} />
             </div>
             <div class="tab-content" class:hidden={activeTab !== "components"}>
                 <ActivationContextsTab />
@@ -109,7 +109,7 @@
             <div class="tab-content" class:hidden={activeTab !== "data-sources"}>
                 <DataSourcesTab />
             </div>
-        {:else if runState.run.status === "loading" || runState.prompts.status === "loading" || runState.allTokens.status === "loading"}
+        {:else if runState.run.status === "loading" || runState.prompts.status === "loading"}
             <div class="empty-state">
                 <p>Loading run...</p>
             </div>

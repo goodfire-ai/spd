@@ -1,17 +1,15 @@
 <script lang="ts">
     import type { OptimizeConfigDraft, MaskType, LossType, LossConfigDraft } from "./types";
-    import type { TokenInfo } from "../../lib/promptAttributionsTypes";
     import TokenDropdown from "./TokenDropdown.svelte";
 
     type Props = {
         config: OptimizeConfigDraft;
         tokens: string[];
-        allTokens: TokenInfo[];
         onChange: (newConfig: OptimizeConfigDraft) => void;
         cardId: number;
     };
 
-    let { config, tokens, allTokens, onChange, cardId }: Props = $props();
+    let { config, tokens, onChange, cardId }: Props = $props();
     let showAdvanced = $state(false);
 
     // Slider value 0-100 controls impMinCoeff on log scale from 1e-5 to 10
@@ -94,7 +92,6 @@
         {#if config.loss.type === "ce"}
             <span class="target-label">, predict</span>
             <TokenDropdown
-                tokens={allTokens}
                 value={config.loss.labelTokenText}
                 selectedTokenId={config.loss.labelTokenId}
                 onSelect={(tokenId, tokenString) => {

@@ -6,9 +6,9 @@
         extractComponentKeys,
         filterInterventableNodes,
         type GraphData,
+        type OptimizationResult,
         type PinnedNode,
         type PromptPreview,
-        type TokenInfo,
     } from "../lib/promptAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import ComputeProgressOverlay from "./prompt-attr/ComputeProgressOverlay.svelte";
@@ -26,6 +26,7 @@
         type ComposerState,
         type DraftState,
         type GraphComputeState,
+        type LoadedStoredGraph,
         type OptimizeConfigDraft,
         type PromptCard,
         type StoredGraph,
@@ -39,23 +40,26 @@
     const runState = getContext<RunContext>(RUN_KEY);
 
     /** Generate a display label for a graph based on its type */
-    function getGraphLabel(data: GraphData): string {
-        switch (data.graphType) {
+    function getGraphLabel(
+        graphType: GraphData["graphType"],
+        optimization?: OptimizationResult | null,
+        nodeCiVals?: Record<string, number>,
+    ): string {
+        switch (graphType) {
             case "standard":
                 return "Standard";
             case "optimized":
-                return data.optimization ? `Optimized (${data.optimization.steps} steps)` : "Optimized";
+                return optimization ? `Optimized (${optimization.steps} steps)` : "Optimized";
             case "manual":
-                return `Manual (${Object.keys(data.nodeCiVals).length} components)`;
+                return nodeCiVals ? `Manual (${Object.keys(nodeCiVals).length} components)` : "Manual";
         }
     }
 
     type Props = {
         prompts: PromptPreview[];
-        allTokens: TokenInfo[];
     };
 
-    let { prompts, allTokens }: Props = $props();
+    let { prompts }: Props = $props();
 
     // Prompt cards state
     let promptCards = $state<PromptCard[]>([]);
@@ -132,8 +136,16 @@
         return activeCard.graphs.find((g) => g.id === activeCard.activeGraphId) ?? null;
     });
 
+    /** activeGraph narrowed to loaded state (data is non-null) */
+    const activeLoadedGraph = $derived.by((): LoadedStoredGraph | null => {
+        if (!activeGraph?.data) return null;
+        return activeGraph as LoadedStoredGraph;
+    });
+
     // Check if a standard graph already exists for the active card
-    const hasStandardGraph = $derived(activeCard?.graphs.some((g) => g.data.graphType === "standard") ?? false);
+    const hasStandardGraph = $derived(
+        activeCard?.graphs.some((g) => g.data?.graphType === "standard") ?? false,
+    );
 
     // Check if compute button should be enabled (config must be valid for optimized graphs)
     const canCompute = $derived.by(() => {
@@ -165,6 +177,43 @@
         }
     }
 
+    /** Load full graph data for a specific graph and update it in the card */
+    async function loadGraphData(cardId: number, graphId: number) {
+        const data = await api.getGraphById(
+            graphId,
+            defaultViewSettings.normalizeEdges,
+            defaultViewSettings.ciThreshold,
+        );
+
+        const runs = await api.getInterventionRuns(graphId);
+        getComposerState(graphId, Object.keys(data.nodeCiVals));
+
+        const componentKeys = extractComponentKeys(data);
+        if (componentKeys.length > 0) {
+            await runState.prefetchComponentData(componentKeys);
+        }
+
+        promptCards = promptCards.map((card) => {
+            if (card.id !== cardId) return card;
+            return {
+                ...card,
+                graphs: card.graphs.map((g) =>
+                    g.id !== graphId
+                        ? g
+                        : {
+                              ...g,
+                              data,
+                              label: getGraphLabel(data.graphType, data.optimization, data.nodeCiVals),
+                              interventionRuns: runs,
+                          },
+                ),
+            };
+        });
+    }
+
+    // Track which graphs are currently being loaded to avoid duplicate loads
+    let loadingGraphIds = $state(new Set<number>());
+
     async function addPromptCardInner(
         promptId: number,
         tokens: string[],
@@ -172,36 +221,17 @@
         nextTokenProbs: (number | null)[],
         isCustom: boolean,
     ) {
-        // Fetch stored graphs for this prompt
-        const storedGraphs = await api.getGraphs(
-            promptId,
-            defaultViewSettings.normalizeEdges,
-            defaultViewSettings.ciThreshold,
-        );
-        const graphs: StoredGraph[] = await Promise.all(
-            storedGraphs.map(async (data) => {
-                // Load intervention runs for this graph
-                const runs = await api.getInterventionRuns(data.id);
+        // Phase 1: Fetch lightweight summaries (fast - no edge/logit data)
+        const summaries = await api.getGraphSummaries(promptId);
 
-                // Initialize composer state for this graph
-                getComposerState(data.id, Object.keys(data.nodeCiVals));
-
-                return {
-                    id: data.id,
-                    label: getGraphLabel(data),
-                    data,
-                    viewSettings: { ...defaultViewSettings },
-                    interventionRuns: runs,
-                };
-            }),
-        );
-
-        // Prefetch component data for all components in loaded graphs
-        const allComponentKeys = graphs.flatMap((g) => extractComponentKeys(g.data));
-        const uniqueKeys = [...new Set(allComponentKeys)];
-        if (uniqueKeys.length > 0) {
-            await runState.prefetchComponentData(uniqueKeys);
-        }
+        // Create stub StoredGraph entries from summaries (data=null for all initially)
+        const graphs: StoredGraph[] = summaries.map((s) => ({
+            id: s.id,
+            label: getGraphLabel(s.graphType, s.optimization),
+            data: null,
+            viewSettings: { ...defaultViewSettings },
+            interventionRuns: [],
+        }));
 
         const newCard: PromptCard = {
             id: promptId,
@@ -216,6 +246,16 @@
             useOptimized: false,
         };
         promptCards = [...promptCards, newCard];
+
+        // Phase 2: Load the first graph's full data (only if there are graphs)
+        if (graphs.length > 0) {
+            loadingGraphIds.add(graphs[0].id);
+            try {
+                await loadGraphData(promptId, graphs[0].id);
+            } finally {
+                loadingGraphIds.delete(graphs[0].id);
+            }
+        }
     }
 
     function handleSelectPrompt(prompt: PromptPreview) {
@@ -321,9 +361,15 @@
 
     function handleSelectGraph(graphId: number) {
         if (!activeCard) return;
-        promptCards = promptCards.map((card) =>
-            card.id === activeCard.id ? { ...card, activeGraphId: graphId } : card,
-        );
+        const cardId = activeCard.id;
+        promptCards = promptCards.map((card) => (card.id === cardId ? { ...card, activeGraphId: graphId } : card));
+
+        // Lazy load graph data if not already loaded
+        const graph = activeCard.graphs.find((g) => g.id === graphId);
+        if (graph && !graph.data && !loadingGraphIds.has(graphId)) {
+            loadingGraphIds.add(graphId);
+            loadGraphData(cardId, graphId).finally(() => loadingGraphIds.delete(graphId));
+        }
     }
 
     function handleCloseGraph(graphId: number) {
@@ -572,7 +618,7 @@
                         ...card.graphs,
                         {
                             id: data.id,
-                            label: getGraphLabel(data),
+                            label: getGraphLabel(data.graphType, data.optimization, data.nodeCiVals),
                             data,
                             viewSettings: { ...activeGraph.viewSettings },
                             interventionRuns: [],
@@ -686,7 +732,7 @@
                         ...card.graphs,
                         {
                             id: data.id,
-                            label: getGraphLabel(data),
+                            label: getGraphLabel(data.graphType, data.optimization, data.nodeCiVals),
                             data,
                             viewSettings: { ...defaultViewSettings },
                             interventionRuns: [],
@@ -706,28 +752,25 @@
     async function refetchActiveGraphData() {
         if (!activeCard || !activeGraph) return;
 
+        const cardId = activeCard.id;
+        const graphId = activeGraph.id;
         const { normalizeEdges, ciThreshold } = activeGraph.viewSettings;
-        refetchingGraphId = activeGraph.id;
+        refetchingGraphId = graphId;
         try {
-            const storedGraphs = await api.getGraphs(activeCard.id, normalizeEdges, ciThreshold);
-            const matchingData = storedGraphs.find((g) => g.id === activeGraph.id);
-
-            if (!matchingData) {
-                throw new Error("Could not find matching graph data after refetch");
-            }
+            const matchingData = await api.getGraphById(graphId, normalizeEdges, ciThreshold);
 
             // Update graph data
             promptCards = promptCards.map((card) => {
-                if (card.id !== activeCard.id) return card;
+                if (card.id !== cardId) return card;
                 return {
                     ...card,
-                    graphs: card.graphs.map((g) => (g.id !== activeGraph.id ? g : { ...g, data: matchingData })),
+                    graphs: card.graphs.map((g) => (g.id !== graphId ? g : { ...g, data: matchingData })),
                 };
             });
 
             // Update composer selection with new node keys
-            const composerState = composerStates[activeGraph.id];
-            composerStates[activeGraph.id] = {
+            const composerState = composerStates[graphId];
+            composerStates[graphId] = {
                 selection: new Set(filterInterventableNodes(Object.keys(matchingData.nodeCiVals))),
                 activeRunId: composerState?.activeRunId ?? null,
             };
@@ -857,11 +900,12 @@
                         onNewGraph={handleEnterNewGraphMode}
                     />
 
-                    {#if activeGraph}
+                    {#if activeLoadedGraph}
+                        {@const loadedGraph = activeLoadedGraph}
                         <!-- Optimization params (if optimized graph) -->
-                        {#if activeGraph.data.optimization}
+                        {#if loadedGraph.data.optimization}
                             <OptimizationParams
-                                optimization={activeGraph.data.optimization}
+                                optimization={loadedGraph.data.optimization}
                                 tokens={activeCard.tokens}
                             />
                         {/if}
@@ -870,21 +914,21 @@
                         <div>
                             <ViewTabs
                                 activeView={activeCard.activeView}
-                                interventionRunCount={activeGraph.interventionRuns.length}
+                                interventionRunCount={loadedGraph.interventionRuns.length}
                                 onViewChange={handleViewChange}
                             />
 
                             {#if activeCard.activeView === "graph"}
                                 <div class="graph-area">
                                     <ViewControls
-                                        topK={activeGraph.viewSettings.topK}
-                                        componentGap={activeGraph.viewSettings.componentGap}
-                                        layerGap={activeGraph.viewSettings.layerGap}
+                                        topK={loadedGraph.viewSettings.topK}
+                                        componentGap={loadedGraph.viewSettings.componentGap}
+                                        layerGap={loadedGraph.viewSettings.layerGap}
                                         {filteredEdgeCount}
-                                        normalizeEdges={activeGraph.viewSettings.normalizeEdges}
-                                        ciThreshold={refetchingGraphId === activeGraph.id
+                                        normalizeEdges={loadedGraph.viewSettings.normalizeEdges}
+                                        ciThreshold={refetchingGraphId === loadedGraph.id
                                             ? { status: "loading" }
-                                            : { status: "loaded", data: activeGraph.viewSettings.ciThreshold }}
+                                            : { status: "loaded", data: loadedGraph.viewSettings.ciThreshold }}
                                         {hideUnpinnedEdges}
                                         {hideNodeCard}
                                         onTopKChange={handleTopKChange}
@@ -898,20 +942,20 @@
                                     <div class="graph-info">
                                         <span class="l0-info"
                                             ><strong>L0:</strong>
-                                            {activeGraph.data.l0_total.toFixed(0)} active at ci threshold {activeGraph
+                                            {loadedGraph.data.l0_total.toFixed(0)} active at ci threshold {loadedGraph
                                                 .viewSettings.ciThreshold}</span
                                         >
                                         {#if pinnedNodes.length > 0}
                                             <span class="pinned-count">{pinnedNodes.length} pinned</span>
                                         {/if}
                                     </div>
-                                    {#key activeGraph.id}
+                                    {#key loadedGraph.id}
                                         <PromptAttributionsGraph
-                                            data={activeGraph.data}
+                                            data={loadedGraph.data}
                                             tokenIds={activeCard.tokenIds}
-                                            topK={activeGraph.viewSettings.topK}
-                                            componentGap={activeGraph.viewSettings.componentGap}
-                                            layerGap={activeGraph.viewSettings.layerGap}
+                                            topK={loadedGraph.viewSettings.topK}
+                                            componentGap={loadedGraph.viewSettings.componentGap}
+                                            layerGap={loadedGraph.viewSettings.layerGap}
                                             {hideUnpinnedEdges}
                                             {hideNodeCard}
                                             stagedNodes={pinnedNodes}
@@ -922,29 +966,28 @@
                                 </div>
                                 <StagedNodesPanel
                                     stagedNodes={pinnedNodes}
-                                    outputProbs={activeGraph.data.outputProbs}
-                                    nodeCiVals={activeGraph.data.nodeCiVals}
-                                    nodeSubcompActs={activeGraph.data.nodeSubcompActs}
+                                    outputProbs={loadedGraph.data.outputProbs}
+                                    nodeCiVals={loadedGraph.data.nodeCiVals}
+                                    nodeSubcompActs={loadedGraph.data.nodeSubcompActs}
                                     tokens={activeCard.tokens}
-                                    edgesBySource={activeGraph.data.edgesBySource}
-                                    edgesByTarget={activeGraph.data.edgesByTarget}
+                                    edgesBySource={loadedGraph.data.edgesBySource}
+                                    edgesByTarget={loadedGraph.data.edgesByTarget}
                                     onStagedNodesChange={handlePinnedNodesChange}
                                 />
                             {:else if activeComposerState}
                                 <InterventionsView
-                                    graph={activeGraph}
+                                    graph={loadedGraph}
                                     composerSelection={activeComposerState.selection}
                                     activeRunId={activeComposerState.activeRunId}
                                     tokens={activeCard.tokens}
                                     tokenIds={activeCard.tokenIds}
-                                    {allTokens}
-                                    topK={activeGraph.viewSettings.topK}
-                                    componentGap={activeGraph.viewSettings.componentGap}
-                                    layerGap={activeGraph.viewSettings.layerGap}
-                                    normalizeEdges={activeGraph.viewSettings.normalizeEdges}
-                                    ciThreshold={refetchingGraphId === activeGraph.id
+                                    topK={loadedGraph.viewSettings.topK}
+                                    componentGap={loadedGraph.viewSettings.componentGap}
+                                    layerGap={loadedGraph.viewSettings.layerGap}
+                                    normalizeEdges={loadedGraph.viewSettings.normalizeEdges}
+                                    ciThreshold={refetchingGraphId === loadedGraph.id
                                         ? { status: "loading" }
-                                        : { status: "loaded", data: activeGraph.viewSettings.ciThreshold }}
+                                        : { status: "loaded", data: loadedGraph.viewSettings.ciThreshold }}
                                     {hideUnpinnedEdges}
                                     {hideNodeCard}
                                     onTopKChange={handleTopKChange}
@@ -965,6 +1008,11 @@
                                     onGenerateGraphFromSelection={handleGenerateGraphFromSelection}
                                 />
                             {/if}
+                        </div>
+                    {:else if activeGraph}
+                        <!-- Graph selected but data not loaded yet -->
+                        <div class="empty-state">
+                            <p>Loading graph...</p>
                         </div>
                     {:else}
                         <!-- No graph yet -->
@@ -999,7 +1047,6 @@
                                             <OptimizationSettings
                                                 config={activeCard.newGraphConfig}
                                                 tokens={activeCard.tokens}
-                                                {allTokens}
                                                 onChange={handleOptimizeConfigChange}
                                                 cardId={activeCard.id}
                                             />

@@ -564,20 +564,162 @@
         }
     }
 
-    // Update edge classes based on state (DOM manipulation for performance with @html edges)
-    $effect(() => {
-        if (!graphContainer) return;
+    // Edge element map: built once when SVG string changes, keyed by "src|tgt"
+    let edgeElementMap = new Map<string, Element>();
+    let prevEdgeSvg = "";
 
-        const edges = graphContainer.querySelectorAll(".edge-visible");
-        edges.forEach((el) => {
+    function rebuildEdgeElementMap() {
+        edgeElementMap.clear();
+        if (!graphContainer) return;
+        for (const el of graphContainer.querySelectorAll(".edge-visible")) {
             const src = el.getAttribute("data-src") || "";
             const tgt = el.getAttribute("data-tgt") || "";
-            const state = getEdgeState(src, tgt);
+            edgeElementMap.set(`${src}|${tgt}`, el);
+        }
+    }
 
-            el.classList.toggle("highlighted", state === "highlighted");
-            el.classList.toggle("hidden", state === "hidden");
-        });
+    // Collect all node keys that "match" the hovered component (for edge lookup)
+    function getHoveredNodeKeys(): Set<string> {
+        if (!hoveredNode) return new Set();
+        const keys = new Set<string>();
+        if (hoveredNode.layer === "embed") {
+            // Match all embed positions with the same token
+            const targetToken = data.tokens[hoveredNode.seqIdx];
+            for (const nodeKey of allNodes) {
+                const [layer, seqIdxStr] = nodeKey.split(":");
+                if (layer === "embed" && data.tokens[parseInt(seqIdxStr)] === targetToken) {
+                    keys.add(nodeKey);
+                }
+            }
+        } else {
+            // Match all seq positions for same layer:cIdx
+            const componentKey = `${hoveredNode.layer}:${hoveredNode.cIdx}`;
+            for (const nodeKey of allNodes) {
+                const [layer, , cIdx] = nodeKey.split(":");
+                if (`${layer}:${cIdx}` === componentKey) {
+                    keys.add(nodeKey);
+                }
+            }
+        }
+        return keys;
+    }
+
+    // Compute highlighted and hidden edge key sets efficiently using index maps
+    const edgeClassSets = $derived.by(() => {
+        const highlighted = new Set<string>();
+        const hidden = new Set<string>();
+
+        const hasPinned = pinnedNodeKeys.size > 0;
+        const hoveredNodeKeys = getHoveredNodeKeys();
+
+        // Helper: collect edge keys connected to a set of node keys
+        function edgeKeysConnectedTo(nodeKeys: Set<string>): Set<string> {
+            const result = new Set<string>();
+            for (const nk of nodeKeys) {
+                for (const e of data.edgesBySource.get(nk) ?? []) result.add(`${e.src}|${e.tgt}`);
+                for (const e of data.edgesByTarget.get(nk) ?? []) result.add(`${e.src}|${e.tgt}`);
+            }
+            return result;
+        }
+
+        const connectedToHovered = edgeKeysConnectedTo(hoveredNodeKeys);
+        const connectedToPinned = hasPinned ? edgeKeysConnectedTo(pinnedNodeKeys) : new Set<string>();
+
+        if (!hasPinned) {
+            // No pinned nodes: edges connected to hovered component are highlighted
+            for (const ek of connectedToHovered) highlighted.add(ek);
+        } else if (effectiveHideUnpinned) {
+            // Hide unpinned mode: edges not connected to pinned/hovered are hidden
+            for (const [i, edge] of filteredEdges.entries()) {
+                const ek = `${edge.src}|${edge.tgt}`;
+                const isPinned = connectedToPinned.has(ek);
+                const isHovered = connectedToHovered.has(ek);
+                if (!isPinned) {
+                    if (isHovered) {
+                        // Connected to hovered but not pinned: show as normal (no class needed)
+                    } else {
+                        hidden.add(ek);
+                    }
+                } else {
+                    // Connected to pinned
+                    if (isHovered || (hoveredEdge && ek === `${hoveredEdge.src}|${hoveredEdge.tgt}`)) {
+                        highlighted.add(ek);
+                    }
+                }
+            }
+        } else {
+            // Show all mode
+            if (hoveredEdge) {
+                const ek = `${hoveredEdge.src}|${hoveredEdge.tgt}`;
+                highlighted.add(ek);
+            } else if (hoveredNodeKeys.size > 0) {
+                for (const ek of connectedToHovered) highlighted.add(ek);
+                for (const ek of connectedToPinned) highlighted.add(ek);
+            } else {
+                for (const ek of connectedToPinned) highlighted.add(ek);
+            }
+        }
+
+        return { highlighted, hidden };
     });
+
+    // Apply edge class changes incrementally (only touch changed elements)
+    let prevHighlighted = new Set<string>();
+    let prevHidden = new Set<string>();
+
+    $effect(() => {
+        // Rebuild element map if SVG string changed
+        const currentSvg = edgesSvgString;
+        if (currentSvg !== prevEdgeSvg) {
+            prevEdgeSvg = currentSvg;
+            // Wait for DOM update from {@html} before querying
+            queueMicrotask(() => {
+                rebuildEdgeElementMap();
+                // Force full apply after rebuild
+                applyEdgeClasses(edgeClassSets.highlighted, edgeClassSets.hidden, true);
+            });
+            return;
+        }
+
+        applyEdgeClasses(edgeClassSets.highlighted, edgeClassSets.hidden, false);
+    });
+
+    function applyEdgeClasses(newHighlighted: Set<string>, newHidden: Set<string>, fullApply: boolean) {
+        if (fullApply) {
+            // Apply all states (after element map rebuild)
+            for (const ek of newHighlighted) {
+                edgeElementMap.get(ek)?.classList.add("highlighted");
+            }
+            for (const ek of newHidden) {
+                edgeElementMap.get(ek)?.classList.add("hidden");
+            }
+        } else {
+            // Remove classes from edges no longer in the set
+            for (const ek of prevHighlighted) {
+                if (!newHighlighted.has(ek)) {
+                    edgeElementMap.get(ek)?.classList.remove("highlighted");
+                }
+            }
+            for (const ek of prevHidden) {
+                if (!newHidden.has(ek)) {
+                    edgeElementMap.get(ek)?.classList.remove("hidden");
+                }
+            }
+            // Add classes to newly affected edges
+            for (const ek of newHighlighted) {
+                if (!prevHighlighted.has(ek)) {
+                    edgeElementMap.get(ek)?.classList.add("highlighted");
+                }
+            }
+            for (const ek of newHidden) {
+                if (!prevHidden.has(ek)) {
+                    edgeElementMap.get(ek)?.classList.add("hidden");
+                }
+            }
+        }
+        prevHighlighted = new Set(newHighlighted);
+        prevHidden = new Set(newHidden);
+    }
 
     // Notify parent of edge count changes
     $effect(() => {

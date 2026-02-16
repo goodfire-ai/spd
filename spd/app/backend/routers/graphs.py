@@ -330,12 +330,49 @@ def tokenize_text(text: str, loaded: DepLoadedRun) -> TokenizeResponse:
 @log_errors
 def get_all_tokens(loaded: DepLoadedRun) -> TokensResponse:
     """Get all tokens in the tokenizer vocabulary for client-side search."""
-    return TokensResponse(
-        tokens=[
+    return TokensResponse(tokens=_get_cached_tokens(loaded))
+
+
+class TokenSearchResponse(BaseModel):
+    """Response from token search endpoint."""
+
+    tokens: list[TokenInfo]
+
+
+@router.get("/tokens/search")
+@log_errors
+def search_tokens(
+    q: Annotated[str, Query(min_length=1)],
+    loaded: DepLoadedRun,
+    limit: Annotated[int, Query(ge=1, le=50)] = 10,
+) -> TokenSearchResponse:
+    """Search tokens by substring match. Returns up to `limit` results."""
+    all_tokens = _get_cached_tokens(loaded)
+    query = q.lower()
+    matches: list[TokenInfo] = []
+    for t in all_tokens:
+        if query in t.string.lower():
+            matches.append(t)
+            if len(matches) >= limit:
+                break
+    return TokenSearchResponse(tokens=matches)
+
+
+# Cache for token list (avoids regenerating 50K TokenInfo objects per request)
+_cached_tokens: list[TokenInfo] | None = None
+_cached_tokens_vocab_size: int = 0
+
+
+def _get_cached_tokens(loaded: DepLoadedRun) -> list[TokenInfo]:
+    global _cached_tokens, _cached_tokens_vocab_size
+    vocab_size = loaded.tokenizer.vocab_size
+    if _cached_tokens is None or _cached_tokens_vocab_size != vocab_size:
+        _cached_tokens = [
             TokenInfo(id=tid, string=loaded.tokenizer.get_tok_display(tid))
-            for tid in range(loaded.tokenizer.vocab_size)
+            for tid in range(vocab_size)
         ]
-    )
+        _cached_tokens_vocab_size = vocab_size
+    return _cached_tokens
 
 
 NormalizeType = Literal["none", "target", "layer"]
@@ -730,8 +767,15 @@ def filter_graph_for_display(
         node_ci_vals_with_pseudo[f"output:{seq_pos}:{token_id}"] = out_prob.prob
 
     # Filter edges to only those connecting surviving nodes
+    # Pre-compute string keys to avoid repeated str() calls in the list comprehension
     node_keys = set(node_ci_vals_with_pseudo.keys())
-    edges = [e for e in raw_edges if str(e.source) in node_keys and str(e.target) in node_keys]
+    edge_source_keys = [str(e.source) for e in raw_edges]
+    edge_target_keys = [str(e.target) for e in raw_edges]
+    edges = [
+        e
+        for e, sk, tk in zip(raw_edges, edge_source_keys, edge_target_keys)
+        if sk in node_keys and tk in node_keys
+    ]
 
     edges = _normalize_edges(edges=edges, normalize=normalize)
     max_abs_attr = compute_max_abs_attr(edges=edges)
@@ -831,6 +875,85 @@ def stored_graph_to_response(
             # Metrics not stored in DB for cached graphs - use l0_total from graph
             metrics=OptimizationMetricsResult(l0_total=float(fg.l0_total)),
         ),
+    )
+
+
+class GraphSummary(BaseModel):
+    """Lightweight graph metadata (no edge/logit data)."""
+
+    id: int
+    graphType: GraphType
+    optimization: OptimizationResult | None = None
+
+
+@router.get("/{prompt_id}/summaries")
+@log_errors
+def get_graph_summaries(
+    prompt_id: int,
+    loaded: DepLoadedRun,
+    manager: DepStateManager,
+) -> list[GraphSummary]:
+    """Get lightweight summaries of all graphs for a prompt.
+
+    Returns graph metadata without edges/logits for fast prompt loading.
+    """
+    db = manager.db
+    summaries = db.get_graph_summaries(prompt_id)
+    results: list[GraphSummary] = []
+    for s in summaries:
+        optimization = None
+        if s["graph_type"] == "optimized" and s["loss_config"]:
+            loss_config_data = json.loads(s["loss_config"])
+            loss_result: CELossResult | KLLossResult
+            if loss_config_data["type"] == "ce":
+                label_str = loaded.tokenizer.get_tok_display(loss_config_data["label_token"])
+                loss_result = CELossResult(
+                    coeff=loss_config_data["coeff"],
+                    position=loss_config_data["position"],
+                    label_token=loss_config_data["label_token"],
+                    label_str=label_str,
+                )
+            else:
+                loss_result = KLLossResult(
+                    coeff=loss_config_data["coeff"],
+                    position=loss_config_data["position"],
+                )
+            optimization = OptimizationResult(
+                imp_min_coeff=s["imp_min_coeff"],
+                steps=s["steps"],
+                pnorm=s["pnorm"],
+                beta=s["beta"],
+                mask_type=s["mask_type"],
+                loss=loss_result,
+                metrics=OptimizationMetricsResult(l0_total=0),
+            )
+        results.append(GraphSummary(id=s["id"], graphType=s["graph_type"], optimization=optimization))
+    return results
+
+
+@router.get("/by-id/{graph_id}")
+@log_errors
+def get_graph_by_id(
+    graph_id: int,
+    normalize: Annotated[NormalizeType, Query()],
+    ci_threshold: Annotated[float, Query(ge=0)],
+    loaded: DepLoadedRun,
+    manager: DepStateManager,
+) -> GraphData | GraphDataWithOptimization:
+    """Get a single graph by its ID with full edge/logit data."""
+    db = manager.db
+    result = db.get_graph(graph_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Graph not found")
+    graph, prompt_id = result
+    prompt = db.get_prompt(prompt_id)
+    assert prompt is not None
+    return stored_graph_to_response(
+        graph=graph,
+        token_ids=prompt.token_ids,
+        tokenizer=loaded.tokenizer,
+        normalize=normalize,
+        ci_threshold=ci_threshold,
     )
 
 

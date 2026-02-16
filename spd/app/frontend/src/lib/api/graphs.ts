@@ -2,7 +2,7 @@
  * API client for /api/graphs endpoints.
  */
 
-import type { GraphData, TokenizeResponse, TokenInfo } from "../promptAttributionsTypes";
+import type { GraphData, TokenizeResponse, TokenInfo, GraphType, OptimizationResult } from "../promptAttributionsTypes";
 import { buildEdgeIndexes } from "../promptAttributionsTypes";
 import { setArchitecture } from "../layerAliasing";
 import { apiUrl, ApiError, fetchJson } from "./index";
@@ -179,5 +179,44 @@ export async function tokenizeText(text: string): Promise<TokenizeResponse> {
 
 export async function getAllTokens(): Promise<TokenInfo[]> {
     const response = await fetchJson<{ tokens: TokenInfo[] }>("/api/graphs/tokens");
+    return response.tokens;
+}
+
+export type GraphSummary = {
+    id: number;
+    graphType: GraphType;
+    optimization: OptimizationResult | null;
+};
+
+export async function getGraphSummaries(promptId: number): Promise<GraphSummary[]> {
+    return fetchJson<GraphSummary[]>(apiUrl(`/api/graphs/${promptId}/summaries`).toString());
+}
+
+export async function getGraphById(
+    graphId: number,
+    normalize: NormalizeType,
+    ciThreshold: number,
+): Promise<GraphData> {
+    const url = apiUrl(`/api/graphs/by-id/${graphId}`);
+    url.searchParams.set("normalize", normalize);
+    url.searchParams.set("ci_threshold", String(ciThreshold));
+    const g = await fetchJson<Omit<GraphData, "edgesBySource" | "edgesByTarget">>(url.toString());
+
+    const layerNames = new Set<string>();
+    for (const edge of g.edges) {
+        layerNames.add(edge.src.split(":")[0]);
+        layerNames.add(edge.tgt.split(":")[0]);
+    }
+    setArchitecture(Array.from(layerNames));
+
+    const { edgesBySource, edgesByTarget } = buildEdgeIndexes(g.edges);
+    return { ...g, edgesBySource, edgesByTarget };
+}
+
+export async function searchTokens(query: string, limit: number = 10): Promise<TokenInfo[]> {
+    const url = apiUrl("/api/graphs/tokens/search");
+    url.searchParams.set("q", query);
+    url.searchParams.set("limit", String(limit));
+    const response = await fetchJson<{ tokens: TokenInfo[] }>(url.toString());
     return response.tokens;
 }
