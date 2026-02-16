@@ -1,8 +1,9 @@
 /**
- * Hook for reading component data from prefetch cache (with loading fallback).
+ * Hook for lazily loading component data with small initial limits.
  *
- * Activation contexts, correlations, and token stats come from prefetch cache.
- * Dataset attributions and interpretation details are fetched on-demand.
+ * Fetches activation contexts (10), correlations (10), and token stats (10)
+ * in parallel for fast initial render, then background-fetches full activation
+ * examples (200). Dataset attributions and interpretation detail are on-demand.
  */
 
 import { getContext } from "svelte";
@@ -11,6 +12,8 @@ import {
     ApiError,
     getActivationContextDetail,
     getComponentAttributions,
+    getComponentCorrelations,
+    getComponentTokenStats,
     getInterpretationDetail,
     requestComponentInterpretation,
 } from "./api";
@@ -41,16 +44,6 @@ export function useComponentDataExpectCached() {
 
     let currentCoords = $state<ComponentCoords | null>(null);
     let requestId = 0;
-
-    /** Try to populate state from cache. Returns cached detail on hit, null on miss. */
-    function tryLoadFromCache(componentKey: string): SubcomponentActivationContexts | null {
-        const detail = runState.getCachedComponentDetail(componentKey);
-        if (!detail) return null;
-        componentDetail = { status: "loaded", data: detail };
-        correlations = { status: "loaded", data: runState.expectCachedCorrelations(componentKey) };
-        tokenStats = { status: "loaded", data: runState.expectCachedTokenStats(componentKey) };
-        return detail;
-    }
 
     /** Fetch full activation examples in background (overwrites cached data when complete). */
     function startBackgroundFetch(
@@ -114,36 +107,34 @@ export function useComponentDataExpectCached() {
     function load(layer: string, cIdx: number) {
         currentCoords = { layer, cIdx };
         const thisRequestId = ++requestId;
-        const componentKey = `${layer}:${cIdx}`;
 
         const isStale = () => requestId !== thisRequestId;
 
-        const cached = tryLoadFromCache(componentKey);
-        if (cached) {
-            startBackgroundFetch(layer, cIdx, cached, isStale);
-        } else {
-            // Cache not populated yet -- prefetch still in-flight
-            componentDetail = { status: "loading" };
-            correlations = { status: "loading" };
-            tokenStats = { status: "loading" };
-        }
+        componentDetail = { status: "loading" };
+        correlations = { status: "loading" };
+        tokenStats = { status: "loading" };
+
+        Promise.all([
+            getActivationContextDetail(layer, cIdx, 10),
+            getComponentCorrelations(layer, cIdx, 10).catch(() => null),
+            getComponentTokenStats(layer, cIdx, 10).catch(() => null),
+        ])
+            .then(([detail, corr, stats]) => {
+                if (isStale()) return;
+                componentDetail = { status: "loaded", data: detail };
+                correlations = { status: "loaded", data: corr };
+                tokenStats = { status: "loaded", data: stats };
+                startBackgroundFetch(layer, cIdx, detail, isStale);
+            })
+            .catch((error) => {
+                if (isStale()) return;
+                componentDetail = { status: "error", error };
+                correlations = { status: "error", error };
+                tokenStats = { status: "error", error };
+            });
 
         startOnDemandFetches(layer, cIdx, isStale);
     }
-
-    // Re-check cache when prefetch completes
-    $effect(() => {
-        if (runState.prefetchVersion === 0) return;
-        if (!currentCoords) return;
-        if (componentDetail.status !== "loading") return;
-        const { layer, cIdx } = currentCoords;
-        const thisRequestId = requestId;
-        const cached = tryLoadFromCache(`${layer}:${cIdx}`);
-        if (cached) {
-            const isStale = () => requestId !== thisRequestId;
-            startBackgroundFetch(layer, cIdx, cached, isStale);
-        }
-    });
 
     function reset() {
         requestId++;

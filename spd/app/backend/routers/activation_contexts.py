@@ -106,53 +106,6 @@ def get_activation_context_detail(
     )
 
 
-class BulkActivationContextsRequest(BaseModel):
-    """Request for bulk activation contexts."""
-
-    component_keys: list[str]  # canonical keys, e.g. ["0.mlp.up:5", "1.attn.q:12"]
-    limit: int = 30
-
-
-@router.post("/bulk")
-@log_errors
-def get_activation_contexts_bulk(
-    request: BulkActivationContextsRequest,
-    loaded: DepLoadedRun,
-) -> dict[str, SubcomponentActivationContexts]:
-    """Bulk fetch activation contexts for multiple components.
-
-    Returns a dict keyed by component_key. Components not found are omitted.
-    Uses optimized bulk loader with single file handle and sorted seeks.
-    """
-
-    # Translate canonical component keys to concrete paths for harvest lookup
-    def _to_concrete_key(canonical_key: str) -> str:
-        layer, idx = canonical_key.rsplit(":", 1)
-        concrete = loaded.topology.canon_to_target(layer)
-        return f"{concrete}:{idx}"
-
-    assert loaded.harvest is not None, "No harvest data available"
-    concrete_to_canonical = {_to_concrete_key(k): k for k in request.component_keys}
-    concrete_keys = list(concrete_to_canonical.keys())
-    components = loaded.harvest.get_components_bulk(concrete_keys)
-
-    # Convert to response format with limit applied, keyed by canonical keys
-    result: dict[str, SubcomponentActivationContexts] = {}
-    for concrete_key, comp in components.items():
-        canonical_key = concrete_to_canonical[concrete_key]
-        examples = comp.activation_examples[: request.limit]
-
-        result[canonical_key] = SubcomponentActivationContexts(
-            subcomponent_idx=comp.component_idx,
-            mean_ci=comp.mean_ci,
-            example_tokens=[loaded.tokenizer.get_spans(ex.token_ids) for ex in examples],
-            example_ci=[ex.ci_values for ex in examples],
-            example_component_acts=[ex.component_acts for ex in examples],
-        )
-
-    return result
-
-
 @router.post("/probe")
 @log_errors
 def probe_component(

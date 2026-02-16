@@ -1,15 +1,12 @@
 <script lang="ts">
-    import { getContext } from "svelte";
     import * as api from "../lib/api";
     import ProbColoredTokens from "./ProbColoredTokens.svelte";
     import {
-        extractComponentKeys,
         filterInterventableNodes,
         type GraphData,
         type PinnedNode,
         type PromptPreview,
     } from "../lib/promptAttributionsTypes";
-    import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import ComputeProgressOverlay from "./prompt-attr/ComputeProgressOverlay.svelte";
     import GraphTabs from "./prompt-attr/GraphTabs.svelte";
     import InterventionsView from "./prompt-attr/InterventionsView.svelte";
@@ -34,8 +31,6 @@
     import ViewControls from "./prompt-attr/ViewControls.svelte";
     import ViewTabs from "./prompt-attr/ViewTabs.svelte";
     import PromptAttributionsGraph from "./PromptAttributionsGraph.svelte";
-
-    const runState = getContext<RunContext>(RUN_KEY);
 
     /** Generate a display label for a graph based on its type */
     function getGraphLabel(data: GraphData): string {
@@ -193,13 +188,6 @@
                 };
             }),
         );
-
-        // Prefetch component data in background (graph renders immediately)
-        const allComponentKeys = graphs.flatMap((g) => extractComponentKeys(g.data));
-        const uniqueKeys = [...new Set(allComponentKeys)];
-        if (uniqueKeys.length > 0) {
-            runState.prefetchComponentData(uniqueKeys);
-        }
 
         const newCard: PromptCard = {
             id: promptId,
@@ -545,10 +533,6 @@
             // Initialize composer state for the new graph
             getComposerState(data.id, Object.keys(data.nodeCiVals));
 
-            // Prefetch component data in background (graph renders immediately)
-            const componentKeys = extractComponentKeys(data);
-            runState.prefetchComponentData(componentKeys);
-
             promptCards = promptCards.map((card) => {
                 if (card.id !== cardId) return card;
 
@@ -664,10 +648,6 @@
 
             // Initialize composer state for the new graph
             getComposerState(data.id, Object.keys(data.nodeCiVals));
-
-            // Prefetch component data in background (graph renders immediately)
-            const componentKeys = extractComponentKeys(data);
-            runState.prefetchComponentData(componentKeys);
 
             promptCards = promptCards.map((card) => {
                 if (card.id !== cardId) return card;

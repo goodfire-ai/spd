@@ -9,11 +9,9 @@ import type { Loadable } from ".";
 import * as api from "./api";
 import type { LoadedRun as RunData, InterpretationHeadline } from "./api";
 import type {
-    SubcomponentCorrelationsResponse,
     PromptPreview,
     SubcomponentActivationContexts,
     TokenInfo,
-    TokenStatsResponse,
     SubcomponentMetadata,
 } from "./promptAttributionsTypes";
 
@@ -64,17 +62,8 @@ export function useRun() {
         status: "uninitialized",
     });
 
-    // Cached component data keyed by component key (layer:cIdx) - non-reactive
+    // Cached activation context detail keyed by component key (layer:cIdx) - non-reactive
     let _componentDetailsCache: Record<string, SubcomponentActivationContexts> = {};
-    let _correlationsCache: Record<string, SubcomponentCorrelationsResponse> = {};
-    let _tokenStatsCache: Record<string, TokenStatsResponse> = {};
-    // Reactive signal incremented when prefetch completes, so consumers can re-check cache
-    let _prefetchVersion = $state(0);
-
-    // Prefetch parameters for bulk component data
-    const PREFETCH_ACTIVATION_CONTEXTS_LIMIT = 10;
-    const PREFETCH_CORRELATIONS_TOP_K = 10;
-    const PREFETCH_TOKEN_STATS_TOP_K = 10;
 
     /** Reset all run-scoped state */
     function resetRunScopedState() {
@@ -84,9 +73,6 @@ export function useRun() {
         intruderScores = { status: "uninitialized" };
         activationContextsSummary = { status: "uninitialized" };
         _componentDetailsCache = {};
-        _correlationsCache = {};
-        _tokenStatsCache = {};
-        _prefetchVersion = 0;
         clusterMapping = null;
     }
 
@@ -219,49 +205,6 @@ export function useRun() {
         return detail;
     }
 
-    /**
-     * Bulk prefetch component data for all given component keys.
-     * Uses a single combined endpoint to avoid GIL contention from concurrent requests.
-     */
-    async function prefetchComponentData(componentKeys: string[]): Promise<void> {
-        if (componentKeys.length === 0) return;
-
-        const response = await api.getComponentDataBulk(
-            componentKeys,
-            PREFETCH_ACTIVATION_CONTEXTS_LIMIT,
-            PREFETCH_CORRELATIONS_TOP_K,
-            PREFETCH_TOKEN_STATS_TOP_K,
-        );
-
-        Object.assign(_componentDetailsCache, response.activation_contexts);
-        Object.assign(_correlationsCache, response.correlations);
-        Object.assign(_tokenStatsCache, response.token_stats);
-        _prefetchVersion++;
-    }
-
-    /**
-     * Read cached component detail. Returns null if not yet prefetched.
-     */
-    function getCachedComponentDetail(componentKey: string): SubcomponentActivationContexts | null {
-        return _componentDetailsCache[componentKey] ?? null;
-    }
-
-    /**
-     * Read cached correlations.
-     * Returns null if component has no correlation data (e.g., rarely-firing components).
-     */
-    function expectCachedCorrelations(componentKey: string): SubcomponentCorrelationsResponse | null {
-        return _correlationsCache[componentKey] ?? null;
-    }
-
-    /**
-     * Read cached token stats.
-     * Returns null if component has no token stats (e.g., rarely-firing components).
-     */
-    function expectCachedTokenStats(componentKey: string): TokenStatsResponse | null {
-        return _tokenStatsCache[componentKey] ?? null;
-    }
-
     /** Load activation contexts summary (fire-and-forget, updates state) */
     function loadActivationContextsSummary() {
         if (activationContextsSummary.status === "loaded" || activationContextsSummary.status === "loading") return;
@@ -317,13 +260,6 @@ export function useRun() {
         setInterpretation,
         getIntruderScore,
         getActivationContextDetail,
-        prefetchComponentData,
-        getCachedComponentDetail,
-        expectCachedCorrelations,
-        expectCachedTokenStats,
-        get prefetchVersion() {
-            return _prefetchVersion;
-        },
         loadActivationContextsSummary,
         setClusterMapping,
         clearClusterMapping,
