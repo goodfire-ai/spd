@@ -22,7 +22,6 @@ def format_prompt(
     app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
-    ci_threshold: float,
 ) -> str:
     match config:
         case CompactSkepticalConfig():
@@ -33,7 +32,6 @@ def format_prompt(
                 app_tok,
                 input_token_stats,
                 output_token_stats,
-                ci_threshold,
             )
         case _:  # pyright: ignore[reportUnnecessaryComparison]
             raise AssertionError(f"Unhandled config type: {type(config)}")  # pyright: ignore[reportUnreachable]

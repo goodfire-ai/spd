@@ -217,8 +217,6 @@ async def request_component_interpretation(
 
     config = CompactSkepticalConfig()
 
-    ci_threshold = loaded.harvest.get_activation_threshold()
-
     async with OpenRouter(api_key=api_key) as api:
         llm = LLMClient(
             api=api,
@@ -235,7 +233,6 @@ async def request_component_interpretation(
                 app_tok=loaded.tokenizer,
                 input_token_stats=input_token_stats,
                 output_token_stats=output_token_stats,
-                ci_threshold=ci_threshold,
             )
         except Exception as e:
             raise HTTPException(

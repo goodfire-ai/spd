@@ -101,7 +101,13 @@ def submit_harvest(
         n_array_tasks=n_gpus,
     )
 
-    merge_cmd = f'python -m spd.harvest.scripts.run_merge "{wandb_path}" --subrun_id {subrun_id}'
+    config_json = config.model_dump_json(exclude_none=True)
+    merge_cmd = (
+        f"python -m spd.harvest.scripts.run_merge "
+        f'"{wandb_path}" '
+        f"--subrun_id {subrun_id} "
+        f"--config_json '{config_json}'"
+    )
     merge_config = SlurmConfig(
         job_name="spd-harvest-merge",
         partition=partition,

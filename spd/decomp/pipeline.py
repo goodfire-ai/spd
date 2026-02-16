@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from spd.autointerp_generic.db import GenericInterpDB
 from spd.autointerp_generic.detection import DetectionResult, run_detection_scoring
@@ -36,11 +37,11 @@ class PipelineResults:
 
 
 def _build_autointerp_data(
-    spec: DecompositionSpec,
+    spec: DecompositionSpec[Any],
     harvest_db_path: Path,
 ) -> DecompositionAutointerpData:
     db = HarvestDB(harvest_db_path, readonly=True)
-    components = db.get_all_components(activation_threshold=0.0)
+    components = db.get_all_components()
     db.close()
 
     autointerp_components = [
@@ -48,10 +49,7 @@ def _build_autointerp_data(
             key=component.component_key,
             component_explanation=spec.component_explanations.get(component.component_key, ""),
             activating_examples=[
-                ActivatingExample(
-                    tokens=example.token_ids,
-                    bold=[v > spec.binarise_threshold for v in example.activation_values],
-                )
+                ActivatingExample(tokens=example.token_ids, bold=example.firings)
                 for example in component.activation_examples
             ],
         )
@@ -67,7 +65,7 @@ def _build_autointerp_data(
 
 
 def run_pipeline(
-    spec: DecompositionSpec,
+    spec: DecompositionSpec[Any],
     *,
     output_dir: Path,
     openrouter_api_key: str,

@@ -48,7 +48,6 @@ def main(
     harvest = HarvestRepo.open(run_id, subrun_id=harvest_subrun_id)
     assert harvest is not None, f"No harvest data for {run_id}"
     components = harvest.get_all_components()
-    ci_threshold = harvest.get_activation_threshold()
 
     subrun_dir = InterpRepo._find_latest_subrun_dir(run_id)
     assert subrun_dir is not None, f"No autointerp subrun found for {run_id}"
@@ -83,7 +82,6 @@ def main(
                     openrouter_api_key=openrouter_api_key,
                     tokenizer_name=arch.tokenizer_name,
                     db=db,
-                    ci_threshold=ci_threshold,
                     eval_config=eval_config,
                     limit=eval_config.limit,
                     cost_limit_usd=eval_config.cost_limit_usd,

@@ -3,6 +3,9 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from jaxtyping import Bool, Float, Int
+from torch import Tensor
+
 from spd.settings import SPD_OUT_DIR
 
 # Base directory for harvest data
@@ -20,10 +23,30 @@ def get_harvest_subrun_dir(wandb_run_id: str, subrun_id: str) -> Path:
 
 
 @dataclass
+class HarvestBatch:
+    """Output of a method-specific harvest function for a single batch.
+
+    The harvest loop calls the user-provided harvest_fn on each raw dataloader batch,
+    which returns one of these. The harvest loop then feeds it to the Harvester.
+
+    firings/activations are keyed by layer name. activations values are keyed by
+    activation type (e.g. "causal_importance", "component_activation" for SPD;
+    just "activation" for SAEs).
+    """
+
+    tokens: Int[Tensor, "batch seq"]
+    firings: dict[str, Bool[Tensor, "batch seq c"]]
+    activations: dict[str, dict[str, Float[Tensor, "batch seq c"]]]
+    output_probs: Float[Tensor, "batch seq vocab"]
+
+
+@dataclass
 class ActivationExample:
+    """Activation example for a single component. no padding"""
+
     token_ids: list[int]
-    activation_values: list[float]
-    component_acts: list[float]  # Normalized component activations: (v_i^T @ a) * ||u_i||
+    firings: list[bool]
+    activations: dict[str, list[float]]
 
     def __post_init__(self) -> None:
         self._strip_legacy_padding()
@@ -34,10 +57,11 @@ class ActivationExample:
         if any(t == PAD for t in self.token_ids):
             mask = [t != PAD for t in self.token_ids]
             self.token_ids = [v for v, k in zip(self.token_ids, mask, strict=True) if k]
-            self.activation_values = [
-                v for v, k in zip(self.activation_values, mask, strict=True) if k
-            ]
-            self.component_acts = [v for v, k in zip(self.component_acts, mask, strict=True) if k]
+            self.firings = [v for v, k in zip(self.firings, mask, strict=True) if k]
+            for act_type in self.activations:
+                self.activations[act_type] = [
+                    v for v, k in zip(self.activations[act_type], mask, strict=True) if k
+                ]
 
 
 @dataclass
@@ -52,7 +76,9 @@ class ComponentSummary:
 
     layer: str
     component_idx: int
-    mean_activation: float
+    firing_density: float
+    mean_activations: dict[str, float]
+    """Key is activation type, (e.g. "causal_importance", "component_activation", etc.)"""
 
 
 @dataclass
@@ -60,7 +86,10 @@ class ComponentData:
     component_key: str
     layer: str
     component_idx: int
-    mean_activation: float
+
+    mean_activations: dict[str, float]
+    firing_density: float
+
     activation_examples: list[ActivationExample]
     input_token_pmi: ComponentTokenPMI
     output_token_pmi: ComponentTokenPMI

@@ -65,31 +65,14 @@ class IntruderResult:
     n_errors: int
 
 
-def _bold_density(component: ComponentData, ci_threshold: float) -> float:
-    """Fraction of valid tokens above ci_threshold across a component's activation examples."""
-    n_bold = 0
-    n_total = 0
-    for ex in component.activation_examples:
-        for tid, ci in zip(ex.token_ids, ex.activation_values, strict=True):
-            if tid < 0:
-                continue
-            n_total += 1
-            if ci > ci_threshold:
-                n_bold += 1
-    return n_bold / n_total if n_total > 0 else 0.0
-
-
 class DensityIndex:
     """Index of components sorted by bold density for efficient similar-density lookup."""
 
-    def __init__(
-        self, components: list[ComponentData], min_examples: int, ci_threshold: float
-    ) -> None:
+    def __init__(self, components: list[ComponentData], min_examples: int) -> None:
         eligible = [c for c in components if len(c.activation_examples) >= min_examples]
-        pairs = [(c, _bold_density(c, ci_threshold)) for c in eligible]
-        pairs.sort(key=lambda p: p[1])
-        self._components = [c for c, _ in pairs]
-        self._densities = [d for _, d in pairs]
+        eligible.sort(key=lambda c: c.firing_density)
+        self._components = eligible
+        self._densities = [c.firing_density for c in eligible]
         self._key_to_idx = {c.component_key: i for i, c in enumerate(self._components)}
 
     def sample_similar(
@@ -121,15 +104,9 @@ class DensityIndex:
 def _format_example(
     example: ActivationExample,
     app_tok: AppTokenizer,
-    ci_threshold: float,
 ) -> str:
-    valid = [
-        (tid, ci)
-        for tid, ci in zip(example.token_ids, example.activation_values, strict=True)
-        if tid >= 0
-    ]
-    spans = app_tok.get_spans([tid for tid, _ in valid])
-    tokens = [(span, ci > ci_threshold) for span, (_, ci) in zip(spans, valid, strict=True)]
+    spans = app_tok.get_spans(example.token_ids)
+    tokens = [(span, firing) for span, firing in zip(spans, example.firings, strict=True)]
     return delimit_tokens(tokens)
 
 
@@ -149,7 +126,6 @@ def _build_prompt(
     intruder: ActivationExample,
     intruder_position: int,
     app_tok: AppTokenizer,
-    ci_threshold: float,
 ) -> str:
     all_examples = list(real_examples)
     all_examples.insert(intruder_position, intruder)
@@ -158,7 +134,7 @@ def _build_prompt(
 
     examples_text = ""
     for i, ex in enumerate(all_examples):
-        examples_text += f"Example {i + 1}: {_format_example(ex, app_tok, ci_threshold)}\n\n"
+        examples_text += f"Example {i + 1}: {_format_example(ex, app_tok)}\n\n"
 
     return f"""\
 Below are {n_total} text snippets from a neural network's training data. {n_real} come from contexts \
@@ -180,7 +156,6 @@ async def score_component(
     component: ComponentData,
     density_index: DensityIndex,
     app_tok: AppTokenizer,
-    ci_threshold: float,
     n_real: int,
     n_trials: int,
     density_tolerance: float,
@@ -197,7 +172,7 @@ async def score_component(
         intruder_pos = rng.randint(0, n_real)
         correct_answer = intruder_pos + 1
 
-        prompt = _build_prompt(real_examples, intruder, intruder_pos, app_tok, ci_threshold)
+        prompt = _build_prompt(real_examples, intruder, intruder_pos, app_tok)
 
         try:
             response = await llm.chat(
@@ -238,7 +213,6 @@ async def run_intruder_scoring(
     openrouter_api_key: str,
     tokenizer_name: str,
     db: HarvestDB,
-    ci_threshold: float,
     eval_config: IntruderEvalConfig,
     limit: int | None = None,
     cost_limit_usd: float | None = None,
@@ -254,7 +228,7 @@ async def run_intruder_scoring(
     if limit is not None:
         eligible = eligible[:limit]
 
-    density_index = DensityIndex(components, min_examples=n_real + 1, ci_threshold=ci_threshold)
+    density_index = DensityIndex(components, min_examples=n_real + 1)
 
     results: list[IntruderResult] = []
 
@@ -279,7 +253,6 @@ async def run_intruder_scoring(
                     component,
                     density_index,
                     app_tok,
-                    ci_threshold,
                     n_real=n_real,
                     n_trials=n_trials,
                     density_tolerance=density_tolerance,

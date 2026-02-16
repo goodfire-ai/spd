@@ -2,10 +2,9 @@
 
 from .harvest import harvest_decomposition
 from .pipeline import PipelineResults, run_pipeline
-from .types import ActivationFn, DecompositionSpec
+from .types import DecompositionSpec
 
 __all__ = [
-    "ActivationFn",
     "DecompositionSpec",
     "PipelineResults",
     "harvest_decomposition",

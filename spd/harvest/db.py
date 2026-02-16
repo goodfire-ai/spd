@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS components (
     component_key TEXT PRIMARY KEY,
     layer TEXT NOT NULL,
     component_idx INTEGER NOT NULL,
-    mean_activation REAL NOT NULL,
+    firing_density REAL NOT NULL,
+    mean_activations TEXT NOT NULL,
     activation_examples TEXT NOT NULL,
     input_token_pmi TEXT NOT NULL,
     output_token_pmi TEXT NOT NULL
@@ -41,12 +42,15 @@ CREATE TABLE IF NOT EXISTS scores (
 """
 
 
-def _serialize_component(comp: ComponentData) -> tuple[str, str, int, float, bytes, bytes, bytes]:
+def _serialize_component(
+    comp: ComponentData,
+) -> tuple[str, str, int, float, bytes, bytes, bytes, bytes]:
     return (
         comp.component_key,
         comp.layer,
         comp.component_idx,
-        comp.mean_activation,
+        comp.firing_density,
+        orjson.dumps(comp.mean_activations),
         orjson.dumps([asdict(ex) for ex in comp.activation_examples]),
         orjson.dumps(asdict(comp.input_token_pmi)),
         orjson.dumps(asdict(comp.output_token_pmi)),
@@ -59,11 +63,14 @@ def _deserialize_component(row: sqlite3.Row) -> ComponentData:
     ]
     input_token_pmi = ComponentTokenPMI(**orjson.loads(row["input_token_pmi"]))
     output_token_pmi = ComponentTokenPMI(**orjson.loads(row["output_token_pmi"]))
+    mean_activations = orjson.loads(row["mean_activations"])
+
     return ComponentData(
         component_key=row["component_key"],
         layer=row["layer"],
         component_idx=row["component_idx"],
-        mean_activation=row["mean_activation"],
+        mean_activations=mean_activations,
+        firing_density=row["firing_density"],
         activation_examples=activation_examples,
         input_token_pmi=input_token_pmi,
         output_token_pmi=output_token_pmi,
@@ -88,7 +95,7 @@ class HarvestDB:
     def save_component(self, comp: ComponentData) -> None:
         row = _serialize_component(comp)
         self._conn.execute(
-            "INSERT OR REPLACE INTO components VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO components VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             row,
         )
         self._conn.commit()
@@ -98,7 +105,7 @@ class HarvestDB:
         n = 0
         for comp in components:
             self._conn.execute(
-                "INSERT OR REPLACE INTO components VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO components VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 _serialize_component(comp),
             )
             n += 1
@@ -135,13 +142,14 @@ class HarvestDB:
 
     def get_summary(self) -> dict[str, ComponentSummary]:
         rows = self._conn.execute(
-            "SELECT component_key, layer, component_idx, mean_activation FROM components"
+            "SELECT component_key, layer, component_idx, firing_density, mean_activations FROM components"
         ).fetchall()
         return {
             row["component_key"]: ComponentSummary(
                 layer=row["layer"],
                 component_idx=row["component_idx"],
-                mean_activation=row["mean_activation"],
+                firing_density=row["firing_density"],
+                mean_activations=orjson.loads(row["mean_activations"]),
             )
             for row in rows
         }
@@ -167,12 +175,9 @@ class HarvestDB:
         assert row is not None
         return row[0]
 
-    def get_all_components(self, activation_threshold: float) -> list[ComponentData]:
-        """Load all components with mean_activation above threshold."""
-        rows = self._conn.execute(
-            "SELECT * FROM components WHERE mean_activation >= ?",
-            (activation_threshold,),
-        ).fetchall()
+    def get_all_components(self) -> list[ComponentData]:
+        """Load all components."""
+        rows = self._conn.execute("SELECT * FROM components").fetchall()
         return [_deserialize_component(row) for row in rows]
 
     # -- Scores (e.g. intruder eval) ------------------------------------------

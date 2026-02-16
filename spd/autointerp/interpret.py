@@ -41,7 +41,6 @@ async def interpret_component(
     app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
-    ci_threshold: float,
 ) -> InterpretationResult:
     """Interpret a single component. Used by the app for on-demand interpretation."""
     prompt = format_prompt(
@@ -51,7 +50,6 @@ async def interpret_component(
         app_tok=app_tok,
         input_token_stats=input_token_stats,
         output_token_stats=output_token_stats,
-        ci_threshold=ci_threshold,
     )
 
     schema = get_response_schema(config)
@@ -109,11 +107,14 @@ def run_interpret(
 
     token_stats = harvest.get_token_stats()
     assert token_stats is not None, "token_stats.pt not found. Run harvest first."
-    ci_threshold = harvest.get_activation_threshold()
 
     app_tok = AppTokenizer.from_pretrained(arch.tokenizer_name)
 
-    eligible = sorted(components, key=lambda c: c.mean_activation, reverse=True)
+    # Sort by firing density descending, just as an easy proxy for doing the most useful work first.
+    # NOTE: this doesn't necessarily align with mean causal importance as we use for sorting in the
+    # app, but it's a close enough proxy.
+    eligible = sorted(components, key=lambda c: c.firing_density, reverse=True)
+
     if limit is not None:
         eligible = eligible[:limit]
 
@@ -145,7 +146,6 @@ def run_interpret(
                 app_tok=app_tok,
                 input_token_stats=input_stats,
                 output_token_stats=output_stats,
-                ci_threshold=ci_threshold,
             )
             jobs.append(LLMJob(prompt=prompt, schema=schema, key=component.component_key))
 

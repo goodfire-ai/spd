@@ -92,9 +92,12 @@ def _sample_activating_examples(
     if len(examples) <= n:
         return list(examples)
 
+    # TODO(oli) what the hell does this code do?
     # Sort by mean CI to get a spread across activation strengths
     sorted_examples = sorted(
-        examples, key=lambda e: sum(e.activation_values) / max(len(e.activation_values), 1)
+        examples,
+        key=lambda e: sum(e.activations["causal_importance"])
+        / max(len(e.activations["causal_importance"]), 1),
     )
     n_examples = len(sorted_examples)
 

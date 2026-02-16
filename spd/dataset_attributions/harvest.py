@@ -50,7 +50,6 @@ def _build_component_layer_keys(model: ComponentModel) -> list[str]:
 def _build_alive_masks(
     model: ComponentModel,
     run_id: str,
-    ci_threshold: float,
     n_components: int,
     vocab_size: int,
 ) -> tuple[Bool[Tensor, " n_sources"], Bool[Tensor, " n_components"]]:
@@ -87,9 +86,7 @@ def _build_alive_masks(
         n_layer_components = model.module_to_c[layer]
         for c_idx in range(n_layer_components):
             component_key = f"{layer}:{c_idx}"
-            is_alive = (
-                component_key in summary and summary[component_key].mean_activation > ci_threshold
-            )
+            is_alive = component_key in summary and summary[component_key].firing_density > 0.0
             source_alive[source_idx] = is_alive
             target_alive[target_idx] = is_alive
             source_idx += 1
@@ -99,7 +96,7 @@ def _build_alive_masks(
     n_target_alive = int(target_alive.sum().item())
     logger.info(
         f"Alive components: {n_source_alive}/{n_sources} sources, "
-        f"{n_target_alive}/{n_components} component targets (ci > {ci_threshold})"
+        f"{n_target_alive}/{n_components} component targets (firing density > 0.0)"
     )
     return source_alive, target_alive
 
@@ -142,9 +139,7 @@ def harvest_attributions(
     # Build component keys and alive masks
     component_layer_keys = _build_component_layer_keys(model)
     n_components = len(component_layer_keys)
-    source_alive, target_alive = _build_alive_masks(
-        model, run_id, config.ci_threshold, n_components, vocab_size
-    )
+    source_alive, target_alive = _build_alive_masks(model, run_id, n_components, vocab_size)
     source_alive = source_alive.to(device)
     target_alive = target_alive.to(device)
 
