@@ -128,11 +128,10 @@ class PersistentPGDState:
     def __init__(
         self,
         module_to_c: dict[str, int],
-        seq_len: int,
+        batch_dims: tuple[int, ...],
         device: torch.device | str,
         use_delta_component: bool,
         cfg: PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig,
-        batch_size: int | None = None,
     ) -> None:
         self.optimizer = make_ppgd_optimizer(cfg.optimizer)
         self._skip_all_reduce = isinstance(cfg.scope, PerBatchPerPositionScope)
@@ -142,14 +141,18 @@ class PersistentPGDState:
 
         match cfg.scope:
             case SingleSourceScope():
-                source_leading_dims = [1, 1]
+                source_leading_dims = [1] * len(batch_dims)
             case BroadcastAcrossBatchScope():
-                source_leading_dims = [1, seq_len]
+                source_leading_dims = [1] + list(batch_dims[1:])
             case RepeatAcrossBatchScope(n_sources=n):
-                source_leading_dims = [n, seq_len]
+                assert batch_dims[0] % n == 0, (
+                    f"n_sources={n} must divide the per-rank microbatch size "
+                    f"{batch_dims[0]}, not the global batch size. "
+                    f"With DDP, reduce n_sources or use fewer ranks."
+                )
+                source_leading_dims = [n] + list(batch_dims[1:])
             case PerBatchPerPositionScope():
-                assert batch_size is not None, "batch_size required for PerBatchPerPositionScope"
-                source_leading_dims = [batch_size, seq_len]
+                source_leading_dims = list(batch_dims)
 
         init_fn = torch.randn if self._use_sigmoid_parameterization else torch.rand
         for module_name, module_c in module_to_c.items():
@@ -226,7 +229,8 @@ def get_mask_infos(
             expanded_adv_sources[module_name] = source.expand(*batch_dims, -1)
         else:
             assert B % N == 0, f"source leading dim {N} must divide batch dim {B}"
-            expanded_adv_sources[module_name] = source.repeat(B // N, 1, 1)
+            repeat_dims = (B // N,) + (1,) * (source.ndim - 1)
+            expanded_adv_sources[module_name] = source.repeat(*repeat_dims)
 
     # Split into component sources and weight delta sources
     adv_sources_components: dict[str, Float[Tensor, "*batch_dims C"]]

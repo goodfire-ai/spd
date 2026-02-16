@@ -85,13 +85,6 @@
                 </div>
             {/if}
 
-            {#if pt.target_model_config}
-                <details class="config-details">
-                    <summary class="config-summary">Model config</summary>
-                    <pre class="config-yaml">{formatPretrainConfigYaml(pt.target_model_config)}</pre>
-                </details>
-            {/if}
-
             {#if pt.pretrain_config}
                 <details class="config-details">
                     <summary class="config-summary">Pretraining config</summary>
