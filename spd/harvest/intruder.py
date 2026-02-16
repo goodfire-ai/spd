@@ -70,7 +70,7 @@ def _bold_density(component: ComponentData, ci_threshold: float) -> float:
     n_bold = 0
     n_total = 0
     for ex in component.activation_examples:
-        for tid, ci in zip(ex.token_ids, ex.ci_values, strict=True):
+        for tid, ci in zip(ex.token_ids, ex.activation_values, strict=True):
             if tid < 0:
                 continue
             n_total += 1
@@ -124,7 +124,9 @@ def _format_example(
     ci_threshold: float,
 ) -> str:
     valid = [
-        (tid, ci) for tid, ci in zip(example.token_ids, example.ci_values, strict=True) if tid >= 0
+        (tid, ci)
+        for tid, ci in zip(example.token_ids, example.activation_values, strict=True)
+        if tid >= 0
     ]
     spans = app_tok.get_spans([tid for tid, _ in valid])
     tokens = [(span, ci > ci_threshold) for span, (_, ci) in zip(spans, valid, strict=True)]

@@ -217,7 +217,7 @@ async def request_component_interpretation(
 
     config = CompactSkepticalConfig()
 
-    ci_threshold = loaded.harvest.get_ci_threshold()
+    ci_threshold = loaded.harvest.get_activation_threshold()
 
     async with OpenRouter(api_key=api_key) as api:
         llm = LLMClient(

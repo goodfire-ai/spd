@@ -59,7 +59,7 @@ class TestAdd:
         r.add(torch.tensor([2]), tokens, ci, acts)
 
         assert torch.equal(r.tokens[2, 0], tokens[0])
-        assert torch.allclose(r.ci[2, 0], ci[0])
+        assert torch.allclose(r.activation[2, 0], ci[0])
         assert torch.allclose(r.acts[2, 0], acts[0])
 
 
@@ -166,7 +166,7 @@ class TestExamples:
     def test_filters_sentinels(self):
         r = _make_reservoir()
         r.tokens[0, 0] = torch.tensor([WINDOW_PAD_SENTINEL, 5, 6])
-        r.ci[0, 0] = torch.tensor([0.0, 0.8, 0.9])
+        r.activation[0, 0] = torch.tensor([0.0, 0.8, 0.9])
         r.acts[0, 0] = torch.tensor([0.0, 1.0, 2.0])
         r.n_items[0] = 1
         r.n_seen[0] = 1
@@ -200,7 +200,7 @@ class TestStateDictRoundtrip:
         assert restored.k == r.k
         assert restored.window == r.window
         assert torch.equal(restored.tokens, r.tokens)
-        assert torch.equal(restored.ci, r.ci)
+        assert torch.equal(restored.activation, r.activation)
         assert torch.equal(restored.acts, r.acts)
         assert torch.equal(restored.n_items, r.n_items)
         assert torch.equal(restored.n_seen, r.n_seen)

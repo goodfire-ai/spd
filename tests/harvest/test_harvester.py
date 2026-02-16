@@ -27,7 +27,7 @@ def _make_harvester() -> Harvester:
         layer_names=LAYER_NAMES,
         c_per_layer=C_PER_LAYER,
         vocab_size=VOCAB_SIZE,
-        ci_threshold=CI_THRESHOLD,
+        activation_threshold=CI_THRESHOLD,
         max_examples_per_component=MAX_EXAMPLES,
         context_tokens_per_side=CONTEXT_TOKENS_PER_SIDE,
         max_examples_per_batch_per_component=5,
@@ -39,14 +39,14 @@ class TestInit:
     def test_tensor_shapes(self):
         h = _make_harvester()
         assert h.firing_counts.shape == (N_TOTAL,)
-        assert h.ci_sums.shape == (N_TOTAL,)
+        assert h.activation_sums.shape == (N_TOTAL,)
         assert h.cooccurrence_counts.shape == (N_TOTAL, N_TOTAL)
         assert h.input_cooccurrence.shape == (N_TOTAL, VOCAB_SIZE)
         assert h.input_marginals.shape == (VOCAB_SIZE,)
         assert h.output_cooccurrence.shape == (N_TOTAL, VOCAB_SIZE)
         assert h.output_marginals.shape == (VOCAB_SIZE,)
         assert h.reservoir.tokens.shape == (N_TOTAL, MAX_EXAMPLES, WINDOW)
-        assert h.reservoir.ci.shape == (N_TOTAL, MAX_EXAMPLES, WINDOW)
+        assert h.reservoir.activation.shape == (N_TOTAL, MAX_EXAMPLES, WINDOW)
         assert h.reservoir.acts.shape == (N_TOTAL, MAX_EXAMPLES, WINDOW)
         assert h.reservoir.n_items.shape == (N_TOTAL,)
         assert h.reservoir.n_seen.shape == (N_TOTAL,)
@@ -64,7 +64,7 @@ class TestInit:
     def test_tensors_initialized_to_zero(self):
         h = _make_harvester()
         assert h.firing_counts.sum() == 0
-        assert h.ci_sums.sum() == 0
+        assert h.activation_sums.sum() == 0
         assert h.cooccurrence_counts.sum() == 0
         assert h.reservoir.n_items.sum() == 0
         assert h.reservoir.n_seen.sum() == 0
@@ -177,7 +177,7 @@ class TestReservoirAdd:
         h.reservoir.add(torch.tensor([2]), tokens, ci, acts)
 
         assert torch.equal(h.reservoir.tokens[2, 0], tokens[0])
-        assert torch.allclose(h.reservoir.ci[2, 0], ci[0])
+        assert torch.allclose(h.reservoir.activation[2, 0], ci[0])
         assert torch.allclose(h.reservoir.acts[2, 0], acts[0])
 
 
@@ -188,7 +188,7 @@ class TestSaveLoadRoundtrip:
         # Put some data in the harvester
         h.firing_counts[0] = 10.0
         h.firing_counts[3] = 5.0
-        h.ci_sums[0] = 2.5
+        h.activation_sums[0] = 2.5
         h.cooccurrence_counts[0, 3] = 7.0
         h.input_cooccurrence[0, 2] = 15
         h.input_marginals[2] = 100
@@ -211,7 +211,7 @@ class TestSaveLoadRoundtrip:
         assert loaded.layer_names == h.layer_names
         assert loaded.c_per_layer == h.c_per_layer
         assert loaded.vocab_size == h.vocab_size
-        assert loaded.ci_threshold == h.ci_threshold
+        assert loaded.activation_threshold == h.activation_threshold
         assert loaded.max_examples_per_component == h.max_examples_per_component
         assert loaded.context_tokens_per_side == h.context_tokens_per_side
         assert loaded.total_tokens_processed == h.total_tokens_processed
@@ -219,7 +219,7 @@ class TestSaveLoadRoundtrip:
 
         for field in [
             "firing_counts",
-            "ci_sums",
+            "activation_sums",
             "cooccurrence_counts",
             "input_cooccurrence",
             "input_marginals",
@@ -230,7 +230,7 @@ class TestSaveLoadRoundtrip:
 
         # Check reservoir fields roundtrip
         assert torch.equal(loaded.reservoir.tokens, h.reservoir.tokens.cpu())
-        assert torch.equal(loaded.reservoir.ci, h.reservoir.ci.cpu())
+        assert torch.equal(loaded.reservoir.activation, h.reservoir.activation.cpu())
         assert torch.equal(loaded.reservoir.acts, h.reservoir.acts.cpu())
         assert torch.equal(loaded.reservoir.n_items, h.reservoir.n_items.cpu())
         assert torch.equal(loaded.reservoir.n_seen, h.reservoir.n_seen.cpu())
@@ -251,8 +251,8 @@ class TestMerge:
 
         h1.firing_counts[0] = 10.0
         h2.firing_counts[0] = 20.0
-        h1.ci_sums[1] = 3.0
-        h2.ci_sums[1] = 7.0
+        h1.activation_sums[1] = 3.0
+        h2.activation_sums[1] = 7.0
         h1.cooccurrence_counts[0, 1] = 5.0
         h2.cooccurrence_counts[0, 1] = 3.0
         h1.input_cooccurrence[0, 2] = 10
@@ -269,7 +269,7 @@ class TestMerge:
         h1.merge(h2)
 
         assert h1.firing_counts[0] == 30.0
-        assert h1.ci_sums[1] == 10.0
+        assert h1.activation_sums[1] == 10.0
         assert h1.cooccurrence_counts[0, 1] == 8.0
         assert h1.input_cooccurrence[0, 2] == 15
         assert h1.input_marginals[2] == 300
@@ -283,7 +283,7 @@ class TestMerge:
             layer_names=["other"],
             c_per_layer={"other": 4},
             vocab_size=VOCAB_SIZE,
-            ci_threshold=CI_THRESHOLD,
+            activation_threshold=CI_THRESHOLD,
             max_examples_per_component=MAX_EXAMPLES,
             context_tokens_per_side=CONTEXT_TOKENS_PER_SIDE,
             max_examples_per_batch_per_component=5,
@@ -380,8 +380,8 @@ class TestBuildResults:
         h.total_tokens_processed = 100
         h.firing_counts[0] = 10.0
         h.firing_counts[1] = 5.0
-        h.ci_sums[0] = 2.0
-        h.ci_sums[1] = 1.0
+        h.activation_sums[0] = 2.0
+        h.activation_sums[1] = 1.0
 
         # Set up token stats so PMI computation works
         h.input_cooccurrence[0, 0] = 8
@@ -438,7 +438,7 @@ class TestBuildResults:
         comp0 = next(r for r in results if r.component_key == "layer_0:0")
         assert comp0.layer == "layer_0"
         assert comp0.component_idx == 0
-        assert abs(comp0.mean_ci - 2.0 / 100) < 1e-6
+        assert abs(comp0.mean_activation - 2.0 / 100) < 1e-6
         assert len(comp0.activation_examples) == 3
         assert comp0.input_token_pmi is not None
         assert comp0.output_token_pmi is not None
@@ -451,7 +451,7 @@ class TestBuildResults:
         ex = comp0.activation_examples[0]
         # All tokens are non-sentinel, so all should be kept
         assert len(ex.token_ids) > 0
-        assert len(ex.ci_values) == len(ex.token_ids)
+        assert len(ex.activation_values) == len(ex.token_ids)
         assert len(ex.component_acts) == len(ex.token_ids)
 
     def test_second_layer_component_keys(self):
@@ -459,7 +459,7 @@ class TestBuildResults:
         h.total_tokens_processed = 100
         # Fire component at flat index 5 = layer_1:1
         h.firing_counts[5] = 8.0
-        h.ci_sums[5] = 1.6
+        h.activation_sums[5] = 1.6
         h.input_marginals[0] = 50
         h.input_cooccurrence[5, 0] = 4
         h.output_marginals[0] = 10.0
@@ -488,7 +488,7 @@ class TestBuildResults:
         h = _make_harvester()
         h.total_tokens_processed = 100
         h.firing_counts[0] = 5.0
-        h.ci_sums[0] = 1.0
+        h.activation_sums[0] = 1.0
         h.input_marginals[0] = 50
         h.input_cooccurrence[0, 0] = 3
         h.output_marginals[0] = 10.0
@@ -496,7 +496,7 @@ class TestBuildResults:
 
         # Manually write a reservoir entry with a sentinel in it
         h.reservoir.tokens[0, 0] = torch.tensor([WINDOW_PAD_SENTINEL, 5, 6])
-        h.reservoir.ci[0, 0] = torch.tensor([0.0, 0.8, 0.9])
+        h.reservoir.activation[0, 0] = torch.tensor([0.0, 0.8, 0.9])
         h.reservoir.acts[0, 0] = torch.tensor([0.0, 1.0, 2.0])
         h.reservoir.n_items[0] = 1
         h.reservoir.n_seen[0] = 1
@@ -546,7 +546,7 @@ class TestProcessBatch:
         subcomp_acts = torch.zeros(B, S, N_TOTAL)
 
         h.process_batch(batch, ci, output_probs, subcomp_acts)
-        assert h.ci_sums[2].item() == 0.75
+        assert h.activation_sums[2].item() == 0.75
 
     def test_cooccurrence_counts(self):
         h = _make_harvester()

@@ -63,7 +63,7 @@ def _deserialize_component(row: sqlite3.Row) -> ComponentData:
         component_key=row["component_key"],
         layer=row["layer"],
         component_idx=row["component_idx"],
-        mean_activation=row["mean_activation"] if "mean_activation" in row else row["mean_ci"],
+        mean_activation=row["mean_activation"],
         activation_examples=activation_examples,
         input_token_pmi=input_token_pmi,
         output_token_pmi=output_token_pmi,
@@ -84,16 +84,6 @@ class HarvestDB:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.executescript(_SCHEMA)
         self._conn.row_factory = sqlite3.Row
-        self._mean_column = self._detect_mean_column()
-
-    def _detect_mean_column(self) -> str:
-        # Read both new and legacy schemas so old harvest DBs remain queryable.
-        cols = {row[1] for row in self._conn.execute("PRAGMA table_info(components)").fetchall()}
-        if "mean_activation" in cols:
-            return "mean_activation"
-        if "mean_ci" in cols:
-            return "mean_ci"
-        raise RuntimeError("components table missing mean_activation/mean_ci column")
 
     def save_component(self, comp: ComponentData) -> None:
         row = _serialize_component(comp)
@@ -145,8 +135,7 @@ class HarvestDB:
 
     def get_summary(self) -> dict[str, ComponentSummary]:
         rows = self._conn.execute(
-            f"SELECT component_key, layer, component_idx, {self._mean_column} AS mean_activation "
-            "FROM components"
+            "SELECT component_key, layer, component_idx, mean_activation FROM components"
         ).fetchall()
         return {
             row["component_key"]: ComponentSummary(
@@ -165,10 +154,6 @@ class HarvestDB:
         row = self._conn.execute(
             "SELECT value FROM config WHERE key = 'activation_threshold'"
         ).fetchone()
-        if row is None:
-            row = self._conn.execute(
-                "SELECT value FROM config WHERE key = 'ci_threshold'"
-            ).fetchone()
         assert row is not None, "activation_threshold not found in config table"
         return orjson.loads(row["value"])
 
@@ -182,23 +167,13 @@ class HarvestDB:
         assert row is not None
         return row[0]
 
-    def get_all_components(
-        self,
-        activation_threshold: float | None = None,
-        ci_threshold: float | None = None,
-    ) -> list[ComponentData]:
+    def get_all_components(self, activation_threshold: float) -> list[ComponentData]:
         """Load all components with mean_activation above threshold."""
-        threshold = activation_threshold if activation_threshold is not None else ci_threshold
-        assert threshold is not None
         rows = self._conn.execute(
-            f"SELECT * FROM components WHERE {self._mean_column} >= ?",
-            (threshold,),
+            "SELECT * FROM components WHERE mean_activation >= ?",
+            (activation_threshold,),
         ).fetchall()
         return [_deserialize_component(row) for row in rows]
-
-    def get_ci_threshold(self) -> float:
-        """Backward-compatible alias for activation_threshold."""
-        return self.get_activation_threshold()
 
     # -- Scores (e.g. intruder eval) ------------------------------------------
 

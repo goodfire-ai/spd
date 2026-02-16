@@ -92,11 +92,11 @@ def run_interpret(
 
     token_stats = harvest.get_token_stats()
     assert token_stats is not None, "token_stats.pt not found. Run harvest first."
-    ci_threshold = harvest.get_ci_threshold()
+    ci_threshold = harvest.get_activation_threshold()
 
     app_tok = AppTokenizer.from_pretrained(arch.tokenizer_name)
 
-    eligible = sorted(components, key=lambda c: c.mean_ci, reverse=True)
+    eligible = sorted(components, key=lambda c: c.mean_activation, reverse=True)
     if limit is not None:
         eligible = eligible[:limit]
 

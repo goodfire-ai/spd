@@ -79,8 +79,8 @@ def format_prompt(
         config.max_examples,
     )
 
-    if component.mean_ci > 0:
-        rate_str = f"~1 in {int(1 / component.mean_ci)} tokens"
+    if component.mean_activation > 0:
+        rate_str = f"~1 in {int(1 / component.mean_activation)} tokens"
     else:
         rate_str = "extremely rare"
 
@@ -101,7 +101,7 @@ Label this neural network component.
 ## Context
 - Model: {arch.model_class} ({arch.n_blocks} layers){dataset_line}
 - Component location: {layer_desc}
-- Component activation rate: {component.mean_ci * 100:.2f}% ({rate_str})
+- Component activation rate: {component.mean_activation * 100:.2f}% ({rate_str})
 
 ## Token correlations
 
@@ -183,7 +183,11 @@ def _build_examples_section(
     examples = component.activation_examples[:max_examples]
 
     for i, ex in enumerate(examples):
-        valid = [(tid, ci) for tid, ci in zip(ex.token_ids, ex.ci_values, strict=True) if tid >= 0]
+        valid = [
+            (tid, ci)
+            for tid, ci in zip(ex.token_ids, ex.activation_values, strict=True)
+            if tid >= 0
+        ]
         spans = app_tok.get_spans([tid for tid, _ in valid])
         tokens = [(span, ci > ci_threshold) for span, (_, ci) in zip(spans, valid, strict=True)]
         has_active = any(active for _, active in tokens)

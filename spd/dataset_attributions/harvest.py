@@ -54,7 +54,7 @@ def _build_alive_masks(
     n_components: int,
     vocab_size: int,
 ) -> tuple[Bool[Tensor, " n_sources"], Bool[Tensor, " n_components"]]:
-    """Build masks of alive components (mean_ci > threshold) for sources and targets.
+    """Build masks of alive components (mean_activation > threshold) for sources and targets.
 
     Falls back to all-alive if harvest summary not available.
 
@@ -87,7 +87,9 @@ def _build_alive_masks(
         n_layer_components = model.module_to_c[layer]
         for c_idx in range(n_layer_components):
             component_key = f"{layer}:{c_idx}"
-            is_alive = component_key in summary and summary[component_key].mean_ci > ci_threshold
+            is_alive = (
+                component_key in summary and summary[component_key].mean_activation > ci_threshold
+            )
             source_alive[source_idx] = is_alive
             target_alive[target_idx] = is_alive
             source_idx += 1

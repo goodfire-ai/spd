@@ -53,7 +53,7 @@ def get_activation_contexts_summary(
         summary[canonical_layer].append(
             SubcomponentMetadata(
                 subcomponent_idx=comp.component_idx,
-                mean_ci=comp.mean_ci,
+                mean_ci=comp.mean_activation,
             )
         )
 
@@ -94,12 +94,12 @@ def get_activation_context_detail(
         examples = examples[:limit]
 
     example_tokens = [loaded.tokenizer.get_spans(ex.token_ids) for ex in examples]
-    example_ci = [ex.ci_values for ex in examples]
+    example_ci = [ex.activation_values for ex in examples]
     example_component_acts = [ex.component_acts for ex in examples]
 
     return SubcomponentActivationContexts(
         subcomponent_idx=comp.component_idx,
-        mean_ci=comp.mean_ci,
+        mean_ci=comp.mean_activation,
         example_tokens=example_tokens,
         example_ci=example_ci,
         example_component_acts=example_component_acts,
@@ -144,9 +144,9 @@ def get_activation_contexts_bulk(
 
         result[canonical_key] = SubcomponentActivationContexts(
             subcomponent_idx=comp.component_idx,
-            mean_ci=comp.mean_ci,
+            mean_ci=comp.mean_activation,
             example_tokens=[loaded.tokenizer.get_spans(ex.token_ids) for ex in examples],
-            example_ci=[ex.ci_values for ex in examples],
+            example_ci=[ex.activation_values for ex in examples],
             example_component_acts=[ex.component_acts for ex in examples],
         )
 

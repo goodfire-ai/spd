@@ -73,7 +73,9 @@ def _delimit_high_ci_tokens(
 ) -> tuple[str, int]:
     """Format example with high-CI tokens in <<delimiters>>. Returns (text, n_delimited)."""
     valid = [
-        (tid, ci) for tid, ci in zip(example.token_ids, example.ci_values, strict=True) if tid >= 0
+        (tid, ci)
+        for tid, ci in zip(example.token_ids, example.activation_values, strict=True)
+        if tid >= 0
     ]
     spans = app_tok.get_spans([tid for tid, _ in valid])
     tokens = [(span, ci > ci_threshold) for span, (_, ci) in zip(spans, valid, strict=True)]
@@ -90,7 +92,9 @@ def _delimit_random_low_ci_tokens(
 ) -> str:
     """Format example with random LOW-CI tokens in <<delimiters>> instead of high-CI ones."""
     valid = [
-        (tid, ci) for tid, ci in zip(example.token_ids, example.ci_values, strict=True) if tid >= 0
+        (tid, ci)
+        for tid, ci in zip(example.token_ids, example.activation_values, strict=True)
+        if tid >= 0
     ]
     low_ci_indices = [j for j, (_, ci) in enumerate(valid) if ci <= ci_threshold]
 

@@ -71,14 +71,13 @@ class ActivationExamplesReservoir:
         cls, d: dict[str, object], device: torch.device
     ) -> "ActivationExamplesReservoir":
         tokens = runtime_cast(Tensor, d["tokens"])
-        activation_key = "activation" if "activation" in d else "ci"
         return cls(
             n_components=tokens.shape[0],
             k=runtime_cast(int, d["k"]),
             window=runtime_cast(int, d["window"]),
             device=device,
             tokens=tokens.to(device),
-            activation=runtime_cast(Tensor, d[activation_key]).to(device),
+            activation=runtime_cast(Tensor, d["activation"]).to(device),
             acts=runtime_cast(Tensor, d["acts"]).to(device),
             n_items=runtime_cast(Tensor, d["n_items"]).to(device),
             n_seen=runtime_cast(Tensor, d["n_seen"]).to(device),
@@ -205,12 +204,3 @@ class ActivationExamplesReservoir:
             "n_items": self.n_items.cpu(),
             "n_seen": self.n_seen.cpu(),
         }
-
-    @property
-    def ci(self) -> Tensor:
-        """Backward-compatible alias for activation."""
-        return self.activation
-
-    @ci.setter
-    def ci(self, value: Tensor) -> None:
-        self.activation = value

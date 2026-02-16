@@ -7,7 +7,7 @@ HarvestSlurmConfig: HarvestConfig + SLURM submission params.
 from typing import Literal
 
 from openrouter.components import Effort
-from pydantic import PositiveInt, model_validator
+from pydantic import PositiveInt
 
 from spd.base_config import BaseConfig
 from spd.settings import DEFAULT_PARTITION_NAME
@@ -43,20 +43,6 @@ class HarvestConfig(BaseConfig):
     activation_context_tokens_per_side: int = 20
     pmi_token_top_k: int = 40
     max_examples_per_batch_per_component: int = 5
-
-    @model_validator(mode="before")
-    @classmethod
-    def _upgrade_legacy_ci_threshold(cls, data: object) -> object:
-        if isinstance(data, dict) and "activation_threshold" not in data and "ci_threshold" in data:
-            upgraded = dict(data)
-            upgraded["activation_threshold"] = upgraded.pop("ci_threshold")
-            return upgraded
-        return data
-
-    @property
-    def ci_threshold(self) -> float:
-        """Backward-compatible alias for activation_threshold."""
-        return self.activation_threshold
 
 
 class HarvestSlurmConfig(BaseConfig):

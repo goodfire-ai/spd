@@ -94,7 +94,9 @@ def _sample_activating_examples(
         return list(examples)
 
     # Sort by mean CI to get a spread across activation strengths
-    sorted_examples = sorted(examples, key=lambda e: sum(e.ci_values) / max(len(e.ci_values), 1))
+    sorted_examples = sorted(
+        examples, key=lambda e: sum(e.activation_values) / max(len(e.activation_values), 1)
+    )
     n_examples = len(sorted_examples)
 
     # Pick one from each of n evenly-spaced decile bins

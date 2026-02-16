@@ -84,16 +84,13 @@ class Harvester:
         context_tokens_per_side: int,
         max_examples_per_batch_per_component: int,
         device: torch.device,
-        activation_threshold: float | None = None,
-        ci_threshold: float | None = None,
+        activation_threshold: float,
         component_keys: list[str] | None = None,
     ):
-        threshold = activation_threshold if activation_threshold is not None else ci_threshold
-        assert threshold is not None, "activation_threshold (or legacy ci_threshold) is required"
         self.layer_names = layer_names
         self.c_per_layer = c_per_layer
         self.vocab_size = vocab_size
-        self.activation_threshold = threshold
+        self.activation_threshold = activation_threshold
         self.max_examples_per_component = max_examples_per_component
         self.context_tokens_per_side = context_tokens_per_side
         self.max_examples_per_batch_per_component = max_examples_per_batch_per_component
@@ -224,7 +221,6 @@ class Harvester:
             "component_keys": self.component_keys,
             "vocab_size": self.vocab_size,
             "activation_threshold": self.activation_threshold,
-            "ci_threshold": self.activation_threshold,
             "max_examples_per_component": self.max_examples_per_component,
             "context_tokens_per_side": self.context_tokens_per_side,
             "max_examples_per_batch_per_component": self.max_examples_per_batch_per_component,
@@ -232,7 +228,6 @@ class Harvester:
             "reservoir": self.reservoir.state_dict(),
             "firing_counts": self.firing_counts.cpu(),
             "activation_sums": self.activation_sums.cpu(),
-            "ci_sums": self.activation_sums.cpu(),
             "cooccurrence_counts": self.cooccurrence_counts.cpu(),
             "input_cooccurrence": self.input_cooccurrence.cpu(),
             "input_marginals": self.input_marginals.cpu(),
@@ -244,13 +239,11 @@ class Harvester:
     @staticmethod
     def load(path: Path, device: torch.device) -> "Harvester":
         d: dict[str, Any] = torch.load(path, weights_only=False)
-        activation_threshold = d.get("activation_threshold", d.get("ci_threshold"))
-        assert activation_threshold is not None
         h = Harvester(
             layer_names=d["layer_names"],
             c_per_layer=d["c_per_layer"],
             vocab_size=d["vocab_size"],
-            activation_threshold=activation_threshold,
+            activation_threshold=d["activation_threshold"],
             max_examples_per_component=d["max_examples_per_component"],
             context_tokens_per_side=d["context_tokens_per_side"],
             max_examples_per_batch_per_component=d.get("max_examples_per_batch_per_component", 5),
@@ -259,9 +252,7 @@ class Harvester:
         )
         h.total_tokens_processed = d["total_tokens_processed"]
         h.firing_counts = d["firing_counts"].to(device)
-        activation_sums = d.get("activation_sums", d.get("ci_sums"))
-        assert activation_sums is not None
-        h.activation_sums = activation_sums.to(device)
+        h.activation_sums = d["activation_sums"].to(device)
         h.cooccurrence_counts = d["cooccurrence_counts"].to(device)
         h.input_cooccurrence = d["input_cooccurrence"].to(device)
         h.input_marginals = d["input_marginals"].to(device)
@@ -344,24 +335,6 @@ class Harvester:
                     pmi_top_k_tokens,
                 ),
             )
-
-    @property
-    def ci_threshold(self) -> float:
-        """Backward-compatible alias for activation_threshold."""
-        return self.activation_threshold
-
-    @ci_threshold.setter
-    def ci_threshold(self, value: float) -> None:
-        self.activation_threshold = value
-
-    @property
-    def ci_sums(self) -> Tensor:
-        """Backward-compatible alias for activation_sums."""
-        return self.activation_sums
-
-    @ci_sums.setter
-    def ci_sums(self, value: Tensor) -> None:
-        self.activation_sums = value
 
 
 # ---------------------------------------------------------------------------
