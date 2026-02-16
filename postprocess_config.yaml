@@ -1,0 +1,9 @@
+harvest:
+  n_gpus: 16
+  partition: h200-reserved-default
+attributions:
+  n_gpus: 16
+  partition: h200-reserved-default
+autointerp:
+  partition: h200-reserved-default
+intruder: null

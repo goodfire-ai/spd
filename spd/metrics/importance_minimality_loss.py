@@ -7,7 +7,7 @@ from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
-from spd.utils.distributed_utils import all_reduce
+from spd.utils.distributed_utils import all_reduce, get_distributed_state
 
 
 def _get_linear_annealed_p(
@@ -90,6 +90,7 @@ def _importance_minimality_loss_compute(
     per_component_sums: dict[str, Float[Tensor, " C"]],
     n_examples: int,
     beta: float,
+    log_scale: int = 1,
 ) -> Float[Tensor, ""]:
     """Compute final loss from accumulated per-component sums.
 
@@ -103,7 +104,7 @@ def _importance_minimality_loss_compute(
     for layer_sums in per_component_sums.values():
         per_component_mean = layer_sums / n_examples
         layer_loss = (
-            per_component_mean + beta * per_component_mean * torch.log2(1 + layer_sums)
+            per_component_mean + beta * per_component_mean * torch.log2(1 + layer_sums * log_scale)
         ).sum()
         total_loss += layer_loss
     return total_loss
@@ -137,10 +138,13 @@ def importance_minimality_loss(
         p_anneal_end_frac=p_anneal_end_frac,
         current_frac_of_training=current_frac_of_training,
     )
+    dist_state = get_distributed_state()
+    log_scale = dist_state.world_size if dist_state is not None else 1
     return _importance_minimality_loss_compute(
         per_component_sums=per_component_sums,
         n_examples=n_examples,
         beta=beta,
+        log_scale=log_scale,
     )
 
 
