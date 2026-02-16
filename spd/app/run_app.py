@@ -303,11 +303,36 @@ class AppRunner:
         return proc
 
     def monitor_child_liveness(self) -> None:
+        log_lines_to_show = 5
+        prev_lines: list[str] = []
+
         while True:
             if self.backend_process and self.backend_process.poll() is not None:
                 self._fail_child_died("Backend")
             if self.frontend_process and self.frontend_process.poll() is not None:
                 self._fail_child_died("Frontend")
+
+            # Show last N lines of logs in a box
+            try:
+                with open(LOGFILE) as f:
+                    all_lines = f.readlines()
+                tail = all_lines[-log_lines_to_show:]
+
+                if tail != prev_lines:
+                    # Clear previous log display (box has +2 lines for borders)
+                    if prev_lines:
+                        lines_to_clear = len(prev_lines) + 2
+                        print(f"\033[{lines_to_clear}A\033[J", end="")
+
+                    print(f"{AnsiEsc.DIM}┌─ logs {'─' * 32}{AnsiEsc.RESET}")
+                    for line in tail:
+                        print(f"{AnsiEsc.DIM}│ {line.rstrip()}{AnsiEsc.RESET}")
+                    print(f"{AnsiEsc.DIM}└{'─' * 40}{AnsiEsc.RESET}")
+
+                    prev_lines = tail
+            except FileNotFoundError:
+                pass
+
             time.sleep(1.0)
 
     def run(self) -> None:
