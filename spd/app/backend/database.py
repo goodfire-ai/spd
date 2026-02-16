@@ -68,6 +68,7 @@ class StoredGraph(BaseModel):
     edges: list[Edge]
     ci_masked_out_logits: torch.Tensor  # [seq, vocab]
     target_out_logits: torch.Tensor  # [seq, vocab]
+    adv_pgd_out_logits: torch.Tensor | None = None  # [seq, vocab] adversarial PGD logits
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val (required for all graphs)
     node_subcomp_acts: dict[str, float] = {}  # layer:seq:c_idx -> subcomp act (v_i^T @ a)
 
@@ -395,13 +396,13 @@ class PromptAttrDB:
             ]
         )
         buf = io.BytesIO()
-        torch.save(
-            {
-                "ci_masked": graph.ci_masked_out_logits,
-                "target": graph.target_out_logits,
-            },
-            buf,
-        )
+        logits_dict: dict[str, torch.Tensor] = {
+            "ci_masked": graph.ci_masked_out_logits,
+            "target": graph.target_out_logits,
+        }
+        if graph.adv_pgd_out_logits is not None:
+            logits_dict["adv_pgd"] = graph.adv_pgd_out_logits
+        torch.save(logits_dict, buf)
         output_logits_blob = buf.getvalue()
         node_ci_vals_json = json.dumps(graph.node_ci_vals)
         node_subcomp_acts_json = json.dumps(graph.node_subcomp_acts)
@@ -517,6 +518,7 @@ class PromptAttrDB:
         logits_data = torch.load(io.BytesIO(row["output_logits"]), weights_only=True)
         ci_masked_out_logits: torch.Tensor = logits_data["ci_masked"]
         target_out_logits: torch.Tensor = logits_data["target"]
+        adv_pgd_out_logits: torch.Tensor | None = logits_data.get("adv_pgd")
         node_ci_vals: dict[str, float] = json.loads(row["node_ci_vals"])
         node_subcomp_acts: dict[str, float] = json.loads(row["node_subcomp_acts"] or "{}")
 
@@ -552,6 +554,7 @@ class PromptAttrDB:
             edges=edges,
             ci_masked_out_logits=ci_masked_out_logits,
             target_out_logits=target_out_logits,
+            adv_pgd_out_logits=adv_pgd_out_logits,
             node_ci_vals=node_ci_vals,
             node_subcomp_acts=node_subcomp_acts,
             optimization_params=opt_params,

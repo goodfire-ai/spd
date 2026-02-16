@@ -27,6 +27,8 @@ export type OutputProbability = {
     logit: number; // CI-masked (SPD model) raw logit
     target_prob: number; // Target model probability
     target_logit: number; // Target model raw logit
+    adv_pgd_prob: number | null; // Adversarial PGD probability
+    adv_pgd_logit: number | null; // Adversarial PGD raw logit
     token: string;
 };
 
@@ -96,6 +98,7 @@ export type LossResult = CELossResult | KLLossResult;
 export type OptimizationMetrics = {
     ci_masked_label_prob: number | null; // Probability of label under CI mask (CE loss only)
     stoch_masked_label_prob: number | null; // Probability of label under stochastic mask (CE loss only)
+    adv_pgd_label_prob: number | null; // Probability of label under adversarial mask (CE loss only)
     l0_total: number; // Total L0 (active components)
 };
 

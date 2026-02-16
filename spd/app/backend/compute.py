@@ -135,6 +135,7 @@ class OptimizedPromptAttributionResult:
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
     node_subcomp_acts: dict[str, float]  # layer:seq:c_idx -> subcomponent activation (v_i^T @ a)
     metrics: OptimizationMetrics  # Final loss metrics from optimization
+    adv_pgd_out_logits: Float[Tensor, "seq vocab"] | None  # Adversarial PGD output logits
 
 
 ProgressCallback = Callable[[int, int, str], None]  # (current, total, stage)
@@ -556,6 +557,11 @@ def compute_prompt_attributions_optimized(
         loss_seq_pos=loss_seq_pos,
     )
 
+    # Slice adversarial logits to match the loss_seq_pos range
+    adv_pgd_out_logits: Float[Tensor, "seq vocab"] | None = None
+    if optim_result.adv_pgd_out_logits is not None:
+        adv_pgd_out_logits = optim_result.adv_pgd_out_logits[: loss_seq_pos + 1]
+
     return OptimizedPromptAttributionResult(
         edges=result.edges,
         ci_masked_out_probs=result.ci_masked_out_probs,
@@ -565,6 +571,7 @@ def compute_prompt_attributions_optimized(
         node_ci_vals=result.node_ci_vals,
         node_subcomp_acts=result.node_subcomp_acts,
         metrics=optim_result.metrics,
+        adv_pgd_out_logits=adv_pgd_out_logits,
     )
 
 

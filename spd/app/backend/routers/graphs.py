@@ -100,6 +100,7 @@ class OptimizationMetricsResult(BaseModel):
     stoch_masked_label_prob: float | None = (
         None  # Probability of label under stochastic mask (CE loss only)
     )
+    adv_pgd_label_prob: float | None = None  # Probability of label under adversarial mask (CE only)
     l0_total: float  # Total L0 (active components)
 
 
@@ -217,6 +218,7 @@ def _build_out_probs(
     ci_masked_out_logits: torch.Tensor,
     target_out_logits: torch.Tensor,
     tok_display: Callable[[int], str],
+    adv_pgd_out_logits: torch.Tensor | None = None,
 ) -> dict[str, OutputProbability]:
     """Build output probs dict from logit tensors.
 
@@ -224,6 +226,9 @@ def _build_out_probs(
     """
     ci_masked_out_probs = torch.softmax(ci_masked_out_logits, dim=-1)
     target_out_probs = torch.softmax(target_out_logits, dim=-1)
+    adv_pgd_out_probs = (
+        torch.softmax(adv_pgd_out_logits, dim=-1) if adv_pgd_out_logits is not None else None
+    )
 
     out_probs: dict[str, OutputProbability] = {}
     for s in range(ci_masked_out_probs.shape[0]):
@@ -237,12 +242,21 @@ def _build_out_probs(
             logit = float(ci_masked_out_logits[s, c_idx].item())
             target_prob = float(target_out_probs[s, c_idx].item())
             target_logit = float(target_out_logits[s, c_idx].item())
+
+            adv_pgd_prob: float | None = None
+            adv_pgd_logit: float | None = None
+            if adv_pgd_out_probs is not None and adv_pgd_out_logits is not None:
+                adv_pgd_prob = round(float(adv_pgd_out_probs[s, c_idx].item()), 6)
+                adv_pgd_logit = round(float(adv_pgd_out_logits[s, c_idx].item()), 4)
+
             key = f"{s}:{c_idx}"
             out_probs[key] = OutputProbability(
                 prob=round(prob, 6),
                 logit=round(logit, 4),
                 target_prob=round(target_prob, 6),
                 target_logit=round(target_logit, 4),
+                adv_pgd_prob=adv_pgd_prob,
+                adv_pgd_logit=adv_pgd_logit,
                 token=tok_display(c_idx),
             )
     return out_probs
@@ -626,6 +640,9 @@ def compute_graph_optimized_stream(
 
         ci_masked_out_logits = result.ci_masked_out_logits.cpu()
         target_out_logits = result.target_out_logits.cpu()
+        adv_pgd_out_logits = (
+            result.adv_pgd_out_logits.cpu() if result.adv_pgd_out_logits is not None else None
+        )
 
         graph_id = db.save_graph(
             prompt_id=prompt_id,
@@ -634,6 +651,7 @@ def compute_graph_optimized_stream(
                 edges=result.edges,
                 ci_masked_out_logits=ci_masked_out_logits,
                 target_out_logits=target_out_logits,
+                adv_pgd_out_logits=adv_pgd_out_logits,
                 node_ci_vals=result.node_ci_vals,
                 node_subcomp_acts=result.node_subcomp_acts,
                 optimization_params=opt_params,
@@ -650,6 +668,7 @@ def compute_graph_optimized_stream(
             num_tokens=num_tokens,
             ci_threshold=ci_threshold,
             normalize=normalize,
+            adv_pgd_out_logits=adv_pgd_out_logits,
         )
 
         # Build loss result based on config type
@@ -687,6 +706,7 @@ def compute_graph_optimized_stream(
                 metrics=OptimizationMetricsResult(
                     ci_masked_label_prob=result.metrics.ci_masked_label_prob,
                     stoch_masked_label_prob=result.metrics.stoch_masked_label_prob,
+                    adv_pgd_label_prob=result.metrics.adv_pgd_label_prob,
                     l0_total=result.metrics.l0_total,
                 ),
                 adv_pgd_n_steps=adv_pgd_n_steps,
@@ -720,6 +740,7 @@ def filter_graph_for_display(
     ci_threshold: float,
     normalize: NormalizeType,
     edge_limit: int = GLOBAL_EDGE_LIMIT,
+    adv_pgd_out_logits: torch.Tensor | None = None,
 ) -> FilteredGraph:
     """Filter and transform a raw attribution graph for display.
 
@@ -730,7 +751,9 @@ def filter_graph_for_display(
     5. Normalize edge strengths (if requested)
     6. Cap edges at edge_limit
     """
-    out_probs = _build_out_probs(ci_masked_out_logits, target_out_logits, tok_display)
+    out_probs = _build_out_probs(
+        ci_masked_out_logits, target_out_logits, tok_display, adv_pgd_out_logits
+    )
 
     filtered_node_ci_vals = {k: v for k, v in node_ci_vals.items() if v > ci_threshold}
 
@@ -790,6 +813,7 @@ def stored_graph_to_response(
         num_tokens=num_tokens,
         ci_threshold=ci_threshold,
         normalize=normalize,
+        adv_pgd_out_logits=graph.adv_pgd_out_logits,
     )
 
     if not is_optimized:

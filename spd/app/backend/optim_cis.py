@@ -110,6 +110,7 @@ class OptimizationMetrics(BaseModel):
     stoch_masked_label_prob: float | None = (
         None  # Probability of label under stochastic mask (CE loss only)
     )
+    adv_pgd_label_prob: float | None = None  # Probability of label under adversarial mask (CE only)
     l0_total: float  # Total L0 (active components)
 
 
@@ -311,6 +312,7 @@ class OptimizeCIResult:
 
     params: OptimizableCIParams
     metrics: OptimizationMetrics
+    adv_pgd_out_logits: Float[Tensor, "seq vocab"] | None = None
 
 
 def _run_adv_pgd(
@@ -538,13 +540,47 @@ def optimize_ci_values(
             stoch_probs = F.softmax(stoch_logits[0, pos, :], dim=-1)
             final_stoch_masked_label_prob = float(stoch_probs[label_token].item())
 
+    # Adversarial PGD final evaluation (needs gradients for PGD, so outside no_grad block)
+    adv_pgd_out_logits: Float[Tensor, "seq vocab"] | None = None
+    final_adv_pgd_label_prob: float | None = None
+
+    if config.adv_pgd is not None:
+        final_adv_sources = _run_adv_pgd(
+            model=model,
+            tokens=tokens,
+            ci_lower_leaky=final_ci_outputs.lower_leaky,
+            alive_masks=alive_info.alive_masks,
+            adv_config=config.adv_pgd,
+            loss_config=config.loss_config,
+            target_out=target_out,
+            device=device,
+        )
+        with torch.no_grad():
+            adv_pgd_masks = make_mask_infos(
+                _interpolate_masks(final_ci_outputs.lower_leaky, final_adv_sources)
+            )
+            with bf16_autocast():
+                adv_logits = model(tokens, mask_infos=adv_pgd_masks)
+            adv_pgd_out_logits = adv_logits[0].detach()  # [seq, vocab]
+
+            if isinstance(config.loss_config, CELossConfig):
+                pos = config.loss_config.position
+                label_token = config.loss_config.label_token
+                adv_probs = F.softmax(adv_logits[0, pos, :], dim=-1)
+                final_adv_pgd_label_prob = float(adv_probs[label_token].item())
+
     metrics = OptimizationMetrics(
         ci_masked_label_prob=final_ci_masked_label_prob,
         stoch_masked_label_prob=final_stoch_masked_label_prob,
+        adv_pgd_label_prob=final_adv_pgd_label_prob,
         l0_total=final_l0_stats["l0/total"],
     )
 
-    return OptimizeCIResult(params=ci_params, metrics=metrics)
+    return OptimizeCIResult(
+        params=ci_params,
+        metrics=metrics,
+        adv_pgd_out_logits=adv_pgd_out_logits,
+    )
 
 
 def get_out_dir() -> Path:
