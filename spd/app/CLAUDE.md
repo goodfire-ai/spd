@@ -337,6 +337,6 @@ HarvestRepo:  # Lazy-loads from SPD_OUT_DIR/harvest/<run_id>/
 
 ## Performance Notes
 
-- **Edge limit**: `GLOBAL_EDGE_LIMIT = 5000` in graph visualization
+- **Edge limit**: `GLOBAL_EDGE_LIMIT = 50000` in graph visualization
 - **SSE streaming**: Long computations stream progress updates
 - **Lazy loading**: Component details fetched on hover/pin

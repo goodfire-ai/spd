@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { getContext } from "svelte";
+    import { getContext, untrack } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
     import type {
         GraphData,
@@ -411,26 +411,36 @@
     // Only recomputes when data/layout changes, not on hover.
     // Ordered smallest-first (reverse of filteredEdges which is desc by abs val).
     const edgeDrawData = $derived.by(() => {
-        const items: EdgeDrawItem[] = [];
-        for (let i = filteredEdges.length - 1; i >= 0; i--) {
-            const edge = filteredEdges[i];
-            const p1 = nodePositions[edge.src];
-            const p2 = nodePositions[edge.tgt];
-            if (!p1 || !p2) continue;
-            const dy = Math.abs(p2.y - p1.y);
-            const curveOffset = Math.max(20, dy * 0.4);
-            const path = new Path2D();
-            path.moveTo(p1.x, p1.y);
-            path.bezierCurveTo(p1.x, p1.y - curveOffset, p2.x, p2.y + curveOffset, p2.x, p2.y);
-            items.push({
-                edge,
-                path,
-                color: getEdgeColor(edge.val),
-                width: lerp(1, 4, Math.abs(edge.val) / maxAbsAttr),
-                opacity: lerp(0, 0.5, Math.abs(edge.val) / maxAbsAttr),
-            });
-        }
-        return items;
+        // Register coarse reactive dependencies
+        const edges = filteredEdges;
+        const positions = nodePositions;
+        const maxAttr = maxAbsAttr;
+
+        // Hot loop in untrack() to avoid O(n²) fine-grained proxy dependency tracking.
+        // Without this, each property access on Svelte's deep reactive proxies (edge.src,
+        // edge.tgt, etc.) registers a fine-grained dependency, scaling quadratically.
+        return untrack(() => {
+            const items: EdgeDrawItem[] = [];
+            for (let i = edges.length - 1; i >= 0; i--) {
+                const edge = edges[i];
+                const p1 = positions[edge.src];
+                const p2 = positions[edge.tgt];
+                if (!p1 || !p2) continue;
+                const dy = Math.abs(p2.y - p1.y);
+                const curveOffset = Math.max(20, dy * 0.4);
+                const path = new Path2D();
+                path.moveTo(p1.x, p1.y);
+                path.bezierCurveTo(p1.x, p1.y - curveOffset, p2.x, p2.y + curveOffset, p2.x, p2.y);
+                items.push({
+                    edge,
+                    path,
+                    color: getEdgeColor(edge.val),
+                    width: lerp(1, 4, Math.abs(edge.val) / maxAttr),
+                    opacity: lerp(0, 0.5, Math.abs(edge.val) / maxAttr),
+                });
+            }
+            return items;
+        });
     });
 
     // Canvas edge rendering effect
@@ -439,36 +449,50 @@
         const ctx = edgeCanvas.getContext("2d");
         if (!ctx) return;
 
-        const dpr = window.devicePixelRatio || 1;
+        // Register coarse reactive deps (used by getEdgeState inside the loop)
+        const items = edgeDrawData;
         const cw = svgWidth;
         const ch = svgHeight;
+        const zs = zoom.scale;
+        const ztx = zoom.translateX;
+        const zty = zoom.translateY;
+        void pinnedNodeKeys;
+        void hoveredNode;
+        void hoveredEdge;
+        void effectiveHideUnpinned;
+        void hoveredComponentKey;
 
-        // Size canvas to match SVG
-        edgeCanvas.width = cw * dpr;
-        edgeCanvas.height = ch * dpr;
-        edgeCanvas.style.width = `${cw}px`;
-        edgeCanvas.style.height = `${ch}px`;
+        const dpr = window.devicePixelRatio || 1;
 
-        ctx.clearRect(0, 0, edgeCanvas.width, edgeCanvas.height);
+        // Hot loop in untrack() — same O(n²) proxy issue as edgeDrawData
+        untrack(() => {
+            // Size canvas to match SVG
+            edgeCanvas.width = cw * dpr;
+            edgeCanvas.height = ch * dpr;
+            edgeCanvas.style.width = `${cw}px`;
+            edgeCanvas.style.height = `${ch}px`;
 
-        // Apply zoom/pan transform matching the SVG <g> transform
-        ctx.setTransform(zoom.scale * dpr, 0, 0, zoom.scale * dpr, zoom.translateX * dpr, zoom.translateY * dpr);
+            ctx.clearRect(0, 0, edgeCanvas.width, edgeCanvas.height);
 
-        // Draw edges
-        for (const item of edgeDrawData) {
-            const state = getEdgeState(item.edge.src, item.edge.tgt);
-            if (state === "hidden") continue;
+            // Apply zoom/pan transform matching the SVG <g> transform
+            ctx.setTransform(zs * dpr, 0, 0, zs * dpr, ztx * dpr, zty * dpr);
 
-            const isHighlighted = state === "highlighted";
-            ctx.strokeStyle = item.color;
-            ctx.lineWidth = isHighlighted ? 3 : item.width;
-            ctx.globalAlpha = isHighlighted ? 1 : item.opacity;
-            ctx.stroke(item.path);
-        }
+            // Draw edges
+            for (const item of items) {
+                const state = getEdgeState(item.edge.src, item.edge.tgt);
+                if (state === "hidden") continue;
 
-        // Reset transform
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.globalAlpha = 1;
+                const isHighlighted = state === "highlighted";
+                ctx.strokeStyle = item.color;
+                ctx.lineWidth = isHighlighted ? 3 : item.width;
+                ctx.globalAlpha = isHighlighted ? 1 : item.opacity;
+                ctx.stroke(item.path);
+            }
+
+            // Reset transform
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalAlpha = 1;
+        });
     });
 
     // Check if a node key should be highlighted (pinned or hovered component)
