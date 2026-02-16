@@ -12,7 +12,7 @@ from spd.log import logger
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import RoutingMasks, make_mask_infos
 from spd.routing import Router
-from spd.utils.distributed_utils import all_reduce
+from spd.utils.distributed_utils import all_reduce, broadcast_tensor
 from spd.utils.general_utils import calc_sum_recon_loss_lm, extract_batch_data
 
 
@@ -41,12 +41,14 @@ def pgd_masked_recon_loss_update(
         match pgd_config.mask_scope:
             case "unique_per_datapoint":
                 shape = torch.Size([*batch_dims, mask_c])
+                source = _get_pgd_init_tensor(pgd_config.init, shape, batch.device)
             case "shared_across_batch":
                 singleton_batch_dims = [1 for _ in batch_dims]
                 shape = torch.Size([*singleton_batch_dims, mask_c])
-        adv_sources[module_name] = _get_pgd_init_tensor(
-            pgd_config.init, shape, batch.device
-        ).requires_grad_(True)
+                source = broadcast_tensor(
+                    _get_pgd_init_tensor(pgd_config.init, shape, batch.device)
+                )
+        adv_sources[module_name] = source.requires_grad_(True)
 
     fwd_pass = partial(
         _forward_with_adv_sources,
@@ -67,10 +69,14 @@ def pgd_masked_recon_loss_update(
             sum_loss, n_examples = fwd_pass()
             loss = sum_loss / n_examples
         grads = torch.autograd.grad(loss, list(adv_sources.values()))
-        adv_sources_grads = {
-            k: all_reduce(g, op=ReduceOp.AVG)
-            for k, g in zip(adv_sources.keys(), grads, strict=True)
-        }
+        match pgd_config.mask_scope:
+            case "shared_across_batch":
+                adv_sources_grads = {
+                    k: all_reduce(g, op=ReduceOp.AVG)
+                    for k, g in zip(adv_sources.keys(), grads, strict=True)
+                }
+            case "unique_per_datapoint":
+                adv_sources_grads = dict(zip(adv_sources.keys(), grads, strict=True))
         with torch.no_grad():
             for k in adv_sources:
                 adv_sources[k].add_(pgd_config.step_size * adv_sources_grads[k].sign())
@@ -123,8 +129,8 @@ def calc_multibatch_pgd_masked_recon_loss(
         module_c = model.module_to_c[module_name]
         mask_c = module_c if not use_delta_component else module_c + 1
         shape = torch.Size([*singleton_batch_dims, mask_c])
-        adv_sources[module_name] = _get_pgd_init_tensor(
-            init=pgd_config.init, shape=shape, device=device
+        adv_sources[module_name] = broadcast_tensor(
+            _get_pgd_init_tensor(pgd_config.init, shape, device)
         ).requires_grad_(True)
 
     fwd_bwd_fn = partial(

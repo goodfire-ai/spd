@@ -85,9 +85,10 @@
             {
                 title: "Top Precision",
                 mathNotation: "P(component fires | token)",
-                items: tokenStats.data.input.top_precision
-                    .slice(0, COMPONENT_CARD_CONSTANTS.N_INPUT_TOKENS)
-                    .map(([token, value]) => ({ token, value })),
+                items: tokenStats.data.input.top_precision.map(([token, value]) => ({
+                    token,
+                    value,
+                })),
                 maxScale: 1,
             },
         ];
@@ -105,17 +106,16 @@
             {
                 title: "Top PMI",
                 mathNotation: "positive association with predictions",
-                items: tokenStats.data.output.top_pmi
-                    .slice(0, COMPONENT_CARD_CONSTANTS.N_OUTPUT_TOKENS)
-                    .map(([token, value]) => ({ token, value })),
+                items: tokenStats.data.output.top_pmi.map(([token, value]) => ({ token, value })),
                 maxScale: maxAbsPmi,
             },
             {
                 title: "Bottom PMI",
                 mathNotation: "negative association with predictions",
-                items: tokenStats.data.output.bottom_pmi
-                    .slice(0, COMPONENT_CARD_CONSTANTS.N_OUTPUT_TOKENS)
-                    .map(([token, value]) => ({ token, value })),
+                items: tokenStats.data.output.bottom_pmi.map(([token, value]) => ({
+                    token,
+                    value,
+                })),
                 maxScale: maxAbsPmi,
             },
         ];

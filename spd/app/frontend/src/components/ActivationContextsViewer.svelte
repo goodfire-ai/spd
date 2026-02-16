@@ -1,8 +1,8 @@
 <script lang="ts">
     import { getContext, onMount } from "svelte";
     import { computeMaxAbsComponentAct } from "../lib/colors";
-    import { anyCorrelationStatsEnabled, displaySettings } from "../lib/displaySettings.svelte";
     import { COMPONENT_CARD_CONSTANTS } from "../lib/componentCardConstants";
+    import { anyCorrelationStatsEnabled, displaySettings } from "../lib/displaySettings.svelte";
     import { getLayerAlias } from "../lib/layerAliasing";
     import type { ActivationContextsSummary, SubcomponentMetadata } from "../lib/promptAttributionsTypes";
     import { useComponentData } from "../lib/useComponentData.svelte";
@@ -146,20 +146,19 @@
         const ts = componentData.tokenStats;
         if (ts.status !== "loaded" || ts.data === null) return null;
         return [
-            {
-                title: "Top Recall",
-                mathNotation: "P(token | component fires)",
-                items: ts.data.input.top_recall
-                    .slice(0, COMPONENT_CARD_CONSTANTS.N_INPUT_TOKENS)
-                    .map(([token, value]) => ({ token, value })),
-                maxScale: 1,
-            },
+            // TODO clean this up, but for now Top Recall is honestly not useful
+            // {
+            //     title: "Top Recall",
+            //     mathNotation: "P(token | component fires)",
+            //     items: ts.data.input.top_recall
+            //         .slice(0, COMPONENT_CARD_CONSTANTS.N_INPUT_TOKENS)
+            //         .map(([token, value]) => ({ token, value })),
+            //     maxScale: 1,
+            // },
             {
                 title: "Top Precision",
                 mathNotation: "P(component fires | token)",
-                items: ts.data.input.top_precision
-                    .slice(0, COMPONENT_CARD_CONSTANTS.N_INPUT_TOKENS)
-                    .map(([token, value]) => ({ token, value })),
+                items: ts.data.input.top_precision.map(([token, value]) => ({ token, value })),
                 maxScale: 1,
             },
         ];
@@ -177,17 +176,13 @@
             {
                 title: "Top PMI",
                 mathNotation: "positive association with predictions",
-                items: ts.data.output.top_pmi
-                    .slice(0, COMPONENT_CARD_CONSTANTS.N_OUTPUT_TOKENS)
-                    .map(([token, value]) => ({ token, value })),
+                items: ts.data.output.top_pmi.map(([token, value]) => ({ token, value })),
                 maxScale: maxAbsPmi,
             },
             {
                 title: "Bottom PMI",
                 mathNotation: "negative association with predictions",
-                items: ts.data.output.bottom_pmi
-                    .slice(0, COMPONENT_CARD_CONSTANTS.N_OUTPUT_TOKENS)
-                    .map(([token, value]) => ({ token, value })),
+                items: ts.data.output.bottom_pmi.map(([token, value]) => ({ token, value })),
                 maxScale: maxAbsPmi,
             },
         ];

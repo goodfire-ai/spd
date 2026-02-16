@@ -2,19 +2,29 @@
     import { getContext, onMount } from "svelte";
     import type { Loadable } from "../lib";
     import { fetchDataSources, type DataSourcesResponse } from "../lib/api";
+    import { fetchPretrainInfoForLoadedRun, type PretrainInfoResponse } from "../lib/api/pretrainInfo";
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
+    import TopologyDiagram from "./TopologyDiagram.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
 
     let data = $state<Loadable<DataSourcesResponse>>({ status: "uninitialized" });
+    let pretrainData = $state<Loadable<PretrainInfoResponse>>({ status: "uninitialized" });
 
     onMount(async () => {
         data = { status: "loading" };
+        pretrainData = { status: "loading" };
         try {
             const result = await fetchDataSources();
             data = { status: "loaded", data: result };
         } catch (e) {
             data = { status: "error", error: e };
+        }
+        try {
+            const result = await fetchPretrainInfoForLoadedRun();
+            pretrainData = { status: "loaded", data: result };
+        } catch (e) {
+            pretrainData = { status: "error", error: e };
         }
     });
 
@@ -23,6 +33,21 @@
         if (typeof value === "object") return JSON.stringify(value);
         return String(value);
     }
+
+    function formatPretrainConfigYaml(config: Record<string, unknown>): string {
+        const lines: string[] = [];
+        for (const [key, value] of Object.entries(config)) {
+            if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+                lines.push(`${key}:`);
+                for (const [subKey, subValue] of Object.entries(value as Record<string, unknown>)) {
+                    lines.push(`  ${subKey}: ${formatConfigValue(subValue)}`);
+                }
+            } else {
+                lines.push(`${key}: ${formatConfigValue(value)}`);
+            }
+        }
+        return lines.join("\n");
+    }
 </script>
 
 <div class="data-sources-container">
@@ -30,6 +55,47 @@
         <section class="source-section">
             <h3 class="section-title">Run Config</h3>
             <pre class="config-yaml">{runState.run.data.config_yaml}</pre>
+        </section>
+    {/if}
+
+    <!-- Target Model Architecture -->
+    {#if pretrainData.status === "loading"}
+        <section class="source-section">
+            <h3 class="section-title">Target Model</h3>
+            <p class="status-text">Loading target model info...</p>
+        </section>
+    {:else if pretrainData.status === "loaded"}
+        {@const pt = pretrainData.data}
+        <section class="source-section">
+            <h3 class="section-title">Target Model</h3>
+            <div class="info-grid">
+                <span class="label">Architecture</span>
+                <span class="value mono">{pt.summary}</span>
+
+                {#if pt.pretrain_wandb_path}
+                    <span class="label">Pretrain run</span>
+                    <span class="value mono">{pt.pretrain_wandb_path}</span>
+                {/if}
+            </div>
+
+            {#if pt.topology}
+                <div class="topology-section">
+                    <h4 class="subsection-title">Topology</h4>
+                    <TopologyDiagram topology={pt.topology} />
+                </div>
+            {/if}
+
+            {#if pt.pretrain_config}
+                <details class="config-details">
+                    <summary class="config-summary">Pretraining config</summary>
+                    <pre class="config-yaml">{formatPretrainConfigYaml(pt.pretrain_config)}</pre>
+                </details>
+            {/if}
+        </section>
+    {:else if pretrainData.status === "error"}
+        <section class="source-section">
+            <h3 class="section-title">Target Model</h3>
+            <p class="status-text error">Failed to load target model info</p>
         </section>
     {/if}
 
@@ -148,6 +214,14 @@
         border-bottom: 1px solid var(--border-default);
     }
 
+    .subsection-title {
+        font-family: var(--font-sans);
+        font-size: var(--text-sm);
+        font-weight: 500;
+        color: var(--text-muted);
+        margin: var(--space-2) 0 0 0;
+    }
+
     .info-grid {
         display: grid;
         grid-template-columns: auto 1fr;
@@ -171,6 +245,28 @@
 
     .muted {
         color: var(--text-muted);
+    }
+
+    .topology-section {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+
+    .config-details {
+        margin-top: var(--space-1);
+    }
+
+    .config-summary {
+        font-family: var(--font-sans);
+        font-size: var(--text-sm);
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: var(--space-1) 0;
+    }
+
+    .config-summary:hover {
+        color: var(--text-primary);
     }
 
     .config-yaml {
