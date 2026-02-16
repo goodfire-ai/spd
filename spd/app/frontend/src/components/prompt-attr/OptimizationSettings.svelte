@@ -216,6 +216,36 @@
                         step={0.1}
                     />
                 </label>
+                <label>
+                    <span class="label-text">adv_n_steps</span>
+                    <input
+                        type="number"
+                        value={config.advPgdNSteps ?? ""}
+                        oninput={(e) => {
+                            const val = e.currentTarget.value;
+                            onChange({ ...config, advPgdNSteps: val === "" ? null : parseInt(val) });
+                        }}
+                        min={1}
+                        max={50}
+                        step={1}
+                        placeholder="off"
+                    />
+                </label>
+                <label>
+                    <span class="label-text">adv_step_size</span>
+                    <input
+                        type="number"
+                        value={config.advPgdStepSize ?? ""}
+                        oninput={(e) => {
+                            const val = e.currentTarget.value;
+                            onChange({ ...config, advPgdStepSize: val === "" ? null : parseFloat(val) });
+                        }}
+                        min={0.001}
+                        max={1}
+                        step={0.01}
+                        placeholder="off"
+                    />
+                </label>
             </div>
         </div>
     {/if}

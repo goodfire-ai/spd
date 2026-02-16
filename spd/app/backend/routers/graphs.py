@@ -26,6 +26,7 @@ from spd.app.backend.compute import (
 from spd.app.backend.database import GraphType, OptimizationParams, StoredGraph
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.optim_cis import (
+    AdvPGDConfig,
     CELossConfig,
     KLLossConfig,
     LossConfig,
@@ -99,6 +100,7 @@ class OptimizationMetricsResult(BaseModel):
     stoch_masked_label_prob: float | None = (
         None  # Probability of label under stochastic mask (CE loss only)
     )
+    adv_pgd_label_prob: float | None = None  # Probability of label under adversarial mask (CE only)
     l0_total: float  # Total L0 (active components)
 
 
@@ -112,6 +114,8 @@ class OptimizationResult(BaseModel):
     mask_type: MaskType
     loss: CELossResult | KLLossResult
     metrics: OptimizationMetricsResult
+    adv_pgd_n_steps: int | None = None
+    adv_pgd_step_size: float | None = None
 
 
 class GraphDataWithOptimization(GraphData):
@@ -214,6 +218,7 @@ def _build_out_probs(
     ci_masked_out_logits: torch.Tensor,
     target_out_logits: torch.Tensor,
     tok_display: Callable[[int], str],
+    adv_pgd_out_logits: torch.Tensor | None = None,
 ) -> dict[str, OutputProbability]:
     """Build output probs dict from logit tensors.
 
@@ -221,6 +226,9 @@ def _build_out_probs(
     """
     ci_masked_out_probs = torch.softmax(ci_masked_out_logits, dim=-1)
     target_out_probs = torch.softmax(target_out_logits, dim=-1)
+    adv_pgd_out_probs = (
+        torch.softmax(adv_pgd_out_logits, dim=-1) if adv_pgd_out_logits is not None else None
+    )
 
     out_probs: dict[str, OutputProbability] = {}
     for s in range(ci_masked_out_probs.shape[0]):
@@ -234,12 +242,21 @@ def _build_out_probs(
             logit = float(ci_masked_out_logits[s, c_idx].item())
             target_prob = float(target_out_probs[s, c_idx].item())
             target_logit = float(target_out_logits[s, c_idx].item())
+
+            adv_pgd_prob: float | None = None
+            adv_pgd_logit: float | None = None
+            if adv_pgd_out_probs is not None and adv_pgd_out_logits is not None:
+                adv_pgd_prob = round(float(adv_pgd_out_probs[s, c_idx].item()), 6)
+                adv_pgd_logit = round(float(adv_pgd_out_logits[s, c_idx].item()), 4)
+
             key = f"{s}:{c_idx}"
             out_probs[key] = OutputProbability(
                 prob=round(prob, 6),
                 logit=round(logit, 4),
                 target_prob=round(target_prob, 6),
                 target_logit=round(target_logit, 4),
+                adv_pgd_prob=adv_pgd_prob,
+                adv_pgd_logit=adv_pgd_logit,
                 token=tok_display(c_idx),
             )
     return out_probs
@@ -560,11 +577,14 @@ def compute_graph_optimized_stream(
     loss_coeff: Annotated[float, Query(gt=0)],
     loss_position: Annotated[int, Query(ge=0)],
     label_token: Annotated[int | None, Query()] = None,
+    adv_pgd_n_steps: Annotated[int | None, Query(gt=0)] = None,
+    adv_pgd_step_size: Annotated[float | None, Query(gt=0)] = None,
 ):
     """Compute optimized attribution graph for a prompt with streaming progress.
 
     loss_type determines whether to use CE (cross-entropy for specific token) or KL (distribution matching).
     label_token is required when loss_type is "ce".
+    adv_pgd_n_steps and adv_pgd_step_size enable adversarial PGD when both are provided.
     """
     # Build loss config based on type
     loss_config: LossConfig
@@ -607,6 +627,8 @@ def compute_graph_optimized_stream(
         beta=beta,
         mask_type=mask_type,
         loss=loss_config,
+        adv_pgd_n_steps=adv_pgd_n_steps,
+        adv_pgd_step_size=adv_pgd_step_size,
     )
 
     optim_config = OptimCIConfig(
@@ -623,6 +645,9 @@ def compute_graph_optimized_stream(
         sampling=loaded.config.sampling,
         ce_kl_rounding_threshold=0.5,
         mask_type=mask_type,
+        adv_pgd=AdvPGDConfig(n_steps=adv_pgd_n_steps, step_size=adv_pgd_step_size, init="random")
+        if adv_pgd_n_steps is not None and adv_pgd_step_size is not None
+        else None,
     )
 
     def work(on_progress: ProgressCallback) -> GraphDataWithOptimization:
@@ -639,6 +664,9 @@ def compute_graph_optimized_stream(
 
         ci_masked_out_logits = result.ci_masked_out_logits.cpu()
         target_out_logits = result.target_out_logits.cpu()
+        adv_pgd_out_logits = (
+            result.adv_pgd_out_logits.cpu() if result.adv_pgd_out_logits is not None else None
+        )
 
         graph_id = db.save_graph(
             prompt_id=prompt_id,
@@ -647,6 +675,7 @@ def compute_graph_optimized_stream(
                 edges=result.edges,
                 ci_masked_out_logits=ci_masked_out_logits,
                 target_out_logits=target_out_logits,
+                adv_pgd_out_logits=adv_pgd_out_logits,
                 node_ci_vals=result.node_ci_vals,
                 node_subcomp_acts=result.node_subcomp_acts,
                 optimization_params=opt_params,
@@ -663,6 +692,7 @@ def compute_graph_optimized_stream(
             num_tokens=num_tokens,
             ci_threshold=ci_threshold,
             normalize=normalize,
+            adv_pgd_out_logits=adv_pgd_out_logits,
         )
 
         # Build loss result based on config type
@@ -700,8 +730,11 @@ def compute_graph_optimized_stream(
                 metrics=OptimizationMetricsResult(
                     ci_masked_label_prob=result.metrics.ci_masked_label_prob,
                     stoch_masked_label_prob=result.metrics.stoch_masked_label_prob,
+                    adv_pgd_label_prob=result.metrics.adv_pgd_label_prob,
                     l0_total=result.metrics.l0_total,
                 ),
+                adv_pgd_n_steps=adv_pgd_n_steps,
+                adv_pgd_step_size=adv_pgd_step_size,
             ),
         )
 
@@ -731,6 +764,7 @@ def filter_graph_for_display(
     ci_threshold: float,
     normalize: NormalizeType,
     edge_limit: int = GLOBAL_EDGE_LIMIT,
+    adv_pgd_out_logits: torch.Tensor | None = None,
 ) -> FilteredGraph:
     """Filter and transform a raw attribution graph for display.
 
@@ -741,7 +775,9 @@ def filter_graph_for_display(
     5. Normalize edge strengths (if requested)
     6. Cap edges at edge_limit
     """
-    out_probs = _build_out_probs(ci_masked_out_logits, target_out_logits, tok_display)
+    out_probs = _build_out_probs(
+        ci_masked_out_logits, target_out_logits, tok_display, adv_pgd_out_logits
+    )
 
     filtered_node_ci_vals = {k: v for k, v in node_ci_vals.items() if v > ci_threshold}
 
@@ -804,6 +840,7 @@ def stored_graph_to_response(
         num_tokens=num_tokens,
         ci_threshold=ci_threshold,
         normalize=normalize,
+        adv_pgd_out_logits=graph.adv_pgd_out_logits,
     )
 
     if not is_optimized:
@@ -857,6 +894,8 @@ def stored_graph_to_response(
             loss=loss_result,
             # Metrics not stored in DB for cached graphs - use l0_total from graph
             metrics=OptimizationMetricsResult(l0_total=float(fg.l0_total)),
+            adv_pgd_n_steps=opt.adv_pgd_n_steps,
+            adv_pgd_step_size=opt.adv_pgd_step_size,
         ),
     )
 

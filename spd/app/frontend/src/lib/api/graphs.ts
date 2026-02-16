@@ -121,6 +121,8 @@ export type ComputeGraphOptimizedParams = {
     lossCoeff: number;
     lossPosition: number;
     labelToken?: number; // Required for CE loss
+    advPgdNSteps?: number;
+    advPgdStepSize?: number;
 };
 
 export async function computeGraphOptimizedStream(
@@ -141,6 +143,12 @@ export async function computeGraphOptimizedStream(
     url.searchParams.set("loss_position", String(params.lossPosition));
     if (params.labelToken !== undefined) {
         url.searchParams.set("label_token", String(params.labelToken));
+    }
+    if (params.advPgdNSteps !== undefined) {
+        url.searchParams.set("adv_pgd_n_steps", String(params.advPgdNSteps));
+    }
+    if (params.advPgdStepSize !== undefined) {
+        url.searchParams.set("adv_pgd_step_size", String(params.advPgdStepSize));
     }
 
     const response = await fetch(url.toString(), { method: "POST" });

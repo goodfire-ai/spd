@@ -623,6 +623,14 @@
                     lossCoeff: optConfig.loss.coeff,
                     lossPosition: optConfig.loss.position,
                     labelToken: optConfig.loss.type === "ce" ? optConfig.loss.labelTokenId : undefined,
+                    advPgdNSteps:
+                        optConfig.advPgdNSteps !== null && optConfig.advPgdStepSize !== null
+                            ? optConfig.advPgdNSteps
+                            : undefined,
+                    advPgdStepSize:
+                        optConfig.advPgdNSteps !== null && optConfig.advPgdStepSize !== null
+                            ? optConfig.advPgdStepSize
+                            : undefined,
                 };
 
                 data = await api.computeGraphOptimizedStream(params, (progress) => {
