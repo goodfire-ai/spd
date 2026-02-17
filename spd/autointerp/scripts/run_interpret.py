@@ -57,7 +57,7 @@ def main(
         limit=interp_config.limit,
         cost_limit_usd=interp_config.cost_limit_usd,
         max_requests_per_minute=interp_config.max_requests_per_minute,
-        arch=adapter.model_metadata,
+        model_metadata=adapter.model_metadata,
         template_strategy=interp_config.template_strategy,
         harvest=harvest,
         db_path=db_path,

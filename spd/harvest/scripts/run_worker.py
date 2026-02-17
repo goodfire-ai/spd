@@ -35,14 +35,7 @@ def main(
 
     adapter = adapter_from_id(config.method_config.id)
 
-    layers = adapter.layer_activation_sizes
-    vocab_size = adapter.vocab_size
-    dataloader = adapter.dataloader(config.batch_size)
-    harvest_fn = make_harvest_fn(device, config.method_config, adapter)
-
-    logger.info(f"Loading model on {device}")
-
-    output_dir = get_harvest_subrun_dir(adapter.id, subrun_id)
+    output_dir = get_harvest_subrun_dir(adapter.decomposition_id, subrun_id)
 
     if rank is not None:
         logger.info(f"Distributed harvest: rank {rank}/{world_size}, subrun {subrun_id}")
@@ -50,10 +43,10 @@ def main(
         logger.info(f"Single-GPU harvest: subrun {subrun_id}")
 
     harvest(
-        layers=layers,
-        vocab_size=vocab_size,
-        dataloader=dataloader,
-        harvest_fn=harvest_fn,
+        layers=adapter.layer_activation_sizes,
+        vocab_size=adapter.vocab_size,
+        dataloader=adapter.dataloader(config.batch_size),
+        harvest_fn=make_harvest_fn(device, config.method_config, adapter),
         config=config,
         output_dir=output_dir,
         rank_world_size=(rank, world_size) if rank is not None and world_size is not None else None,

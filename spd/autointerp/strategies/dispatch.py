@@ -18,7 +18,7 @@ from spd.harvest.schemas import ComponentData
 def format_prompt(
     strategy: CompactSkepticalConfig,
     component: ComponentData,
-    arch: ModelMetadata,
+    model_metadata: ModelMetadata,
     app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
@@ -28,7 +28,7 @@ def format_prompt(
             return compact_skeptical_prompt(
                 strategy,
                 component,
-                arch,
+                model_metadata,
                 app_tok,
                 input_token_stats,
                 output_token_stats,

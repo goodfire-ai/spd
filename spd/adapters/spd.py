@@ -31,7 +31,7 @@ class SPDAdapter(DecompositionAdapter):
 
     @property
     @override
-    def id(self) -> str:
+    def decomposition_id(self) -> str:
         return self._run_id
 
     @property

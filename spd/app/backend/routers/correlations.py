@@ -211,7 +211,7 @@ async def request_component_interpretation(
             detail=f"Token stats not available for component {component_key}",
         )
 
-    arch = ModelMetadata(
+    model_metadata = ModelMetadata(
         n_blocks=loaded.topology.n_blocks,
         model_class=loaded.model.__class__.__name__,
         dataset_name=runtime_cast(LMTaskConfig, loaded.config.task_config).dataset_name,
@@ -228,7 +228,7 @@ async def request_component_interpretation(
                 reasoning_effort="none",
                 strategy=CompactSkepticalConfig(),
                 component=component_data,
-                arch=arch,
+                model_metadata=model_metadata,
                 app_tok=loaded.tokenizer,
                 input_token_stats=input_token_stats,
                 output_token_stats=output_token_stats,

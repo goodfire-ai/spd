@@ -9,7 +9,7 @@ from spd.autointerp.schemas import ModelMetadata
 class DecompositionAdapter(ABC):
     @property
     @abstractmethod
-    def id(self) -> str: ...
+    def decomposition_id(self) -> str: ...
 
     @property
     @abstractmethod
