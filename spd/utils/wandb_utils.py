@@ -69,6 +69,23 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
 }
 
 
+def get_wandb_entity() -> str:
+    """Get the WandB entity from env var or the authenticated user's default entity."""
+    load_dotenv(override=True)
+    entity = os.getenv("WANDB_ENTITY")
+    if entity is None:
+        entity = wandb.Api().default_entity
+    assert entity is not None, (
+        "Could not determine WandB entity. Set WANDB_ENTITY in .env or log in with `wandb login`."
+    )
+    return entity
+
+
+def get_wandb_run_url(project: str, run_id: str) -> str:
+    """Get the direct WandB URL for a run."""
+    return f"https://wandb.ai/{get_wandb_entity()}/{project}/runs/{run_id}"
+
+
 def _parse_metric_config_key(key: str) -> tuple[str, str, str] | None:
     """Parse a metric config key into (list_field, classname, param).
 
@@ -290,12 +307,10 @@ def init_wandb(
         name: The name of the wandb run.
         tags: Optional list of tags to add to the run.
     """
-    load_dotenv(override=True)
-
     wandb.init(
         id=run_id,
         project=project,
-        entity=os.getenv("WANDB_ENTITY"),
+        entity=get_wandb_entity(),
         name=name,
         tags=tags,
     )

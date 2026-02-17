@@ -384,6 +384,7 @@ def setup_decomposition_run(
     experiment_tag: str,
     evals_id: str | None = None,
     sweep_id: str | None = None,
+    run_id: str | None = None,
 ) -> tuple[Path, str, list[str]]:
     """Set up run infrastructure for a decomposition experiment.
 
@@ -394,13 +395,20 @@ def setup_decomposition_run(
         experiment_tag: Tag for the experiment type (e.g., "lm", "tms", "resid_mlp")
         evals_id: Optional evaluation identifier to add as W&B tag
         sweep_id: Optional sweep identifier to add as W&B tag
+        run_id: Optional pre-generated run ID from launcher. If None, generates a new one.
 
     Returns:
         Tuple of (output directory, run_id, tags for W&B).
     """
-    execution_stamp = ExecutionStamp.create(run_type="spd", create_snapshot=False)
-    out_dir = execution_stamp.out_dir
-    logger.info(f"Run ID: {execution_stamp.run_id}")
+    if run_id is not None:
+        out_dir = SPD_OUT_DIR / "spd" / run_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        execution_stamp = ExecutionStamp.create(run_type="spd", create_snapshot=False)
+        out_dir = execution_stamp.out_dir
+        run_id = execution_stamp.run_id
+
+    logger.info(f"Run ID: {run_id}")
     logger.info(f"Output directory: {out_dir}")
 
     tags = [i for i in [experiment_tag, evals_id, sweep_id] if i is not None]
@@ -409,7 +417,7 @@ def setup_decomposition_run(
         logger.info(f"Running on slurm array job id: {slurm_array_job_id}")
         tags.append(f"slurm-array-job-id_{slurm_array_job_id}")
 
-    return out_dir, execution_stamp.run_id, tags
+    return out_dir, run_id, tags
 
 
 _NO_ARG_PARSSED_SENTINEL = object()
