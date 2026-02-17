@@ -76,11 +76,11 @@ def get_sources_by_target(
 
     layers = [embed_path, *model.target_module_paths, unembed_path]
 
-    # Test all ordered pairs for gradient flow
+    # Test all distinct pairs for gradient flow
     test_pairs = []
     for in_layer in layers[:-1]:  # Don't include "output" as source
         for out_layer in layers[1:]:  # Don't include embed as target
-            if layers.index(in_layer) < layers.index(out_layer):
+            if in_layer != out_layer:
                 test_pairs.append((in_layer, out_layer))
 
     sources_by_target: dict[str, list[str]] = defaultdict(list)
