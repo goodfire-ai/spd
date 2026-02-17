@@ -69,6 +69,14 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
 }
 
 
+def get_wandb_run_url(project: str, run_id: str) -> str:
+    """Get the direct WandB URL for a run."""
+    load_dotenv(override=True)
+    entity = os.getenv("WANDB_ENTITY")
+    assert entity is not None, "WANDB_ENTITY must be set in .env"
+    return f"https://wandb.ai/{entity}/{project}/runs/{run_id}"
+
+
 def _parse_metric_config_key(key: str) -> tuple[str, str, str] | None:
     """Parse a metric config key into (list_field, classname, param).
 
