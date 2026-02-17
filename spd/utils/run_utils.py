@@ -13,6 +13,7 @@ from typing import Any, Final, Literal, NamedTuple
 import torch
 import yaml
 
+from spd.configs import Config
 from spd.log import logger
 from spd.settings import SPD_OUT_DIR
 from spd.utils.git_utils import (
@@ -324,21 +325,38 @@ RUN_TYPE_ABBREVIATIONS: Final[dict[RunType, str]] = {
 }
 
 
+def generate_run_id(run_type: RunType) -> str:
+    """Generate a unique run identifier.
+
+    Format: `{type_abbr}-{random_hex}`
+    """
+    type_abbr = RUN_TYPE_ABBREVIATIONS[run_type]
+    return f"{type_abbr}-{secrets.token_hex(4)}"
+
+
+def parse_config(config_path: Path | str | None, config_json: str | None) -> Config:
+    """Parse a Config from either a file path or a JSON string. Exactly one must be provided."""
+    assert (config_path is not None) != (config_json is not None), (
+        "Need exactly one of config_path and config_json"
+    )
+    if config_path is not None:
+        return Config.from_file(config_path)
+    assert config_json is not None
+    return Config(**json.loads(config_json.removeprefix("json:")))
+
+
+def parse_sweep_params(sweep_params_json: str | None) -> dict[str, Any] | None:
+    """Parse sweep parameters from a JSON string, or return None if not provided."""
+    if sweep_params_json is None:
+        return None
+    return json.loads(sweep_params_json.removeprefix("json:"))
+
+
 class ExecutionStamp(NamedTuple):
     run_id: str
     snapshot_branch: str
     commit_hash: str
     run_type: RunType
-
-    @staticmethod
-    def _generate_run_id(run_type: RunType) -> str:
-        """Generate a unique run identifier,
-
-        Format: `{type_abbr}-{random_hex}`
-        """
-        type_abbr: str = RUN_TYPE_ABBREVIATIONS[run_type]
-        random_hex: str = secrets.token_hex(4)
-        return f"{type_abbr}-{random_hex}"
 
     @classmethod
     def create(
@@ -347,7 +365,7 @@ class ExecutionStamp(NamedTuple):
         create_snapshot: bool,
     ) -> "ExecutionStamp":
         """Create an execution stamp, possibly including a git snapshot branch."""
-        run_id = ExecutionStamp._generate_run_id(run_type)
+        run_id = generate_run_id(run_type)
         snapshot_branch: str
         commit_hash: str
 
@@ -378,46 +396,6 @@ class ExecutionStamp(NamedTuple):
         run_dir = SPD_OUT_DIR / self.run_type / self.run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir
-
-
-def setup_decomposition_run(
-    experiment_tag: str,
-    evals_id: str | None = None,
-    launch_id: str | None = None,
-    run_id: str | None = None,
-) -> tuple[Path, str, list[str]]:
-    """Set up run infrastructure for a decomposition experiment.
-
-    Creates execution stamp, logs run info, and builds W&B tags.
-    Should only be called on main process for distributed training.
-
-    Args:
-        experiment_tag: Tag for the experiment type (e.g., "lm", "tms", "resid_mlp")
-        evals_id: Optional evaluation identifier to add as W&B tag
-        launch_id: Optional launch identifier to add as W&B tag
-        run_id: Optional pre-generated run ID from launcher. If None, generates a new one.
-
-    Returns:
-        Tuple of (output directory, run_id, tags for W&B).
-    """
-    if run_id is not None:
-        out_dir = SPD_OUT_DIR / "spd" / run_id
-        out_dir.mkdir(parents=True, exist_ok=True)
-    else:
-        execution_stamp = ExecutionStamp.create(run_type="spd", create_snapshot=False)
-        out_dir = execution_stamp.out_dir
-        run_id = execution_stamp.run_id
-
-    logger.info(f"Run ID: {run_id}")
-    logger.info(f"Output directory: {out_dir}")
-
-    tags = [i for i in [experiment_tag, evals_id, launch_id] if i is not None]
-    slurm_array_job_id = os.getenv("SLURM_ARRAY_JOB_ID", None)
-    if slurm_array_job_id is not None:
-        logger.info(f"Running on slurm array job id: {slurm_array_job_id}")
-        tags.append(f"slurm-array-job-id_{slurm_array_job_id}")
-
-    return out_dir, run_id, tags
 
 
 _NO_ARG_PARSSED_SENTINEL = object()
