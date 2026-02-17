@@ -12,12 +12,10 @@ Dependency graph (depends on a prior harvest merge):
 """
 
 from dataclasses import dataclass
-from datetime import datetime
 
 from spd.autointerp.config import AutointerpSlurmConfig
 from spd.autointerp.scoring.scripts import run_label_scoring
 from spd.autointerp.scripts import run_interpret
-from spd.decomposition import Decomposition
 from spd.log import logger
 from spd.utils.slurm import SlurmConfig, SubmitResult, generate_script, submit_slurm_job
 
@@ -30,11 +28,11 @@ class AutointerpSubmitResult:
 
 
 def submit_autointerp(
-    decomposition: Decomposition,
+    decomposition_id: str,
     config: AutointerpSlurmConfig,
-    dependency_job_id: str,
-    snapshot_branch: str,
-    harvest_subrun_id: str,
+    dependency_job_id: str | None = None,
+    snapshot_branch: str | None = None,
+    harvest_subrun_id: str | None = None,
 ) -> AutointerpSubmitResult:
     """Submit the autointerp pipeline to SLURM.
 
@@ -51,14 +49,11 @@ def submit_autointerp(
         AutointerpSubmitResult with interpret, detection, and fuzzing results.
     """
 
-    autointerp_run_id = "a-" + datetime.now().strftime("%Y%m%d_%H%M%S")
-
     # === 1. Interpret job ===
     interpret_cmd = run_interpret.get_command(
-        decomposition.id,
-        harvest_subrun_id,
-        config.config,
-        autointerp_run_id,
+        decomposition_id=decomposition_id,
+        config=config.config,
+        harvest_subrun_id=harvest_subrun_id,
     )
 
     interpret_slurm = SlurmConfig(
@@ -77,8 +72,7 @@ def submit_autointerp(
     logger.values(
         {
             "Job ID": interpret_result.job_id,
-            "Autointerp run ID": autointerp_run_id,
-            # "WandB path": wandb_path,
+            "Decomposition ID": decomposition_id,
             "Model": config.config.model,
             "Log": interpret_result.log_pattern,
         }
@@ -95,7 +89,7 @@ def submit_autointerp(
     scoring_results: dict[str, SubmitResult] = {}
     for scorer in ("detection", "fuzzing"):
         scoring_cmd = run_label_scoring.get_command(
-            decomposition.id,
+            decomposition_id,
             scorer_type=scorer,
             config=config.evals,
             harvest_subrun_id=harvest_subrun_id,

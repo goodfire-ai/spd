@@ -3,7 +3,7 @@ import os
 
 from dotenv import load_dotenv
 
-from spd.decomposition.dispatch import decomposition_from_id
+from spd.adapters import adapter_from_id
 from spd.harvest.config import IntruderEvalConfig
 from spd.harvest.intruder import run_intruder_scoring
 from spd.harvest.repo import HarvestRepo
@@ -20,7 +20,7 @@ def main(
 
     eval_config = IntruderEvalConfig.model_validate_json(config_json)
 
-    tokenizer_name = decomposition_from_id(decomposition_id).tokenizer_name
+    tokenizer_name = adapter_from_id(decomposition_id).tokenizer_name
 
     harvest = HarvestRepo(decomposition_id, subrun_id=harvest_subrun_id, readonly=False)
 

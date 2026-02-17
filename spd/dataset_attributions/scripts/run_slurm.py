@@ -80,7 +80,13 @@ def submit_attributions(
     # SLURM arrays are 1-indexed, so task ID 1 -> rank 0, etc.
     worker_commands = []
     for rank in range(n_gpus):
-        cmd = attribution_run.get_worker_command(wandb_path, config_json, rank, n_gpus, subrun_id)
+        cmd = attribution_run.get_worker_command(
+            wandb_path,
+            config_json,
+            rank=rank,
+            world_size=n_gpus,
+            subrun_id=subrun_id,
+        )
         worker_commands.append(cmd)
 
     array_config = SlurmArrayConfig(

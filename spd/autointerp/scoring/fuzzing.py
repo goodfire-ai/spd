@@ -121,6 +121,7 @@ async def run_fuzzing_scoring(
     openrouter_api_key: str,
     tokenizer_name: str,
     config: FuzzingEvalConfig,
+    max_requests_per_minute: int,
     limit: int | None,
     cost_limit_usd: float | None,
 ) -> list[FuzzingResult]:
@@ -194,7 +195,7 @@ async def run_fuzzing_scoring(
         jobs=jobs,
         max_tokens=5000,
         max_concurrent=config.max_concurrent,
-        max_requests_per_minute=10,
+        max_requests_per_minute=max_requests_per_minute,
         cost_limit_usd=cost_limit_usd,
     ):
         match outcome:

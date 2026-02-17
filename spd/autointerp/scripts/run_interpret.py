@@ -10,19 +10,18 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 
+from spd.adapters import adapter_from_id
 from spd.autointerp.config import AutointerpConfig
 from spd.autointerp.interpret import run_interpret
 from spd.autointerp.schemas import get_autointerp_subrun_dir
-from spd.decomposition.dispatch import decomposition_from_id
 from spd.harvest.repo import HarvestRepo
 from spd.log import logger
 
 
 def main(
     decomposition_id: str,
-    harvest_subrun_id: str,
     config_json: str,
-    autointerp_run_id: str | None = None,
+    harvest_subrun_id: str | None = None,
 ) -> None:
     interp_config = AutointerpConfig.model_validate_json(config_json)
 
@@ -30,11 +29,14 @@ def main(
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
-    harvest = HarvestRepo(decomposition_id, subrun_id=harvest_subrun_id, readonly=False)
+    if harvest_subrun_id is not None:
+        harvest = HarvestRepo(decomposition_id, subrun_id=harvest_subrun_id, readonly=False)
+    else:
+        harvest = HarvestRepo.open_most_recent(decomposition_id, readonly=False)
+        if harvest is None:
+            raise ValueError(f"No harvest data found for {decomposition_id}")
 
-    # Create timestamped run directory
-    if autointerp_run_id is None:
-        autointerp_run_id = "a-" + datetime.now().strftime("%Y%m%d_%H%M%S")
+    autointerp_run_id = "a-" + datetime.now().strftime("%Y%m%d_%H%M%S")
 
     subrun_dir = get_autointerp_subrun_dir(decomposition_id, autointerp_run_id)
     subrun_dir.mkdir(parents=True, exist_ok=True)
@@ -46,7 +48,7 @@ def main(
 
     logger.info(f"Autointerp run: {subrun_dir}")
 
-    decomposition = decomposition_from_id(decomposition_id)
+    adapter = adapter_from_id(decomposition_id)
 
     run_interpret(
         openrouter_api_key=openrouter_api_key,
@@ -55,30 +57,26 @@ def main(
         limit=interp_config.limit,
         cost_limit_usd=interp_config.cost_limit_usd,
         max_requests_per_minute=interp_config.max_requests_per_minute,
-        arch=decomposition.architecture_info,
+        arch=adapter.model_metadata,
         template_strategy=interp_config.template_strategy,
         harvest=harvest,
         db_path=db_path,
+        tokenizer_name=adapter.tokenizer_name,
+        max_concurrent=interp_config.max_concurrent,
     )
 
 
 def get_command(
     decomposition_id: str,
-    harvest_subrun_id: str,
     config: AutointerpConfig,
-    autointerp_run_id: str | None = None,
+    harvest_subrun_id: str | None = None,
 ) -> str:
     config_json = config.model_dump_json(exclude_none=True)
-    return (
+    cmd = (
         "python -m spd.autointerp.scripts.run_interpret "
         f"--decomposition_id {decomposition_id} "
-        f"--harvest_subrun_id {harvest_subrun_id} "
         f"--config_json '{config_json}' "
-        f"--autointerp_run_id {autointerp_run_id} "
     )
-
-
-if __name__ == "__main__":
-    import fire
-
-    fire.Fire(main)
+    if harvest_subrun_id is not None:
+        cmd += f"--harvest_subrun_id {harvest_subrun_id} "
+    return cmd

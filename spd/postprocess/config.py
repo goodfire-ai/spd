@@ -9,8 +9,7 @@ from typing import Any, override
 from spd.autointerp.config import AutointerpSlurmConfig
 from spd.base_config import BaseConfig
 from spd.dataset_attributions.config import AttributionsSlurmConfig
-from spd.decomposition.configs import SPDDecompositionConfig
-from spd.harvest.config import HarvestSlurmConfig, IntruderSlurmConfig
+from spd.harvest.config import HarvestSlurmConfig, IntruderSlurmConfig, SPDHarvestConfig
 
 
 class PostprocessConfig(BaseConfig):
@@ -36,7 +35,7 @@ class PostprocessConfig(BaseConfig):
 
     @override
     def model_post_init(self, __context: Any) -> None:
-        if self.attributions is None and not isinstance(
-            self.harvest.config.target_decomposition, SPDDecompositionConfig
-        ):
+        expects_attributions = self.attributions is not None
+        is_not_spd = not isinstance(self.harvest.config.method_config, SPDHarvestConfig)
+        if expects_attributions and is_not_spd:
             raise ValueError("Attributions only work for SPD decompositions")

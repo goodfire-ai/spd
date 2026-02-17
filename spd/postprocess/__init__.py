@@ -21,8 +21,7 @@ import yaml
 
 from spd.autointerp.scripts.run_slurm import AutointerpSubmitResult, submit_autointerp
 from spd.dataset_attributions.scripts.run_slurm import submit_attributions
-from spd.decomposition.dispatch import decomposition_from_config
-from spd.decomposition.spd import SPDDecomposition
+from spd.harvest.config import SPDHarvestConfig
 from spd.harvest.scripts import run_intruder
 from spd.harvest.scripts.run_slurm import submit_harvest
 from spd.log import logger
@@ -42,7 +41,7 @@ def postprocess(config: PostprocessConfig) -> Path:
     snapshot_branch, commit_hash = create_git_snapshot(f"postprocess-{secrets.token_hex(4)}")
     logger.info(f"Created git snapshot: {snapshot_branch} ({commit_hash[:8]})")
 
-    decomposition = decomposition_from_config(config.harvest.config.target_decomposition)
+    decomp_cfg = config.harvest.config.method_config
 
     # === 1. Harvest (always runs, upserts into harvest.db) ===
     harvest_result = submit_harvest(config.harvest, snapshot_branch=snapshot_branch)
@@ -54,9 +53,9 @@ def postprocess(config: PostprocessConfig) -> Path:
     # === 2. Attributions (parallel with harvest, SPD-only) ===
     attr_result = None
     if config.attributions is not None:
-        assert isinstance(decomposition, SPDDecomposition)
+        assert isinstance(decomp_cfg, SPDHarvestConfig)
         attr_result = submit_attributions(
-            wandb_path=decomposition.wandb_path,
+            wandb_path=decomp_cfg.wandb_path,
             config=config.attributions,
             snapshot_branch=snapshot_branch,
         )
@@ -65,7 +64,7 @@ def postprocess(config: PostprocessConfig) -> Path:
     autointerp_result: AutointerpSubmitResult | None = None
     if config.autointerp is not None:
         autointerp_result = submit_autointerp(
-            decomposition=decomposition,
+            decomposition_id=decomp_cfg.id,
             config=config.autointerp,
             dependency_job_id=harvest_result.merge_result.job_id,
             snapshot_branch=snapshot_branch,
@@ -76,7 +75,7 @@ def postprocess(config: PostprocessConfig) -> Path:
     intruder_result: SubmitResult | None = None
     if config.intruder is not None:
         intruder_cmd = run_intruder.get_command(
-            decomposition_id=decomposition.id,
+            decomposition_id=decomp_cfg.id,
             config=config.intruder.config,
             harvest_subrun_id=harvest_result.subrun_id,
         )
@@ -128,7 +127,7 @@ def postprocess(config: PostprocessConfig) -> Path:
 
     manifest = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "decomposition": config.harvest.config.target_decomposition.model_dump(),
+        "decomposition": config.harvest.config.method_config.model_dump(),
         "snapshot_branch": snapshot_branch,
         "commit_hash": commit_hash,
         "config": config.model_dump(),

@@ -10,9 +10,10 @@ from datetime import datetime
 import fire
 import torch
 
-from spd.decomposition.dispatch import decomposition_from_config
+from spd.adapters import adapter_from_id
 from spd.harvest.config import HarvestConfig
 from spd.harvest.harvest import harvest
+from spd.harvest.harvest_fn import make_harvest_fn
 from spd.harvest.schemas import get_harvest_subrun_dir
 from spd.log import logger
 from spd.utils.distributed_utils import get_device
@@ -20,32 +21,42 @@ from spd.utils.distributed_utils import get_device
 
 def main(
     config_json: str,
-    rank_world_size: tuple[int, int] | None,
+    rank: int | None = None,
+    world_size: int | None = None,
     subrun_id: str | None = None,
 ) -> None:
+    assert (rank is not None) == (world_size is not None)
+
     if subrun_id is None:
         subrun_id = "h-" + datetime.now().strftime("%Y%m%d_%H%M%S")
+    device = torch.device(get_device())
 
     config = HarvestConfig.model_validate_json(config_json)
 
-    decomposition = decomposition_from_config(config.target_decomposition)
+    adapter = adapter_from_id(config.method_config.id)
 
-    if rank_world_size is not None:
-        r, w = rank_world_size
-        logger.info(f"Distributed harvest: rank {r}/{w}, subrun {subrun_id}")
+    layers = adapter.layer_activation_sizes
+    vocab_size = adapter.vocab_size
+    dataloader = adapter.dataloader(config.batch_size)
+    harvest_fn = make_harvest_fn(device, config.method_config, adapter)
+
+    logger.info(f"Loading model on {device}")
+
+    output_dir = get_harvest_subrun_dir(adapter.id, subrun_id)
+
+    if rank is not None:
+        logger.info(f"Distributed harvest: rank {rank}/{world_size}, subrun {subrun_id}")
     else:
         logger.info(f"Single-GPU harvest: subrun {subrun_id}")
 
-    device = torch.device(get_device())
-    logger.info(f"Loading model on {device}")
-
-    output_dir = get_harvest_subrun_dir(decomposition.id, subrun_id)
-
     harvest(
-        decomposition=decomposition,
+        layers=layers,
+        vocab_size=vocab_size,
+        dataloader=dataloader,
+        harvest_fn=harvest_fn,
         config=config,
         output_dir=output_dir,
-        rank_world_size=rank_world_size,
+        rank_world_size=(rank, world_size) if rank is not None and world_size is not None else None,
         device=device,
     )
 

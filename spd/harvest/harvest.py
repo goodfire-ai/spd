@@ -13,21 +13,29 @@ Performance (SimpleStories, 600M tokens, batch_size=256):
 
 import itertools
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import torch
 import tqdm
+from torch.utils.data import DataLoader
 
-from spd.decomposition import Decomposition
 from spd.harvest.config import HarvestConfig
 from spd.harvest.harvester import Harvester
 from spd.harvest.repo import HarvestRepo
+from spd.harvest.schemas import HarvestBatch
 from spd.log import logger
 from spd.utils.general_utils import bf16_autocast
 
 
 def harvest(
-    decomposition: Decomposition,
+    # maybe consolidate *only* these later
+    layers: list[tuple[str, int]],
+    vocab_size: int,
+    dataloader: DataLoader[Any],
+    harvest_fn: Callable[[torch.Tensor], HarvestBatch],
+    # ===============================
     config: HarvestConfig,
     output_dir: Path,
     *,
@@ -52,18 +60,15 @@ def harvest(
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     harvester = Harvester(
-        layers=[
-            (layer_name, n_components)
-            for layer_name, n_components in decomposition.architecture_info.c_per_layer.items()
-        ],
-        vocab_size=decomposition.architecture_info.vocab_size,
+        layers=layers,
+        vocab_size=vocab_size,
         max_examples_per_component=config.activation_examples_per_component,
         context_tokens_per_side=config.activation_context_tokens_per_side,
         max_examples_per_batch_per_component=config.max_examples_per_batch_per_component,
         device=device,
     )
 
-    train_iter = iter(decomposition.dataloader(config.batch_size))
+    train_iter = iter(dataloader)
     batches_processed = 0
     last_log_time = time.time()
     match config.n_batches:
@@ -71,8 +76,6 @@ def harvest(
             batch_range = range(n_batches)
         case "whole_dataset":
             batch_range = itertools.count()
-
-    harvest_fn = decomposition.make_harvest_fn(device)
 
     for batch_idx in tqdm.tqdm(batch_range, desc="Harvesting", disable=rank_world_size is not None):
         try:

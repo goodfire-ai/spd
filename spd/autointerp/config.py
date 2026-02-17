@@ -42,7 +42,8 @@ class AutointerpConfig(BaseConfig):
     reasoning_effort: Effort = "low"
     limit: int | None = None
     cost_limit_usd: float | None = None
-    max_requests_per_minute: int = 500
+    max_requests_per_minute: int = 500  # TODO(oli): remove this?
+    max_concurrent: int = 50
     template_strategy: Annotated[CompactSkepticalConfig, Field(discriminator="type")]
 
 

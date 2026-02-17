@@ -11,10 +11,12 @@ from pydantic import BaseModel
 
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
-from spd.decomposition.spd import SPDDecomposition
+from spd.autointerp.schemas import ModelMetadata
+from spd.configs import LMTaskConfig
 from spd.harvest import analysis
 from spd.log import logger
 from spd.topology import TransformerTopology
+from spd.utils.general_utils import runtime_cast
 
 
 def _canonical_to_concrete_key(
@@ -209,8 +211,14 @@ async def request_component_interpretation(
             detail=f"Token stats not available for component {component_key}",
         )
 
-    # TODO(oli): this a gross use of a way-too-big api just for arch info
-    arch = SPDDecomposition(loaded.run.wandb_path, 0.0).architecture_info
+    arch = ModelMetadata(
+        n_blocks=loaded.topology.n_blocks,
+        model_class=loaded.model.__class__.__name__,
+        dataset_name=runtime_cast(LMTaskConfig, loaded.config.task_config).dataset_name,
+        layer_descriptions={
+            path: loaded.topology.target_to_canon(path) for path in loaded.model.target_module_paths
+        },
+    )
 
     async with OpenRouter(api_key=api_key) as api:
         try:

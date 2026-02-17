@@ -4,7 +4,7 @@ from typing import Any
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.autointerp.config import CompactSkepticalConfig
-from spd.autointerp.schemas import ArchitectureInfo
+from spd.autointerp.schemas import ModelMetadata
 from spd.autointerp.strategies.compact_skeptical import (
     INTERPRETATION_SCHEMA,
 )
@@ -18,7 +18,7 @@ from spd.harvest.schemas import ComponentData
 def format_prompt(
     strategy: CompactSkepticalConfig,
     component: ComponentData,
-    arch: ArchitectureInfo,
+    arch: ModelMetadata,
     app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,

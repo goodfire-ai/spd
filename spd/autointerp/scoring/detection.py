@@ -155,6 +155,7 @@ async def run_detection_scoring(
     openrouter_api_key: str,
     tokenizer_name: str,
     config: DetectionEvalConfig,
+    max_requests_per_minute: int,
     limit: int | None,
     cost_limit_usd: float | None,
 ) -> list[DetectionResult]:
@@ -223,7 +224,7 @@ async def run_detection_scoring(
         jobs=jobs,
         max_tokens=5000,
         max_concurrent=config.max_concurrent,
-        max_requests_per_minute=10,
+        max_requests_per_minute=max_requests_per_minute,
         cost_limit_usd=cost_limit_usd,
     ):
         match outcome:

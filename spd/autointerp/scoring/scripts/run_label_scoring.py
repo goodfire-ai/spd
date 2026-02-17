@@ -10,11 +10,11 @@ from typing import Literal
 
 from dotenv import load_dotenv
 
+from spd.adapters import adapter_from_id
 from spd.autointerp.config import AutointerpEvalConfig
 from spd.autointerp.repo import InterpRepo
 from spd.autointerp.scoring.detection import run_detection_scoring
 from spd.autointerp.scoring.fuzzing import run_fuzzing_scoring
-from spd.decomposition.dispatch import decomposition_from_id
 from spd.harvest.repo import HarvestRepo
 
 LabelScorerType = Literal["detection", "fuzzing"]
@@ -32,7 +32,7 @@ def main(
 
     config = AutointerpEvalConfig.model_validate_json(config_json)
 
-    tokenizer_name = decomposition_from_id(decomposition_id).tokenizer_name
+    tokenizer_name = adapter_from_id(decomposition_id).tokenizer_name
 
     interp_repo = InterpRepo.open(decomposition_id)
     assert interp_repo is not None, (
@@ -58,6 +58,7 @@ def main(
                     openrouter_api_key=openrouter_api_key,
                     tokenizer_name=tokenizer_name,
                     config=config.detection_config,
+                    max_requests_per_minute=config.max_requests_per_minute,
                     limit=config.limit,
                     cost_limit_usd=config.cost_limit_usd,
                 )
@@ -68,10 +69,11 @@ def main(
                     components=components,
                     interp_repo=interp_repo,
                     model=config.model,
+                    reasoning_effort=config.reasoning_effort,
                     openrouter_api_key=openrouter_api_key,
                     tokenizer_name=tokenizer_name,
-                    reasoning_effort=config.reasoning_effort,
                     config=config.fuzzing_config,
+                    max_requests_per_minute=config.max_requests_per_minute,
                     limit=config.limit,
                     cost_limit_usd=config.cost_limit_usd,
                 )
@@ -82,7 +84,7 @@ def get_command(
     decomposition_id: str,
     scorer_type: LabelScorerType,
     config: AutointerpEvalConfig,
-    harvest_subrun_id: str,
+    harvest_subrun_id: str | None = None,
 ) -> str:
     config_json = config.model_dump_json(exclude_none=True)
     cmd = (
@@ -90,8 +92,9 @@ def get_command(
         f"--decomposition_id {decomposition_id} "
         f"--scorer_type {scorer_type} "
         f"--config_json '{config_json}' "
-        f"--harvest_subrun_id {harvest_subrun_id}"
     )
+    if harvest_subrun_id is not None:
+        cmd += f" --harvest_subrun_id {harvest_subrun_id} "
     return cmd
 
 

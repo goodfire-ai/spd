@@ -15,7 +15,7 @@ from spd.autointerp.llm_api import (
     make_response_format,
     map_llm_calls,
 )
-from spd.autointerp.schemas import ArchitectureInfo, InterpretationResult
+from spd.autointerp.schemas import InterpretationResult, ModelMetadata
 from spd.autointerp.strategies.dispatch import format_prompt, get_response_schema
 from spd.harvest.analysis import TokenPRLift, get_input_token_stats, get_output_token_stats
 from spd.harvest.repo import HarvestRepo
@@ -31,7 +31,7 @@ async def interpret_component(
     reasoning_effort: Effort,
     strategy: CompactSkepticalConfig,
     component: ComponentData,
-    arch: ArchitectureInfo,
+    arch: ModelMetadata,
     app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
@@ -87,17 +87,19 @@ def run_interpret(
     limit: int | None,
     cost_limit_usd: float | None,
     max_requests_per_minute: int,
-    arch: ArchitectureInfo,
+    max_concurrent: int,
+    arch: ModelMetadata,
     template_strategy: CompactSkepticalConfig,
     harvest: HarvestRepo,
     db_path: Path,
+    tokenizer_name: str,
 ) -> list[InterpretationResult]:
     components = harvest.get_all_components()
 
     token_stats = harvest.get_token_stats()
     assert token_stats is not None, "token_stats.pt not found. Run harvest first."
 
-    app_tok = AppTokenizer.from_pretrained(arch.tokenizer_name)
+    app_tok = AppTokenizer.from_pretrained(tokenizer_name)
 
     # Sort by firing density descending, just as an easy proxy for doing the most useful work first.
     # NOTE: this doesn't necessarily align with mean causal importance as we use for sorting in the
@@ -110,80 +112,84 @@ def run_interpret(
     async def _run() -> list[InterpretationResult]:
         db = InterpDB(db_path)
 
-        completed = db.get_completed_keys()
-        if completed:
-            logger.info(f"Resuming: {len(completed)} already completed")
+        try:
+            completed = db.get_completed_keys()
+            if completed:
+                logger.info(f"Resuming: {len(completed)} already completed")
 
-        remaining = [c for c in eligible if c.component_key not in completed]
-        logger.info(f"Interpreting {len(remaining)} components")
+            remaining = [c for c in eligible if c.component_key not in completed]
+            logger.info(f"Interpreting {len(remaining)} components")
 
-        schema = get_response_schema(template_strategy)
-        jobs: list[LLMJob] = []
-        for component in remaining:
-            input_stats = get_input_token_stats(
-                token_stats, component.component_key, app_tok, top_k=20
-            )
-            output_stats = get_output_token_stats(
-                token_stats, component.component_key, app_tok, top_k=50
-            )
-            assert input_stats is not None
-            assert output_stats is not None
-            prompt = format_prompt(
-                strategy=template_strategy,
-                component=component,
-                arch=arch,
-                app_tok=app_tok,
-                input_token_stats=input_stats,
-                output_token_stats=output_stats,
-            )
-            jobs.append(LLMJob(prompt=prompt, schema=schema, key=component.component_key))
+            schema = get_response_schema(template_strategy)
+            jobs: list[LLMJob] = []
+            for component in remaining:
+                input_stats = get_input_token_stats(
+                    token_stats, component.component_key, app_tok, top_k=20
+                )
+                output_stats = get_output_token_stats(
+                    token_stats, component.component_key, app_tok, top_k=50
+                )
+                assert input_stats is not None
+                assert output_stats is not None
+                prompt = format_prompt(
+                    strategy=template_strategy,
+                    component=component,
+                    arch=arch,
+                    app_tok=app_tok,
+                    input_token_stats=input_stats,
+                    output_token_stats=output_stats,
+                )
+                jobs.append(LLMJob(prompt=prompt, schema=schema, key=component.component_key))
 
-        results: list[InterpretationResult] = []
-        n_errors = 0
+            results: list[InterpretationResult] = []
+            n_errors = 0
 
-        async for outcome in map_llm_calls(
-            openrouter_api_key=openrouter_api_key,
-            model=model,
-            reasoning_effort=reasoning_effort,
-            jobs=jobs,
-            max_tokens=8000,
-            max_concurrent=MAX_CONCURRENT,
-            max_requests_per_minute=max_requests_per_minute,
-            cost_limit_usd=cost_limit_usd,
-        ):
-            match outcome:
-                case LLMResult(job=job, parsed=parsed, raw=raw):
-                    assert len(parsed) == 3, f"Expected 3 fields, got {len(parsed)}"
-                    label = parsed["label"]
-                    confidence = parsed["confidence"]
-                    reasoning_text = parsed["reasoning"]
-                    assert (
-                        isinstance(label, str)
-                        and isinstance(confidence, str)
-                        and isinstance(reasoning_text, str)
+            async for outcome in map_llm_calls(
+                openrouter_api_key=openrouter_api_key,
+                model=model,
+                reasoning_effort=reasoning_effort,
+                jobs=jobs,
+                max_tokens=8000,
+                max_concurrent=max_concurrent,
+                max_requests_per_minute=max_requests_per_minute,
+                cost_limit_usd=cost_limit_usd,
+            ):
+                match outcome:
+                    case LLMResult(job=job, parsed=parsed, raw=raw):
+                        assert len(parsed) == 3, f"Expected 3 fields, got {len(parsed)}"
+                        label = parsed["label"]
+                        confidence = parsed["confidence"]
+                        reasoning_text = parsed["reasoning"]
+                        assert (
+                            isinstance(label, str)
+                            and isinstance(confidence, str)
+                            and isinstance(reasoning_text, str)
+                        )
+                        result = InterpretationResult(
+                            component_key=job.key,
+                            label=label,
+                            confidence=confidence,
+                            reasoning=reasoning_text,
+                            raw_response=raw,
+                            prompt=job.prompt,
+                        )
+                        results.append(result)
+                        db.save_interpretation(result)
+                    case LLMError(job=job, error=e):
+                        n_errors += 1
+                        logger.error(f"Skipping {job.key}: {type(e).__name__}: {e}")
+
+                error_rate = n_errors / (n_errors + len(results))
+                # 10 is a magic number - just trying to avoid low sample size causing this to false alarm
+                if error_rate > 0.2 and n_errors > 10:
+                    raise RuntimeError(
+                        f"Error rate {error_rate:.0%} ({n_errors}/{len(remaining)}) exceeds 20% threshold"
                     )
-                    result = InterpretationResult(
-                        component_key=job.key,
-                        label=label,
-                        confidence=confidence,
-                        reasoning=reasoning_text,
-                        raw_response=raw,
-                        prompt=job.prompt,
-                    )
-                    results.append(result)
-                    db.save_interpretation(result)
-                case LLMError(job=job, error=e):
-                    n_errors += 1
-                    logger.error(f"Skipping {job.key}: {type(e).__name__}: {e}")
 
-        db.close()
-
-        # TODO(oli): we should maybe put this **in** the loop
-        error_rate = n_errors / len(remaining) if remaining else 0.0
-        if error_rate > 0.2:
-            raise RuntimeError(
-                f"Error rate {error_rate:.0%} ({n_errors}/{len(remaining)}) exceeds 20% threshold"
-            )
+        except Exception as e:
+            logger.error(f"Error: {type(e).__name__}: {e}")
+            db.close()
+            raise e
 
         logger.info(f"Completed {len(results)} interpretations -> {db_path}")
         return results
