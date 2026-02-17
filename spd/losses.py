@@ -38,11 +38,7 @@ from spd.metrics import (
     unmasked_recon_loss,
 )
 from spd.models.component_model import CIOutputs, ComponentModel
-from spd.persistent_pgd import (
-    PPGDSources,
-    persistent_pgd_recon_loss,
-    persistent_pgd_recon_subset_loss,
-)
+from spd.persistent_pgd import PersistentPGDState
 
 
 def compute_losses(
@@ -57,8 +53,8 @@ def compute_losses(
     sampling: SamplingType,
     use_delta_component: bool,
     n_mask_samples: int,
-    ppgd_sourcess: dict[
-        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PPGDSources
+    ppgd_states: dict[
+        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PersistentPGDState
     ],
     output_loss_type: Literal["mse", "kl"],
 ) -> dict[LossMetricConfigType, Float[Tensor, ""]]:
@@ -188,28 +184,13 @@ def compute_losses(
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                 )
-            case PersistentPGDReconLossConfig():
-                ppgd_sources = ppgd_sourcess[cfg]
-                loss = persistent_pgd_recon_loss(
+            case PersistentPGDReconLossConfig() | PersistentPGDReconSubsetLossConfig():
+                loss = ppgd_states[cfg].compute_recon_loss(
                     model=model,
                     batch=batch,
-                    ppgd_sources=ppgd_sources,
-                    ci=ci.lower_leaky,
-                    weight_deltas=weight_deltas if use_delta_component else None,
                     target_out=target_out,
-                    output_loss_type=output_loss_type,
-                )
-            case PersistentPGDReconSubsetLossConfig():
-                ppgd_sources = ppgd_sourcess[cfg]
-                loss = persistent_pgd_recon_subset_loss(
-                    model=model,
-                    batch=batch,
-                    ppgd_sources=ppgd_sources,
                     ci=ci.lower_leaky,
-                    weight_deltas=weight_deltas if use_delta_component else None,
-                    target_out=target_out,
-                    output_loss_type=output_loss_type,
-                    routing=cfg.routing,
+                    weight_deltas=weight_deltas,
                 )
 
         losses[cfg] = loss
