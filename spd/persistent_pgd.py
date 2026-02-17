@@ -169,7 +169,7 @@ class PersistentPGDState:
         if self._skip_all_reduce:
             return dict(zip(self.sources.keys(), grads, strict=True))
         return {
-            k: all_reduce(g, op=ReduceOp.SUM)
+            k: all_reduce(g, op=ReduceOp.AVG)
             for k, g in zip(self.sources.keys(), grads, strict=True)
         }
 
