@@ -1,41 +1,50 @@
 """Harvest data repository.
 
-Owns SPD_OUT_DIR/harvest/<run_id>/ and provides read access to all harvest artifacts.
-No in-memory caching -- reads go through on every call. Component data backed by SQLite;
-correlations and token stats remain as .pt files.
+Owns SPD_OUT_DIR/harvest/<decomposition_id>/ and provides read/write access to all
+harvest artifacts. No in-memory caching -- reads go through on every call.
+Component data backed by SQLite; correlations and token stats remain as .pt files.
 
-Use HarvestRepo.open() to construct — returns None if no harvest data exists.
-Layout: harvest/<run_id>/h-YYYYMMDD_HHMMSS/{harvest.db, *.pt}
+Use HarvestRepo.open() for reading, HarvestRepo.save_results() for writing.
+Layout: harvest/<decomposition_id>/h-YYYYMMDD_HHMMSS/{harvest.db, *.pt}
 """
 
 from pathlib import Path
 
+from spd.harvest.config import HarvestConfig
 from spd.harvest.db import HarvestDB
+from spd.harvest.harvester import Harvester
 from spd.harvest.schemas import (
     ComponentData,
     ComponentSummary,
     get_harvest_dir,
 )
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
+from spd.log import logger
 
 
 class HarvestRepo:
-    """Read-only access to harvest data for a single run.
+    """Access to harvest data for a single decomposition.
 
-    Constructed via HarvestRepo.open(). DB is opened eagerly at construction.
+    Constructed via HarvestRepo.open() for reading.
+    Use HarvestRepo.save_results() to write harvest outputs.
     """
 
-    def __init__(self, db: HarvestDB, subrun_dir: Path, run_id: str) -> None:
+    def __init__(self, db: HarvestDB, subrun_dir: Path, decomposition_id: str) -> None:
         self._db = db
         self._subrun_dir = subrun_dir
         self.db_path = subrun_dir / "harvest.db"
         self.subrun_id = subrun_dir.name
-        self.run_id = run_id
+        self.decomposition_id = decomposition_id
 
     @classmethod
-    def open(cls, run_id: str, subrun_id: str | None = None) -> "HarvestRepo | None":
-        """Open harvest data for a run. Returns None if no harvest data exists."""
-        harvest_dir = get_harvest_dir(run_id)
+    def open(
+        cls,
+        decomposition_id: str,
+        subrun_id: str | None = None,
+        readonly: bool = True,
+    ) -> "HarvestRepo | None":
+        """Open harvest data. Returns None if no harvest data exists."""
+        harvest_dir = get_harvest_dir(decomposition_id)
         if not harvest_dir.exists():
             return None
 
@@ -55,10 +64,50 @@ class HarvestRepo:
             return None
 
         return cls(
-            db=HarvestDB(db_path, readonly=True),
+            db=HarvestDB(db_path, readonly=readonly),
             subrun_dir=subrun_dir,
-            run_id=run_id,
+            decomposition_id=decomposition_id,
         )
+
+    @staticmethod
+    def save_results(harvester: Harvester, config: HarvestConfig, output_dir: Path) -> None:
+        """Build and save all harvest results to disk.
+
+        Components are streamed to the DB one at a time to avoid holding all ~40K
+        ComponentData objects in memory simultaneously.
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info("Building and saving component results...")
+        db_path = output_dir / "harvest.db"
+        db = HarvestDB(db_path)
+        db.save_config(config)
+        components_iter = harvester.build_results(pmi_top_k_tokens=config.pmi_token_top_k)
+        n_saved = db.save_components_iter(components_iter)
+        db.close()
+        logger.info(f"Saved {n_saved} components to {db_path}")
+
+        component_keys = harvester.component_keys
+
+        correlations = CorrelationStorage(
+            component_keys=component_keys,
+            count_i=harvester.firing_counts.long().cpu(),
+            count_ij=harvester.cooccurrence_counts.long().cpu(),
+            count_total=harvester.total_tokens_processed,
+        )
+        correlations.save(output_dir / "component_correlations.pt")
+
+        token_stats = TokenStatsStorage(
+            component_keys=component_keys,
+            vocab_size=harvester.vocab_size,
+            n_tokens=harvester.total_tokens_processed,
+            input_counts=harvester.input_cooccurrence.cpu(),
+            input_totals=harvester.input_marginals.float().cpu(),
+            output_counts=harvester.output_cooccurrence.cpu(),
+            output_totals=harvester.output_marginals.cpu(),
+            firing_counts=harvester.firing_counts.cpu(),
+        )
+        token_stats.save(output_dir / "token_stats.pt")
 
     # -- Provenance ------------------------------------------------------------
 
@@ -98,6 +147,8 @@ class HarvestRepo:
 
     # -- Eval scores (e.g. intruder) -------------------------------------------
 
-    def get_intruder_scores(self) -> dict[str, float] | None:
-        scores = self._db.get_scores("intruder")
-        return scores if scores else None
+    def save_score(self, component_key: str, score_type: str, score: float, details: str) -> None:
+        self._db.save_score(component_key, score_type, score, details)
+
+    def get_scores(self, score_type: str) -> dict[str, float]:
+        return self._db.get_scores(score_type)

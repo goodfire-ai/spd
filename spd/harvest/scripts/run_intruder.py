@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 
 from spd.autointerp.interpret import get_architecture_info
 from spd.harvest.config import IntruderEvalConfig
-from spd.harvest.db import HarvestDB
 from spd.harvest.intruder import run_intruder_scoring
 from spd.harvest.repo import HarvestRepo
 from spd.utils.wandb_utils import parse_wandb_run_path
@@ -35,11 +34,9 @@ def main(
     arch = get_architecture_info(wandb_path)
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
-    harvest = HarvestRepo.open(run_id, subrun_id=harvest_subrun_id)
+    harvest = HarvestRepo.open(run_id, subrun_id=harvest_subrun_id, readonly=False)
     assert harvest is not None, f"No harvest data for {run_id}"
     components = harvest.get_all_components()
-
-    db = HarvestDB(harvest.db_path)
 
     asyncio.run(
         run_intruder_scoring(
@@ -47,7 +44,7 @@ def main(
             model=eval_config.model,
             openrouter_api_key=openrouter_api_key,
             tokenizer_name=arch.tokenizer_name,
-            db=db,
+            harvest=harvest,
             eval_config=eval_config,
             limit=eval_config.limit,
             cost_limit_usd=eval_config.cost_limit_usd,

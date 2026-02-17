@@ -21,56 +21,11 @@ import torch
 import tqdm
 
 from spd.harvest.config import HarvestConfig
-from spd.harvest.db import HarvestDB
 from spd.harvest.harvester import Harvester
+from spd.harvest.repo import HarvestRepo
 from spd.harvest.schemas import HarvestBatch
-from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
 from spd.utils.general_utils import bf16_autocast
-
-
-def _save_harvest_results(
-    harvester: Harvester,
-    config: HarvestConfig,
-    output_dir: Path,
-) -> None:
-    """Build and save all harvest results to disk.
-
-    Components are streamed to the DB one at a time to avoid holding all ~40K
-    ComponentData objects in memory simultaneously (~187 GB as Python objects).
-    """
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    logger.info("Building and saving component results...")
-    db_path = output_dir / "harvest.db"
-    db = HarvestDB(db_path)
-    db.save_config(config)
-    components_iter = harvester.build_results(pmi_top_k_tokens=config.pmi_token_top_k)
-    n_saved = db.save_components_iter(components_iter)
-    db.close()
-    logger.info(f"Saved {n_saved} components to {db_path}")
-
-    component_keys = harvester.component_keys
-
-    correlations = CorrelationStorage(
-        component_keys=component_keys,
-        count_i=harvester.firing_counts.long().cpu(),
-        count_ij=harvester.cooccurrence_counts.long().cpu(),
-        count_total=harvester.total_tokens_processed,
-    )
-    correlations.save(output_dir / "component_correlations.pt")
-
-    token_stats = TokenStatsStorage(
-        component_keys=component_keys,
-        vocab_size=harvester.vocab_size,
-        n_tokens=harvester.total_tokens_processed,
-        input_counts=harvester.input_cooccurrence.cpu(),
-        input_totals=harvester.input_marginals.float().cpu(),
-        output_counts=harvester.output_cooccurrence.cpu(),
-        output_totals=harvester.output_marginals.cpu(),
-        firing_counts=harvester.firing_counts.cpu(),
-    )
-    token_stats.save(output_dir / "token_stats.pt")
 
 
 def harvest(
@@ -155,7 +110,7 @@ def harvest(
         harvester.save(state_path)
         logger.info(f"[Worker {rank}] Saved state to {state_path}")
     else:
-        _save_harvest_results(harvester, config, output_dir)
+        HarvestRepo.save_results(harvester, config, output_dir)
         logger.info(f"Saved results to {output_dir}")
 
 
@@ -184,7 +139,7 @@ def merge_harvest(output_dir: Path, config: HarvestConfig) -> None:
 
     logger.info(f"Merge complete. Total tokens: {harvester.total_tokens_processed:,}")
 
-    _save_harvest_results(harvester, config, output_dir)
+    HarvestRepo.save_results(harvester, config, output_dir)
     db_path = output_dir / "harvest.db"
     assert db_path.exists() and db_path.stat().st_size > 0, f"Merge output is empty: {db_path}"
     logger.info(f"Saved merged results to {output_dir}")

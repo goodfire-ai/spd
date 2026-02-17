@@ -51,7 +51,7 @@ def get_data_sources(loaded: DepLoadedRun) -> DataSourcesResponse:
             subrun_id=loaded.harvest.subrun_id,
             config=loaded.harvest.get_config(),
             n_components=loaded.harvest.get_component_count(),
-            has_intruder_scores=loaded.harvest.get_intruder_scores() is not None,
+            has_intruder_scores=bool(loaded.harvest.get_scores("intruder")),
         )
 
     autointerp_info: AutointerpInfo | None = None

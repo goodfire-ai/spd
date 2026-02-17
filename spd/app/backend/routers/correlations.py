@@ -260,8 +260,8 @@ def get_intruder_scores(loaded: DepLoadedRun) -> dict[str, float]:
     """
     if loaded.harvest is None:
         return {}
-    scores = loaded.harvest.get_intruder_scores()
-    if scores is None:
+    scores = loaded.harvest.get_scores("intruder")
+    if not scores:
         return {}
     return {
         _concrete_to_canonical_key(key, loaded.topology): score for key, score in scores.items()

@@ -30,7 +30,7 @@ from spd.autointerp.llm_api import (
     make_response_format,
 )
 from spd.harvest.config import IntruderEvalConfig
-from spd.harvest.db import HarvestDB
+from spd.harvest.repo import HarvestRepo
 from spd.harvest.schemas import ActivationExample, ComponentData
 from spd.log import logger
 
@@ -212,7 +212,7 @@ async def run_intruder_scoring(
     model: str,
     openrouter_api_key: str,
     tokenizer_name: str,
-    db: HarvestDB,
+    harvest: HarvestRepo,
     eval_config: IntruderEvalConfig,
     limit: int | None = None,
     cost_limit_usd: float | None = None,
@@ -232,7 +232,7 @@ async def run_intruder_scoring(
 
     results: list[IntruderResult] = []
 
-    existing_scores = db.get_scores("intruder")
+    existing_scores = harvest.get_scores("intruder")
     completed = set(existing_scores.keys())
     if completed:
         logger.info(f"Resuming: {len(completed)} already scored")
@@ -265,7 +265,7 @@ async def run_intruder_scoring(
             async with output_lock:
                 results.append(result)
                 details = json.dumps(asdict(result))
-                db.save_score(result.component_key, "intruder", result.score, details)
+                harvest.save_score(result.component_key, "intruder", result.score, details)
                 if index % 100 == 0:
                     logger.info(
                         f"[{index}] scored {len(results)}, ${llm.cost_tracker.cost_usd():.2f}"
