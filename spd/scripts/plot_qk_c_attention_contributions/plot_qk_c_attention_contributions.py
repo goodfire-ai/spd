@@ -7,7 +7,7 @@ For each layer, produces a single grid containing:
 All use V-norm-scaled U dot products divided by sqrt(head_dim), ignoring RoPE and data.
 
 Usage:
-    python -m spd.scripts.plot_attention_contributions.plot_attention_contributions \
+    python -m spd.scripts.plot_qk_c_attention_contributions.plot_qk_c_attention_contributions \
         wandb:goodfire/spd/runs/<run_id>
 """
 
@@ -133,7 +133,7 @@ def _plot_heatmaps(
     logger.info(f"Saved {path}")
 
 
-def plot_attention_contributions(wandb_path: ModelPath) -> None:
+def plot_qk_c_attention_contributions(wandb_path: ModelPath) -> None:
     _entity, _project, run_id = parse_wandb_run_path(str(wandb_path))
     run_info = SPDRunInfo.from_path(wandb_path)
 
@@ -188,4 +188,4 @@ def plot_attention_contributions(wandb_path: ModelPath) -> None:
 
 
 if __name__ == "__main__":
-    fire.Fire(plot_attention_contributions)
+    fire.Fire(plot_qk_c_attention_contributions)
