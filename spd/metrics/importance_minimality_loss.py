@@ -124,13 +124,7 @@ def importance_minimality_loss(
     p_anneal_final_p: float | None,
     p_anneal_end_frac: float,
 ) -> Float[Tensor, ""]:
-    """Compute importance minimality loss.
-
-    NOTE: If gradient accumulation is used, the log term won't perfectly reflect the full effective
-    batch. Ideally, the log2(1 + layer_sums) in _importance_minimality_loss_compute should be
-    computed once over all microbatches. But this would break our current property that loss
-    functions are stateless.
-    """
+    """Compute importance minimality loss."""
 
     per_component_sums, n_examples = _importance_minimality_loss_update(
         ci_upper_leaky=ci_upper_leaky,

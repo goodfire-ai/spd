@@ -236,73 +236,68 @@ def optimize(
 
         weight_deltas = component_model.calc_weight_deltas()
 
-        microbatch_log_data: defaultdict[str, float] = defaultdict(float)
+        step_log_data: defaultdict[str, float] = defaultdict(float)
 
-        for _ in range(config.gradient_accumulation_steps):
-            microbatch = extract_batch_data(next(train_iterator)).to(device)
+        batch = extract_batch_data(next(train_iterator)).to(device)
 
-            with bf16_autocast(enabled=config.autocast_bf16):
-                # NOTE: we need to call the wrapped_model at least once each step in order
-                # to setup the DDP gradient syncing for all parameters in the component model.
-                # Gradients will sync regardless of whether the parameters are used in this
-                # call to wrapped_model.
-                target_model_output: OutputWithCache = wrapped_model(microbatch, cache_type="input")
+        with bf16_autocast(enabled=config.autocast_bf16):
+            # NOTE: we need to call the wrapped_model at least once each step in order
+            # to setup the DDP gradient syncing for all parameters in the component model.
+            # Gradients will sync regardless of whether the parameters are used in this
+            # call to wrapped_model.
+            target_model_output: OutputWithCache = wrapped_model(batch, cache_type="input")
 
-                ci = component_model.calc_causal_importances(
-                    pre_weight_acts=target_model_output.cache,
-                    detach_inputs=False,
-                    sampling=config.sampling,
-                )
+            ci = component_model.calc_causal_importances(
+                pre_weight_acts=target_model_output.cache,
+                detach_inputs=False,
+                sampling=config.sampling,
+            )
 
-                microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
-                    loss_metric_configs=config.loss_metric_configs,
-                    model=component_model,
-                    batch=microbatch,
-                    ci=ci,
-                    target_out=target_model_output.output,
-                    weight_deltas=weight_deltas,
-                    pre_weight_acts=target_model_output.cache,
-                    current_frac_of_training=step / config.steps,
-                    sampling=config.sampling,
-                    use_delta_component=config.use_delta_component,
-                    n_mask_samples=config.n_mask_samples,
-                    output_loss_type=config.output_loss_type,
-                )
+            total_loss, loss_terms = compute_total_loss(
+                loss_metric_configs=config.loss_metric_configs,
+                model=component_model,
+                batch=batch,
+                ci=ci,
+                target_out=target_model_output.output,
+                weight_deltas=weight_deltas,
+                pre_weight_acts=target_model_output.cache,
+                current_frac_of_training=step / config.steps,
+                sampling=config.sampling,
+                use_delta_component=config.use_delta_component,
+                n_mask_samples=config.n_mask_samples,
+                output_loss_type=config.output_loss_type,
+            )
 
-            microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
+        total_loss.backward()
 
-            for loss_name, loss_value in microbatch_loss_terms.items():
-                microbatch_log_data[f"train/{loss_name}"] += (
-                    loss_value / config.gradient_accumulation_steps
-                )
+        for loss_name, loss_value in loss_terms.items():
+            step_log_data[f"train/{loss_name}"] += loss_value
 
-            for layer_name, layer_ci in ci.lower_leaky.items():
-                l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
-                microbatch_log_data[f"train/l0/{layer_name}"] += (
-                    l0_val / config.gradient_accumulation_steps
-                )
+        for layer_name, layer_ci in ci.lower_leaky.items():
+            l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
+            step_log_data[f"train/l0/{layer_name}"] += l0_val
 
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
-            avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
-            microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
+            avg_metrics = avg_metrics_across_ranks(step_log_data, device=device)
+            step_log_data = cast(defaultdict[str, float], avg_metrics)
 
             grad_norms = get_grad_norms_dict(component_model, device)
             dict_safe_update_(
-                microbatch_log_data, {f"train/grad_norms/{k}": v for k, v in grad_norms.items()}
+                step_log_data, {f"train/grad_norms/{k}": v for k, v in grad_norms.items()}
             )
 
-            microbatch_log_data["train/schedules/lr"] = step_lr
+            step_log_data["train/schedules/lr"] = step_lr
 
             if is_main_process():
                 assert out_dir is not None
                 tqdm.write(f"--- Step {step} ---")
                 tqdm.write(f"LR: {step_lr:.6f}")
-                for name, value in microbatch_log_data.items():
+                for name, value in step_log_data.items():
                     tqdm.write(f"{name}: {value:.15f}")
-                local_log(microbatch_log_data, step, out_dir)
+                local_log(step_log_data, step, out_dir)
                 if config.wandb_project:
-                    try_wandb(wandb.log, microbatch_log_data, step=step)
+                    try_wandb(wandb.log, step_log_data, step=step)
 
         # --- Evaluation --- #
         if step % config.eval_freq == 0:

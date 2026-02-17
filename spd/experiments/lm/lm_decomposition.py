@@ -127,16 +127,16 @@ def main(
         case DistributedState(world_size=world_size):
             # Keep per-process batch size constant to maintain scale of all metrics so we can simply average
             # them across processes.
-            assert config.microbatch_size % world_size == 0 and config.microbatch_size > 0, (
-                f"Microbatch size {config.microbatch_size} is not divisible by world size {world_size}. "
+            assert config.batch_size % world_size == 0 and config.batch_size > 0, (
+                f"Batch size {config.batch_size} is not divisible by world size {world_size}. "
             )
-            train_rank_microbatch_size = config.microbatch_size // world_size
+            train_rank_batch_size = config.batch_size // world_size
         case None:
-            train_rank_microbatch_size = config.microbatch_size
+            train_rank_batch_size = config.batch_size
 
     train_loader, _tokenizer = create_data_loader(
         dataset_config=train_data_config,
-        batch_size=train_rank_microbatch_size,
+        batch_size=train_rank_batch_size,
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed,
         dist_state=dist_state,
