@@ -30,12 +30,10 @@ from spd.utils.general_utils import bf16_autocast
 
 
 def harvest(
-    # maybe consolidate *only* these later
     layers: list[tuple[str, int]],
     vocab_size: int,
     dataloader: DataLoader[Any],
     harvest_fn: Callable[[torch.Tensor], HarvestBatch],
-    # ===============================
     config: HarvestConfig,
     output_dir: Path,
     *,

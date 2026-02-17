@@ -9,31 +9,45 @@ Usage:
     python -m spd.autointerp.scoring.scripts.run_intruder <wandb_path> --limit 100
 """
 
+import asyncio
 import bisect
 import json
 import random
-from collections import defaultdict
 from dataclasses import asdict, dataclass
+
+from aiolimiter import AsyncLimiter
+from openrouter import OpenRouter
+from openrouter.components import Effort, Reasoning
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
-from spd.autointerp.llm_api import LLMError, LLMJob, LLMResult, map_llm_calls
+from spd.autointerp.llm_api import (
+    BudgetExceededError,
+    CostTracker,
+    GlobalBackoff,
+    LLMClient,
+    get_model_pricing,
+    make_response_format,
+)
 from spd.harvest.config import IntruderEvalConfig
 from spd.harvest.repo import HarvestRepo
 from spd.harvest.schemas import ActivationExample, ComponentData
 from spd.log import logger
 
-INTRUDER_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "intruder": {
-            "type": "integer",
-            "description": "1-indexed example number of the intruder",
+INTRUDER_RESPONSE_FORMAT = make_response_format(
+    "intruder_response",
+    {
+        "type": "object",
+        "properties": {
+            "intruder": {
+                "type": "integer",
+                "description": "1-indexed example number of the intruder",
+            },
+            "reasoning": {"type": "string", "description": "Brief explanation"},
         },
-        "reasoning": {"type": "string", "description": "Brief explanation"},
+        "required": ["intruder", "reasoning"],
     },
-    "required": ["intruder", "reasoning"],
-}
+)
 
 
 @dataclass
@@ -52,7 +66,7 @@ class IntruderResult:
 
 
 class DensityIndex:
-    """Index of components sorted by bold density for efficient similar-density lookup."""
+    """Index of components sorted by firing density for efficient similar-density lookup."""
 
     def __init__(self, components: list[ComponentData], min_examples: int) -> None:
         eligible = [c for c in components if len(c.activation_examples) >= min_examples]
@@ -67,7 +81,7 @@ class DensityIndex:
         rng: random.Random,
         tolerance: float,
     ) -> ComponentData:
-        """Sample a different component with similar bold density."""
+        """Sample a different component with similar firing density."""
         assert target.component_key in self._key_to_idx
         target_density = self._densities[self._key_to_idx[target.component_key]]
 
@@ -102,7 +116,7 @@ def _sample_intruder(
     rng: random.Random,
     density_tolerance: float,
 ) -> ActivationExample:
-    """Sample an intruder example from a component with similar bold density."""
+    """Sample an intruder example from a component with similar firing density."""
     donor = density_index.sample_similar(target, rng, tolerance=density_tolerance)
     return rng.choice(donor.activation_examples)
 
@@ -135,10 +149,62 @@ the example that does not fit.
 Respond with the intruder example number (1-{n_total}) and brief reasoning."""
 
 
-@dataclass
-class _TrialGroundTruth:
-    component_key: str
-    correct_answer: int
+async def score_component(
+    llm: LLMClient,
+    model: str,
+    reasoning_effort: Effort,
+    component: ComponentData,
+    density_index: DensityIndex,
+    app_tok: AppTokenizer,
+    n_real: int,
+    n_trials: int,
+    density_tolerance: float,
+) -> IntruderResult:
+    assert len(component.activation_examples) >= n_real + 1
+
+    rng = random.Random()
+    trials: list[IntruderTrial] = []
+    n_errors = 0
+
+    for trial_idx in range(n_trials):
+        real_examples = rng.sample(component.activation_examples, n_real)
+        intruder = _sample_intruder(component, density_index, rng, density_tolerance)
+        intruder_pos = rng.randint(0, n_real)
+        correct_answer = intruder_pos + 1
+
+        prompt = _build_prompt(real_examples, intruder, intruder_pos, app_tok)
+
+        try:
+            response = await llm.chat(
+                model=model,
+                reasoning=Reasoning(effort=reasoning_effort),
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=300,
+                context_label=f"{component.component_key}/trial{trial_idx}",
+                response_format=INTRUDER_RESPONSE_FORMAT,
+            )
+            parsed = json.loads(response)
+            predicted = int(parsed["intruder"])
+            trials.append(
+                IntruderTrial(
+                    correct_answer=correct_answer,
+                    predicted=predicted,
+                    is_correct=predicted == correct_answer,
+                )
+            )
+        except Exception as e:
+            logger.error(f"{component.component_key}/trial{trial_idx}: {type(e).__name__}: {e}")
+            n_errors += 1
+
+    correct = sum(1 for t in trials if t.is_correct)
+    score = correct / len(trials) if trials else 0.0
+
+    return IntruderResult(
+        component_key=component.component_key,
+        score=score,
+        trials=trials,
+        n_errors=n_errors,
+    )
 
 
 async def run_intruder_scoring(
@@ -148,12 +214,13 @@ async def run_intruder_scoring(
     tokenizer_name: str,
     harvest: HarvestRepo,
     eval_config: IntruderEvalConfig,
-    limit: int | None,
-    cost_limit_usd: float | None,
+    limit: int | None = None,
+    cost_limit_usd: float | None = None,
 ) -> list[IntruderResult]:
     n_real = eval_config.n_real
     n_trials = eval_config.n_trials
     density_tolerance = eval_config.density_tolerance
+    max_concurrent = eval_config.max_concurrent
 
     app_tok = AppTokenizer.from_pretrained(tokenizer_name)
 
@@ -163,77 +230,64 @@ async def run_intruder_scoring(
 
     density_index = DensityIndex(components, min_examples=n_real + 1)
 
+    results: list[IntruderResult] = []
+
     existing_scores = harvest.get_scores("intruder")
     completed = set(existing_scores.keys())
     if completed:
         logger.info(f"Resuming: {len(completed)} already scored")
 
     remaining = [c for c in eligible if c.component_key not in completed]
-    logger.info(f"Scoring {len(remaining)} components ({len(remaining) * n_trials} trials)")
+    logger.info(f"Scoring {len(remaining)} components")
 
-    rng = random.Random()
-    jobs: list[LLMJob] = []
-    ground_truth: dict[str, _TrialGroundTruth] = {}
+    semaphore = asyncio.Semaphore(max_concurrent)
+    output_lock = asyncio.Lock()
 
-    for component in remaining:
-        for trial_idx in range(n_trials):
-            real_examples = rng.sample(component.activation_examples, n_real)
-            intruder = _sample_intruder(component, density_index, rng, density_tolerance)
-            intruder_pos = rng.randint(0, n_real)
-            correct_answer = intruder_pos + 1
-
-            key = f"{component.component_key}/trial{trial_idx}"
-            jobs.append(
-                LLMJob(
-                    prompt=_build_prompt(real_examples, intruder, intruder_pos, app_tok),
-                    schema=INTRUDER_SCHEMA,
-                    key=key,
+    async def process_one(component: ComponentData, index: int, llm: LLMClient) -> None:
+        async with semaphore:
+            try:
+                result = await score_component(
+                    llm,
+                    model,
+                    eval_config.reasoning_effort,
+                    component,
+                    density_index,
+                    app_tok,
+                    n_real=n_real,
+                    n_trials=n_trials,
+                    density_tolerance=density_tolerance,
                 )
-            )
-            ground_truth[key] = _TrialGroundTruth(
-                component_key=component.component_key,
-                correct_answer=correct_answer,
-            )
-
-    component_trials: defaultdict[str, list[IntruderTrial]] = defaultdict(list)
-    component_errors: defaultdict[str, int] = defaultdict(int)
-
-    async for outcome in map_llm_calls(
-        openrouter_api_key=openrouter_api_key,
-        model=model,
-        reasoning_effort=eval_config.reasoning_effort,
-        jobs=jobs,
-        max_tokens=300,
-        max_concurrent=eval_config.max_concurrent,
-        max_requests_per_minute=eval_config.max_requests_per_minute,
-        cost_limit_usd=cost_limit_usd,
-    ):
-        match outcome:
-            case LLMResult(job=job, parsed=parsed):
-                gt = ground_truth[job.key]
-                predicted = int(parsed["intruder"])
-                component_trials[gt.component_key].append(
-                    IntruderTrial(
-                        correct_answer=gt.correct_answer,
-                        predicted=predicted,
-                        is_correct=predicted == gt.correct_answer,
+            except BudgetExceededError:
+                return
+            except Exception as e:
+                logger.error(f"Skipping {component.component_key}: {type(e).__name__}: {e}")
+                return
+            async with output_lock:
+                results.append(result)
+                details = json.dumps(asdict(result))
+                harvest.save_score(result.component_key, "intruder", result.score, details)
+                if index % 100 == 0:
+                    logger.info(
+                        f"[{index}] scored {len(results)}, ${llm.cost_tracker.cost_usd():.2f}"
                     )
-                )
-            case LLMError(job=job, error=e):
-                gt = ground_truth[job.key]
-                component_errors[gt.component_key] += 1
-                logger.error(f"{job.key}: {type(e).__name__}: {e}")
 
-    results: list[IntruderResult] = []
-    for component in remaining:
-        ck = component.component_key
-        trials = component_trials.get(ck, [])
-        n_err = component_errors.get(ck, 0)
-        correct = sum(1 for t in trials if t.is_correct)
-        score = correct / len(trials) if trials else 0.0
-        result = IntruderResult(component_key=ck, score=score, trials=trials, n_errors=n_err)
-        results.append(result)
-        harvest.save_score(ck, "intruder", score, json.dumps(asdict(result)))
+    async with OpenRouter(api_key=openrouter_api_key) as api:
+        input_price, output_price = await get_model_pricing(api, model)
+        cost_tracker = CostTracker(
+            input_price_per_token=input_price,
+            output_price_per_token=output_price,
+            limit_usd=cost_limit_usd,
+        )
+        llm = LLMClient(
+            api=api,
+            rate_limiter=AsyncLimiter(max_rate=eval_config.max_requests_per_minute, time_period=60),
+            backoff=GlobalBackoff(),
+            cost_tracker=cost_tracker,
+        )
+
+        await asyncio.gather(*[process_one(c, i, llm) for i, c in enumerate(remaining)])
+
+        logger.info(f"Final cost: ${cost_tracker.cost_usd():.2f}")
 
     logger.info(f"Scored {len(results)} components")
     return results

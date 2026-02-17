@@ -1,4 +1,4 @@
-"""LLM API utilities: batch concurrent calls with rate limiting, retry, and cost tracking."""
+"""LLM API client with rate limiting, cost tracking, and retry."""
 
 import asyncio
 import contextlib
@@ -13,8 +13,8 @@ import httpx
 from aiolimiter import AsyncLimiter
 from openrouter import OpenRouter
 from openrouter.components import (
-    Effort,
     JSONSchemaConfig,
+    MessageTypedDict,
     Reasoning,
     ResponseFormatJSONSchema,
 )
@@ -33,15 +33,14 @@ from openrouter.errors import (
 
 from spd.log import logger
 
-_MAX_RETRIES = 8
-_BASE_DELAY_S = 0.5
-_MAX_DELAY_S = 60.0
-_JITTER_FACTOR = 0.5
-_REQUEST_TIMEOUT_MS = 120_000
-_JSON_PARSE_RETRIES = 3
-_MAX_BACKOFF_S = 600.0
+MAX_RETRIES = 8
+BASE_DELAY_S = 0.5
+MAX_DELAY_S = 60.0
+JITTER_FACTOR = 0.5
+REQUEST_TIMEOUT_MS = 120_000
+JSON_PARSE_RETRIES = 3
 
-_RETRYABLE_ERRORS = (
+RETRYABLE_ERRORS = (
     TooManyRequestsResponseError,
     ProviderOverloadedResponseError,
     ServiceUnavailableResponseError,
@@ -55,43 +54,12 @@ _RETRYABLE_ERRORS = (
 )
 
 
-def make_response_format(name: str, schema: dict[str, Any]) -> ResponseFormatJSONSchema:
-    return ResponseFormatJSONSchema(
-        json_schema=JSONSchemaConfig(
-            name=name,
-            schema_={**schema, "additionalProperties": False},
-            strict=True,
-        )
-    )
+class BudgetExceededError(Exception):
+    pass
 
 
 @dataclass
-class LLMJob:
-    prompt: str
-    schema: dict[str, Any]
-    key: str
-
-
-@dataclass
-class LLMResult:
-    job: LLMJob
-    parsed: dict[str, Any]
-    raw: str
-
-
-@dataclass
-class LLMError:
-    job: LLMJob
-    error: Exception
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _CostTracker:
+class CostTracker:
     input_tokens: int = 0
     output_tokens: int = 0
     input_price_per_token: float = 0.0
@@ -117,11 +85,10 @@ class _CostTracker:
         )
 
 
-class _BudgetExceededError(Exception):
-    pass
+MAX_BACKOFF_S = 600.0
 
 
-class _GlobalBackoff:
+class GlobalBackoff:
     """Shared backoff that pauses all coroutines when the API pushes back."""
 
     def __init__(self) -> None:
@@ -129,8 +96,8 @@ class _GlobalBackoff:
         self._lock = asyncio.Lock()
 
     async def set_backoff(self, seconds: float) -> None:
-        assert seconds <= _MAX_BACKOFF_S, (
-            f"Server requested {seconds:.0f}s backoff, exceeds {_MAX_BACKOFF_S:.0f}s cap"
+        assert seconds <= MAX_BACKOFF_S, (
+            f"Server requested {seconds:.0f}s backoff, exceeds {MAX_BACKOFF_S:.0f}s cap"
         )
         async with self._lock:
             self._resume_at = max(self._resume_at, time.monotonic() + seconds)
@@ -141,7 +108,17 @@ class _GlobalBackoff:
             await asyncio.sleep(delay)
 
 
-async def _get_model_pricing(api: OpenRouter, model_id: str) -> tuple[float, float]:
+def make_response_format(name: str, schema: dict[str, Any]) -> ResponseFormatJSONSchema:
+    return ResponseFormatJSONSchema(
+        json_schema=JSONSchemaConfig(
+            name=name,
+            schema_={**schema, "additionalProperties": False},
+            strict=True,
+        )
+    )
+
+
+async def get_model_pricing(api: OpenRouter, model_id: str) -> tuple[float, float]:
     """Returns (input_price, output_price) per token."""
     response = await api.models.list_async()
     for model in response.data:
@@ -151,6 +128,7 @@ async def _get_model_pricing(api: OpenRouter, model_id: str) -> tuple[float, flo
 
 
 def _get_retry_after(e: Exception) -> float | None:
+    """Extract Retry-After seconds from an OpenRouter error, if present."""
     if not isinstance(e, OpenRouterError):
         return None
     val = e.headers.get("retry-after")
@@ -162,154 +140,192 @@ def _get_retry_after(e: Exception) -> float | None:
         return None
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
+@dataclass
+class LLMClient:
+    """OpenRouter client with rate limiting, cost tracking, and retry.
 
-
-async def map_llm_calls(
-    openrouter_api_key: str,
-    model: str,
-    reasoning_effort: Effort,
-    jobs: Sequence[LLMJob],
-    max_tokens: int,
-    max_concurrent: int,
-    max_requests_per_minute: int,
-    cost_limit_usd: float | None,
-) -> AsyncGenerator[LLMResult | LLMError]:
-    """Fan out LLM calls concurrently, yielding results as they complete.
-
-    Handles rate limiting, retry with exponential backoff, JSON parsing,
-    cost tracking, and progress logging. Yields LLMResult on success,
-    LLMError on failure. Silently stops remaining jobs on budget exceeded.
+    All API calls go through `chat()`, which enforces budget limits,
+    rate limiting (token bucket via aiolimiter), and retries with
+    exponential backoff. A shared GlobalBackoff pauses all coroutines
+    when the API returns Retry-After headers.
     """
-    if not jobs:
-        return
 
-    async with OpenRouter(api_key=openrouter_api_key) as api:
-        input_price, output_price = await _get_model_pricing(api, model)
-        cost = _CostTracker(
-            input_price_per_token=input_price,
-            output_price_per_token=output_price,
-            limit_usd=cost_limit_usd,
-        )
-        rate_limiter = AsyncLimiter(max_rate=max_requests_per_minute, time_period=60)
-        backoff = _GlobalBackoff()
-        reasoning = Reasoning(effort=reasoning_effort)
-        response_format = make_response_format("response", jobs[0].schema)
+    api: OpenRouter
+    rate_limiter: AsyncLimiter
+    backoff: GlobalBackoff
+    cost_tracker: CostTracker
 
-        async def chat(prompt: str, context_label: str) -> str:
-            if cost.over_budget():
-                raise _BudgetExceededError(f"${cost.cost_usd():.2f}")
+    async def chat(
+        self,
+        model: str,
+        messages: list[MessageTypedDict],
+        max_tokens: int,
+        context_label: str,
+        response_format: ResponseFormatJSONSchema | None = None,
+        reasoning: Reasoning | None = None,
+    ) -> str:
+        """Send a chat request. Returns response content.
 
-            last_error: Exception | None = None
-            for attempt in range(_MAX_RETRIES):
-                await backoff.wait()
-                async with rate_limiter:
-                    try:
-                        response = await api.chat.send_async(
-                            model=model,
-                            max_tokens=max_tokens,
-                            messages=[{"role": "user", "content": prompt}],
-                            timeout_ms=_REQUEST_TIMEOUT_MS,
-                            response_format=response_format,
-                            reasoning=reasoning,
-                        )
-                        choice = response.choices[0]
-                        message = choice.message
-                        assert isinstance(message.content, str)
-                        assert response.usage is not None
+        Raises BudgetExceededError if cost limit is reached.
+        Raises RuntimeError if all retries are exhausted.
+        """
+        if self.cost_tracker.over_budget():
+            raise BudgetExceededError(f"${self.cost_tracker.cost_usd():.2f}")
 
-                        if choice.finish_reason == "length":
-                            logger.warning(
-                                f"{context_label}: Response truncated at {max_tokens} tokens"
-                            )
-
-                        await cost.add(
-                            int(response.usage.prompt_tokens),
-                            int(response.usage.completion_tokens),
-                        )
-                        return message.content
-                    except _RETRYABLE_ERRORS as e:
-                        last_error = e
-                        if attempt == _MAX_RETRIES - 1:
-                            break
-
-                        retry_after = _get_retry_after(e)
-                        if retry_after is not None:
-                            await backoff.set_backoff(retry_after)
-                            delay = retry_after
-                        else:
-                            delay = min(_BASE_DELAY_S * (2**attempt), _MAX_DELAY_S)
-                            jitter = delay * _JITTER_FACTOR * random.random()
-                            delay = delay + jitter
-
-                        logger.warning(
-                            f"[retry {attempt + 1}/{_MAX_RETRIES}] ({context_label}) "
-                            f"{type(e).__name__}, backing off {delay:.1f}s"
-                        )
-                        await asyncio.sleep(delay)
-
-            assert last_error is not None
-            raise RuntimeError(f"Max retries exceeded for {context_label}: {last_error}")
-
-        queue: asyncio.Queue[LLMResult | LLMError | None] = asyncio.Queue()
-        semaphore = asyncio.Semaphore(max_concurrent)
-        n_total = len(jobs)
-        n_done = 0
-        budget_exceeded = False
-
-        async def process_one(job: LLMJob) -> None:
-            nonlocal n_done, budget_exceeded
-            if budget_exceeded:
-                return
-            async with semaphore:
+        last_error: Exception | None = None
+        for attempt in range(MAX_RETRIES):
+            await self.backoff.wait()
+            async with self.rate_limiter:
                 try:
-                    raw = ""
-                    parsed = None
-                    for attempt in range(_JSON_PARSE_RETRIES):
-                        raw = await chat(job.prompt, job.key)
-                        try:
-                            parsed = json.loads(raw)
-                            break
-                        except json.JSONDecodeError:
-                            if attempt == _JSON_PARSE_RETRIES - 1:
-                                raise
-                            logger.warning(
-                                f"{job.key}: invalid JSON "
-                                f"(attempt {attempt + 1}/{_JSON_PARSE_RETRIES}), retrying"
-                            )
-                    assert parsed is not None
-                    await queue.put(LLMResult(job=job, parsed=parsed, raw=raw))
-                except _BudgetExceededError:
-                    budget_exceeded = True
-                    return
-                except Exception as e:
-                    await queue.put(LLMError(job=job, error=e))
-            n_done += 1
-            if n_done % 100 == 0 or n_done == n_total:
-                logger.info(
-                    f"[{n_done}/{n_total}] ${cost.cost_usd():.2f} "
-                    f"({cost.input_tokens:,} in, {cost.output_tokens:,} out)"
-                )
+                    kwargs: dict[str, Any] = dict(
+                        model=model,
+                        max_tokens=max_tokens,
+                        messages=messages,
+                        timeout_ms=REQUEST_TIMEOUT_MS,
+                    )
+                    if response_format is not None:
+                        kwargs["response_format"] = response_format
+                    if reasoning is not None:
+                        kwargs["reasoning"] = reasoning
 
-        async def run_all() -> None:
-            await asyncio.gather(*[process_one(job) for job in jobs])
-            await queue.put(None)
+                    response = await self.api.chat.send_async(**kwargs)
+                    choice = response.choices[0]
+                    message = choice.message
+                    assert isinstance(message.content, str)
+                    assert response.usage is not None
 
-        task = asyncio.create_task(run_all())
-        try:
-            while True:
-                item = await queue.get()
-                if item is None:
-                    break
-                yield item
-        finally:
-            if not task.done():
-                task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+                    if choice.finish_reason == "length":
+                        logger.warning(
+                            f"{context_label}: Response truncated at {max_tokens} tokens"
+                        )
+
+                    await self.cost_tracker.add(
+                        int(response.usage.prompt_tokens),
+                        int(response.usage.completion_tokens),
+                    )
+
+                    return message.content
+                except RETRYABLE_ERRORS as e:
+                    last_error = e
+                    if attempt == MAX_RETRIES - 1:
+                        break
+
+                    retry_after = _get_retry_after(e)
+                    if retry_after is not None:
+                        await self.backoff.set_backoff(retry_after)
+                        delay = retry_after
+                    else:
+                        delay = min(BASE_DELAY_S * (2**attempt), MAX_DELAY_S)
+                        jitter = delay * JITTER_FACTOR * random.random()
+                        delay = delay + jitter
+
+                    logger.warning(
+                        f"[retry {attempt + 1}/{MAX_RETRIES}] ({context_label}) "
+                        f"{type(e).__name__}, backing off {delay:.1f}s"
+                    )
+                    await asyncio.sleep(delay)
+
+        assert last_error is not None
+        raise RuntimeError(f"Max retries exceeded for {context_label}: {last_error}")
+
+
+@dataclass
+class LLMJob:
+    prompt: str
+    schema: dict[str, Any]
+    key: str
+
+
+@dataclass
+class LLMResult:
+    job: LLMJob
+    parsed: dict[str, Any]
+    raw: str
+
+
+@dataclass
+class LLMError:
+    job: LLMJob
+    error: Exception
+
+
+async def map_api_calls(
+    jobs: Sequence[LLMJob],
+    llm: LLMClient,
+    model: str,
+    max_tokens: int,
+    reasoning: Reasoning | None,
+    max_concurrent: int,
+) -> AsyncGenerator[LLMResult | LLMError]:
+    """Fan out LLM calls concurrently, yielding parsed results as they complete.
+
+    Handles rate limiting (via LLMClient), JSON parsing with retry, and progress logging.
+    Yields LLMResult on success, LLMError on failure. BudgetExceededError silently stops
+    remaining jobs.
+    """
+    queue: asyncio.Queue[LLMResult | LLMError | None] = asyncio.Queue()
+    semaphore = asyncio.Semaphore(max_concurrent)
+    n_total = len(jobs)
+    n_done = 0
+    budget_exceeded = False
+    response_format = make_response_format("response", jobs[0].schema) if jobs else None
+
+    async def process_one(job: LLMJob) -> None:
+        nonlocal n_done, budget_exceeded
+        if budget_exceeded:
+            return
+        async with semaphore:
+            try:
+                assert response_format is not None
+                raw = ""
+                parsed = None
+                for attempt in range(JSON_PARSE_RETRIES):
+                    raw = await llm.chat(
+                        model=model,
+                        messages=[{"role": "user", "content": job.prompt}],
+                        max_tokens=max_tokens,
+                        context_label=job.key,
+                        response_format=response_format,
+                        reasoning=reasoning,
+                    )
+                    try:
+                        parsed = json.loads(raw)
+                        break
+                    except json.JSONDecodeError:
+                        if attempt == JSON_PARSE_RETRIES - 1:
+                            raise
+                        logger.warning(
+                            f"{job.key}: invalid JSON "
+                            f"(attempt {attempt + 1}/{JSON_PARSE_RETRIES}), retrying"
+                        )
+                assert parsed is not None
+                await queue.put(LLMResult(job=job, parsed=parsed, raw=raw))
+            except BudgetExceededError:
+                budget_exceeded = True
+                return
+            except Exception as e:
+                await queue.put(LLMError(job=job, error=e))
+        n_done += 1
+        if n_done % 100 == 0 or n_done == n_total:
             logger.info(
-                f"Final cost: ${cost.cost_usd():.2f} "
-                f"({cost.input_tokens:,} in, {cost.output_tokens:,} out)"
+                f"[{n_done}/{n_total}] ${llm.cost_tracker.cost_usd():.2f} "
+                f"({llm.cost_tracker.input_tokens:,} in, "
+                f"{llm.cost_tracker.output_tokens:,} out)"
             )
+
+    async def run_all() -> None:
+        await asyncio.gather(*[process_one(job) for job in jobs])
+        await queue.put(None)
+
+    task = asyncio.create_task(run_all())
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield item
+    finally:
+        if not task.done():
+            task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task

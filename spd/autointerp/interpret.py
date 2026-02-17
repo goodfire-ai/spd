@@ -2,20 +2,26 @@ import asyncio
 import json
 from pathlib import Path
 
+from aiolimiter import AsyncLimiter
 from openrouter import OpenRouter
-from openrouter.components import Effort, Reasoning
+from openrouter.components import Reasoning
 
 from spd.app.backend.app_tokenizer import AppTokenizer
-from spd.autointerp.config import CompactSkepticalConfig
+from spd.autointerp.config import AutointerpConfig
 from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import (
+    JSON_PARSE_RETRIES,
+    CostTracker,
+    GlobalBackoff,
+    LLMClient,
     LLMError,
     LLMJob,
     LLMResult,
+    get_model_pricing,
     make_response_format,
-    map_llm_calls,
+    map_api_calls,
 )
-from spd.autointerp.schemas import InterpretationResult, ModelMetadata
+from spd.autointerp.schemas import ArchitectureInfo, InterpretationResult
 from spd.autointerp.strategies.dispatch import format_prompt, get_response_schema
 from spd.harvest.analysis import TokenPRLift, get_input_token_stats, get_output_token_stats
 from spd.harvest.repo import HarvestRepo
@@ -26,43 +32,48 @@ MAX_CONCURRENT = 50
 
 
 async def interpret_component(
-    api: OpenRouter,
-    model: str,
-    reasoning_effort: Effort,
-    strategy: CompactSkepticalConfig,
+    llm: LLMClient,
+    config: AutointerpConfig,
     component: ComponentData,
-    model_metadata: ModelMetadata,
+    arch: ArchitectureInfo,
     app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
 ) -> InterpretationResult:
     """Interpret a single component. Used by the app for on-demand interpretation."""
     prompt = format_prompt(
-        strategy=strategy,
+        config=config,
         component=component,
-        model_metadata=model_metadata,
+        arch=arch,
         app_tok=app_tok,
         input_token_stats=input_token_stats,
         output_token_stats=output_token_stats,
     )
 
-    schema = get_response_schema(strategy)
+    schema = get_response_schema(config)
     response_format = make_response_format("interpretation", schema)
-
-    response = await api.chat.send_async(
-        model=model,
-        max_tokens=8000,
-        messages=[{"role": "user", "content": prompt}],
-        response_format=response_format,
-        reasoning=Reasoning(effort=reasoning_effort),
-    )
-
-    choice = response.choices[0]
-    assert isinstance(choice.message.content, str)
-    raw = choice.message.content
-    parsed = json.loads(raw)
-
-    assert len(parsed) == 3, f"Expected 3 fields, got {parsed}"
+    raw = ""
+    parsed = None
+    for attempt in range(JSON_PARSE_RETRIES):
+        raw = await llm.chat(
+            model=config.model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=8000,
+            context_label=component.component_key,
+            response_format=response_format,
+            reasoning=Reasoning(effort=config.reasoning_effort),
+        )
+        try:
+            parsed = json.loads(raw)
+            break
+        except json.JSONDecodeError:
+            if attempt == JSON_PARSE_RETRIES - 1:
+                raise
+            logger.warning(
+                f"{component.component_key}: invalid JSON "
+                f"(attempt {attempt + 1}/{JSON_PARSE_RETRIES}), retrying"
+            )
+    assert parsed is not None and len(parsed) == 3, f"Expected 3 fields, got {parsed}"
     label = parsed["label"]
     confidence = parsed["confidence"]
     reasoning_text = parsed["reasoning"]
@@ -81,78 +92,84 @@ async def interpret_component(
 
 
 def run_interpret(
+    decomposition_id: str,
     openrouter_api_key: str,
-    model: str,
-    reasoning_effort: Effort,
-    limit: int | None,
-    cost_limit_usd: float | None,
-    max_requests_per_minute: int,
-    max_concurrent: int,
-    model_metadata: ModelMetadata,
-    template_strategy: CompactSkepticalConfig,
+    config: AutointerpConfig,
     harvest: HarvestRepo,
     db_path: Path,
-    tokenizer_name: str,
+    limit: int | None,
+    cost_limit_usd: float | None = None,
 ) -> list[InterpretationResult]:
+    from spd.adapters import adapter_from_id
+
+    adapter = adapter_from_id(decomposition_id)
+    arch = adapter.architecture_info
     components = harvest.get_all_components()
 
     token_stats = harvest.get_token_stats()
     assert token_stats is not None, "token_stats.pt not found. Run harvest first."
 
-    app_tok = AppTokenizer.from_pretrained(tokenizer_name)
+    app_tok = AppTokenizer.from_pretrained(arch.tokenizer_name)
 
-    # Sort by firing density descending, just as an easy proxy for doing the most useful work first.
-    # NOTE: this doesn't necessarily align with mean causal importance as we use for sorting in the
-    # app, but it's a close enough proxy.
     eligible = sorted(components, key=lambda c: c.firing_density, reverse=True)
-
     if limit is not None:
         eligible = eligible[:limit]
 
     async def _run() -> list[InterpretationResult]:
         db = InterpDB(db_path)
 
-        try:
-            completed = db.get_completed_keys()
-            if completed:
-                logger.info(f"Resuming: {len(completed)} already completed")
+        completed = db.get_completed_keys()
+        if completed:
+            logger.info(f"Resuming: {len(completed)} already completed")
 
-            remaining = [c for c in eligible if c.component_key not in completed]
-            logger.info(f"Interpreting {len(remaining)} components")
+        remaining = [c for c in eligible if c.component_key not in completed]
+        logger.info(f"Interpreting {len(remaining)} components")
 
-            schema = get_response_schema(template_strategy)
-            jobs: list[LLMJob] = []
-            for component in remaining:
-                input_stats = get_input_token_stats(
-                    token_stats, component.component_key, app_tok, top_k=20
-                )
-                output_stats = get_output_token_stats(
-                    token_stats, component.component_key, app_tok, top_k=50
-                )
-                assert input_stats is not None
-                assert output_stats is not None
-                prompt = format_prompt(
-                    strategy=template_strategy,
-                    component=component,
-                    model_metadata=model_metadata,
-                    app_tok=app_tok,
-                    input_token_stats=input_stats,
-                    output_token_stats=output_stats,
-                )
-                jobs.append(LLMJob(prompt=prompt, schema=schema, key=component.component_key))
+        schema = get_response_schema(config)
+        jobs: list[LLMJob] = []
+        for component in remaining:
+            input_stats = get_input_token_stats(
+                token_stats, component.component_key, app_tok, top_k=20
+            )
+            output_stats = get_output_token_stats(
+                token_stats, component.component_key, app_tok, top_k=50
+            )
+            assert input_stats is not None
+            assert output_stats is not None
+            prompt = format_prompt(
+                config=config,
+                component=component,
+                arch=arch,
+                app_tok=app_tok,
+                input_token_stats=input_stats,
+                output_token_stats=output_stats,
+            )
+            jobs.append(LLMJob(prompt=prompt, schema=schema, key=component.component_key))
 
-            results: list[InterpretationResult] = []
-            n_errors = 0
+        results: list[InterpretationResult] = []
+        n_errors = 0
 
-            async for outcome in map_llm_calls(
-                openrouter_api_key=openrouter_api_key,
-                model=model,
-                reasoning_effort=reasoning_effort,
-                jobs=jobs,
+        async with OpenRouter(api_key=openrouter_api_key) as api:
+            input_price, output_price = await get_model_pricing(api, config.model)
+            cost_tracker = CostTracker(
+                input_price_per_token=input_price,
+                output_price_per_token=output_price,
+                limit_usd=cost_limit_usd,
+            )
+            llm = LLMClient(
+                api=api,
+                rate_limiter=AsyncLimiter(max_rate=config.max_requests_per_minute, time_period=60),
+                backoff=GlobalBackoff(),
+                cost_tracker=cost_tracker,
+            )
+
+            async for outcome in map_api_calls(
+                jobs,
+                llm,
+                model=config.model,
                 max_tokens=8000,
-                max_concurrent=max_concurrent,
-                max_requests_per_minute=max_requests_per_minute,
-                cost_limit_usd=cost_limit_usd,
+                reasoning=Reasoning(effort=config.reasoning_effort),
+                max_concurrent=MAX_CONCURRENT,
             ):
                 match outcome:
                     case LLMResult(job=job, parsed=parsed, raw=raw):
@@ -179,17 +196,15 @@ def run_interpret(
                         n_errors += 1
                         logger.error(f"Skipping {job.key}: {type(e).__name__}: {e}")
 
-                error_rate = n_errors / (n_errors + len(results))
-                # 10 is a magic number - just trying to avoid low sample size causing this to false alarm
-                if error_rate > 0.2 and n_errors > 10:
-                    raise RuntimeError(
-                        f"Error rate {error_rate:.0%} ({n_errors}/{len(remaining)}) exceeds 20% threshold"
-                    )
+            logger.info(f"Final cost: ${cost_tracker.cost_usd():.2f}")
 
-        except Exception as e:
-            logger.error(f"Error: {type(e).__name__}: {e}")
-            db.close()
-            raise e
+        db.close()
+
+        error_rate = n_errors / len(remaining) if remaining else 0.0
+        if error_rate > 0.2:
+            raise RuntimeError(
+                f"Error rate {error_rate:.0%} ({n_errors}/{len(remaining)}) exceeds 20% threshold"
+            )
 
         logger.info(f"Completed {len(results)} interpretations -> {db_path}")
         return results

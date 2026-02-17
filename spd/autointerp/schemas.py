@@ -20,10 +20,12 @@ def get_autointerp_subrun_dir(decomposition_id: str, autointerp_run_id: str) -> 
 
 
 @dataclass
-class ModelMetadata:
+class ArchitectureInfo:
     n_blocks: int
+    c_per_layer: dict[str, int]
     model_class: str
     dataset_name: str
+    tokenizer_name: str
     layer_descriptions: dict[str, str]
 
 

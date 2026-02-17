@@ -1,3 +1,9 @@
+"""CLI for intruder detection eval.
+
+Usage:
+    python -m spd.harvest.scripts.run_intruder <decomposition_id> --config_json '...' --harvest_subrun_id h-20260211_120000
+"""
+
 import asyncio
 import os
 

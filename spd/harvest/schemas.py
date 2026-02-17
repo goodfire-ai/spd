@@ -86,10 +86,8 @@ class ComponentData:
     component_key: str
     layer: str
     component_idx: int
-
     mean_activations: dict[str, float]
     firing_density: float
-
     activation_examples: list[ActivationExample]
     input_token_pmi: ComponentTokenPMI
     output_token_pmi: ComponentTokenPMI

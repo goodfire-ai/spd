@@ -1,7 +1,8 @@
 """CLI for label-based scoring (detection, fuzzing).
 
 Usage:
-    python -m spd.autointerp.scoring.scripts.run_label_scoring <decomposition_id> --config_json '...' --harvest_subrun_id h-20260211_120000
+    python -m spd.autointerp.scoring.scripts.run_label_scoring <decomposition_id> --scorer detection --eval_config_json '...'
+    python -m spd.autointerp.scoring.scripts.run_label_scoring <decomposition_id> --scorer fuzzing --eval_config_json '...'
 """
 
 import asyncio
@@ -12,9 +13,8 @@ from dotenv import load_dotenv
 
 from spd.adapters import adapter_from_id
 from spd.autointerp.config import AutointerpEvalConfig
+from spd.autointerp.db import InterpDB
 from spd.autointerp.repo import InterpRepo
-from spd.autointerp.scoring.detection import run_detection_scoring
-from spd.autointerp.scoring.fuzzing import run_fuzzing_scoring
 from spd.harvest.repo import HarvestRepo
 
 LabelScorerType = Literal["detection", "fuzzing"]
@@ -22,80 +22,72 @@ LabelScorerType = Literal["detection", "fuzzing"]
 
 def main(
     decomposition_id: str,
-    scorer_type: LabelScorerType,
-    config_json: str,
-    harvest_subrun_id: str,
+    scorer: LabelScorerType,
+    eval_config_json: str | dict[str, object],
+    harvest_subrun_id: str | None = None,
 ) -> None:
     load_dotenv()
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
-    config = AutointerpEvalConfig.model_validate_json(config_json)
+    match eval_config_json:
+        case str(json_str):
+            eval_config = AutointerpEvalConfig.model_validate_json(json_str)
+        case dict(d):
+            eval_config = AutointerpEvalConfig.model_validate(d)
 
     tokenizer_name = adapter_from_id(decomposition_id).tokenizer_name
 
-    interp_repo = InterpRepo.open(decomposition_id)
-    assert interp_repo is not None, (
-        f"No autointerp data for {decomposition_id}. Run autointerp first."
-    )
+    interp = InterpRepo.open(decomposition_id)
+    assert interp is not None, f"No autointerp data for {decomposition_id}. Run autointerp first."
+    interpretations = interp.get_all_interpretations()
+    labels = {key: result.label for key, result in interpretations.items()}
 
-    harvest = HarvestRepo(
-        decomposition_id=decomposition_id,
-        subrun_id=harvest_subrun_id,
-        readonly=False,
-    )
-
+    if harvest_subrun_id is not None:
+        harvest = HarvestRepo(decomposition_id, subrun_id=harvest_subrun_id, readonly=True)
+    else:
+        harvest = HarvestRepo.open_most_recent(decomposition_id)
+        assert harvest is not None, f"No harvest data for {decomposition_id}"
     components = harvest.get_all_components()
 
-    match scorer_type:
+    subrun_dir = InterpRepo._find_latest_subrun_dir(decomposition_id)
+    assert subrun_dir is not None, f"No autointerp subrun found for {decomposition_id}"
+    db = InterpDB(subrun_dir / "interp.db")
+
+    match scorer:
         case "detection":
+            from spd.autointerp.scoring.detection import run_detection_scoring
+
             asyncio.run(
                 run_detection_scoring(
                     components=components,
-                    interp_repo=interp_repo,
-                    model=config.model,
-                    reasoning_effort=config.reasoning_effort,
+                    labels=labels,
+                    model=eval_config.model,
+                    reasoning_effort=eval_config.reasoning_effort,
                     openrouter_api_key=openrouter_api_key,
                     tokenizer_name=tokenizer_name,
-                    config=config.detection_config,
-                    max_requests_per_minute=config.max_requests_per_minute,
-                    limit=config.limit,
-                    cost_limit_usd=config.cost_limit_usd,
+                    db=db,
+                    eval_config=eval_config,
+                    limit=eval_config.limit,
+                    cost_limit_usd=eval_config.cost_limit_usd,
                 )
             )
         case "fuzzing":
+            from spd.autointerp.scoring.fuzzing import run_fuzzing_scoring
+
             asyncio.run(
                 run_fuzzing_scoring(
                     components=components,
-                    interp_repo=interp_repo,
-                    model=config.model,
-                    reasoning_effort=config.reasoning_effort,
+                    labels=labels,
+                    model=eval_config.model,
                     openrouter_api_key=openrouter_api_key,
                     tokenizer_name=tokenizer_name,
-                    config=config.fuzzing_config,
-                    max_requests_per_minute=config.max_requests_per_minute,
-                    limit=config.limit,
-                    cost_limit_usd=config.cost_limit_usd,
+                    db=db,
+                    eval_config=eval_config,
+                    limit=eval_config.limit,
+                    cost_limit_usd=eval_config.cost_limit_usd,
                 )
             )
-
-
-def get_command(
-    decomposition_id: str,
-    scorer_type: LabelScorerType,
-    config: AutointerpEvalConfig,
-    harvest_subrun_id: str | None = None,
-) -> str:
-    config_json = config.model_dump_json(exclude_none=True)
-    cmd = (
-        f"python -m spd.autointerp.scoring.scripts.run_label_scoring "
-        f"--decomposition_id {decomposition_id} "
-        f"--scorer_type {scorer_type} "
-        f"--config_json '{config_json}' "
-    )
-    if harvest_subrun_id is not None:
-        cmd += f" --harvest_subrun_id {harvest_subrun_id} "
-    return cmd
 
 
 if __name__ == "__main__":

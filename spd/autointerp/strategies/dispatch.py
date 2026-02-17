@@ -3,8 +3,8 @@
 from typing import Any
 
 from spd.app.backend.app_tokenizer import AppTokenizer
-from spd.autointerp.config import CompactSkepticalConfig
-from spd.autointerp.schemas import ModelMetadata
+from spd.autointerp.config import AutointerpConfig, CompactSkepticalConfig
+from spd.autointerp.schemas import ArchitectureInfo
 from spd.autointerp.strategies.compact_skeptical import (
     INTERPRETATION_SCHEMA,
 )
@@ -16,30 +16,30 @@ from spd.harvest.schemas import ComponentData
 
 
 def format_prompt(
-    strategy: CompactSkepticalConfig,
+    config: AutointerpConfig,
     component: ComponentData,
-    model_metadata: ModelMetadata,
+    arch: ArchitectureInfo,
     app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
 ) -> str:
-    match strategy:
+    match config:
         case CompactSkepticalConfig():
             return compact_skeptical_prompt(
-                strategy,
+                config,
                 component,
-                model_metadata,
+                arch,
                 app_tok,
                 input_token_stats,
                 output_token_stats,
             )
         case _:  # pyright: ignore[reportUnnecessaryComparison]
-            raise AssertionError(f"Unhandled strategy type: {type(strategy)}")  # pyright: ignore[reportUnreachable]
+            raise AssertionError(f"Unhandled config type: {type(config)}")  # pyright: ignore[reportUnreachable]
 
 
-def get_response_schema(strategy: CompactSkepticalConfig) -> dict[str, Any]:
-    match strategy:
+def get_response_schema(config: AutointerpConfig) -> dict[str, Any]:
+    match config:
         case CompactSkepticalConfig():
             return INTERPRETATION_SCHEMA
         case _:  # pyright: ignore[reportUnnecessaryComparison]
-            raise AssertionError(f"Unhandled strategy type: {type(strategy)}")  # pyright: ignore[reportUnreachable]
+            raise AssertionError(f"Unhandled config type: {type(config)}")  # pyright: ignore[reportUnreachable]
