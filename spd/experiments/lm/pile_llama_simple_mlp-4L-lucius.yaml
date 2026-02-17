@@ -26,13 +26,13 @@ sampling: continuous
 sigmoid_type: leaky_hard
 module_info:
 - module_pattern: h.*.mlp.c_fc
-  C: 3072
+  C: 4096
 - module_pattern: h.*.mlp.down_proj
-  C: 3584
+  C: 3072
 - module_pattern: h.*.attn.q_proj
   C: 512
 - module_pattern: h.*.attn.k_proj
-  C: 512
+  C: 256
 - module_pattern: h.*.attn.v_proj
   C: 1024
 - module_pattern: h.*.attn.o_proj
@@ -40,10 +40,10 @@ module_info:
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.0004
+- coeff: 0.0005
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
-  beta: 0.2
+  beta: 0.1
   p_anneal_start_frac: 0.0
   p_anneal_final_p: 0.4
   p_anneal_end_frac: 1.0
@@ -55,24 +55,26 @@ loss_metric_configs:
 - coeff: 0.5
   classname: PersistentPGDReconSubsetLoss
   optimizer:
-    type: sign
-    step_size: 0.1
+    type: adam
+    lr: 0.01
+    beta1: 0.8
+    beta2: 0.99
+    eps: 1.0e-08
   scope:
-    type: per_batch_per_position
-  use_sigmoid_parameterization: false
-  reset_prob: 0.0
+    type: batch_invariant
+    n_masks: 8
   routing:
     type: uniform_k_subset
-- coeff: 10000000.0
+- coeff: 1000000.0
   classname: FaithfulnessLoss
 output_loss_type: kl
 lr_schedule:
-  start_val: 5.0e-05
+  start_val: 3.0e-05
   warmup_pct: 0.0
   final_val_frac: 0.1
   fn_type: cosine
 steps: 400000
-batch_size: 64
+batch_size: 128
 gradient_accumulation_steps: 1
 grad_clip_norm_components: 0.01
 grad_clip_norm_ci_fns: null

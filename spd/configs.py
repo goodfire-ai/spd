@@ -533,6 +533,7 @@ class PersistentPGDReconLossConfig(LossMetricConfig):
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
     scope: PersistentPGDSourceScope
     use_sigmoid_parameterization: bool = False
+    reset_prob: float = 0.0
 
     @model_validator(mode="before")
     @classmethod
@@ -553,6 +554,7 @@ class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
     scope: PersistentPGDSourceScope
     use_sigmoid_parameterization: bool = False
+    reset_prob: float = 0.0
     routing: Annotated[
         SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
     ]
@@ -831,6 +833,13 @@ class Config(BaseConfig):
     ci_alive_threshold: Probability = Field(
         default=0.0,
         description="Causal importance threshold above which a component is considered 'firing'",
+    )
+
+    # --- SPD checkpoint initialization ---
+    init_spd_checkpoint: str | None = Field(
+        default=None,
+        description="Path to a .pth checkpoint from a prior SPD run. If set, component and CI "
+        "weights are loaded from this checkpoint instead of being randomly initialized.",
     )
 
     # --- Pretrained model info ---
