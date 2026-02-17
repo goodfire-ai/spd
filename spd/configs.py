@@ -754,14 +754,7 @@ class Config(BaseConfig):
     steps: NonNegativeInt = Field(..., description="Total number of optimisation steps")
     batch_size: PositiveInt = Field(
         ...,
-        description=(
-            "The effective batch size used for optimisation. Depending on gradient accumulation "
-            "steps, it may be processed as multiple micro-batches."
-        ),
-    )
-    gradient_accumulation_steps: PositiveInt = Field(
-        default=1,
-        description="Number of steps to accumulate gradients over before updating parameters",
+        description="Total batch size (may be divided across multiple devices).",
     )
     grad_clip_norm_components: PositiveFloat | None = Field(
         default=None,
@@ -785,10 +778,6 @@ class Config(BaseConfig):
         default=0.0,
         description="Weight decay for warmup phase optimizer",
     )
-
-    @property
-    def microbatch_size(self) -> PositiveInt:
-        return self.batch_size // self.gradient_accumulation_steps
 
     # --- Logging & Saving ---
     train_log_freq: PositiveInt = Field(
@@ -890,6 +879,7 @@ class Config(BaseConfig):
         "lr_exponential_halflife",
         "out_dir",
         "n_examples_until_dead",
+        "gradient_accumulation_steps",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "grad_clip_norm": "grad_clip_norm_components",
@@ -1005,10 +995,6 @@ class Config(BaseConfig):
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
-        assert self.batch_size % self.gradient_accumulation_steps == 0, (
-            "batch_size must be divisible by gradient_accumulation_steps"
-        )
-
         assert self.slow_eval_freq % self.eval_freq == 0, (
             "slow_eval_freq must be a multiple of eval_freq"
         )
@@ -1018,15 +1004,6 @@ class Config(BaseConfig):
 
         for cfg in self.loss_metric_configs:
             assert cfg.coeff is not None, "All loss_metric_configs must have a coeff"
-
-        if any(
-            isinstance(cfg, PGDConfig) and cfg.mask_scope == "shared_across_batch"
-            for cfg in self.loss_metric_configs
-        ):
-            assert self.gradient_accumulation_steps == 1, (
-                "gradient_accumulation_steps must be 1 if we are using PGD losses with "
-                "mask_scope='shared_across_batch'"
-            )
 
         if any(
             isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)

@@ -274,71 +274,60 @@ def optimize(
             ppgd_cfg: ppgd_states[ppgd_cfg].empty_grads() for ppgd_cfg in persistent_pgd_configs
         }
 
-        for _ in range(config.gradient_accumulation_steps):
-            microbatch = extract_batch_data(next(train_iterator)).to(device, non_blocking=True)
+        batch = extract_batch_data(next(train_iterator)).to(device, non_blocking=True)
 
-            with bf16_autocast(enabled=config.autocast_bf16):
-                # NOTE: we need to call the wrapped_model at least once each step in order
-                # to setup the DDP gradient syncing for all parameters in the component model.
-                # Gradients will sync regardless of whether the parameters are used in this
-                # call to wrapped_model.
-                target_model_output: OutputWithCache = wrapped_model(microbatch, cache_type="input")
+        with bf16_autocast(enabled=config.autocast_bf16):
+            # NOTE: we need to call the wrapped_model at least once each step in order
+            # to setup the DDP gradient syncing for all parameters in the component model.
+            # Gradients will sync regardless of whether the parameters are used in this
+            # call to wrapped_model.
+            target_model_output: OutputWithCache = wrapped_model(batch, cache_type="input")
 
-                ci = component_model.calc_causal_importances(
-                    pre_weight_acts=target_model_output.cache,
-                    detach_inputs=False,
-                    sampling=config.sampling,
-                )
-
-                microbatch_losses = compute_losses(
-                    loss_metric_configs=config.loss_metric_configs,
-                    model=component_model,
-                    batch=microbatch,
-                    ci=ci,
-                    target_out=target_model_output.output,
-                    weight_deltas=weight_deltas,
-                    pre_weight_acts=target_model_output.cache,
-                    current_frac_of_training=step / config.steps,
-                    sampling=config.sampling,
-                    use_delta_component=config.use_delta_component,
-                    n_mask_samples=config.n_mask_samples,
-                    ppgd_sourcess={
-                        cfg: ppgd_states[cfg].get_effective_sources()
-                        for cfg in persistent_pgd_configs
-                    },
-                    output_loss_type=config.output_loss_type,
-                )
-
-            # Compute total loss and accumulate PPGD grads
-            microbatch_total_loss = torch.tensor(0.0, device=device)
-            for loss_cfg, loss_val in microbatch_losses.items():
-                assert loss_cfg.coeff is not None
-                microbatch_total_loss = microbatch_total_loss + loss_cfg.coeff * loss_val
-                batch_log_data[f"train/loss/{loss_cfg.classname}"] += (
-                    loss_val.item() / config.gradient_accumulation_steps
-                )
-
-                # Accumulate PPGD grads
-                if isinstance(
-                    loss_cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
-                ):
-                    ppgd_grads = ppgd_states[loss_cfg].get_grads(loss_val)
-                    for module_name, grad in ppgd_grads.items():
-                        ppgd_batch_grads[loss_cfg][module_name] += (
-                            grad / config.gradient_accumulation_steps
-                        )
-
-            batch_log_data["train/loss/total"] += (
-                microbatch_total_loss.item() / config.gradient_accumulation_steps
+            ci = component_model.calc_causal_importances(
+                pre_weight_acts=target_model_output.cache,
+                detach_inputs=False,
+                sampling=config.sampling,
             )
 
-            microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
+            losses = compute_losses(
+                loss_metric_configs=config.loss_metric_configs,
+                model=component_model,
+                batch=batch,
+                ci=ci,
+                target_out=target_model_output.output,
+                weight_deltas=weight_deltas,
+                pre_weight_acts=target_model_output.cache,
+                current_frac_of_training=step / config.steps,
+                sampling=config.sampling,
+                use_delta_component=config.use_delta_component,
+                n_mask_samples=config.n_mask_samples,
+                ppgd_sourcess={
+                    cfg: ppgd_states[cfg].get_effective_sources() for cfg in persistent_pgd_configs
+                },
+                output_loss_type=config.output_loss_type,
+            )
 
-            for layer_name, layer_ci in ci.lower_leaky.items():
-                l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
-                batch_log_data[f"train/l0/{layer_name}"] += (
-                    l0_val / config.gradient_accumulation_steps
-                )
+        total_loss = torch.tensor(0.0, device=device)
+        for loss_cfg, loss_val in losses.items():
+            assert loss_cfg.coeff is not None
+            total_loss = total_loss + loss_cfg.coeff * loss_val
+            batch_log_data[f"train/loss/{loss_cfg.classname}"] = loss_val.item()
+
+            if isinstance(
+                loss_cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
+            ):
+                ppgd_grads = ppgd_states[loss_cfg].get_grads(loss_val)
+                for module_name, grad in ppgd_grads.items():
+                    ppgd_batch_grads[loss_cfg][module_name] += grad
+
+        batch_log_data["train/loss/total"] = total_loss.item()
+
+        total_loss.backward()
+
+        for layer_name, layer_ci in ci.lower_leaky.items():
+            l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
+            batch_log_data[f"train/l0/{layer_name}"] = l0_val
+
         # Step PPGD optimizers
         for ppgd_cfg in persistent_pgd_configs:
             mean_abs_steps = ppgd_states[ppgd_cfg].step(ppgd_batch_grads[ppgd_cfg])
