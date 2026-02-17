@@ -31,6 +31,7 @@ def main(
     evals_id: str | None = None,
     sweep_id: str | None = None,
     sweep_params_json: str | None = None,
+    run_id: str | None = None,
 ) -> None:
     assert (config_path is not None) != (config_json is not None), (
         "Need exactly one of config_path and config_json"
@@ -53,7 +54,7 @@ def main(
 
     if is_main_process():
         out_dir, run_id, tags = setup_decomposition_run(
-            experiment_tag="lm", evals_id=evals_id, sweep_id=sweep_id
+            experiment_tag="lm", evals_id=evals_id, sweep_id=sweep_id, run_id=run_id
         )
         if config.wandb_project:
             init_wandb(
