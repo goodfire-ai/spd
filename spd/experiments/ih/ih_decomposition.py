@@ -22,7 +22,7 @@ def main(
     config_path: Path | str | None = None,
     config_json: str | None = None,
     evals_id: str | None = None,
-    sweep_id: str | None = None,
+    launch_id: str | None = None,
     sweep_params_json: str | None = None,
 ) -> None:
     assert (config_path is not None) != (config_json is not None), (
@@ -50,8 +50,8 @@ def main(
         tags = ["ih"]
         if evals_id:
             tags.append(evals_id)
-        if sweep_id:
-            tags.append(sweep_id)
+        if launch_id:
+            tags.append(launch_id)
         init_wandb(
             config=config,
             project=config.wandb_project,
