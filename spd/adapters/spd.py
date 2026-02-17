@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from spd.adapters.base import DecompositionAdapter
-from spd.autointerp.schemas import ArchitectureInfo
+from spd.autointerp.schemas import ModelMetadata
 from spd.configs import LMTaskConfig
 from spd.data import train_loader_and_tokenizer
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -58,16 +58,13 @@ class SPDAdapter(DecompositionAdapter):
 
     @property
     @override
-    def architecture_info(self) -> ArchitectureInfo:
+    def model_metadata(self) -> ModelMetadata:
         cfg = self.spd_run_info.config
         task_cfg = runtime_cast(LMTaskConfig, cfg.task_config)
-        assert cfg.tokenizer_name is not None
-        return ArchitectureInfo(
+        return ModelMetadata(
             n_blocks=self._topology.n_blocks,
-            c_per_layer=self.component_model.module_to_c,
             model_class=cfg.pretrained_model_class,
             dataset_name=task_cfg.dataset_name,
-            tokenizer_name=cfg.tokenizer_name,
             layer_descriptions={
                 path: self._topology.target_to_canon(path)
                 for path in self.component_model.target_module_paths
