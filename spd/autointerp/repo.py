@@ -49,7 +49,7 @@ class InterpRepo:
         if not db_path.exists():
             return None
         return cls(
-            db=InterpDB(db_path, readonly=True),
+            db=InterpDB(db_path),
             subrun_dir=subrun_dir,
             run_id=run_id,
         )
