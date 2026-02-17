@@ -52,6 +52,10 @@ class PPGDOptimizer(ABC):
         Updates sources in-place. Returns mean absolute step per module.
         """
 
+    @abstractmethod
+    def reset_state(self, module_name: str, indices: Tensor) -> None:
+        """Reset optimizer state for entries at given dim-0 indices."""
+
 
 class SignPGDOptimizer(PPGDOptimizer):
     def __init__(self, cfg: SignPGDConfig) -> None:
@@ -69,6 +73,10 @@ class SignPGDOptimizer(PPGDOptimizer):
             mean_abs_step[module_name] = step_tensor.abs().mean().item()
             sources[module_name].add_(step_tensor)
         return mean_abs_step
+
+    @override
+    def reset_state(self, module_name: str, indices: Tensor) -> None:
+        pass
 
 
 class AdamPGDOptimizer(PPGDOptimizer):
@@ -107,6 +115,11 @@ class AdamPGDOptimizer(PPGDOptimizer):
             source.add_(step_tensor)
         return mean_abs_step
 
+    @override
+    def reset_state(self, module_name: str, indices: Tensor) -> None:
+        self._m[module_name][indices] = 0
+        self._v[module_name][indices] = 0
+
 
 def make_ppgd_optimizer(cfg: PGDOptimizerConfig) -> PPGDOptimizer:
     match cfg:
@@ -136,6 +149,8 @@ class PersistentPGDState:
         self.optimizer = make_ppgd_optimizer(cfg.optimizer)
         self._skip_all_reduce = isinstance(cfg.scope, PerBatchPerPositionScope)
         self._use_sigmoid_parameterization = cfg.use_sigmoid_parameterization
+        self._reset_prob = cfg.reset_prob
+        self._init_fn = torch.randn if self._use_sigmoid_parameterization else torch.rand
 
         self.sources: PPGDSources = {}
 
@@ -154,11 +169,10 @@ class PersistentPGDState:
             case PerBatchPerPositionScope():
                 source_leading_dims = list(batch_dims)
 
-        init_fn = torch.randn if self._use_sigmoid_parameterization else torch.rand
         for module_name, module_c in module_to_c.items():
             source_c = module_c + 1 if use_delta_component else module_c
             source_shape = source_leading_dims + [source_c]
-            source_data = broadcast_tensor(init_fn(source_shape, device=device))
+            source_data = broadcast_tensor(self._init_fn(source_shape, device=device))
             self.sources[module_name] = source_data.requires_grad_(True)
 
         self.optimizer.init_state(self.sources)
@@ -178,6 +192,7 @@ class PersistentPGDState:
 
         Updates sources in-place, then clamps to [0, 1] (or leaves unbounded when using sigmoid
         parameterization, where sigmoid is applied when reading effective sources).
+        Randomly resets a fraction of sources (controlled by reset_prob).
 
         Returns:
             Mean absolute step per module (before clamping).
@@ -189,7 +204,33 @@ class PersistentPGDState:
                 for source in self.sources.values():
                     source.clamp_(0.0, 1.0)
 
+            self._maybe_reset_sources()
+
         return mean_abs_step
+
+    def _maybe_reset_sources(self) -> None:
+        if self._reset_prob == 0.0:
+            return
+
+        any_source = next(iter(self.sources.values()))
+        leading_dim = any_source.shape[0]
+        device = any_source.device
+
+        reset_mask = torch.rand(leading_dim, device=device) < self._reset_prob
+        if not self._skip_all_reduce:
+            reset_mask = broadcast_tensor(reset_mask)
+
+        indices = reset_mask.nonzero(as_tuple=True)[0]
+        if len(indices) == 0:
+            return
+
+        for module_name, source in self.sources.items():
+            new_shape = [len(indices)] + list(source.shape[1:])
+            new_vals = self._init_fn(new_shape, device=device)
+            if not self._skip_all_reduce:
+                new_vals = broadcast_tensor(new_vals)
+            source.data[indices] = new_vals
+            self.optimizer.reset_state(module_name, indices)
 
     def get_effective_sources(self) -> PPGDSources:
         """Return sources in [0, 1] range.

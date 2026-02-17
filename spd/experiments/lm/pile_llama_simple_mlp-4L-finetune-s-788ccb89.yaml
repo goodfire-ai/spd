@@ -1,6 +1,6 @@
 wandb_project: spd
 wandb_run_name: null
-wandb_run_name_prefix: ''
+wandb_run_name_prefix: 'finetune-s-788ccb89-'
 seed: 0
 autocast_bf16: true
 n_mask_samples: 1
@@ -39,50 +39,51 @@ module_info:
   C: 1024
 identity_module_info: null
 use_delta_component: true
+
+init_spd_checkpoint: /mnt/polished-lake/artifacts/mechanisms/spd/spd/s-788ccb89/model_400000.pth
+
 loss_metric_configs:
+# ImpMin: pnorm fixed at 0.4 (end-of-training annealed value), coeff 1.5x original
 - coeff: 0.0004
   classname: ImportanceMinimalityLoss
-  pnorm: 2.0
+  pnorm: 0.4
   beta: 0.2
-  p_anneal_start_frac: 0.0
-  p_anneal_final_p: 0.4
+  p_anneal_start_frac: 1.0
+  p_anneal_final_p: null
   p_anneal_end_frac: 1.0
   eps: 1.0e-12
 - coeff: 0.5
   classname: StochasticReconSubsetLoss
   routing:
     type: uniform_k_subset
+# PGDReconLoss replaces PersistentPGDReconSubsetLoss
 - coeff: 0.5
-  classname: PersistentPGDReconSubsetLoss
-  optimizer:
-    type: sign
-    step_size: 0.4
-  scope:
-    type: per_batch_per_position
-  use_sigmoid_parameterization: false
-  reset_prob: 0.1
-  routing:
-    type: uniform_k_subset
+  classname: PGDReconLoss
+  init: random
+  step_size: 0.1
+  n_steps: 20
+  mask_scope: shared_across_batch
 - coeff: 10000000.0
   classname: FaithfulnessLoss
+
 output_loss_type: kl
 lr_schedule:
-  start_val: 5.0e-05
+  start_val: 5.0e-06
   warmup_pct: 0.0
-  final_val_frac: 0.1
-  fn_type: cosine
-steps: 400000
+  final_val_frac: 1.0
+  fn_type: constant
+steps: 5000
 batch_size: 64
 gradient_accumulation_steps: 1
 grad_clip_norm_components: 0.01
 grad_clip_norm_ci_fns: null
-faithfulness_warmup_steps: 400
+faithfulness_warmup_steps: 0
 faithfulness_warmup_lr: 0.001
 faithfulness_warmup_weight_decay: 0.0
-train_log_freq: 200
-eval_freq: 1000
+train_log_freq: 50
+eval_freq: 500
 eval_batch_size: 128
-slow_eval_freq: 10000
+slow_eval_freq: 1000
 n_eval_steps: 1
 slow_eval_on_first_step: true
 save_freq: null
