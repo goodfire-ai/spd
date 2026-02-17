@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 import torch
 from torch.utils.data import DataLoader
 
-from spd.autointerp.schemas import ArchitectureInfo
+from spd.autointerp.schemas import ModelMetadata
 
 
 class DecompositionAdapter(ABC):
@@ -25,7 +25,7 @@ class DecompositionAdapter(ABC):
 
     @property
     @abstractmethod
-    def architecture_info(self) -> ArchitectureInfo: ...
+    def model_metadata(self) -> ModelMetadata: ...
 
     @abstractmethod
     def dataloader(self, batch_size: int) -> DataLoader[torch.Tensor]: ...

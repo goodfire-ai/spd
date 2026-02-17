@@ -65,7 +65,7 @@ def postprocess(config: PostprocessConfig) -> Path:
     if config.autointerp is not None:
         autointerp_result = submit_autointerp(
             decomposition_id=decomp_cfg.id,
-            slurm_config=config.autointerp,
+            config=config.autointerp,
             dependency_job_id=harvest_result.merge_result.job_id,
             snapshot_branch=snapshot_branch,
             harvest_subrun_id=harvest_result.subrun_id,

@@ -7,7 +7,7 @@ Extracted from the original prompt_template.py.
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
 from spd.autointerp.config import CompactSkepticalConfig
-from spd.autointerp.schemas import ArchitectureInfo
+from spd.autointerp.schemas import ModelMetadata
 from spd.harvest.analysis import TokenPRLift
 from spd.harvest.schemas import ComponentData
 
@@ -49,7 +49,7 @@ SPD_CONTEXT = (
 def format_prompt(
     config: CompactSkepticalConfig,
     component: ComponentData,
-    arch: ArchitectureInfo,
+    model_metadata: ModelMetadata,
     app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
@@ -80,13 +80,15 @@ def format_prompt(
     if component.firing_density > 0.0:
         rate_str = f"~1 in {int(1 / component.firing_density)} tokens"
     else:
-        rate_str = "extremely rare"
+        rate_str = "extremely rare"  # TODO(oli) make this string better. does this even happen?
 
-    layer_desc = arch.layer_descriptions.get(component.layer, component.layer)
+    layer_desc = model_metadata.layer_descriptions.get(component.layer, component.layer)
 
     dataset_line = ""
     if config.include_dataset_description:
-        dataset_desc = DATASET_DESCRIPTIONS.get(arch.dataset_name, arch.dataset_name)
+        dataset_desc = DATASET_DESCRIPTIONS.get(
+            model_metadata.dataset_name, model_metadata.dataset_name
+        )
         dataset_line = f", dataset: {dataset_desc}"
 
     spd_context_block = f"\n{SPD_CONTEXT}\n" if config.include_spd_context else ""
@@ -97,7 +99,7 @@ def format_prompt(
 Label this neural network component.
 {spd_context_block}
 ## Context
-- Model: {arch.model_class} ({arch.n_blocks} layers){dataset_line}
+- Model: {model_metadata.model_class} ({model_metadata.n_blocks} blocks){dataset_line}
 - Component location: {layer_desc}
 - Component firing rate: {component.firing_density * 100:.2f}% ({rate_str})
 
