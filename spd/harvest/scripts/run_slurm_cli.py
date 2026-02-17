@@ -11,8 +11,7 @@ import fire
 
 
 def harvest(
-    wandb_path: str,
-    config: str | None = None,
+    config: str,
     job_suffix: str | None = None,
 ) -> None:
     """Submit multi-GPU harvest job to SLURM.
@@ -24,14 +23,9 @@ def harvest(
     """
     from spd.harvest.config import HarvestSlurmConfig
     from spd.harvest.scripts.run_slurm import submit_harvest
-    from spd.utils.wandb_utils import parse_wandb_run_path
 
-    parse_wandb_run_path(wandb_path)
-
-    slurm_config = (
-        HarvestSlurmConfig.from_file(config) if config is not None else HarvestSlurmConfig()
-    )
-    submit_harvest(wandb_path=wandb_path, slurm_config=slurm_config, job_suffix=job_suffix)
+    slurm_config = HarvestSlurmConfig.from_file(config)
+    submit_harvest(config=slurm_config, job_suffix=job_suffix)
 
 
 def cli() -> None:

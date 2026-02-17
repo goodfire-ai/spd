@@ -17,9 +17,9 @@ def get_harvest_dir(wandb_run_id: str) -> Path:
     return HARVEST_DATA_DIR / wandb_run_id
 
 
-def get_harvest_subrun_dir(wandb_run_id: str, subrun_id: str) -> Path:
+def get_harvest_subrun_dir(decomposition_id: str, subrun_id: str) -> Path:
     """Get the sub-run directory for a specific harvest invocation."""
-    return get_harvest_dir(wandb_run_id) / subrun_id
+    return get_harvest_dir(decomposition_id) / subrun_id
 
 
 @dataclass

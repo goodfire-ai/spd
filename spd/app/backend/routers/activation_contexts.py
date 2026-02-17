@@ -53,7 +53,7 @@ def example_to_activation_contexts(
 
     return SubcomponentActivationContexts(
         subcomponent_idx=comp.component_idx,
-        # TODO(oli) consider replacing with firing density
+        # We might consider replacing mean_ci here with firing density
         mean_ci=mean_ci,
         example_tokens=example_tokens,
         example_ci=example_ci,

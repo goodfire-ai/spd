@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
+from spd.decomposition.spd import SPDDecomposition
 from spd.harvest import analysis
 from spd.log import logger
 from spd.topology import TransformerTopology
@@ -166,15 +167,10 @@ async def request_component_interpretation(
     """
     import os
 
-    from aiolimiter import AsyncLimiter
     from openrouter import OpenRouter
 
     from spd.autointerp.config import CompactSkepticalConfig
-    from spd.autointerp.interpret import (
-        get_architecture_info,
-        interpret_component,
-    )
-    from spd.autointerp.llm_api import CostTracker, GlobalBackoff, LLMClient  # noqa: F811
+    from spd.autointerp.interpret import interpret_component
 
     assert loaded.harvest is not None, "No harvest data available"
     assert loaded.interp is not None, "No autointerp data available"
@@ -198,8 +194,6 @@ async def request_component_interpretation(
             detail="OPENROUTER_API_KEY environment variable not set",
         )
 
-    arch = get_architecture_info(loaded.run.wandb_path)
-
     token_stats = loaded.harvest.get_token_stats()
     assert token_stats is not None, "Token stats required for interpretation"
 
@@ -215,19 +209,16 @@ async def request_component_interpretation(
             detail=f"Token stats not available for component {component_key}",
         )
 
-    config = CompactSkepticalConfig()
+    # TODO(oli): this a gross use of a way-too-big api just for arch info
+    arch = SPDDecomposition(loaded.run.wandb_path, 0.0).architecture_info
 
     async with OpenRouter(api_key=api_key) as api:
-        llm = LLMClient(
-            api=api,
-            rate_limiter=AsyncLimiter(max_rate=10, time_period=60),
-            backoff=GlobalBackoff(),
-            cost_tracker=CostTracker(),
-        )
         try:
             result = await interpret_component(
-                llm=llm,
-                config=config,
+                api=api,
+                model="google/gemini-3-flash-preview",
+                reasoning_effort="none",
+                strategy=CompactSkepticalConfig(),
                 component=component_data,
                 arch=arch,
                 app_tok=loaded.tokenizer,

@@ -13,31 +13,25 @@ Performance (SimpleStories, 600M tokens, batch_size=256):
 
 import itertools
 import time
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 import torch
 import tqdm
 
+from spd.decomposition import Decomposition
 from spd.harvest.config import HarvestConfig
 from spd.harvest.harvester import Harvester
 from spd.harvest.repo import HarvestRepo
-from spd.harvest.schemas import HarvestBatch
 from spd.log import logger
 from spd.utils.general_utils import bf16_autocast
 
 
 def harvest(
-    harvest_fn: Callable[[Any], HarvestBatch],
-    layers: list[tuple[str, int]],
-    vocab_size: int,
-    dataloader: Any,
+    decomposition: Decomposition,
     config: HarvestConfig,
     output_dir: Path,
     *,
-    rank: int | None = None,
-    world_size: int | None = None,
+    rank_world_size: tuple[int, int] | None,
     device: torch.device | None = None,
 ) -> None:
     """Single-pass harvest for any decomposition method.
@@ -54,21 +48,22 @@ def harvest(
         world_size: Total number of workers.
         device: Device for accumulator tensors.
     """
-    assert (rank is None) == (world_size is None), "rank and world_size must both be set or unset"
-
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     harvester = Harvester(
-        layers=layers,
-        vocab_size=vocab_size,
+        layers=[
+            (layer_name, n_components)
+            for layer_name, n_components in decomposition.architecture_info.c_per_layer.items()
+        ],
+        vocab_size=decomposition.architecture_info.vocab_size,
         max_examples_per_component=config.activation_examples_per_component,
         context_tokens_per_side=config.activation_context_tokens_per_side,
         max_examples_per_batch_per_component=config.max_examples_per_batch_per_component,
         device=device,
     )
 
-    train_iter = iter(dataloader)
+    train_iter = iter(decomposition.dataloader(config.batch_size))
     batches_processed = 0
     last_log_time = time.time()
     match config.n_batches:
@@ -77,15 +72,19 @@ def harvest(
         case "whole_dataset":
             batch_range = itertools.count()
 
-    for batch_idx in tqdm.tqdm(batch_range, desc="Harvesting", disable=rank is not None):
+    harvest_fn = decomposition.make_harvest_fn(device)
+
+    for batch_idx in tqdm.tqdm(batch_range, desc="Harvesting", disable=rank_world_size is not None):
         try:
             batch_item = next(train_iter)
         except StopIteration:
             logger.info(f"Dataset exhausted at batch {batch_idx}. Processing complete.")
             break
 
-        if world_size is not None and batch_idx % world_size != rank:
-            continue
+        if rank_world_size is not None:
+            r, w = rank_world_size
+            if batch_idx % w != r:
+                continue
 
         with torch.no_grad(), bf16_autocast():
             hb = harvest_fn(batch_item)
@@ -93,22 +92,26 @@ def harvest(
 
         batches_processed += 1
         now = time.time()
-        if rank is not None and now - last_log_time >= 10:
-            logger.info(f"[Worker {rank}] {batches_processed} batches")
-            last_log_time = now
+
+        if rank_world_size is not None:
+            r, w = rank_world_size
+            if now - last_log_time >= 10:
+                logger.info(f"[Worker {r}] {batches_processed} batches")
+                last_log_time = now
 
     logger.info(
-        f"{'[Worker ' + str(rank) + '] ' if rank is not None else ''}"
+        f"{'[Worker ' + str(rank_world_size[0]) + '] ' if rank_world_size is not None else ''}"
         f"Processing complete. {batches_processed} batches, "
         f"{harvester.total_tokens_processed:,} tokens"
     )
 
-    if rank is not None:
+    if rank_world_size is not None:
+        r, w = rank_world_size
         state_dir = output_dir / "worker_states"
         state_dir.mkdir(parents=True, exist_ok=True)
-        state_path = state_dir / f"worker_{rank}.pt"
+        state_path = state_dir / f"worker_{r}.pt"
         harvester.save(state_path)
-        logger.info(f"[Worker {rank}] Saved state to {state_path}")
+        logger.info(f"[Worker {r}] Saved state to {state_path}")
     else:
         HarvestRepo.save_results(harvester, config, output_dir)
         logger.info(f"Saved results to {output_dir}")

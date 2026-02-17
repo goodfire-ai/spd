@@ -50,6 +50,7 @@ def _build_component_layer_keys(model: ComponentModel) -> list[str]:
 def _build_alive_masks(
     model: ComponentModel,
     run_id: str,
+    subrun_id: str,
     n_components: int,
     vocab_size: int,
 ) -> tuple[Bool[Tensor, " n_sources"], Bool[Tensor, " n_components"]]:
@@ -61,8 +62,6 @@ def _build_alive_masks(
     - Sources: [0, vocab_size) = wte tokens, [vocab_size, vocab_size + n_components) = component layers
     - Targets: [0, n_components) = component layers (output handled via out_residual)
     """
-    harvest = HarvestRepo.open(run_id)
-    summary = harvest.get_summary() if harvest is not None else None
 
     n_sources = vocab_size + n_components
 
@@ -72,11 +71,9 @@ def _build_alive_masks(
     # All wte tokens are always alive (source indices [0, vocab_size))
     source_alive[:vocab_size] = True
 
-    if summary is None:
-        logger.warning("Harvest summary not available, using all components as alive")
-        source_alive.fill_(True)
-        target_alive.fill_(True)
-        return source_alive, target_alive
+    harvest = HarvestRepo(decomposition_id=run_id, subrun_id=subrun_id, readonly=True)
+    summary = harvest.get_summary()
+    assert summary is not None, "Harvest summary not available"
 
     # Build masks for component layers
     source_idx = vocab_size  # Start after wte tokens
@@ -102,7 +99,6 @@ def _build_alive_masks(
 
 
 def harvest_attributions(
-    wandb_path: str,
     config: DatasetAttributionConfig,
     output_dir: Path,
     rank: int | None = None,
@@ -124,9 +120,9 @@ def harvest_attributions(
     device = torch.device(get_device())
     logger.info(f"Loading model on {device}")
 
-    _, _, run_id = parse_wandb_run_path(wandb_path)
+    _, _, run_id = parse_wandb_run_path(config.spd_run_wandb_path)
 
-    run_info = SPDRunInfo.from_path(wandb_path)
+    run_info = SPDRunInfo.from_path(config.spd_run_wandb_path)
     model = ComponentModel.from_run_info(run_info).to(device)
     model.eval()
 
@@ -139,7 +135,9 @@ def harvest_attributions(
     # Build component keys and alive masks
     component_layer_keys = _build_component_layer_keys(model)
     n_components = len(component_layer_keys)
-    source_alive, target_alive = _build_alive_masks(model, run_id, n_components, vocab_size)
+    source_alive, target_alive = _build_alive_masks(
+        model, run_id, config.harvest_subrun_id, n_components, vocab_size
+    )
     source_alive = source_alive.to(device)
     target_alive = target_alive.to(device)
 

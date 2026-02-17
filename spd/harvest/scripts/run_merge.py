@@ -6,31 +6,33 @@ Usage:
 
 import fire
 
+from spd.decomposition.dispatch import decomposition_from_config
 from spd.harvest.config import HarvestConfig
 from spd.harvest.harvest import merge_harvest
 from spd.harvest.schemas import get_harvest_subrun_dir
 from spd.log import logger
-from spd.utils.wandb_utils import parse_wandb_run_path
 
 
 def main(
     wandb_path: str,
     subrun_id: str,
-    config_json: str | dict[str, object] | None = None,
+    config_json: str,
 ) -> None:
-    _, _, run_id = parse_wandb_run_path(wandb_path)
-    output_dir = get_harvest_subrun_dir(run_id, subrun_id)
-
-    match config_json:
-        case str(json_str):
-            config = HarvestConfig.model_validate_json(json_str)
-        case dict(d):
-            config = HarvestConfig.model_validate(d)
-        case None:
-            config = HarvestConfig()
-
+    config = HarvestConfig.model_validate_json(config_json)
+    decomposition = decomposition_from_config(config.target_decomposition)
+    output_dir = get_harvest_subrun_dir(decomposition.id, subrun_id)
     logger.info(f"Merging harvest results for {wandb_path} (subrun {subrun_id})")
     merge_harvest(output_dir, config)
+
+
+def get_command(subrun_id: str, config: HarvestConfig) -> str:
+    config_json = config.model_dump_json(exclude_none=True)
+    cmd = (
+        f"python -m spd.harvest.scripts.run_merge "
+        f"--subrun_id {subrun_id} "
+        f"--config_json '{config_json}'"
+    )
+    return cmd
 
 
 if __name__ == "__main__":

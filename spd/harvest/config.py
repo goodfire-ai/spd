@@ -4,12 +4,13 @@ HarvestConfig: tuning params for the harvest pipeline.
 HarvestSlurmConfig: HarvestConfig + SLURM submission params.
 """
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from openrouter.components import Effort
-from pydantic import PositiveInt
+from pydantic import Field, PositiveInt
 
 from spd.base_config import BaseConfig
+from spd.decomposition.configs import TargetDecompositionConfig
 from spd.settings import DEFAULT_PARTITION_NAME
 
 
@@ -36,9 +37,9 @@ class IntruderSlurmConfig(BaseConfig):
 
 
 class HarvestConfig(BaseConfig):
+    target_decomposition: Annotated[TargetDecompositionConfig, Field(discriminator="type")]
     n_batches: int | Literal["whole_dataset"] = 20_000
     batch_size: int = 32
-    activation_threshold: float = 1e-6
     activation_examples_per_component: int = 1000
     activation_context_tokens_per_side: int = 20
     pmi_token_top_k: int = 40
@@ -48,7 +49,7 @@ class HarvestConfig(BaseConfig):
 class HarvestSlurmConfig(BaseConfig):
     """Config for harvest SLURM submission."""
 
-    config: HarvestConfig = HarvestConfig()
+    config: HarvestConfig
     n_gpus: PositiveInt = 8
     partition: str = DEFAULT_PARTITION_NAME
     time: str = "12:00:00"

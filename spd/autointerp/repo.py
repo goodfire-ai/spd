@@ -89,3 +89,10 @@ class InterpRepo:
     def get_fuzzing_scores(self) -> dict[str, float] | None:
         scores = self._db.get_scores("fuzzing")
         return scores if scores else None
+
+    def get_scores(self, score_type: str) -> dict[str, float]:
+        scores = self._db.get_scores(score_type)
+        return scores if scores else {}
+
+    def save_score(self, component_key: str, score_type: str, score: float, details: str) -> None:
+        self._db.save_score(component_key, score_type, score, details)

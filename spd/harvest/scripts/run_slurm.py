@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from spd.harvest.config import HarvestSlurmConfig
+from spd.harvest.scripts import run_merge as harvest_merge
+from spd.harvest.scripts import run_worker as harvest_worker
 from spd.log import logger
 from spd.utils.git_utils import create_git_snapshot
 from spd.utils.slurm import (
@@ -31,36 +33,20 @@ class HarvestSubmitResult:
     merge_result: SubmitResult
     subrun_id: str
 
-    @property
-    def job_id(self) -> str:
-        return self.merge_result.job_id
-
 
 def submit_harvest(
-    wandb_path: str,
-    slurm_config: HarvestSlurmConfig,
+    config: HarvestSlurmConfig,
     job_suffix: str | None = None,
     snapshot_branch: str | None = None,
 ) -> HarvestSubmitResult:
     """Submit multi-GPU harvest job to SLURM.
 
     Submits a job array where each task processes a subset of batches, then
-    submits a merge job that depends on all workers completing. Creates a git
-    snapshot to ensure consistent code across all workers.
-
-    Args:
-        wandb_path: WandB run path for the target decomposition run.
-        slurm_config: Harvest SLURM configuration.
-        job_suffix: Optional suffix for SLURM job names (e.g., "v2" -> "spd-harvest-v2").
-        snapshot_branch: Git snapshot branch to use. If None, creates a new snapshot.
-
-    Returns:
-        SubmitResult for the merge job (the terminal job in the harvest pipeline).
+    submits a merge job that depends on all workers completing.
     """
-    config = slurm_config.config
-    n_gpus = slurm_config.n_gpus
-    partition = slurm_config.partition
-    time = slurm_config.time
+    n_gpus = config.n_gpus
+    partition = config.partition
+    time = config.time
 
     if snapshot_branch is None:
         run_id = f"harvest-{secrets.token_hex(4)}"
@@ -76,20 +62,18 @@ def submit_harvest(
 
     worker_commands = []
     for rank in range(n_gpus):
-        cmd = (
-            f"python -m spd.harvest.scripts.run_worker "
-            f'"{wandb_path}" '
-            f"--config_json '{config.model_dump_json(exclude_none=True)}' "
-            f"--rank {rank} "
-            f"--world_size {n_gpus} "
-            f"--subrun_id {subrun_id}"
+        cmd = harvest_worker.get_command(
+            config.config,
+            rank=rank,
+            world_size=n_gpus,
+            subrun_id=subrun_id,
         )
         worker_commands.append(cmd)
 
     array_config = SlurmArrayConfig(
         job_name=array_job_name,
         partition=partition,
-        n_gpus=1,  # 1 GPU per worker
+        n_gpus=1,
         time=time,
         snapshot_branch=snapshot_branch,
     )
@@ -101,33 +85,29 @@ def submit_harvest(
         n_array_tasks=n_gpus,
     )
 
-    config_json = config.model_dump_json(exclude_none=True)
-    merge_cmd = (
-        f"python -m spd.harvest.scripts.run_merge "
-        f'"{wandb_path}" '
-        f"--subrun_id {subrun_id} "
-        f"--config_json '{config_json}'"
+    merge_command = harvest_merge.get_command(
+        subrun_id,
+        config.config,
     )
     merge_config = SlurmConfig(
         job_name="spd-harvest-merge",
         partition=partition,
         n_gpus=0,
-        time=slurm_config.merge_time,
-        mem=slurm_config.merge_mem,
+        time=config.merge_time,
+        mem=config.merge_mem,
         snapshot_branch=snapshot_branch,
         dependency_job_id=array_result.job_id,
     )
-    merge_script = generate_script(merge_config, merge_cmd)
+    merge_script = generate_script(merge_config, merge_command)
     merge_result = submit_slurm_job(merge_script, "harvest_merge")
 
     logger.section("Harvest jobs submitted!")
     logger.values(
         {
-            "WandB path": wandb_path,
             "Sub-run ID": subrun_id,
-            "N batches": config.n_batches,
+            "N batches": config.config.n_batches,
             "N GPUs": n_gpus,
-            "Batch size": config.batch_size,
+            "Batch size": config.config.batch_size,
             "Snapshot": f"{snapshot_branch} ({commit_hash[:8]})",
             "Array Job ID": array_result.job_id,
             "Merge Job ID": merge_result.job_id,

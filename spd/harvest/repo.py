@@ -4,7 +4,6 @@ Owns SPD_OUT_DIR/harvest/<decomposition_id>/ and provides read/write access to a
 harvest artifacts. No in-memory caching -- reads go through on every call.
 Component data backed by SQLite; correlations and token stats remain as .pt files.
 
-Use HarvestRepo.open() for reading, HarvestRepo.save_results() for writing.
 Layout: harvest/<decomposition_id>/h-YYYYMMDD_HHMMSS/{harvest.db, *.pt}
 """
 
@@ -23,51 +22,45 @@ from spd.log import logger
 
 
 class HarvestRepo:
-    """Access to harvest data for a single decomposition.
+    """Access to harvest data for a single harvest subrun of a decomposition."""
 
-    Constructed via HarvestRepo.open() for reading.
-    Use HarvestRepo.save_results() to write harvest outputs.
-    """
-
-    def __init__(self, db: HarvestDB, subrun_dir: Path, decomposition_id: str) -> None:
-        self._db = db
-        self._subrun_dir = subrun_dir
-        self.db_path = subrun_dir / "harvest.db"
-        self.subrun_id = subrun_dir.name
-        self.decomposition_id = decomposition_id
+    def __init__(self, decomposition_id: str, subrun_id: str, readonly: bool) -> None:
+        # self.decomposition_id = decomposition_id
+        self.subrun_id = subrun_id
+        self._dir = get_harvest_dir(decomposition_id) / subrun_id
+        self._db = HarvestDB(self._dir / "harvest.db", readonly=readonly)
 
     @classmethod
-    def open(
+    def open_most_recent(
         cls,
         decomposition_id: str,
-        subrun_id: str | None = None,
         readonly: bool = True,
     ) -> "HarvestRepo | None":
         """Open harvest data. Returns None if no harvest data exists."""
-        harvest_dir = get_harvest_dir(decomposition_id)
-        if not harvest_dir.exists():
+        decomposition_subruns_dir = get_harvest_dir(decomposition_id)
+        if not decomposition_subruns_dir.exists():
             return None
 
-        if subrun_id is not None:
-            subrun_dir = harvest_dir / subrun_id
-        else:
-            candidates = sorted(
-                [d for d in harvest_dir.iterdir() if d.is_dir() and d.name.startswith("h-")],
-                key=lambda d: d.name,
-            )
-            if not candidates:
-                return None
-            subrun_dir = candidates[-1]
+        subrun_candidates = sorted(
+            [
+                d
+                for d in decomposition_subruns_dir.iterdir()
+                if d.is_dir() and d.name.startswith("h-")
+            ],
+            key=lambda d: d.name,
+        )
+        if not subrun_candidates:
+            return None
+
+        subrun_dir = subrun_candidates[-1]
 
         db_path = subrun_dir / "harvest.db"
         if not db_path.exists():
             return None
 
-        return cls(
-            db=HarvestDB(db_path, readonly=readonly),
-            subrun_dir=subrun_dir,
-            decomposition_id=decomposition_id,
-        )
+        subrun_id = subrun_dir.name
+
+        return cls(decomposition_id=decomposition_id, subrun_id=subrun_id, readonly=readonly)
 
     @staticmethod
     def save_results(harvester: Harvester, config: HarvestConfig, output_dir: Path) -> None:
@@ -134,13 +127,13 @@ class HarvestRepo:
     # -- Correlations & token stats (tensor data) ------------------------------
 
     def get_correlations(self) -> CorrelationStorage | None:
-        path = self._subrun_dir / "component_correlations.pt"
+        path = self._dir / "component_correlations.pt"
         if not path.exists():
             return None
         return CorrelationStorage.load(path)
 
     def get_token_stats(self) -> TokenStatsStorage | None:
-        path = self._subrun_dir / "token_stats.pt"
+        path = self._dir / "token_stats.pt"
         if not path.exists():
             return None
         return TokenStatsStorage.load(path)
