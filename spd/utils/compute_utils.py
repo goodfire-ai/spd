@@ -28,6 +28,7 @@ class TrainingJob:
     experiment: str
     script_path: Path
     config: Config
+    run_id: str  # Pre-generated unique run identifier (e.g. "s-a1b2c3d4")
 
 
 def _choose_master_port(run_id_local: str, idx: int) -> int:
@@ -52,7 +53,8 @@ def _build_script_args(
     args = (
         f"--config_json {shlex.quote(json_tagged_config)} "
         f"--sweep_id {run_id} "
-        f"--evals_id {job.experiment}"
+        f"--evals_id {job.experiment} "
+        f"--run_id {job.run_id}"
     )
     if sweep_params is not None:
         json_tagged_sweep_params = f"json:{json.dumps(sweep_params)}"

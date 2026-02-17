@@ -25,9 +25,14 @@ from spd.utils.compute_utils import (
     create_slurm_array_script,
 )
 from spd.utils.git_utils import create_git_snapshot
-from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations
+from spd.utils.run_utils import ExecutionStamp, apply_nested_updates, generate_grid_combinations
 from spd.utils.slurm import submit_slurm_job
-from spd.utils.wandb_utils import ReportCfg, create_view_and_report, generate_wandb_run_name
+from spd.utils.wandb_utils import (
+    ReportCfg,
+    create_view_and_report,
+    generate_wandb_run_name,
+    get_wandb_run_url,
+)
 
 
 def launch_slurm_run(
@@ -79,15 +84,16 @@ def launch_slurm_run(
     snapshot_branch, commit_hash = create_git_snapshot(run_id=run_id)
     logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
 
-    _wandb_setup(
-        create_report=create_report,
-        report_title=report_title,
-        project=project,
-        run_id=run_id,
-        experiments_list=experiments_list,
-        snapshot_branch=snapshot_branch,
-        commit_hash=commit_hash,
-    )
+    if len(training_jobs) > 1:
+        _wandb_setup(
+            create_report=create_report,
+            report_title=report_title,
+            project=project,
+            run_id=run_id,
+            experiments_list=experiments_list,
+            snapshot_branch=snapshot_branch,
+            commit_hash=commit_hash,
+        )
 
     slurm_job_name = f"spd-{job_suffix or get_max_expected_runtime(experiments_list)}"
 
@@ -111,15 +117,19 @@ def launch_slurm_run(
     )
 
     logger.section("Job submitted successfully!")
-    logger.values(
-        {
-            "Array Job ID": result.job_id,
-            "Total training jobs": len(training_jobs),
-            "Max concurrent tasks": n_agents,
-            "View logs in": result.log_pattern,
-            "Script": str(result.script_path),
-        }
-    )
+    summary: dict[str, str | int | None] = {
+        "Array Job ID": result.job_id,
+        "Total training jobs": len(training_jobs),
+        "Max concurrent tasks": n_agents,
+        "View logs in": result.log_pattern,
+        "Script": str(result.script_path),
+    }
+    if len(training_jobs) <= 10:
+        urls = [get_wandb_run_url(project, job.run_id) for job in training_jobs]
+        summary["WandB run URLs"] = (
+            urls[0] if len(urls) == 1 else "\n" + "\n".join(f"  - {u}" for u in urls)
+        )
+    logger.values(summary)
 
 
 def _generate_run_id() -> str:
@@ -161,6 +171,7 @@ def _create_training_jobs(
                     experiment=experiment,
                     script_path=exp_config.decomp_script,
                     config=config_with_overrides,
+                    run_id=ExecutionStamp._generate_run_id("spd"),
                 )
             )
             task_breakdown[experiment] = "1 job"
@@ -185,6 +196,7 @@ def _create_training_jobs(
                         experiment=experiment,
                         script_path=exp_config.decomp_script,
                         config=config_with_overrides,
+                        run_id=ExecutionStamp._generate_run_id("spd"),
                     )
                 )
 
