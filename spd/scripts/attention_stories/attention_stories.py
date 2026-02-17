@@ -1,22 +1,22 @@
 """Generate PDF reports tracing Q -> K -> V attention component interaction chains.
 
 For each layer, produces a multi-page PDF:
-  - Page 1: Layer overview with summed Q->K attention contribution and K->V CI co-occurrence
-    heatmaps side by side
+  - Page 1: Layer overview with Q->K attention contributions at multiple RoPE offsets
+    and K->V CI co-occurrence heatmaps
   - Pages 2+: Individual Q component "stories" with positive and negative attention separated
     into two columns, showing which K components the Q looks for vs avoids, and what V
     information those K components carry forward
 
 The Q->K attention contribution is a weight-only measure (V-norm-scaled U dot products
-divided by sqrt(head_dim), summed across heads). The K->V association uses CI co-occurrence
-counts (number of tokens where both components are causally important).
+with RoPE applied at specified relative position offsets, summed across heads). The K->V
+association uses CI co-occurrence counts (number of tokens where both components are
+causally important).
 
 Usage:
     python -m spd.scripts.attention_stories.attention_stories \
         wandb:goodfire/spd/runs/<run_id>
 """
 
-import math
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,7 +25,6 @@ import fire
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from einops import einsum
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.gridspec import GridSpec
 from numpy.typing import NDArray
@@ -39,6 +38,7 @@ from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.models.components import LinearComponents
 from spd.pretrain.models.llama_simple_mlp import LlamaSimpleMLP
+from spd.scripts.rope_aware_qk import compute_qk_rope_coefficients, evaluate_qk_at_offsets
 from spd.spd_types import ModelPath
 from spd.utils.wandb_utils import parse_wandb_run_path
 
@@ -50,6 +50,7 @@ TOP_V_PER_K = 3
 N_K_TEXT_PER_SIDE = 3
 TEXT_WRAP_WIDTH = 75
 LINE_HEIGHT = 0.013
+STORY_OFFSETS = [0, 1, 2, 4, 8]
 
 
 @dataclass
@@ -63,7 +64,8 @@ class ComponentInfo:
 @dataclass
 class KPartner:
     info: ComponentInfo
-    attention_contribution: float
+    attention_contribution: float  # peak W(Δ) value (at offset with max |W|)
+    contributions_by_offset: list[tuple[int, float]]  # (offset, value) for each offset
     v_partners: list[tuple[ComponentInfo, float]]  # (v_info, cooccurrence_count)
 
 
@@ -103,10 +105,12 @@ def _compute_attention_contributions(
     n_q_heads: int,
     n_kv_heads: int,
     head_dim: int,
+    rotary_cos: torch.Tensor,
+    rotary_sin: torch.Tensor,
 ) -> NDArray[np.floating]:
-    """Compute (n_q_alive, n_k_alive) summed attention contributions.
+    """Compute (n_offsets, n_q_alive, n_k_alive) summed attention contributions at each offset.
 
-    V-norm-scaled U dot products divided by sqrt(head_dim), summed across heads.
+    V-norm-scaled U dot products with RoPE at STORY_OFFSETS, summed across heads.
     """
     V_q_norms = torch.linalg.norm(q_component.V[:, q_alive], dim=0).float()
     V_k_norms = torch.linalg.norm(k_component.V[:, k_alive], dim=0).float()
@@ -120,8 +124,14 @@ def _compute_attention_contributions(
     g = n_q_heads // n_kv_heads
     U_k_expanded = U_k.repeat_interleave(g, dim=1)
 
-    W = einsum(U_q, U_k_expanded, "q h d, k h d -> h q k") / math.sqrt(head_dim)
-    return W.sum(dim=0).cpu().numpy()
+    head_results = []
+    for h in range(n_q_heads):
+        A, B = compute_qk_rope_coefficients(U_q[:, h, :], U_k_expanded[:, h, :])
+        W_h = evaluate_qk_at_offsets(A, B, rotary_cos, rotary_sin, STORY_OFFSETS, head_dim)
+        head_results.append(W_h)  # (n_offsets, n_q, n_k)
+
+    # (n_heads, n_offsets, n_q, n_k) -> sum across heads -> (n_offsets, n_q, n_k)
+    return torch.stack(head_results).sum(dim=0).cpu().numpy()
 
 
 def _compute_cooccurrence_matrix(
@@ -145,7 +155,7 @@ def _compute_cooccurrence_matrix(
 
 def _render_overview_page(
     pdf: PdfPages,
-    W_summed: NDArray[np.floating],
+    W_by_offset: NDArray[np.floating],
     cooccur: NDArray[np.floating] | None,
     q_alive: list[int],
     k_alive: list[int],
@@ -153,34 +163,39 @@ def _render_overview_page(
     layer_idx: int,
     run_id: str,
 ) -> None:
-    n_panels = 2 if cooccur is not None else 1
-    fig, axes = plt.subplots(1, n_panels, figsize=(14, 8.5), squeeze=False)
+    overview_offsets = STORY_OFFSETS[:2]  # Show Δ=0 and Δ=1
+    n_qk = len(overview_offsets)
+    n_panels = n_qk + (1 if cooccur is not None else 0)
+    fig, axes = plt.subplots(1, n_panels, figsize=(7 * n_panels, 8.5), squeeze=False)
 
-    # Q->K attention contributions
-    ax_qk = axes[0, 0]
-    vmax = float(np.abs(W_summed).max()) or 1.0
-    im = ax_qk.imshow(W_summed, aspect="auto", cmap="RdBu_r", vmin=-vmax, vmax=vmax)
-    fig.colorbar(im, ax=ax_qk, shrink=0.8, pad=0.02)
-    ax_qk.set_title("Q\u2192K attention contribution (summed)", fontsize=11)
-    ax_qk.set_xlabel("K component")
-    ax_qk.set_ylabel("Q component")
-    ax_qk.set_xticks(range(len(k_alive)))
-    ax_qk.set_xticklabels([f"C{i}" for i in k_alive], fontsize=5, rotation=90)
-    ax_qk.set_yticks(range(len(q_alive)))
-    ax_qk.set_yticklabels([f"C{i}" for i in q_alive], fontsize=5)
+    # Shared color scale across QK panels
+    qk_vmax = float(max(np.abs(W_by_offset[idx]).max() for idx in range(n_qk))) or 1.0
+
+    for panel_idx in range(n_qk):
+        ax = axes[0, panel_idx]
+        W = W_by_offset[panel_idx]
+        im = ax.imshow(W, aspect="auto", cmap="RdBu_r", vmin=-qk_vmax, vmax=qk_vmax)
+        fig.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
+        ax.set_title(f"Q\u2192K attention (\u0394={overview_offsets[panel_idx]})", fontsize=11)
+        ax.set_xlabel("K component")
+        ax.set_ylabel("Q component")
+        ax.set_xticks(range(len(k_alive)))
+        ax.set_xticklabels([f"C{idx}" for idx in k_alive], fontsize=5, rotation=90)
+        ax.set_yticks(range(len(q_alive)))
+        ax.set_yticklabels([f"C{idx}" for idx in q_alive], fontsize=5)
 
     # K->V CI co-occurrence
     if cooccur is not None:
-        ax_kv = axes[0, 1]
+        ax_kv = axes[0, n_qk]
         im2 = ax_kv.imshow(cooccur, aspect="auto", cmap="Purples", vmin=0)
         fig.colorbar(im2, ax=ax_kv, shrink=0.8, pad=0.02, label="CI co-occurrence count")
         ax_kv.set_title("K\u2192V CI co-occurrence", fontsize=11)
         ax_kv.set_xlabel("K component")
         ax_kv.set_ylabel("V component")
         ax_kv.set_xticks(range(len(k_alive)))
-        ax_kv.set_xticklabels([f"C{i}" for i in k_alive], fontsize=5, rotation=90)
+        ax_kv.set_xticklabels([f"C{idx}" for idx in k_alive], fontsize=5, rotation=90)
         ax_kv.set_yticks(range(len(v_alive)))
-        ax_kv.set_yticklabels([f"C{i}" for i in v_alive], fontsize=5)
+        ax_kv.set_yticklabels([f"C{idx}" for idx in v_alive], fontsize=5)
 
     fig.suptitle(
         f"{run_id}  |  Layer {layer_idx} \u2014 Overview  (ci>{MIN_MEAN_CI})\n"
@@ -214,7 +229,7 @@ def _render_bar_chart(
     ax.set_yticks(y_pos)
     ax.set_yticklabels(ytick_labels, fontsize=7, fontweight="bold")
     ax.invert_yaxis()
-    ax.set_xlabel("|attention contribution|", fontsize=7)
+    ax.set_xlabel("|attention contribution| (peak)", fontsize=7)
     ax.set_title(title, fontsize=10, fontweight="bold")
     ax.tick_params(axis="x", labelsize=7)
 
@@ -234,10 +249,9 @@ def _render_kv_text(
 
     y = 0.98
     for kp in partners[:N_K_TEXT_PER_SIDE]:
-        # K component header (bold)
-        k_header = (
-            f"K C{kp.info.idx} (ci={kp.info.mean_ci:.3f})  [attn={kp.attention_contribution:+.3f}]"
-        )
+        # K component header with multi-offset breakdown
+        offset_str = ", ".join(f"\u0394={d}: {v:+.2f}" for d, v in kp.contributions_by_offset)
+        k_header = f"K C{kp.info.idx} (ci={kp.info.mean_ci:.3f})  [{offset_str}]"
         if kp.info.label:
             k_header += f'  \u2014  "{kp.info.label}"'
         ax.text(
@@ -413,7 +427,7 @@ def _md_component(info: ComponentInfo, prefix: str, extra: str = "") -> str:
     if extra:
         line += f"  {extra}"
     if info.label:
-        line += f'  —  **"{info.label}"**'
+        line += f'  \u2014  **"{info.label}"**'
     if info.reasoning:
         line += f"\n  {info.reasoning}"
     return line
@@ -424,10 +438,13 @@ def _md_k_partners(partners: list[KPartner], section_title: str) -> str:
         return f"### {section_title}\n\n(none)\n"
     lines = [f"### {section_title}\n"]
     for kp in partners:
-        lines.append(_md_component(kp.info, "K", extra=f"[attn={kp.attention_contribution:+.3f}]"))
+        offset_str = "  ".join(f"\u0394={d}: {v:+.3f}" for d, v in kp.contributions_by_offset)
+        lines.append(_md_component(kp.info, "K", extra=f"[{offset_str}]"))
         if kp.v_partners:
             for v_info, count in kp.v_partners:
-                lines.append("  " + _md_component(v_info, "→ V", extra=f"(co-occ={count:.0f})"))
+                lines.append(
+                    "  " + _md_component(v_info, "\u2192 V", extra=f"(co-occ={count:.0f})")
+                )
         else:
             lines.append("  (no strong V associations)")
         lines.append("")
@@ -444,7 +461,7 @@ def _write_layer_markdown(
     stories: list[tuple[ComponentInfo, list[KPartner], list[KPartner]]],
 ) -> None:
     lines = [
-        f"# {run_id} — Layer {layer_idx} Attention Stories\n",
+        f"# {run_id} \u2014 Layer {layer_idx} Attention Stories\n",
         f"Q: {len(q_alive)} alive | K: {len(k_alive)} alive | V: {len(v_alive)} alive"
         f"  (ci>{MIN_MEAN_CI})\n",
         "---\n",
@@ -453,7 +470,7 @@ def _write_layer_markdown(
     for q_info, pos_partners, neg_partners in stories:
         header = f"## Q Component C{q_info.idx} (ci={q_info.mean_ci:.4f})"
         if q_info.label:
-            header += f'  —  "{q_info.label}"'
+            header += f'  \u2014  "{q_info.label}"'
         lines.append(header + "\n")
         if q_info.reasoning:
             lines.append(f"{q_info.reasoning}\n")
@@ -471,7 +488,8 @@ def _write_layer_markdown(
 
 def _build_k_partners(
     k_ranks: NDArray[np.integer],
-    q_row: NDArray[np.floating],
+    peak_values: NDArray[np.floating],
+    q_offset_slice: NDArray[np.floating],
     k_alive: list[int],
     v_alive: list[int],
     k_path: str,
@@ -484,7 +502,11 @@ def _build_k_partners(
     for k_rank in k_ranks:
         k_idx = k_alive[int(k_rank)]
         k_info = _get_component_info(k_idx, k_path, summary, interp)
-        k_contrib = float(q_row[int(k_rank)])
+        k_contrib = float(peak_values[int(k_rank)])
+        contrib_by_offset = [
+            (STORY_OFFSETS[i], float(q_offset_slice[i, int(k_rank)]))
+            for i in range(len(STORY_OFFSETS))
+        ]
 
         v_partners: list[tuple[ComponentInfo, float]] = []
         if cooccur is not None and v_alive:
@@ -499,7 +521,12 @@ def _build_k_partners(
                 v_partners.append((v_info, count))
 
         partners.append(
-            KPartner(info=k_info, attention_contribution=k_contrib, v_partners=v_partners)
+            KPartner(
+                info=k_info,
+                attention_contribution=k_contrib,
+                contributions_by_offset=contrib_by_offset,
+                v_partners=v_partners,
+            )
         )
     return partners
 
@@ -538,6 +565,7 @@ def generate_attention_stories(wandb_path: ModelPath) -> None:
     target_model = model.target_model
     assert isinstance(target_model, LlamaSimpleMLP)
     blocks = target_model._h
+    assert not blocks[0].attn.rotary_adjacent_pairs, "RoPE math assumes non-adjacent pairs layout"
     head_dim = blocks[0].attn.head_dim
     n_q_heads = blocks[0].attn.n_head
     n_kv_heads = blocks[0].attn.n_key_value_heads
@@ -567,7 +595,12 @@ def generate_attention_stories(wandb_path: ModelPath) -> None:
             assert isinstance(q_component, LinearComponents)
             assert isinstance(k_component, LinearComponents)
 
-            W_summed = _compute_attention_contributions(
+            rotary_cos = blocks[layer_idx].attn.rotary_cos
+            rotary_sin = blocks[layer_idx].attn.rotary_sin
+            assert isinstance(rotary_cos, torch.Tensor)
+            assert isinstance(rotary_sin, torch.Tensor)
+
+            W_by_offset = _compute_attention_contributions(
                 q_component,
                 k_component,
                 q_alive,
@@ -575,6 +608,8 @@ def generate_attention_stories(wandb_path: ModelPath) -> None:
                 n_q_heads,
                 n_kv_heads,
                 head_dim,
+                rotary_cos,
+                rotary_sin,
             )
 
             cooccur: NDArray[np.floating] | None = None
@@ -585,20 +620,27 @@ def generate_attention_stories(wandb_path: ModelPath) -> None:
             stories: list[tuple[ComponentInfo, list[KPartner], list[KPartner]]] = []
             for q_rank, q_idx in enumerate(q_alive[:N_STORIES_PER_LAYER]):
                 q_info = _get_component_info(q_idx, q_path, summary, interp)
-                q_row = W_summed[q_rank]
 
-                pos_mask = q_row > 0
-                neg_mask = q_row < 0
+                # (n_offsets, n_k_alive) for this Q component
+                q_offset_slice = W_by_offset[:, q_rank, :]
+
+                # Rank K partners by peak |W(Δ)| across offsets
+                peak_offset_idx = np.argmax(np.abs(q_offset_slice), axis=0)  # (n_k_alive,)
+                peak_values = q_offset_slice[peak_offset_idx, np.arange(q_offset_slice.shape[1])]
+
+                pos_mask = peak_values > 0
+                neg_mask = peak_values < 0
 
                 pos_ranks = np.where(pos_mask)[0]
-                pos_ranks = pos_ranks[np.argsort(-q_row[pos_ranks])][:TOP_K_PER_SIDE]
+                pos_ranks = pos_ranks[np.argsort(-peak_values[pos_ranks])][:TOP_K_PER_SIDE]
 
                 neg_ranks = np.where(neg_mask)[0]
-                neg_ranks = neg_ranks[np.argsort(q_row[neg_ranks])][:TOP_K_PER_SIDE]
+                neg_ranks = neg_ranks[np.argsort(peak_values[neg_ranks])][:TOP_K_PER_SIDE]
 
                 pos_partners = _build_k_partners(
                     pos_ranks,
-                    q_row,
+                    peak_values,
+                    q_offset_slice,
                     k_alive,
                     v_alive,
                     k_path,
@@ -609,7 +651,8 @@ def generate_attention_stories(wandb_path: ModelPath) -> None:
                 )
                 neg_partners = _build_k_partners(
                     neg_ranks,
-                    q_row,
+                    peak_values,
+                    q_offset_slice,
                     k_alive,
                     v_alive,
                     k_path,
@@ -625,7 +668,7 @@ def generate_attention_stories(wandb_path: ModelPath) -> None:
             with PdfPages(pdf_path) as pdf:
                 _render_overview_page(
                     pdf,
-                    W_summed,
+                    W_by_offset,
                     cooccur,
                     q_alive,
                     k_alive,
