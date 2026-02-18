@@ -4,6 +4,8 @@ Usage:
     python -m spd.harvest.scripts.run_merge --subrun_id h-20260211_120000 --config_json '...'
 """
 
+from typing import Any
+
 import fire
 
 from spd.harvest.config import HarvestConfig
@@ -12,8 +14,9 @@ from spd.harvest.schemas import get_harvest_subrun_dir
 from spd.log import logger
 
 
-def main(subrun_id: str, config_json: str) -> None:
-    config = HarvestConfig.from_json_or_dict(config_json)
+def main(subrun_id: str, config_json: dict[str, Any]) -> None:
+    assert isinstance(config_json, dict), f"Expected dict from fire, got {type(config_json)}"
+    config = HarvestConfig.model_validate(config_json)
     output_dir = get_harvest_subrun_dir(config.method_config.id, subrun_id)
     logger.info(f"Merging harvest results for (subrun {subrun_id})")
     merge_harvest(output_dir, config)

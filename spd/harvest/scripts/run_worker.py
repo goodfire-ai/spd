@@ -6,6 +6,7 @@ Usage:
 """
 
 from datetime import datetime
+from typing import Any
 
 import fire
 import torch
@@ -20,18 +21,19 @@ from spd.utils.distributed_utils import get_device
 
 
 def main(
-    config_json: str,
+    config_json: dict[str, Any],
     rank: int | None = None,
     world_size: int | None = None,
     subrun_id: str | None = None,
 ) -> None:
+    assert isinstance(config_json, dict), f"Expected dict from fire, got {type(config_json)}"
     assert (rank is not None) == (world_size is not None)
 
     if subrun_id is None:
         subrun_id = "h-" + datetime.now().strftime("%Y%m%d_%H%M%S")
     device = torch.device(get_device())
 
-    config = HarvestConfig.from_json_or_dict(config_json)
+    config = HarvestConfig.model_validate(config_json)
 
     adapter = adapter_from_id(config.method_config.id)
 

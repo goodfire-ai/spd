@@ -13,6 +13,7 @@ Usage:
 """
 
 from datetime import datetime
+from typing import Any
 
 from spd.dataset_attributions.config import DatasetAttributionConfig
 from spd.dataset_attributions.harvest import (
@@ -26,13 +27,14 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 
 def main(
     wandb_path: str,
-    config_json: str,
+    config_json: dict[str, Any],
     rank: int | None = None,
     world_size: int | None = None,
     merge: bool = False,
     subrun_id: str | None = None,
     harvest_subrun_id: str | None = None,
 ) -> None:
+    assert isinstance(config_json, dict), f"Expected dict from fire, got {type(config_json)}"
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
     if subrun_id is None:
@@ -48,7 +50,7 @@ def main(
 
     assert (rank is None) == (world_size is None), "rank and world_size must both be set or unset"
 
-    config = DatasetAttributionConfig.from_json_or_dict(config_json)
+    config = DatasetAttributionConfig.model_validate(config_json)
 
     if world_size is not None:
         logger.info(

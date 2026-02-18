@@ -38,13 +38,6 @@ class BaseConfig(BaseModel):
             raise e
         return cfg
 
-    @classmethod
-    def from_json_or_dict(cls, data: str | dict[str, object]) -> Self:
-        """Validate from a JSON string or dict. Handles fire.Fire parsing JSON args into dicts."""
-        if isinstance(data, str):
-            return cls.model_validate_json(data)
-        return cls.model_validate(data)
-
     def to_file(self, path: Path | str) -> None:
         """Save config to file (format inferred from extension)."""
         if isinstance(path, str):

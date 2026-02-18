@@ -1,5 +1,6 @@
 import asyncio
 import os
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -11,14 +12,15 @@ from spd.harvest.repo import HarvestRepo
 
 def main(
     decomposition_id: str,
-    config_json: str,
+    config_json: dict[str, Any],
     harvest_subrun_id: str,
 ) -> None:
+    assert isinstance(config_json, dict), f"Expected dict from fire, got {type(config_json)}"
     load_dotenv()
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
-    eval_config = IntruderEvalConfig.from_json_or_dict(config_json)
+    eval_config = IntruderEvalConfig.model_validate(config_json)
 
     tokenizer_name = adapter_from_id(decomposition_id).tokenizer_name
 

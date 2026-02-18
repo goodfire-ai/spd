@@ -7,6 +7,7 @@ Usage:
 
 import os
 from datetime import datetime
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -20,10 +21,11 @@ from spd.log import logger
 
 def main(
     decomposition_id: str,
-    config_json: str,
+    config_json: dict[str, Any],
     harvest_subrun_id: str | None = None,
 ) -> None:
-    interp_config = AutointerpConfig.from_json_or_dict(config_json)
+    assert isinstance(config_json, dict), f"Expected dict from fire, got {type(config_json)}"
+    interp_config = AutointerpConfig.model_validate(config_json)
 
     load_dotenv()
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
