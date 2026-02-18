@@ -24,7 +24,7 @@ from spd.metrics import (
     stochastic_recon_subset_loss,
 )
 from spd.models.component_model import ComponentModel
-from spd.persistent_pgd import PersistentPGDState, _persistent_pgd_recon_subset_loss_update
+from spd.persistent_pgd import PersistentPGDState
 from spd.utils.module_utils import ModulePathInfo
 
 
@@ -731,17 +731,13 @@ class TestPersistentPGDReconLoss:
         initial_sources = {k: v.clone() for k, v in state.sources.items()}
 
         # Compute loss and gradients
-        sum_loss, n_examples = _persistent_pgd_recon_subset_loss_update(
+        loss = state.compute_recon_loss(
             model=model,
             batch=batch,
-            ppgd_sources=state.sources,
+            target_out=target_out,
             ci=ci,
             weight_deltas=None,
-            target_out=target_out,
-            output_loss_type="mse",
-            routing_masks="all",
         )
-        loss = sum_loss / n_examples
         grad = state.get_grads(loss)
 
         # Apply PGD step
@@ -785,17 +781,13 @@ class TestPersistentPGDReconLoss:
         sources_history = []
         for _ in range(5):
             sources_history.append({k: v.clone() for k, v in state.sources.items()})
-            sum_loss, n_examples = _persistent_pgd_recon_subset_loss_update(
+            loss = state.compute_recon_loss(
                 model=model,
                 batch=batch,
-                ppgd_sources=state.sources,
+                target_out=target_out,
                 ci=ci,
                 weight_deltas=None,
-                target_out=target_out,
-                output_loss_type="mse",
-                routing_masks="all",
             )
-            loss = sum_loss / n_examples
             grad = state.get_grads(loss)
             state.step(grad)
             assert loss >= 0.0
@@ -841,17 +833,13 @@ class TestPersistentPGDReconLoss:
         # Masks should have C+1 elements when using delta component
         assert state.sources["fc"].shape[-1] == model.module_to_c["fc"] + 1
 
-        sum_loss, n_examples = _persistent_pgd_recon_subset_loss_update(
+        loss = state.compute_recon_loss(
             model=model,
             batch=batch,
-            ppgd_sources=state.sources,
+            target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
-            target_out=target_out,
-            output_loss_type="mse",
-            routing_masks="all",
         )
-        loss = sum_loss / n_examples
         grad = state.get_grads(loss)
         state.step(grad)
 
@@ -907,17 +895,13 @@ class TestPersistentPGDReconLoss:
         # Masks should have shape (1, 1, C) for single_mask scope - single mask shared across batch
         assert state.sources["fc"].shape == (1, 1, model.module_to_c["fc"])
 
-        sum_loss, n_examples = _persistent_pgd_recon_subset_loss_update(
+        loss = state.compute_recon_loss(
             model=model,
             batch=batch,
-            ppgd_sources=state.sources,
+            target_out=target_out,
             ci=ci,
             weight_deltas=None,
-            target_out=target_out,
-            output_loss_type="mse",
-            routing_masks="all",
         )
-        loss = sum_loss / n_examples
         grad = state.get_grads(loss)
         state.step(grad)
 
@@ -947,17 +931,13 @@ class TestPersistentPGDReconLoss:
             output_loss_type="mse",
         )
 
-        sum_loss, n_examples = _persistent_pgd_recon_subset_loss_update(
+        loss = state.compute_recon_loss(
             model=model,
             batch=batch,
-            ppgd_sources=state.sources,
+            target_out=target_out,
             ci=ci,
             weight_deltas=None,
-            target_out=target_out,
-            output_loss_type="mse",
-            routing_masks="all",
         )
-        loss = sum_loss / n_examples
         grad = state.get_grads(loss)
         state.step(grad)
 

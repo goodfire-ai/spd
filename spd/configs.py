@@ -520,16 +520,13 @@ def _coerce_ppgd_scope(config_dict: dict[str, Any]) -> None:
             pass
 
 
-class PersistentPGDReconLossConfig(LossMetricConfig):
-    """Config for persistent PGD reconstruction loss.
+class _PersistentPGDBaseConfig(LossMetricConfig):
+    """Shared fields for persistent PGD configs.
 
-    Unlike standard PGD which reinitializes masks each step and runs N optimization steps,
-    PersistentPGD maintains persistent masks that receive one gradient update per training step.
-    This amortizes PGD optimization across training - getting the benefit of many PGD steps
-    without the per-step computational cost.
+    Persistent PGD maintains persistent masks that receive one gradient update per training step,
+    amortizing PGD optimization across training.
     """
 
-    classname: Literal["PersistentPGDReconLoss"] = "PersistentPGDReconLoss"
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
     scope: PersistentPGDSourceScope
     use_sigmoid_parameterization: bool = False
@@ -551,36 +548,15 @@ class PersistentPGDReconLossConfig(LossMetricConfig):
         return data
 
 
-class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
-    """Config for persistent PGD reconstruction loss with subset routing.
+class PersistentPGDReconLossConfig(_PersistentPGDBaseConfig):
+    classname: Literal["PersistentPGDReconLoss"] = "PersistentPGDReconLoss"
 
-    Like PersistentPGDReconLossConfig but routes to a subset of modules per position,
-    similar to how StochasticReconSubsetLoss relates to StochasticReconLoss.
-    """
 
+class PersistentPGDReconSubsetLossConfig(_PersistentPGDBaseConfig):
     classname: Literal["PersistentPGDReconSubsetLoss"] = "PersistentPGDReconSubsetLoss"
-    optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
-    scope: PersistentPGDSourceScope
-    use_sigmoid_parameterization: bool = False
-    n_warmup_steps: Annotated[
-        NonNegativeInt,
-        Field(
-            description="Number of additional inner PGD source-optimization steps to run on each "
-            "batch before the final loss computation. Each training step always performs one PPGD "
-            "source update (grad + step) as part of the outer loop; these warmup steps add extra "
-            "source refinement iterations on the same batch in an inner loop beforehand."
-        ),
-    ] = 0
     routing: Annotated[
         SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
     ]
-
-    @model_validator(mode="before")
-    @classmethod
-    def _compat_scope(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            _coerce_ppgd_scope(data)
-        return data
 
 
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):

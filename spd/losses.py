@@ -190,7 +190,7 @@ def compute_losses(
                     batch=batch,
                     target_out=target_out,
                     ci=ci.lower_leaky,
-                    weight_deltas=weight_deltas,
+                    weight_deltas=weight_deltas if use_delta_component else None,
                 )
 
         losses[cfg] = loss

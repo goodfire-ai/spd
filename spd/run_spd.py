@@ -60,14 +60,7 @@ def run_faithfulness_warmup(
     component_params: list[torch.nn.Parameter],
     config: Config,
 ) -> None:
-    """Run faithfulness warmup phase to improve initialization.
-
-    Args:
-        component_model: The component model to warm up
-        component_params: List of component parameters to optimize
-        config: Configuration object containing warmup settings
-    """
-
+    """Run faithfulness warmup phase to improve initialization."""
     logger.info("Starting faithfulness warmup phase...")
 
     assert component_params, "component_params is empty"
@@ -207,8 +200,6 @@ def optimize(
     if config.faithfulness_warmup_steps > 0:
         run_faithfulness_warmup(component_model, component_params, config)
 
-    # Extract PersistentPGD configs for state initialization
-    # (PPGD is handled in compute_losses but not evaluated)
     persistent_pgd_configs: list[
         PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
     ] = [
@@ -236,7 +227,6 @@ def optimize(
         else sample_batch.shape  # else it's a batch of token ids
     )
 
-    # Initialize PersistentPGD states if needed
     ppgd_states: dict[
         PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PersistentPGDState
     ] = {
@@ -285,7 +275,7 @@ def optimize(
                     batch=batch,
                     target_out=target_model_output.output,
                     ci=ci.lower_leaky,
-                    weight_deltas=weight_deltas,
+                    weight_deltas=weight_deltas if config.use_delta_component else None,
                 )
 
             losses = compute_losses(
@@ -357,7 +347,6 @@ def optimize(
                     else step % config.slow_eval_freq == 0
                 )
 
-                assert batch_dims is not None, "batch_dims is not set"
                 multibatch_pgd_metrics = evaluate_multibatch_pgd(
                     multibatch_pgd_eval_configs=multibatch_pgd_eval_configs,
                     model=component_model,
