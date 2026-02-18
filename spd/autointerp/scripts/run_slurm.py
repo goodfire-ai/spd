@@ -21,6 +21,7 @@ from datetime import datetime
 from spd.autointerp.config import AutointerpSlurmConfig
 from spd.log import logger
 from spd.utils.slurm import SlurmConfig, SubmitResult, generate_script, submit_slurm_job
+from spd.utils.wandb_utils import wandb_path_to_url
 
 
 @dataclass
@@ -80,6 +81,7 @@ def submit_autointerp(
         time=time,
         snapshot_branch=snapshot_branch,
         dependency_job_id=dependency_job_id,
+        comment=wandb_path_to_url(wandb_path),
     )
     script_content = generate_script(interpret_slurm, interpret_cmd)
     interpret_result = submit_slurm_job(script_content, "spd-interpret")

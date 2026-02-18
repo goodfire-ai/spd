@@ -88,6 +88,12 @@ def get_wandb_run_url(project: str, run_id: str) -> str:
     return f"https://wandb.ai/{get_wandb_entity()}/{project}/runs/{run_id}"
 
 
+def wandb_path_to_url(wandb_path: str) -> str:
+    """Convert a WandB run path to a URL."""
+    entity, project, run_id = parse_wandb_run_path(wandb_path)
+    return f"https://wandb.ai/{entity}/{project}/runs/{run_id}"
+
+
 def _parse_metric_config_key(key: str) -> tuple[str, str, str] | None:
     """Parse a metric config key into (list_field, classname, param).
 
