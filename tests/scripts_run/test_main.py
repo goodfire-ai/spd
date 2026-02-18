@@ -28,10 +28,10 @@ class TestSPDRun:
     @patch("spd.scripts.run.submit_slurm_job")
     @patch("spd.scripts.run.create_slurm_array_script")
     @patch("spd.scripts.run.create_git_snapshot")
-    @patch("spd.scripts.run._wandb_setup")
+    @patch("spd.scripts.run._create_wandb_views_and_report")
     def test_sweep_creates_slurm_array(
         self,
-        mock_wandb_setup,
+        mock_create_wandb_views_and_report,
         mock_create_git_snapshot,
         mock_create_slurm_array_script,
         mock_submit_slurm_job,
