@@ -60,14 +60,7 @@ def run_faithfulness_warmup(
     component_params: list[torch.nn.Parameter],
     config: Config,
 ) -> None:
-    """Run faithfulness warmup phase to improve initialization.
-
-    Args:
-        component_model: The component model to warm up
-        component_params: List of component parameters to optimize
-        config: Configuration object containing warmup settings
-    """
-
+    """Run faithfulness warmup phase to improve initialization."""
     logger.info("Starting faithfulness warmup phase...")
 
     assert component_params, "component_params is empty"
@@ -207,8 +200,6 @@ def optimize(
     if config.faithfulness_warmup_steps > 0:
         run_faithfulness_warmup(component_model, component_params, config)
 
-    # Extract PersistentPGD configs for state initialization
-    # (PPGD is handled in compute_losses but not evaluated)
     persistent_pgd_configs: list[
         PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
     ] = [
@@ -229,13 +220,6 @@ def optimize(
         cfg for cfg in eval_metric_configs if cfg not in multibatch_pgd_eval_configs
     ]
 
-    # Persistent PGD losses are training-only (sources are coupled to train batch size)
-    eval_metric_configs: list[MetricConfigType] = [
-        cfg
-        for cfg in eval_metric_configs
-        if not isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
-    ]
-
     sample_batch = extract_batch_data(next(train_iterator))
     batch_dims = (
         sample_batch.shape[:-1]
@@ -243,7 +227,6 @@ def optimize(
         else sample_batch.shape  # else it's a batch of token ids
     )
 
-    # Initialize PersistentPGD states if needed
     ppgd_states: dict[
         PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PersistentPGDState
     ] = {
@@ -253,6 +236,7 @@ def optimize(
             device=device,
             use_delta_component=config.use_delta_component,
             cfg=ppgd_cfg,
+            output_loss_type=config.output_loss_type,
         )
         for ppgd_cfg in persistent_pgd_configs
     }
@@ -270,10 +254,6 @@ def optimize(
 
         batch_log_data: defaultdict[str, float] = defaultdict(float)
 
-        ppgd_batch_grads = {
-            ppgd_cfg: ppgd_states[ppgd_cfg].empty_grads() for ppgd_cfg in persistent_pgd_configs
-        }
-
         batch = extract_batch_data(next(train_iterator)).to(device, non_blocking=True)
 
         with bf16_autocast(enabled=config.autocast_bf16):
@@ -289,6 +269,15 @@ def optimize(
                 sampling=config.sampling,
             )
 
+            for ppgd_cfg in persistent_pgd_configs:
+                ppgd_states[ppgd_cfg].warmup(
+                    model=component_model,
+                    batch=batch,
+                    target_out=target_model_output.output,
+                    ci=ci.lower_leaky,
+                    weight_deltas=weight_deltas if config.use_delta_component else None,
+                )
+
             losses = compute_losses(
                 loss_metric_configs=config.loss_metric_configs,
                 model=component_model,
@@ -301,9 +290,7 @@ def optimize(
                 sampling=config.sampling,
                 use_delta_component=config.use_delta_component,
                 n_mask_samples=config.n_mask_samples,
-                ppgd_sourcess={
-                    cfg: ppgd_states[cfg].get_effective_sources() for cfg in persistent_pgd_configs
-                },
+                ppgd_states=ppgd_states,
                 output_loss_type=config.output_loss_type,
             )
 
@@ -313,28 +300,21 @@ def optimize(
             total_loss = total_loss + loss_cfg.coeff * loss_val
             batch_log_data[f"train/loss/{loss_cfg.classname}"] = loss_val.item()
 
-            if isinstance(
-                loss_cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
-            ):
-                ppgd_grads = ppgd_states[loss_cfg].get_grads(loss_val)
-                for module_name, grad in ppgd_grads.items():
-                    ppgd_batch_grads[loss_cfg][module_name] += grad
-
         batch_log_data["train/loss/total"] = total_loss.item()
 
+        ppgd_grads = {
+            cfg: ppgd_states[cfg].get_grads(losses[cfg], retain_graph=True)
+            for cfg in persistent_pgd_configs
+        }
+
         total_loss.backward()
+
+        for ppgd_cfg in persistent_pgd_configs:
+            ppgd_states[ppgd_cfg].step(ppgd_grads[ppgd_cfg])
 
         for layer_name, layer_ci in ci.lower_leaky.items():
             l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
             batch_log_data[f"train/l0/{layer_name}"] = l0_val
-
-        # Step PPGD optimizers
-        for ppgd_cfg in persistent_pgd_configs:
-            mean_abs_steps = ppgd_states[ppgd_cfg].step(ppgd_batch_grads[ppgd_cfg])
-            for module_name, mean_abs_step in mean_abs_steps.items():
-                batch_log_data[f"train/loss/{ppgd_cfg.classname}/mean_abs_step/{module_name}"] = (
-                    mean_abs_step
-                )
 
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
@@ -367,7 +347,6 @@ def optimize(
                     else step % config.slow_eval_freq == 0
                 )
 
-                assert batch_dims is not None, "batch_dims is not set"
                 multibatch_pgd_metrics = evaluate_multibatch_pgd(
                     multibatch_pgd_eval_configs=multibatch_pgd_eval_configs,
                     model=component_model,
@@ -381,10 +360,6 @@ def optimize(
                     eval_metric_configs=eval_metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
                     eval_iterator=eval_iterator,
-                    ppgd_sourcess={
-                        cfg: ppgd_states[cfg].get_effective_sources()
-                        for cfg in persistent_pgd_configs
-                    },
                     device=device,
                     run_config=config,
                     slow_step=slow_step,

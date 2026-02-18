@@ -64,7 +64,6 @@ from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetC
 from spd.metrics.stochastic_recon_subset_loss import StochasticReconSubsetLoss
 from spd.metrics.uv_plots import UVPlots
 from spd.models.component_model import ComponentModel, OutputWithCache
-from spd.persistent_pgd import PersistentPGDReconLoss, PersistentPGDReconSubsetLoss, PPGDSources
 from spd.routing import AllLayersRouter, get_subset_router
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
 from spd.utils.general_utils import dict_safe_update_, extract_batch_data
@@ -122,9 +121,6 @@ def avg_eval_metrics_across_ranks(metrics: MetricOutType, device: str) -> DistMe
 def init_metric(
     cfg: MetricConfigType,
     model: ComponentModel,
-    ppgd_sourcess: dict[
-        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PPGDSources
-    ],
     run_config: Config,
     device: str,
 ) -> Metric:
@@ -279,27 +275,12 @@ def init_metric(
                 device=device,
                 output_loss_type=run_config.output_loss_type,
             )
-
-        case PersistentPGDReconLossConfig():
-            metric = PersistentPGDReconLoss(
-                model=model,
-                device=device,
-                use_delta_component=run_config.use_delta_component,
-                output_loss_type=run_config.output_loss_type,
-                ppgd_sources=ppgd_sourcess[cfg],
-            )
-        case PersistentPGDReconSubsetLossConfig():
-            metric = PersistentPGDReconSubsetLoss(
-                model=model,
-                device=device,
-                use_delta_component=run_config.use_delta_component,
-                output_loss_type=run_config.output_loss_type,
-                ppgd_sources=ppgd_sourcess[cfg],
-                routing=cfg.routing,
-            )
-        case PGDMultiBatchReconLossConfig() | PGDMultiBatchReconSubsetLossConfig():
-            # We shouldn't handle **all** cases because PGDMultiBatch metrics should be handled by
-            # the evaluate_multibatch_pgd function below.
+        case (
+            PGDMultiBatchReconLossConfig()
+            | PGDMultiBatchReconSubsetLossConfig()
+            | PersistentPGDReconLossConfig()
+            | PersistentPGDReconSubsetLossConfig()
+        ):
             raise ValueError(f"Unsupported metric config for eval: {cfg}")
     return metric
 
@@ -308,10 +289,6 @@ def evaluate(
     eval_metric_configs: list[MetricConfigType],
     model: ComponentModel,
     eval_iterator: Iterator[Int[Tensor, "..."] | tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
-    ppgd_sourcess: dict[
-        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig,
-        dict[str, Float[Tensor, " source_c"]],
-    ],
     device: str,
     run_config: Config,
     slow_step: bool,
@@ -320,12 +297,18 @@ def evaluate(
 ) -> MetricOutType:
     """Run evaluation and return a mapping of metric names to values/images."""
 
+    # Persistent PGD losses are training-only (sources are coupled to train batch size)
+    eval_metric_configs = [
+        cfg
+        for cfg in eval_metric_configs
+        if not isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
+    ]
+
     metrics: list[Metric] = []
     for cfg in eval_metric_configs:
         metric = init_metric(
             cfg=cfg,
             model=model,
-            ppgd_sourcess=ppgd_sourcess,
             run_config=run_config,
             device=device,
         )
