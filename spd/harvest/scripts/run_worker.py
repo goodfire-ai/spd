@@ -31,7 +31,7 @@ def main(
         subrun_id = "h-" + datetime.now().strftime("%Y%m%d_%H%M%S")
     device = torch.device(get_device())
 
-    config = HarvestConfig.model_validate_json(config_json)
+    config = HarvestConfig.model_validate(config_json)
 
     adapter = adapter_from_id(config.method_config.id)
 
