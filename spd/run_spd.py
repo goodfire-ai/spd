@@ -279,7 +279,6 @@ def optimize(
                 sampling=config.sampling,
             )
 
-            # Phase 1: Warmup PPGD sources (K-1 inner steps)
             for ppgd_cfg in persistent_pgd_configs:
                 ppgd_states[ppgd_cfg].warmup(
                     model=component_model,
@@ -289,7 +288,6 @@ def optimize(
                     weight_deltas=weight_deltas,
                 )
 
-            # Phase 2: Compute all losses (PPGD loss is pure — no source mutation)
             losses = compute_losses(
                 loss_metric_configs=config.loss_metric_configs,
                 model=component_model,
@@ -314,7 +312,6 @@ def optimize(
 
         batch_log_data["train/loss/total"] = total_loss.item()
 
-        # Phase 3a: Extract PPGD source grads before backward frees the graph
         ppgd_grads = {
             cfg: ppgd_states[cfg].get_grads(losses[cfg], retain_graph=True)
             for cfg in persistent_pgd_configs
@@ -322,7 +319,6 @@ def optimize(
 
         total_loss.backward()
 
-        # Phase 3b: Step PPGD sources after backward
         for ppgd_cfg in persistent_pgd_configs:
             ppgd_states[ppgd_cfg].step(ppgd_grads[ppgd_cfg])
 
