@@ -97,6 +97,8 @@ def launch_slurm_run(
 
     slurm_job_name = f"spd-{job_suffix or get_max_expected_runtime(experiments_list)}"
 
+    wandb_urls = [get_wandb_run_url(project, job.run_id) for job in training_jobs]
+
     array_script_content = create_slurm_array_script(
         slurm_job_name=slurm_job_name,
         launch_id=launch_id,
@@ -106,6 +108,7 @@ def launch_slurm_run(
         n_gpus=n_gpus,
         partition=partition,
         max_concurrent_tasks=n_agents,
+        per_task_comments=wandb_urls,
     )
 
     # Submit script (handles file writing, submission, renaming, and log file creation)
@@ -124,10 +127,11 @@ def launch_slurm_run(
         "View logs in": result.log_pattern,
         "Script": str(result.script_path),
     }
-    if len(training_jobs) <= 10:
-        urls = [get_wandb_run_url(project, job.run_id) for job in training_jobs]
+    if len(wandb_urls) <= 10:
         summary["WandB run URLs"] = (
-            urls[0] if len(urls) == 1 else "\n" + "\n".join(f"  - {u}" for u in urls)
+            wandb_urls[0]
+            if len(wandb_urls) == 1
+            else "\n" + "\n".join(f"  - {u}" for u in wandb_urls)
         )
     logger.values(summary)
 
