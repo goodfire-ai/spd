@@ -25,7 +25,6 @@ class HarvestRepo:
     """Access to harvest data for a single harvest subrun of a decomposition."""
 
     def __init__(self, decomposition_id: str, subrun_id: str, readonly: bool) -> None:
-        # self.decomposition_id = decomposition_id
         self.subrun_id = subrun_id
         self._dir = get_harvest_dir(decomposition_id) / subrun_id
         self._db = HarvestDB(self._dir / "harvest.db", readonly=readonly)
@@ -66,7 +65,7 @@ class HarvestRepo:
     def save_results(harvester: Harvester, config: HarvestConfig, output_dir: Path) -> None:
         """Build and save all harvest results to disk.
 
-        Components are streamed to the DB one at a time to avoid holding all ~40K
+        Components are streamed to the DB one at a time to avoid holding all
         ComponentData objects in memory simultaneously.
         """
         output_dir.mkdir(parents=True, exist_ok=True)

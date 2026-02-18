@@ -94,8 +94,8 @@ def _sample_activating_examples(
 
     sorted_examples = sorted(
         examples,
-        key=lambda e: sum(e.activations["causal_importance"])
-        / max(len(e.activations["causal_importance"]), 1),
+        key=lambda e: sum(v for vals in e.activations.values() for v in vals)
+        / max(sum(len(vals) for vals in e.activations.values()), 1),
     )
     n_examples = len(sorted_examples)
 

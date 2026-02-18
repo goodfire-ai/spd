@@ -46,10 +46,6 @@ def postprocess(config: PostprocessConfig) -> Path:
     # === 1. Harvest (always runs, upserts into harvest.db) ===
     harvest_result = submit_harvest(config.harvest, snapshot_branch=snapshot_branch)
 
-    # Autointerp, intruder, and attributions CLI scripts currently need wandb_path
-    # for ArchitectureInfo. Only SPDDecomposition has one. This should be decoupled
-    # (autointerp/intruder only consume harvest data, not the model).
-
     # === 2. Attributions (parallel with harvest, SPD-only) ===
     attr_result = None
     if config.attributions is not None:

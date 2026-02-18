@@ -23,7 +23,7 @@ def _make_reservoir() -> ActivationExamplesReservoir:
     return ActivationExamplesReservoir.create(N_COMPONENTS, K, WINDOW, DEVICE)
 
 
-def _make_aw(
+def _make_activation_window(
     comp: list[int],
     tokens: torch.Tensor,
     firings: torch.Tensor | None = None,
@@ -46,7 +46,7 @@ class TestAdd:
         comp = 1
 
         for i in range(K):
-            r.add(_make_aw([comp], torch.full((1, WINDOW), i, dtype=torch.long)))
+            r.add(_make_activation_window([comp], torch.full((1, WINDOW), i, dtype=torch.long)))
 
         assert r.n_items[comp] == K
         assert r.n_seen[comp] == K
@@ -60,7 +60,7 @@ class TestAdd:
 
         n_total = K + 50
         for i in range(n_total):
-            r.add(_make_aw([comp], torch.full((1, WINDOW), i, dtype=torch.long)))
+            r.add(_make_activation_window([comp], torch.full((1, WINDOW), i, dtype=torch.long)))
 
         assert r.n_items[comp] == K
         assert r.n_seen[comp] == n_total
@@ -87,8 +87,8 @@ class TestMerge:
         r1 = _make_reservoir()
         r2 = _make_reservoir()
 
-        r1.add(_make_aw([0], torch.full((1, WINDOW), 1, dtype=torch.long)))
-        r2.add(_make_aw([0], torch.full((1, WINDOW), 2, dtype=torch.long)))
+        r1.add(_make_activation_window([0], torch.full((1, WINDOW), 1, dtype=torch.long)))
+        r2.add(_make_activation_window([0], torch.full((1, WINDOW), 2, dtype=torch.long)))
 
         r1.merge(r2)
         assert r1.n_items[0] == 2
@@ -104,11 +104,15 @@ class TestMerge:
             r_light = _make_reservoir()
 
             for _ in range(K):
-                r_heavy.add(_make_aw([0], torch.full((1, WINDOW), 1, dtype=torch.long)))
+                r_heavy.add(
+                    _make_activation_window([0], torch.full((1, WINDOW), 1, dtype=torch.long))
+                )
             r_heavy.n_seen[0] = 1000
 
             for _ in range(K):
-                r_light.add(_make_aw([0], torch.full((1, WINDOW), 2, dtype=torch.long)))
+                r_light.add(
+                    _make_activation_window([0], torch.full((1, WINDOW), 2, dtype=torch.long))
+                )
             r_light.n_seen[0] = 1
 
             r_heavy.merge(r_light)
@@ -123,9 +127,9 @@ class TestMerge:
         r2 = _make_reservoir()
 
         for i in range(K + 5):
-            r1.add(_make_aw([0], torch.full((1, WINDOW), i % 10, dtype=torch.long)))
+            r1.add(_make_activation_window([0], torch.full((1, WINDOW), i % 10, dtype=torch.long)))
         for i in range(K + 3):
-            r2.add(_make_aw([0], torch.full((1, WINDOW), i % 10, dtype=torch.long)))
+            r2.add(_make_activation_window([0], torch.full((1, WINDOW), i % 10, dtype=torch.long)))
 
         total = r1.n_seen[0].item() + r2.n_seen[0].item()
         r1.merge(r2)
@@ -199,7 +203,7 @@ class TestStateDictRoundtrip:
 
     def test_state_dict_on_cpu(self):
         r = _make_reservoir()
-        r.add(_make_aw([0], torch.full((1, WINDOW), 1, dtype=torch.long)))
+        r.add(_make_activation_window([0], torch.full((1, WINDOW), 1, dtype=torch.long)))
 
         sd = r.state_dict()
         assert isinstance(sd["tokens"], torch.Tensor) and sd["tokens"].device == torch.device("cpu")
