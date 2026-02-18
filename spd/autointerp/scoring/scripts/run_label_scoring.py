@@ -24,7 +24,7 @@ def main(
     decomposition_id: str,
     scorer_type: LabelScorerType,
     config_json: str,
-    harvest_subrun_id: str,
+    harvest_subrun_id: str | None = None,
 ) -> None:
     load_dotenv()
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
@@ -39,11 +39,15 @@ def main(
         f"No autointerp data for {decomposition_id}. Run autointerp first."
     )
 
-    harvest = HarvestRepo(
-        decomposition_id=decomposition_id,
-        subrun_id=harvest_subrun_id,
-        readonly=False,
-    )
+    if harvest_subrun_id is not None:
+        harvest = HarvestRepo(
+            decomposition_id=decomposition_id,
+            subrun_id=harvest_subrun_id,
+            readonly=False,
+        )
+    else:
+        harvest = HarvestRepo.open_most_recent(decomposition_id, readonly=False)
+        assert harvest is not None, f"No harvest data for {decomposition_id}"
 
     components = harvest.get_all_components()
 
