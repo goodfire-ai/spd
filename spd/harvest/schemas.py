@@ -2,10 +2,13 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from jaxtyping import Bool, Float, Int
+from pydantic import model_validator
 from torch import Tensor
 
+from spd.base_config import BaseConfig
 from spd.settings import SPD_OUT_DIR
 
 # Base directory for harvest data
@@ -40,38 +43,36 @@ class HarvestBatch:
     output_probs: Float[Tensor, "batch seq vocab"]
 
 
-@dataclass
-class ActivationExample:
+class ActivationExample(BaseConfig):
     """Activation example for a single component. no padding"""
 
     token_ids: list[int]
     firings: list[bool]
     activations: dict[str, list[float]]
 
-    def __post_init__(self) -> None:
-        self._strip_legacy_padding()
-
-    def _strip_legacy_padding(self) -> None:
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_legacy_padding(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Strip -1 padding sentinels from old harvest data."""
         PAD = -1
-        if any(t == PAD for t in self.token_ids):
-            mask = [t != PAD for t in self.token_ids]
-            self.token_ids = [v for v, k in zip(self.token_ids, mask, strict=True) if k]
-            self.firings = [v for v, k in zip(self.firings, mask, strict=True) if k]
-            for act_type in self.activations:
-                self.activations[act_type] = [
-                    v for v, k in zip(self.activations[act_type], mask, strict=True) if k
-                ]
+        token_ids = data["token_ids"]
+        if any(t == PAD for t in token_ids):
+            mask = [t != PAD for t in token_ids]
+            data["token_ids"] = [v for v, k in zip(token_ids, mask, strict=True) if k]
+            data["firings"] = [v for v, k in zip(data["firings"], mask, strict=True) if k]
+            data["activations"] = {
+                act_type: [v for v, k in zip(vals, mask, strict=True) if k]
+                for act_type, vals in data["activations"].items()
+            }
+        return data
 
 
-@dataclass
-class ComponentTokenPMI:
+class ComponentTokenPMI(BaseConfig):
     top: list[tuple[int, float]]
     bottom: list[tuple[int, float]]
 
 
-@dataclass
-class ComponentSummary:
+class ComponentSummary(BaseConfig):
     """Lightweight summary of a component (for /summary endpoint)."""
 
     layer: str
@@ -81,8 +82,7 @@ class ComponentSummary:
     """Key is activation type, (e.g. "causal_importance", "component_activation", etc.)"""
 
 
-@dataclass
-class ComponentData:
+class ComponentData(BaseConfig):
     component_key: str
     layer: str
     component_idx: int

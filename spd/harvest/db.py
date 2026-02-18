@@ -2,17 +2,14 @@
 
 import sqlite3
 from collections.abc import Iterable
-from dataclasses import asdict
 from pathlib import Path
 
 import orjson
 
 from spd.harvest.config import HarvestConfig
 from spd.harvest.schemas import (
-    ActivationExample,
     ComponentData,
     ComponentSummary,
-    ComponentTokenPMI,
 )
 
 _SCHEMA = """\
@@ -51,29 +48,22 @@ def _serialize_component(
         comp.component_idx,
         comp.firing_density,
         orjson.dumps(comp.mean_activations),
-        orjson.dumps([asdict(ex) for ex in comp.activation_examples]),
-        orjson.dumps(asdict(comp.input_token_pmi)),
-        orjson.dumps(asdict(comp.output_token_pmi)),
+        orjson.dumps([ex.model_dump() for ex in comp.activation_examples]),
+        orjson.dumps(comp.input_token_pmi.model_dump()),
+        orjson.dumps(comp.output_token_pmi.model_dump()),
     )
 
 
 def _deserialize_component(row: sqlite3.Row) -> ComponentData:
-    activation_examples = [
-        ActivationExample(**ex) for ex in orjson.loads(row["activation_examples"])
-    ]
-    input_token_pmi = ComponentTokenPMI(**orjson.loads(row["input_token_pmi"]))
-    output_token_pmi = ComponentTokenPMI(**orjson.loads(row["output_token_pmi"]))
-    mean_activations = orjson.loads(row["mean_activations"])
-
     return ComponentData(
         component_key=row["component_key"],
         layer=row["layer"],
         component_idx=row["component_idx"],
-        mean_activations=mean_activations,
+        mean_activations=orjson.loads(row["mean_activations"]),
         firing_density=row["firing_density"],
-        activation_examples=activation_examples,
-        input_token_pmi=input_token_pmi,
-        output_token_pmi=output_token_pmi,
+        activation_examples=orjson.loads(row["activation_examples"]),
+        input_token_pmi=orjson.loads(row["input_token_pmi"]),
+        output_token_pmi=orjson.loads(row["output_token_pmi"]),
     )
 
 
