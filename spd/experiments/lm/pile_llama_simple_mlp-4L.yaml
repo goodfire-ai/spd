@@ -53,17 +53,18 @@ loss_metric_configs:
   routing:
     type: uniform_k_subset
 - coeff: 0.5
-  classname: PersistentPGDReconSubsetLoss
+  classname: PersistentPGDReconLoss
   optimizer:
-    type: sign
-    step_size: 0.1
+    type: adam
+    lr: 0.03
+    beta1: 0.5
+    beta2: 0.99
+    eps: 1.0e-08
   scope:
     type: repeat_across_batch
     n_sources: 8
-  routing:
-    type: uniform_k_subset
   use_sigmoid_parameterization: false
-  n_warmup_steps: 2
+  n_warmup_steps: 0
 - coeff: 10000000.0
   classname: FaithfulnessLoss
 output_loss_type: kl
