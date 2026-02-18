@@ -18,7 +18,7 @@ def main(
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
-    eval_config = IntruderEvalConfig.model_validate_json(config_json)
+    eval_config = IntruderEvalConfig.from_json_or_dict(config_json)
 
     tokenizer_name = adapter_from_id(decomposition_id).tokenizer_name
 

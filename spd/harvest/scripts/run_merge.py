@@ -13,7 +13,7 @@ from spd.log import logger
 
 
 def main(subrun_id: str, config_json: str) -> None:
-    config = HarvestConfig.model_validate_json(config_json)
+    config = HarvestConfig.from_json_or_dict(config_json)
     output_dir = get_harvest_subrun_dir(config.method_config.id, subrun_id)
     logger.info(f"Merging harvest results for (subrun {subrun_id})")
     merge_harvest(output_dir, config)

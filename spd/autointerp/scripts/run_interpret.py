@@ -23,7 +23,7 @@ def main(
     config_json: str,
     harvest_subrun_id: str | None = None,
 ) -> None:
-    interp_config = AutointerpConfig.model_validate_json(config_json)
+    interp_config = AutointerpConfig.from_json_or_dict(config_json)
 
     load_dotenv()
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")

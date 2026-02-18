@@ -48,7 +48,7 @@ def main(
 
     assert (rank is None) == (world_size is None), "rank and world_size must both be set or unset"
 
-    config = DatasetAttributionConfig.model_validate_json(config_json)
+    config = DatasetAttributionConfig.from_json_or_dict(config_json)
 
     if world_size is not None:
         logger.info(
