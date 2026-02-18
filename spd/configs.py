@@ -533,7 +533,15 @@ class PersistentPGDReconLossConfig(LossMetricConfig):
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
     scope: PersistentPGDSourceScope
     use_sigmoid_parameterization: bool = False
-    n_inner_steps: PositiveInt = 1
+    n_warmup_steps: Annotated[
+        NonNegativeInt,
+        Field(
+            description="Number of additional inner PGD source-optimization steps to run on each "
+            "batch before the final loss computation. Each training step always performs one PPGD "
+            "source update (grad + step) as part of the outer loop; these warmup steps add extra "
+            "source refinement iterations on the same batch in an inner loop beforehand."
+        ),
+    ] = 0
 
     @model_validator(mode="before")
     @classmethod
@@ -554,7 +562,15 @@ class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
     scope: PersistentPGDSourceScope
     use_sigmoid_parameterization: bool = False
-    n_inner_steps: PositiveInt = 1
+    n_warmup_steps: Annotated[
+        NonNegativeInt,
+        Field(
+            description="Number of additional inner PGD source-optimization steps to run on each "
+            "batch before the final loss computation. Each training step always performs one PPGD "
+            "source update (grad + step) as part of the outer loop; these warmup steps add extra "
+            "source refinement iterations on the same batch in an inner loop beforehand."
+        ),
+    ] = 0
     routing: Annotated[
         SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
     ]

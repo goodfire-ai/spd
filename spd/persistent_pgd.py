@@ -125,7 +125,7 @@ class PersistentPGDState:
         self._skip_all_reduce = isinstance(cfg.scope, PerBatchPerPositionScope)
         self._use_sigmoid_parameterization = cfg.use_sigmoid_parameterization
         self._router = _get_router_for_ppgd_config(cfg, device)
-        self._n_inner_steps = cfg.n_inner_steps
+        self._n_warmup_steps = cfg.n_warmup_steps
         self._output_loss_type: Literal["mse", "kl"] = output_loss_type
         self._use_delta_component = use_delta_component
 
@@ -196,12 +196,12 @@ class PersistentPGDState:
         ci: dict[str, Float[Tensor, "... C"]],
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     ) -> None:
-        """Run K-1 inner PGD steps to refine adversarial sources before the final loss computation.
+        """Run extra PGD steps to refine adversarial sources before the final loss computation.
 
         Each step computes the recon loss, extracts gradients, and updates sources in-place.
-        When n_inner_steps=1 (default), this is a no-op.
+        When n_warmup_steps=0 (default), this is a no-op.
         """
-        for _ in range(self._n_inner_steps - 1):
+        for _ in range(self._n_warmup_steps):
             loss = self.compute_recon_loss(model, batch, target_out, ci, weight_deltas)
             grads = self.get_grads(loss, retain_graph=False)
             self.step(grads)
