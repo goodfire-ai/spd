@@ -1,0 +1,4 @@
+Downloading run from wandb: goodfire/spd/s-275c8f21
+wandb: Currently logged in as: olicg-gf (goodfire) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+/var/spool/slurmd/job276256/slurm_script: line 14: 978645 Killed                  python -m spd.autointerp.scoring.scripts.run_label_scoring wandb:goodfire/spd/runs/s-275c8f21 --scorer detection
+slurmstepd: error: Detected 1 oom_kill event in StepId=276256.batch. Some of the step tasks have been OOM Killed.

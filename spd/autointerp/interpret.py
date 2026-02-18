@@ -6,8 +6,10 @@ from openrouter import OpenRouter
 from openrouter.components import Effort, Reasoning
 
 from spd.app.backend.app_tokenizer import AppTokenizer
-from spd.autointerp.config import CompactSkepticalConfig
+from spd.autointerp.config import StrategyConfig
 from spd.autointerp.db import InterpDB
+from collections.abc import Iterable
+
 from spd.autointerp.llm_api import (
     LLMError,
     LLMJob,
@@ -29,7 +31,7 @@ async def interpret_component(
     api: OpenRouter,
     model: str,
     reasoning_effort: Effort,
-    strategy: CompactSkepticalConfig,
+    strategy: StrategyConfig,
     component: ComponentData,
     model_metadata: ModelMetadata,
     app_tok: AppTokenizer,
@@ -89,7 +91,7 @@ def run_interpret(
     max_requests_per_minute: int,
     max_concurrent: int,
     model_metadata: ModelMetadata,
-    template_strategy: CompactSkepticalConfig,
+    template_strategy: StrategyConfig,
     harvest: HarvestRepo,
     db_path: Path,
     tokenizer_name: str,
@@ -121,25 +123,26 @@ def run_interpret(
             logger.info(f"Interpreting {len(remaining)} components")
 
             schema = get_response_schema(template_strategy)
-            jobs: list[LLMJob] = []
-            for component in remaining:
-                input_stats = get_input_token_stats(
-                    token_stats, component.component_key, app_tok, top_k=20
-                )
-                output_stats = get_output_token_stats(
-                    token_stats, component.component_key, app_tok, top_k=50
-                )
-                assert input_stats is not None
-                assert output_stats is not None
-                prompt = format_prompt(
-                    strategy=template_strategy,
-                    component=component,
-                    model_metadata=model_metadata,
-                    app_tok=app_tok,
-                    input_token_stats=input_stats,
-                    output_token_stats=output_stats,
-                )
-                jobs.append(LLMJob(prompt=prompt, schema=schema, key=component.component_key))
+
+            def build_jobs() -> Iterable[LLMJob]:
+                for component in remaining:
+                    input_stats = get_input_token_stats(
+                        token_stats, component.component_key, app_tok, top_k=20
+                    )
+                    output_stats = get_output_token_stats(
+                        token_stats, component.component_key, app_tok, top_k=50
+                    )
+                    assert input_stats is not None
+                    assert output_stats is not None
+                    prompt = format_prompt(
+                        strategy=template_strategy,
+                        component=component,
+                        model_metadata=model_metadata,
+                        app_tok=app_tok,
+                        input_token_stats=input_stats,
+                        output_token_stats=output_stats,
+                    )
+                    yield LLMJob(prompt=prompt, schema=schema, key=component.component_key)
 
             results: list[InterpretationResult] = []
             n_errors = 0
@@ -148,11 +151,13 @@ def run_interpret(
                 openrouter_api_key=openrouter_api_key,
                 model=model,
                 reasoning_effort=reasoning_effort,
-                jobs=jobs,
+                jobs=build_jobs(),
                 max_tokens=8000,
                 max_concurrent=max_concurrent,
                 max_requests_per_minute=max_requests_per_minute,
                 cost_limit_usd=cost_limit_usd,
+                response_schema=schema,
+                n_total=len(remaining),
             ):
                 match outcome:
                     case LLMResult(job=job, parsed=parsed, raw=raw):

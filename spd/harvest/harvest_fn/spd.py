@@ -15,7 +15,7 @@ class SPDHarvestFn(HarvestFn):
         self._activation_threshold = config.activation_threshold
         self._device = device
 
-        self._adapter.component_model.eval()
+        self._adapter.component_model.to(device).eval()
         self._u_norms = {
             layer_name: component.U.norm(dim=1).to(device)
             for layer_name, component in self._adapter.component_model.components.items()
