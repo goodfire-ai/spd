@@ -1,13 +1,10 @@
 """Language Model decomposition script."""
 
-import json
 from pathlib import Path
 
 import fire
-import wandb
 
 from spd.configs import (
-    Config,
     LMTaskConfig,
     PersistentPGDReconLossConfig,
     PersistentPGDReconSubsetLossConfig,
@@ -16,7 +13,7 @@ from spd.configs import (
 from spd.data import DatasetConfig, create_data_loader
 from spd.log import logger
 from spd.pretrain.run_info import PretrainRunInfo
-from spd.run_spd import optimize
+from spd.run_spd import run_experiment
 from spd.utils.distributed_utils import (
     DistributedState,
     ensure_cached_and_call,
@@ -25,9 +22,8 @@ from spd.utils.distributed_utils import (
     is_main_process,
     with_distributed_cleanup,
 )
-from spd.utils.general_utils import resolve_class, save_pre_run_info, set_seed
-from spd.utils.run_utils import setup_decomposition_run
-from spd.utils.wandb_utils import init_wandb
+from spd.utils.general_utils import resolve_class, set_seed
+from spd.utils.run_utils import parse_config, parse_sweep_params
 
 
 @with_distributed_cleanup
@@ -35,43 +31,17 @@ def main(
     config_path: Path | str | None = None,
     config_json: str | None = None,
     evals_id: str | None = None,
-    sweep_id: str | None = None,
+    launch_id: str | None = None,
     sweep_params_json: str | None = None,
+    run_id: str | None = None,
 ) -> None:
-    assert (config_path is not None) != (config_json is not None), (
-        "Need exactly one of config_path and config_json"
-    )
-    if config_path is not None:
-        config = Config.from_file(config_path)
-    else:
-        assert config_json is not None
-        config = Config(**json.loads(config_json.removeprefix("json:")))
+    config = parse_config(config_path, config_json)
 
     dist_state = init_distributed()
     logger.info(f"Distributed state: {dist_state}")
 
-    sweep_params = (
-        None if sweep_params_json is None else json.loads(sweep_params_json.removeprefix("json:"))
-    )
-
     # Use the same seed across all ranks for deterministic data loading
     set_seed(config.seed)
-
-    if is_main_process():
-        out_dir, run_id, tags = setup_decomposition_run(
-            experiment_tag="lm", evals_id=evals_id, sweep_id=sweep_id
-        )
-        if config.wandb_project:
-            init_wandb(
-                config=config,
-                project=config.wandb_project,
-                run_id=run_id,
-                name=config.wandb_run_name,
-                tags=tags,
-            )
-        logger.info(config)
-    else:
-        out_dir = None
 
     device = get_device()
     assert isinstance(config.task_config, LMTaskConfig), "task_config not LMTaskConfig"
@@ -101,18 +71,6 @@ def main(
             config.pretrained_model_name,
         )
     target_model.eval()
-
-    if is_main_process():
-        assert out_dir is not None
-        save_pre_run_info(
-            save_to_wandb=config.wandb_project is not None,
-            out_dir=out_dir,
-            spd_config=config,
-            sweep_params=sweep_params,
-            target_model=None,
-            train_config=None,
-            task_name=None,
-        )
 
     # --- Load Data --- #
     if is_main_process():
@@ -187,23 +145,18 @@ def main(
         dist_state=dist_state,
     )
 
-    if is_main_process():
-        logger.info("Starting optimization...")
-
-    optimize(
+    run_experiment(
         target_model=target_model,
         config=config,
         device=device,
         train_loader=train_loader,
         eval_loader=eval_loader,
-        n_eval_steps=config.n_eval_steps,
-        out_dir=out_dir,
+        experiment_tag="lm",
+        run_id=run_id,
+        launch_id=launch_id,
+        evals_id=evals_id,
+        sweep_params=parse_sweep_params(sweep_params_json),
     )
-
-    if is_main_process():
-        logger.info("Optimization finished.")
-        if config.wandb_project:
-            wandb.finish()
 
 
 if __name__ == "__main__":

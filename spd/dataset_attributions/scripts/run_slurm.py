@@ -65,7 +65,7 @@ def submit_attributions(
 
     if snapshot_branch is None:
         run_id = f"attr-{secrets.token_hex(4)}"
-        snapshot_branch, commit_hash = create_git_snapshot(run_id)
+        snapshot_branch, commit_hash = create_git_snapshot(snapshot_id=run_id)
         logger.info(f"Created git snapshot: {snapshot_branch} ({commit_hash[:8]})")
     else:
         commit_hash = "shared"
