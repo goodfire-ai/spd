@@ -115,9 +115,7 @@ def test_resid_mlp_decomposition_happy_path(tmp_path: Path) -> None:
         synced_inputs=None,
     )
 
-    train_loader = DatasetGeneratedDataLoader(
-        dataset, batch_size=config.microbatch_size, shuffle=False
-    )
+    train_loader = DatasetGeneratedDataLoader(dataset, batch_size=config.batch_size, shuffle=False)
     eval_loader = DatasetGeneratedDataLoader(
         dataset, batch_size=config.eval_batch_size, shuffle=False
     )
