@@ -4,13 +4,12 @@ Submits all postprocessing steps to SLURM with proper dependency chaining.
 All steps always run — data accumulates (harvest upserts, autointerp resumes).
 
 Dependency graph:
-    harvest (GPU array -> merge)
-    ├── intruder eval    (CPU, depends on harvest merge, label-free)
-    └── autointerp       (depends on harvest merge)
-        ├── interpret    (CPU, LLM calls, resumes via completed keys)
-        │   ├── detection (CPU, label-dependent)
-        │   └── fuzzing   (CPU, label-dependent)
-    attributions (GPU array -> merge, depends on harvest merge, SPD-only)
+    harvest             (GPU array -> merge, GPU, SPD-only)
+    ├── intruder eval   (CPU, depends on harvest merge, label-free)
+    ├── attributions    (GPU array -> merge, depends on harvest merge, SPD-only)
+    └── autointerp      (CPU, LLM calls, resumes via completed keys)
+        ├── detection   (CPU, label-dependent)
+        └── fuzzing     (CPU, label-dependent)
 """
 
 import secrets
@@ -100,8 +99,8 @@ def postprocess(config: PostprocessConfig) -> Path:
         )
 
     # === Write manifest ===
-    subrun_id = "pp-" + datetime.now().strftime("%Y%m%d_%H%M%S")
-    manifest_dir = SPD_OUT_DIR / "postprocess" / subrun_id
+    manifest_id = "pp-" + datetime.now().strftime("%Y%m%d_%H%M%S")
+    manifest_dir = SPD_OUT_DIR / "postprocess" / manifest_id
     manifest_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = manifest_dir / "manifest.yaml"
 
