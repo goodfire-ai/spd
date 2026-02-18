@@ -11,28 +11,6 @@ from spd.autointerp.schemas import ModelMetadata
 from spd.harvest.analysis import TokenPRLift
 from spd.harvest.schemas import ComponentData
 
-INTERPRETATION_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "label": {
-            "type": "string",
-            "description": "2-5 word label for what this component detects",
-        },
-        "confidence": {
-            "type": "string",
-            "enum": ["low", "medium", "high"],
-            "description": "low = speculative/unclear; medium = plausible but noisy; high = clear specific pattern with strong evidence",
-        },
-        "reasoning": {
-            "type": "string",
-            "description": "1-3 sentences explaining the evidence",
-        },
-    },
-    "required": ["label", "confidence", "reasoning"],
-    "additionalProperties": False,
-}
-
-
 DATASET_DESCRIPTIONS: dict[str, str] = {
     "SimpleStories/SimpleStories": (
         "SimpleStories: 2M+ short stories (200-350 words), grade 1-8 reading level. "
