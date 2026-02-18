@@ -31,6 +31,7 @@ def main(
     world_size: int | None = None,
     merge: bool = False,
     subrun_id: str | None = None,
+    harvest_subrun_id: str | None = None,
 ) -> None:
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
@@ -57,17 +58,24 @@ def main(
         logger.info(f"Single-GPU harvest: {wandb_path} (subrun {subrun_id})")
 
     harvest_attributions(
+        wandb_path=wandb_path,
         config=config,
         output_dir=output_dir,
+        harvest_subrun_id=harvest_subrun_id,
         rank=rank,
         world_size=world_size,
     )
 
 
 def get_worker_command(
-    wandb_path: str, config_json: str, rank: int, world_size: int, subrun_id: str
+    wandb_path: str,
+    config_json: str,
+    rank: int,
+    world_size: int,
+    subrun_id: str,
+    harvest_subrun_id: str | None = None,
 ) -> str:
-    return (
+    cmd = (
         f"python -m spd.dataset_attributions.scripts.run "
         f'"{wandb_path}" '
         f"--config_json '{config_json}' "
@@ -75,6 +83,9 @@ def get_worker_command(
         f"--world_size {world_size} "
         f"--subrun_id {subrun_id}"
     )
+    if harvest_subrun_id is not None:
+        cmd += f" --harvest_subrun_id {harvest_subrun_id}"
+    return cmd
 
 
 def get_merge_command(wandb_path: str, subrun_id: str) -> str:

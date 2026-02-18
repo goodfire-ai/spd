@@ -25,7 +25,7 @@ class PostprocessConfig(BaseConfig):
             ├── interpret
             │   ├── detection
             │   └── fuzzing
-        attributions (GPU array -> merge, parallel with harvest)
+        attributions (GPU array -> merge, depends on harvest merge)
     """
 
     harvest: HarvestSlurmConfig

@@ -44,6 +44,8 @@ def submit_attributions(
     config: AttributionsSlurmConfig,
     job_suffix: str | None = None,
     snapshot_branch: str | None = None,
+    dependency_job_id: str | None = None,
+    harvest_subrun_id: str | None = None,
 ) -> AttributionsSubmitResult:
     """Submit multi-GPU attribution harvesting job to SLURM.
 
@@ -56,6 +58,8 @@ def submit_attributions(
         config: Attribution SLURM configuration.
         job_suffix: Optional suffix for SLURM job names (e.g., "1h" -> "spd-attr-1h").
         snapshot_branch: Git snapshot branch to use. If None, creates a new snapshot.
+        dependency_job_id: SLURM job to wait for before starting (e.g. harvest merge).
+        harvest_subrun_id: Harvest subrun for alive masks. If None, uses most recent.
 
     Returns:
         AttributionsSubmitResult with array, merge results and subrun ID.
@@ -87,6 +91,7 @@ def submit_attributions(
             rank=rank,
             world_size=n_gpus,
             subrun_id=subrun_id,
+            harvest_subrun_id=harvest_subrun_id,
         )
         worker_commands.append(cmd)
 
@@ -98,6 +103,7 @@ def submit_attributions(
         n_gpus=1,  # 1 GPU per worker
         time=time,
         snapshot_branch=snapshot_branch,
+        dependency_job_id=dependency_job_id,
         comment=wandb_url,
     )
     array_script = generate_array_script(array_config, worker_commands)

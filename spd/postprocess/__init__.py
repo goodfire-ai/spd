@@ -10,7 +10,7 @@ Dependency graph:
         ├── interpret    (CPU, LLM calls, resumes via completed keys)
         │   ├── detection (CPU, label-dependent)
         │   └── fuzzing   (CPU, label-dependent)
-    attributions (GPU array -> merge, parallel with harvest, SPD-only)
+    attributions (GPU array -> merge, depends on harvest merge, SPD-only)
 """
 
 import secrets
@@ -46,17 +46,7 @@ def postprocess(config: PostprocessConfig) -> Path:
     # === 1. Harvest (always runs, upserts into harvest.db) ===
     harvest_result = submit_harvest(config.harvest, snapshot_branch=snapshot_branch)
 
-    # === 2. Attributions (parallel with harvest, SPD-only) ===
-    attr_result = None
-    if config.attributions is not None:
-        assert isinstance(decomp_cfg, SPDHarvestConfig)
-        attr_result = submit_attributions(
-            wandb_path=decomp_cfg.wandb_path,
-            config=config.attributions,
-            snapshot_branch=snapshot_branch,
-        )
-
-    # === 3. Autointerp (depends on harvest, resumes via completed keys) ===
+    # === 2. Autointerp (depends on harvest, resumes via completed keys) ===
     autointerp_result: AutointerpSubmitResult | None = None
     if config.autointerp is not None:
         autointerp_result = submit_autointerp(
@@ -67,7 +57,7 @@ def postprocess(config: PostprocessConfig) -> Path:
             harvest_subrun_id=harvest_result.subrun_id,
         )
 
-    # === 4. Intruder eval (depends on harvest merge, label-free) ===
+    # === 3. Intruder eval (depends on harvest merge, label-free) ===
     intruder_result: SubmitResult | None = None
     if config.intruder is not None:
         intruder_cmd = run_intruder.get_command(
@@ -95,6 +85,18 @@ def postprocess(config: PostprocessConfig) -> Path:
                 "Depends on": f"harvest merge ({harvest_result.merge_result.job_id})",
                 "Log": intruder_result.log_pattern,
             }
+        )
+
+    # === 4. Attributions (depends on harvest merge, SPD-only) ===
+    attr_result = None
+    if config.attributions is not None:
+        assert isinstance(decomp_cfg, SPDHarvestConfig)
+        attr_result = submit_attributions(
+            wandb_path=decomp_cfg.wandb_path,
+            config=config.attributions,
+            snapshot_branch=snapshot_branch,
+            dependency_job_id=harvest_result.merge_result.job_id,
+            harvest_subrun_id=harvest_result.subrun_id,
         )
 
     # === Write manifest ===

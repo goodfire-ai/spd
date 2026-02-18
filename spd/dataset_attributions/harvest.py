@@ -50,7 +50,7 @@ def _build_component_layer_keys(model: ComponentModel) -> list[str]:
 def _build_alive_masks(
     model: ComponentModel,
     run_id: str,
-    subrun_id: str,
+    harvest_subrun_id: str | None,
     n_components: int,
     vocab_size: int,
 ) -> tuple[Bool[Tensor, " n_sources"], Bool[Tensor, " n_components"]]:
@@ -71,7 +71,11 @@ def _build_alive_masks(
     # All wte tokens are always alive (source indices [0, vocab_size))
     source_alive[:vocab_size] = True
 
-    harvest = HarvestRepo(decomposition_id=run_id, subrun_id=subrun_id, readonly=True)
+    if harvest_subrun_id is not None:
+        harvest = HarvestRepo(decomposition_id=run_id, subrun_id=harvest_subrun_id, readonly=True)
+    else:
+        harvest = HarvestRepo.open_most_recent(run_id, readonly=True)
+        assert harvest is not None, f"No harvest data for {run_id}"
     summary = harvest.get_summary()
     assert summary is not None, "Harvest summary not available"
 
@@ -99,8 +103,10 @@ def _build_alive_masks(
 
 
 def harvest_attributions(
+    wandb_path: str,
     config: DatasetAttributionConfig,
     output_dir: Path,
+    harvest_subrun_id: str | None = None,
     rank: int | None = None,
     world_size: int | None = None,
 ) -> None:
@@ -110,6 +116,7 @@ def harvest_attributions(
         wandb_path: WandB run path for the target decomposition run.
         config: Configuration for attribution harvesting.
         output_dir: Directory to write results into.
+        harvest_subrun_id: Harvest subrun to use for alive masks. If None, uses most recent.
         rank: Worker rank for parallel execution (0 to world_size-1).
         world_size: Total number of workers. If specified with rank, only processes
             batches where batch_idx % world_size == rank.
@@ -120,9 +127,9 @@ def harvest_attributions(
     device = torch.device(get_device())
     logger.info(f"Loading model on {device}")
 
-    _, _, run_id = parse_wandb_run_path(config.spd_run_wandb_path)
+    _, _, run_id = parse_wandb_run_path(wandb_path)
 
-    run_info = SPDRunInfo.from_path(config.spd_run_wandb_path)
+    run_info = SPDRunInfo.from_path(wandb_path)
     model = ComponentModel.from_run_info(run_info).to(device)
     model.eval()
 
@@ -136,7 +143,7 @@ def harvest_attributions(
     component_layer_keys = _build_component_layer_keys(model)
     n_components = len(component_layer_keys)
     source_alive, target_alive = _build_alive_masks(
-        model, run_id, config.harvest_subrun_id, n_components, vocab_size
+        model, run_id, harvest_subrun_id, n_components, vocab_size
     )
     source_alive = source_alive.to(device)
     target_alive = target_alive.to(device)
