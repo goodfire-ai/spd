@@ -21,6 +21,7 @@ from spd.utils.slurm import (
     generate_script,
     submit_slurm_job,
 )
+from spd.utils.wandb_utils import wandb_path_to_url
 
 
 def harvest(
@@ -81,12 +82,15 @@ def harvest(
         )
         worker_commands.append(cmd)
 
+    wandb_url = wandb_path_to_url(wandb_path)
+
     array_config = SlurmArrayConfig(
         job_name=array_job_name,
         partition=partition,
         n_gpus=1,  # 1 GPU per worker
         time=time,
         snapshot_branch=snapshot_branch,
+        comment=wandb_url,
     )
     array_script = generate_array_script(array_config, worker_commands)
     array_result = submit_slurm_job(
@@ -105,6 +109,7 @@ def harvest(
         time="01:00:00",  # Merge is quick
         snapshot_branch=snapshot_branch,
         dependency_job_id=array_result.job_id,
+        comment=wandb_url,
     )
     merge_script = generate_script(merge_config, merge_cmd)
     merge_result = submit_slurm_job(merge_script, "harvest_merge")
