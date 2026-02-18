@@ -23,6 +23,9 @@
 <div class="opt-params">
     <span class="param"><span class="key">steps</span>{optimization.steps}</span>
     <span class="param"><span class="key">imp_min</span>{optimization.imp_min_coeff}</span>
+    <span class="param"><span class="key">pnorm</span>{optimization.pnorm}</span>
+    <span class="param"><span class="key">beta</span>{optimization.beta}</span>
+    <span class="param"><span class="key">mask</span>{optimization.mask_type}</span>
     <span class="param">
         <span class="key">{optimization.loss.type}</span>{optimization.loss.coeff}
     </span>
@@ -33,6 +36,14 @@
     {#if optimization.loss.type === "ce"}
         <span class="param">
             <span class="key">label</span>(<span class="token">{optimization.loss.label_str}</span>)
+        </span>
+    {/if}
+    {#if optimization.adv_pgd_n_steps !== null}
+        <span class="param">
+            <span class="key">adv_steps</span>{optimization.adv_pgd_n_steps}
+        </span>
+        <span class="param">
+            <span class="key">adv_lr</span>{optimization.adv_pgd_step_size}
         </span>
     {/if}
     <span class="divider"></span>

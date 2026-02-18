@@ -34,7 +34,7 @@ export type ComponentCoords = { layer: string; cIdx: number };
  * Interpretation headline is derived from the global runState cache.
  * Interpretation detail (reasoning + prompt) is fetched on-demand.
  *
- * For reading from prefetched cache, use useComponentDataExpectCached instead.
+ * For graph tooltips (smaller initial limits + background fetch), use useComponentDataExpectCached.
  */
 export function useComponentData() {
     const runState = getContext<RunContext>(RUN_KEY);

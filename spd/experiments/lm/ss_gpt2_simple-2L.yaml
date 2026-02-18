@@ -57,7 +57,6 @@ lr_schedule:
   final_val_frac: 0.1
 steps: 400_000
 batch_size: 64
-gradient_accumulation_steps: 1
 faithfulness_warmup_steps: 200
 faithfulness_warmup_lr: 0.001
 faithfulness_warmup_weight_decay: 0.0

@@ -4,7 +4,7 @@
     import { colors, getEdgeColor, getOutputHeaderColor, rgbaToCss } from "../../lib/colors";
     import type { Loadable } from "../../lib/index";
     import type { NormalizeType } from "../../lib/api";
-    import { isInterventableNode, type NodePosition, type TokenInfo } from "../../lib/promptAttributionsTypes";
+    import { isInterventableNode, type NodePosition } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import {
         parseLayer,
@@ -53,7 +53,6 @@
         activeRunId: number | null;
         tokens: string[];
         tokenIds: number[];
-        allTokens: TokenInfo[];
         // View settings (shared with main graph)
         topK: number;
         componentGap: number;
@@ -87,7 +86,6 @@
         activeRunId,
         tokens,
         tokenIds,
-        allTokens,
         topK,
         componentGap,
         layerGap,
@@ -227,14 +225,13 @@
         return nodes;
     });
 
-    // Filter edges for rendering (topK by magnitude, optionally hide edges not connected to selected nodes)
+    // Filter edges for rendering (topK by magnitude, optionally hide edges not connected to selected nodes).
+    // Edges arrive pre-sorted by abs(val) desc from backend, so filter preserves order and we just slice.
     const filteredEdges = $derived.by(() => {
-        let edges = [...graph.data.edges];
-        // If hideUnpinnedEdges is true and we have selected nodes, filter to only edges connected to them
+        let edges = graph.data.edges;
         if (hideUnpinnedEdges && composerSelection.size > 0) {
             edges = edges.filter((e) => composerSelection.has(e.src) || composerSelection.has(e.tgt));
         }
-        edges.sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
         return edges.slice(0, topK);
     });
 
@@ -1072,7 +1069,6 @@
                             <div class="token-slot" class:replaced={isReplaced}>
                                 <span class="token-label">pos {idx}: "{tokens[idx]}"</span>
                                 <TokenDropdown
-                                    tokens={allTokens}
                                     value={slot.value}
                                     selectedTokenId={slot.tokenId}
                                     onSelect={(tokenId, tokenString) => handleForkSlotSelect(idx, tokenId, tokenString)}

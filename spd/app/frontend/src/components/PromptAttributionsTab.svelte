@@ -1,16 +1,12 @@
 <script lang="ts">
-    import { getContext } from "svelte";
     import * as api from "../lib/api";
     import ProbColoredTokens from "./ProbColoredTokens.svelte";
     import {
-        extractComponentKeys,
         filterInterventableNodes,
         type GraphData,
         type PinnedNode,
         type PromptPreview,
-        type TokenInfo,
     } from "../lib/promptAttributionsTypes";
-    import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import ComputeProgressOverlay from "./prompt-attr/ComputeProgressOverlay.svelte";
     import GraphTabs from "./prompt-attr/GraphTabs.svelte";
     import InterventionsView from "./prompt-attr/InterventionsView.svelte";
@@ -36,8 +32,6 @@
     import ViewTabs from "./prompt-attr/ViewTabs.svelte";
     import PromptAttributionsGraph from "./PromptAttributionsGraph.svelte";
 
-    const runState = getContext<RunContext>(RUN_KEY);
-
     /** Generate a display label for a graph based on its type */
     function getGraphLabel(data: GraphData): string {
         switch (data.graphType) {
@@ -52,10 +46,9 @@
 
     type Props = {
         prompts: PromptPreview[];
-        allTokens: TokenInfo[];
     };
 
-    let { prompts, allTokens }: Props = $props();
+    let { prompts }: Props = $props();
 
     // Prompt cards state
     let promptCards = $state<PromptCard[]>([]);
@@ -195,13 +188,6 @@
                 };
             }),
         );
-
-        // Prefetch component data for all components in loaded graphs
-        const allComponentKeys = graphs.flatMap((g) => extractComponentKeys(g.data));
-        const uniqueKeys = [...new Set(allComponentKeys)];
-        if (uniqueKeys.length > 0) {
-            await runState.prefetchComponentData(uniqueKeys);
-        }
 
         const newCard: PromptCard = {
             id: promptId,
@@ -547,10 +533,6 @@
             // Initialize composer state for the new graph
             getComposerState(data.id, Object.keys(data.nodeCiVals));
 
-            // Prefetch component data for all components in the subgraph
-            const componentKeys = extractComponentKeys(data);
-            await runState.prefetchComponentData(componentKeys);
-
             promptCards = promptCards.map((card) => {
                 if (card.id !== cardId) return card;
 
@@ -641,6 +623,14 @@
                     lossCoeff: optConfig.loss.coeff,
                     lossPosition: optConfig.loss.position,
                     labelToken: optConfig.loss.type === "ce" ? optConfig.loss.labelTokenId : undefined,
+                    advPgdNSteps:
+                        optConfig.advPgdNSteps !== null && optConfig.advPgdStepSize !== null
+                            ? optConfig.advPgdNSteps
+                            : undefined,
+                    advPgdStepSize:
+                        optConfig.advPgdNSteps !== null && optConfig.advPgdStepSize !== null
+                            ? optConfig.advPgdStepSize
+                            : undefined,
                 };
 
                 data = await api.computeGraphOptimizedStream(params, (progress) => {
@@ -666,10 +656,6 @@
 
             // Initialize composer state for the new graph
             getComposerState(data.id, Object.keys(data.nodeCiVals));
-
-            // Prefetch component data BEFORE state update so cache is populated when components mount
-            const componentKeys = extractComponentKeys(data);
-            await runState.prefetchComponentData(componentKeys);
 
             promptCards = promptCards.map((card) => {
                 if (card.id !== cardId) return card;
@@ -937,7 +923,6 @@
                                     activeRunId={activeComposerState.activeRunId}
                                     tokens={activeCard.tokens}
                                     tokenIds={activeCard.tokenIds}
-                                    {allTokens}
                                     topK={activeGraph.viewSettings.topK}
                                     componentGap={activeGraph.viewSettings.componentGap}
                                     layerGap={activeGraph.viewSettings.layerGap}
@@ -999,7 +984,6 @@
                                             <OptimizationSettings
                                                 config={activeCard.newGraphConfig}
                                                 tokens={activeCard.tokens}
-                                                {allTokens}
                                                 onChange={handleOptimizeConfigChange}
                                                 cardId={activeCard.id}
                                             />

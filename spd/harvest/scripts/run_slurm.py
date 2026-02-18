@@ -50,7 +50,7 @@ def submit_harvest(
 
     if snapshot_branch is None:
         run_id = f"harvest-{secrets.token_hex(4)}"
-        snapshot_branch, commit_hash = create_git_snapshot(run_id)
+        snapshot_branch, commit_hash = create_git_snapshot(snapshot_id=run_id)
         logger.info(f"Created git snapshot: {snapshot_branch} ({commit_hash[:8]})")
     else:
         commit_hash = "shared"
@@ -76,6 +76,7 @@ def submit_harvest(
         n_gpus=1,
         time=time,
         snapshot_branch=snapshot_branch,
+        comment=config.config.method_config.id,
     )
     array_script = generate_array_script(array_config, worker_commands)
     array_result = submit_slurm_job(
@@ -97,6 +98,7 @@ def submit_harvest(
         mem=config.merge_mem,
         snapshot_branch=snapshot_branch,
         dependency_job_id=array_result.job_id,
+        comment=config.config.method_config.id,
     )
     merge_script = generate_script(merge_config, merge_command)
     merge_result = submit_slurm_job(merge_script, "harvest_merge")

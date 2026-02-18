@@ -1,9 +1,9 @@
 /**
- * Hook for reading component data from prefetched cache.
+ * Hook for lazily loading component data with small initial limits.
  *
- * prefetchComponentData() must be called before using this hook.
- * Activation contexts, correlations, and token stats are read from cache.
- * Dataset attributions and interpretation details are fetched on-demand.
+ * Fetches activation contexts (10), correlations (10), and token stats (10)
+ * in parallel for fast initial render, then background-fetches full activation
+ * examples (200). Dataset attributions and interpretation detail are on-demand.
  */
 
 import { getContext } from "svelte";
@@ -12,6 +12,8 @@ import {
     ApiError,
     getActivationContextDetail,
     getComponentAttributions,
+    getComponentCorrelations,
+    getComponentTokenStats,
     getInterpretationDetail,
     requestComponentInterpretation,
 } from "./api";
@@ -43,23 +45,16 @@ export function useComponentDataExpectCached() {
     let currentCoords = $state<ComponentCoords | null>(null);
     let requestId = 0;
 
-    function load(layer: string, cIdx: number) {
-        currentCoords = { layer, cIdx };
-        const thisRequestId = ++requestId;
-        const componentKey = `${layer}:${cIdx}`;
-
-        const isStale = () => requestId !== thisRequestId;
-
-        const cachedDetail = runState.expectCachedComponentDetail(componentKey);
-        componentDetail = { status: "loaded", data: cachedDetail };
-        correlations = { status: "loaded", data: runState.expectCachedCorrelations(componentKey) };
-        tokenStats = { status: "loaded", data: runState.expectCachedTokenStats(componentKey) };
-
-        // Fetch more activation examples in background (overwrites cached data when complete)
+    /** Fetch full activation examples in background (overwrites cached data when complete). */
+    function startBackgroundFetch(
+        layer: string,
+        cIdx: number,
+        cachedDetail: SubcomponentActivationContexts,
+        isStale: () => boolean,
+    ) {
         getActivationContextDetail(layer, cIdx, ACTIVATION_EXAMPLES_FULL_LIMIT)
             .then((data) => {
                 if (isStale()) return;
-                // Only update if we got more examples than cached
                 if (data.example_tokens.length > cachedDetail.example_tokens.length) {
                     componentDetail = { status: "loaded", data };
                 }
@@ -68,7 +63,10 @@ export function useComponentDataExpectCached() {
                 if (isStale()) return;
                 componentDetail = { status: "error", error };
             });
+    }
 
+    /** Start on-demand fetches (dataset attributions, interpretation detail). */
+    function startOnDemandFetches(layer: string, cIdx: number, isStale: () => boolean) {
         // Skip fetch entirely if dataset attributions not available for this run
         if (runState.datasetAttributionsAvailable) {
             datasetAttributions = { status: "loading" };
@@ -104,6 +102,38 @@ export function useComponentDataExpectCached() {
                     interpretationDetail = { status: "error", error };
                 }
             });
+    }
+
+    function load(layer: string, cIdx: number) {
+        currentCoords = { layer, cIdx };
+        const thisRequestId = ++requestId;
+
+        const isStale = () => requestId !== thisRequestId;
+
+        componentDetail = { status: "loading" };
+        correlations = { status: "loading" };
+        tokenStats = { status: "loading" };
+
+        Promise.all([
+            getActivationContextDetail(layer, cIdx, 10),
+            getComponentCorrelations(layer, cIdx, 10).catch(() => null),
+            getComponentTokenStats(layer, cIdx, 10).catch(() => null),
+        ])
+            .then(([detail, corr, stats]) => {
+                if (isStale()) return;
+                componentDetail = { status: "loaded", data: detail };
+                correlations = { status: "loaded", data: corr };
+                tokenStats = { status: "loaded", data: stats };
+                startBackgroundFetch(layer, cIdx, detail, isStale);
+            })
+            .catch((error) => {
+                if (isStale()) return;
+                componentDetail = { status: "error", error };
+                correlations = { status: "error", error };
+                tokenStats = { status: "error", error };
+            });
+
+        startOnDemandFetches(layer, cIdx, isStale);
     }
 
     function reset() {

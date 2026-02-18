@@ -14,7 +14,7 @@ ci_config:
   transition_attn_config: null
   transition_hidden_dim: null
   simple_transformer_ci_cfg:
-    d_model: 1024
+    d_model: 2048
     n_blocks: 8
     mlp_hidden_dim:
     - 8192
@@ -56,8 +56,8 @@ loss_metric_configs:
   classname: PersistentPGDReconSubsetLoss
   optimizer:
     type: adam
-    lr: 0.1
-    beta1: 0.9
+    lr: 0.01
+    beta1: 0.8
     beta2: 0.99
     eps: 1.0e-08
   scope:
@@ -69,12 +69,13 @@ loss_metric_configs:
   classname: FaithfulnessLoss
 output_loss_type: kl
 lr_schedule:
-  start_val: 1.0e-04
+  start_val: 3.0e-05
   warmup_pct: 0.0
   final_val_frac: 0.1
   fn_type: cosine
 steps: 400000
-batch_size: 64
+batch_size: 128
+gradient_accumulation_steps: 1
 grad_clip_norm_components: 0.01
 grad_clip_norm_ci_fns: null
 faithfulness_warmup_steps: 400
@@ -82,7 +83,7 @@ faithfulness_warmup_lr: 0.001
 faithfulness_warmup_weight_decay: 0.0
 train_log_freq: 200
 eval_freq: 1000
-eval_batch_size: 64
+eval_batch_size: 128
 slow_eval_freq: 10000
 n_eval_steps: 1
 slow_eval_on_first_step: true
@@ -97,6 +98,10 @@ eval_metric_configs:
     - h.0.*
     layer_1:
     - h.1.*
+    layer_2:
+    - h.2.*
+    layer_3:
+    - h.3.*
     total:
     - '*'
 - classname: CEandKLLosses
@@ -113,7 +118,7 @@ eval_metric_configs:
 ci_alive_threshold: 0.0
 pretrained_model_class: spd.pretrain.models.llama_simple_mlp.LlamaSimpleMLP
 pretrained_model_path: null
-pretrained_model_name: wandb:goodfire/spd/t-bd02d372
+pretrained_model_name: wandb:goodfire/spd/t-32d1bb3b
 pretrained_model_output_attr: idx_0
 tokenizer_name: EleutherAI/gpt-neox-20b
 task_config:

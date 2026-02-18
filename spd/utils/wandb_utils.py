@@ -71,6 +71,29 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
 }
 
 
+def get_wandb_entity() -> str:
+    """Get the WandB entity from env var or the authenticated user's default entity."""
+    load_dotenv(override=True)
+    entity = os.getenv("WANDB_ENTITY")
+    if entity is None:
+        entity = wandb.Api().default_entity
+    assert entity is not None, (
+        "Could not determine WandB entity. Set WANDB_ENTITY in .env or log in with `wandb login`."
+    )
+    return entity
+
+
+def get_wandb_run_url(project: str, run_id: str) -> str:
+    """Get the direct WandB URL for a run."""
+    return f"https://wandb.ai/{get_wandb_entity()}/{project}/runs/{run_id}"
+
+
+def wandb_path_to_url(wandb_path: str) -> str:
+    """Convert a WandB run path to a URL."""
+    entity, project, run_id = parse_wandb_run_path(wandb_path)
+    return f"https://wandb.ai/{entity}/{project}/runs/{run_id}"
+
+
 def _parse_metric_config_key(key: str) -> tuple[str, str, str] | None:
     """Parse a metric config key into (list_field, classname, param).
 
@@ -292,12 +315,10 @@ def init_wandb(
         name: The name of the wandb run.
         tags: Optional list of tags to add to the run.
     """
-    load_dotenv(override=True)
-
     wandb.init(
         id=run_id,
         project=project,
-        entity=os.getenv("WANDB_ENTITY"),
+        entity=get_wandb_entity(),
         name=name,
         tags=tags,
     )
@@ -330,7 +351,7 @@ def ensure_project_exists(project: str) -> None:
         logger.info(f"Project '{project}' created successfully")
 
 
-def create_workspace_view(run_id: str, experiment_name: str, project: str) -> str:
+def create_workspace_view(launch_id: str, experiment_name: str, project: str) -> str:
     """Create a wandb workspace view for an experiment."""
     # Use experiment-specific template if available
     template_url: str = WORKSPACE_TEMPLATES.get(experiment_name, WORKSPACE_TEMPLATES["default"])
@@ -340,12 +361,11 @@ def create_workspace_view(run_id: str, experiment_name: str, project: str) -> st
     workspace.project = project
 
     # Update the workspace name
-    workspace.name = f"{experiment_name} - {run_id}"
+    workspace.name = f"{experiment_name} - {launch_id}"
 
-    # Filter for runs that have BOTH the run_id AND experiment name tags
-    # Create filter using the same pattern as in run_grid_search.py
+    # Filter for runs that have BOTH the launch_id AND experiment name tags
     workspace.runset_settings.filters = [
-        ws.Tags("tags").isin([run_id]),
+        ws.Tags("tags").isin([launch_id]),
         ws.Tags("tags").isin([experiment_name]),
     ]
 
@@ -357,7 +377,7 @@ def create_workspace_view(run_id: str, experiment_name: str, project: str) -> st
 
 def create_wandb_report(
     report_title: str,
-    run_id: str,
+    launch_id: str,
     branch_name: str,
     commit_hash: str | None,
     experiments: list[str],
@@ -365,7 +385,7 @@ def create_wandb_report(
     project: str,
     report_total_width: int = 24,
 ) -> str:
-    """Create a W&B report for the run."""
+    """Create a W&B report for the launch."""
     report = wr.Report(
         project=project,
         title=report_title,
@@ -381,8 +401,10 @@ def create_wandb_report(
     for experiment in experiments:
         task_name: str = EXPERIMENT_REGISTRY[experiment].task_name
 
-        # Use run_id and experiment name tags for filtering
-        combined_filter = f'(Tags("tags") in ["{run_id}"]) and (Tags("tags") in ["{experiment}"])'
+        # Use launch_id and experiment name tags for filtering
+        combined_filter = (
+            f'(Tags("tags") in ["{launch_id}"]) and (Tags("tags") in ["{experiment}"])'
+        )
 
         # Create runset for this specific experiment
         runset = wr.Runset(
@@ -547,7 +569,7 @@ class ReportCfg:
 
 def create_view_and_report(
     project: str,
-    run_id: str,
+    launch_id: str,
     experiments: list[str],
     report_cfg: ReportCfg | None,
 ) -> None:
@@ -555,7 +577,7 @@ def create_view_and_report(
 
     Args:
         project: W&B project name
-        run_id: Unique run identifier
+        launch_id: Launch identifier for this group of jobs
         experiments: List of experiment names to create views for
         report_cfg: How to set up a wandb view, and optionally a report for the run, if at all.
     """
@@ -566,15 +588,15 @@ def create_view_and_report(
     logger.section("Creating workspace views...")
     workspace_urls: dict[str, str] = {}
     for experiment in experiments:
-        workspace_url = create_workspace_view(run_id, experiment, project)
+        workspace_url = create_workspace_view(launch_id, experiment, project)
         workspace_urls[experiment] = workspace_url
 
     # Create report if requested
     report_url: str | None = None
     if report_cfg is not None and len(experiments) > 1:
         report_url = create_wandb_report(
-            report_title=report_cfg.report_title or f"SPD Run Report - {run_id}",
-            run_id=run_id,
+            report_title=report_cfg.report_title or f"SPD Launch Report - {launch_id}",
+            launch_id=launch_id,
             branch_name=report_cfg.branch,
             commit_hash=report_cfg.commit_hash,
             experiments=experiments,

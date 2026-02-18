@@ -25,6 +25,7 @@ from spd.utils.slurm import (
     generate_script,
     submit_slurm_job,
 )
+from spd.utils.wandb_utils import wandb_path_to_url
 
 
 @dataclass
@@ -65,7 +66,7 @@ def submit_attributions(
 
     if snapshot_branch is None:
         run_id = f"attr-{secrets.token_hex(4)}"
-        snapshot_branch, commit_hash = create_git_snapshot(run_id)
+        snapshot_branch, commit_hash = create_git_snapshot(snapshot_id=run_id)
         logger.info(f"Created git snapshot: {snapshot_branch} ({commit_hash[:8]})")
     else:
         commit_hash = "shared"
@@ -89,12 +90,15 @@ def submit_attributions(
         )
         worker_commands.append(cmd)
 
+    wandb_url = wandb_path_to_url(wandb_path)
+
     array_config = SlurmArrayConfig(
         job_name=array_job_name,
         partition=partition,
         n_gpus=1,  # 1 GPU per worker
         time=time,
         snapshot_branch=snapshot_branch,
+        comment=wandb_url,
     )
     array_script = generate_array_script(array_config, worker_commands)
     array_result = submit_slurm_job(
@@ -113,6 +117,7 @@ def submit_attributions(
         time=config.merge_time,
         snapshot_branch=snapshot_branch,
         dependency_job_id=array_result.job_id,
+        comment=wandb_url,
     )
     merge_script = generate_script(merge_config, merge_cmd)
     merge_result = submit_slurm_job(merge_script, "attr_merge")

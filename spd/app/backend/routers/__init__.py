@@ -3,7 +3,6 @@
 from spd.app.backend.routers.activation_contexts import router as activation_contexts_router
 from spd.app.backend.routers.agents import router as agents_router
 from spd.app.backend.routers.clusters import router as clusters_router
-from spd.app.backend.routers.component_data import router as component_data_router
 from spd.app.backend.routers.correlations import router as correlations_router
 from spd.app.backend.routers.data_sources import router as data_sources_router
 from spd.app.backend.routers.dataset_attributions import router as dataset_attributions_router
@@ -18,7 +17,6 @@ __all__ = [
     "activation_contexts_router",
     "agents_router",
     "clusters_router",
-    "component_data_router",
     "correlations_router",
     "data_sources_router",
     "dataset_attributions_router",

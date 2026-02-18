@@ -520,19 +520,25 @@ def _coerce_ppgd_scope(config_dict: dict[str, Any]) -> None:
             pass
 
 
-class PersistentPGDReconLossConfig(LossMetricConfig):
-    """Config for persistent PGD reconstruction loss.
+class _PersistentPGDBaseConfig(LossMetricConfig):
+    """Shared fields for persistent PGD configs.
 
-    Unlike standard PGD which reinitializes masks each step and runs N optimization steps,
-    PersistentPGD maintains persistent masks that receive one gradient update per training step.
-    This amortizes PGD optimization across training - getting the benefit of many PGD steps
-    without the per-step computational cost.
+    Persistent PGD maintains persistent masks that receive one gradient update per training step,
+    amortizing PGD optimization across training.
     """
 
-    classname: Literal["PersistentPGDReconLoss"] = "PersistentPGDReconLoss"
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
     scope: PersistentPGDSourceScope
     use_sigmoid_parameterization: bool = False
+    n_warmup_steps: Annotated[
+        NonNegativeInt,
+        Field(
+            description="Number of additional inner PGD source-optimization steps to run on each "
+            "batch before the final loss computation. Each training step always performs one PPGD "
+            "source update (grad + step) as part of the outer loop; these warmup steps add extra "
+            "source refinement iterations on the same batch in an inner loop beforehand."
+        ),
+    ] = 0
 
     @model_validator(mode="before")
     @classmethod
@@ -542,27 +548,15 @@ class PersistentPGDReconLossConfig(LossMetricConfig):
         return data
 
 
-class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
-    """Config for persistent PGD reconstruction loss with subset routing.
+class PersistentPGDReconLossConfig(_PersistentPGDBaseConfig):
+    classname: Literal["PersistentPGDReconLoss"] = "PersistentPGDReconLoss"
 
-    Like PersistentPGDReconLossConfig but routes to a subset of modules per position,
-    similar to how StochasticReconSubsetLoss relates to StochasticReconLoss.
-    """
 
+class PersistentPGDReconSubsetLossConfig(_PersistentPGDBaseConfig):
     classname: Literal["PersistentPGDReconSubsetLoss"] = "PersistentPGDReconSubsetLoss"
-    optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
-    scope: PersistentPGDSourceScope
-    use_sigmoid_parameterization: bool = False
     routing: Annotated[
         SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
     ]
-
-    @model_validator(mode="before")
-    @classmethod
-    def _compat_scope(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            _coerce_ppgd_scope(data)
-        return data
 
 
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
@@ -754,14 +748,7 @@ class Config(BaseConfig):
     steps: NonNegativeInt = Field(..., description="Total number of optimisation steps")
     batch_size: PositiveInt = Field(
         ...,
-        description=(
-            "The effective batch size used for optimisation. Depending on gradient accumulation "
-            "steps, it may be processed as multiple micro-batches."
-        ),
-    )
-    gradient_accumulation_steps: PositiveInt = Field(
-        default=1,
-        description="Number of steps to accumulate gradients over before updating parameters",
+        description="Total batch size (may be divided across multiple devices).",
     )
     grad_clip_norm_components: PositiveFloat | None = Field(
         default=None,
@@ -785,10 +772,6 @@ class Config(BaseConfig):
         default=0.0,
         description="Weight decay for warmup phase optimizer",
     )
-
-    @property
-    def microbatch_size(self) -> PositiveInt:
-        return self.batch_size // self.gradient_accumulation_steps
 
     # --- Logging & Saving ---
     train_log_freq: PositiveInt = Field(
@@ -890,6 +873,7 @@ class Config(BaseConfig):
         "lr_exponential_halflife",
         "out_dir",
         "n_examples_until_dead",
+        "gradient_accumulation_steps",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "grad_clip_norm": "grad_clip_norm_components",
@@ -1005,10 +989,6 @@ class Config(BaseConfig):
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
-        assert self.batch_size % self.gradient_accumulation_steps == 0, (
-            "batch_size must be divisible by gradient_accumulation_steps"
-        )
-
         assert self.slow_eval_freq % self.eval_freq == 0, (
             "slow_eval_freq must be a multiple of eval_freq"
         )
@@ -1018,15 +998,6 @@ class Config(BaseConfig):
 
         for cfg in self.loss_metric_configs:
             assert cfg.coeff is not None, "All loss_metric_configs must have a coeff"
-
-        if any(
-            isinstance(cfg, PGDConfig) and cfg.mask_scope == "shared_across_batch"
-            for cfg in self.loss_metric_configs
-        ):
-            assert self.gradient_accumulation_steps == 1, (
-                "gradient_accumulation_steps must be 1 if we are using PGD losses with "
-                "mask_scope='shared_across_batch'"
-            )
 
         if any(
             isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)

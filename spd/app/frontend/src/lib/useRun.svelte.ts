@@ -9,11 +9,9 @@ import type { Loadable } from ".";
 import * as api from "./api";
 import type { LoadedRun as RunData, InterpretationHeadline } from "./api";
 import type {
-    SubcomponentCorrelationsResponse,
     PromptPreview,
     SubcomponentActivationContexts,
     TokenInfo,
-    TokenStatsResponse,
     SubcomponentMetadata,
 } from "./promptAttributionsTypes";
 
@@ -64,15 +62,8 @@ export function useRun() {
         status: "uninitialized",
     });
 
-    // Cached component data keyed by component key (layer:cIdx) - non-reactive
+    // Cached activation context detail keyed by component key (layer:cIdx) - non-reactive
     let _componentDetailsCache: Record<string, SubcomponentActivationContexts> = {};
-    let _correlationsCache: Record<string, SubcomponentCorrelationsResponse> = {};
-    let _tokenStatsCache: Record<string, TokenStatsResponse> = {};
-
-    // Prefetch parameters for bulk component data
-    const PREFETCH_ACTIVATION_CONTEXTS_LIMIT = 10;
-    const PREFETCH_CORRELATIONS_TOP_K = 10;
-    const PREFETCH_TOKEN_STATS_TOP_K = 10;
 
     /** Reset all run-scoped state */
     function resetRunScopedState() {
@@ -82,8 +73,6 @@ export function useRun() {
         intruderScores = { status: "uninitialized" };
         activationContextsSummary = { status: "uninitialized" };
         _componentDetailsCache = {};
-        _correlationsCache = {};
-        _tokenStatsCache = {};
         clusterMapping = null;
     }
 
@@ -129,10 +118,12 @@ export function useRun() {
         run = { status: "loading" };
         try {
             await api.loadRun(wandbPath, contextLength);
-            const [status] = await Promise.all([api.getStatus(), fetchTokens()]).then(([s]) => [s] as const);
+            const status = await api.getStatus();
             if (status) {
                 run = { status: "loaded", data: status };
                 fetchRunScopedData();
+                // Fetch tokens in background (no longer blocks UI - used only by token search)
+                fetchTokens();
             } else {
                 run = { status: "error", error: "Failed to load run" };
             }
@@ -214,50 +205,6 @@ export function useRun() {
         return detail;
     }
 
-    /**
-     * Bulk prefetch component data for all given component keys.
-     * Uses a single combined endpoint to avoid GIL contention from concurrent requests.
-     */
-    async function prefetchComponentData(componentKeys: string[]): Promise<void> {
-        if (componentKeys.length === 0) return;
-
-        const response = await api.getComponentDataBulk(
-            componentKeys,
-            PREFETCH_ACTIVATION_CONTEXTS_LIMIT,
-            PREFETCH_CORRELATIONS_TOP_K,
-            PREFETCH_TOKEN_STATS_TOP_K,
-        );
-
-        Object.assign(_componentDetailsCache, response.activation_contexts);
-        Object.assign(_correlationsCache, response.correlations);
-        Object.assign(_tokenStatsCache, response.token_stats);
-    }
-
-    /**
-     * Read cached component detail. Throws if not prefetched.
-     */
-    function expectCachedComponentDetail(componentKey: string): SubcomponentActivationContexts {
-        const cached = _componentDetailsCache[componentKey];
-        if (!cached) throw new Error(`Component detail not prefetched: ${componentKey}`);
-        return cached;
-    }
-
-    /**
-     * Read cached correlations.
-     * Returns null if component has no correlation data (e.g., rarely-firing components).
-     */
-    function expectCachedCorrelations(componentKey: string): SubcomponentCorrelationsResponse | null {
-        return _correlationsCache[componentKey] ?? null;
-    }
-
-    /**
-     * Read cached token stats.
-     * Returns null if component has no token stats (e.g., rarely-firing components).
-     */
-    function expectCachedTokenStats(componentKey: string): TokenStatsResponse | null {
-        return _tokenStatsCache[componentKey] ?? null;
-    }
-
     /** Load activation contexts summary (fire-and-forget, updates state) */
     function loadActivationContextsSummary() {
         if (activationContextsSummary.status === "loaded" || activationContextsSummary.status === "loading") return;
@@ -313,10 +260,6 @@ export function useRun() {
         setInterpretation,
         getIntruderScore,
         getActivationContextDetail,
-        prefetchComponentData,
-        expectCachedComponentDetail,
-        expectCachedCorrelations,
-        expectCachedTokenStats,
         loadActivationContextsSummary,
         setClusterMapping,
         clearClusterMapping,

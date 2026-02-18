@@ -28,6 +28,7 @@ class TrainingJob:
     experiment: str
     script_path: Path
     config: Config
+    run_id: str  # Pre-generated unique run identifier (e.g. "s-a1b2c3d4")
 
 
 def _choose_master_port(run_id_local: str, idx: int) -> int:
@@ -43,7 +44,7 @@ def _choose_master_port(run_id_local: str, idx: int) -> int:
 
 
 def _build_script_args(
-    run_id: str,
+    launch_id: str,
     job: TrainingJob,
     sweep_params: dict[str, Any] | None,
 ) -> str:
@@ -51,8 +52,9 @@ def _build_script_args(
     json_tagged_config = f"json:{json.dumps(job.config.model_dump(mode='json'))}"
     args = (
         f"--config_json {shlex.quote(json_tagged_config)} "
-        f"--sweep_id {run_id} "
-        f"--evals_id {job.experiment}"
+        f"--launch_id {launch_id} "
+        f"--evals_id {job.experiment} "
+        f"--run_id {job.run_id}"
     )
     if sweep_params is not None:
         json_tagged_sweep_params = f"json:{json.dumps(sweep_params)}"
@@ -61,7 +63,7 @@ def _build_script_args(
 
 
 def get_command(
-    run_id: str,
+    launch_id: str,
     job: TrainingJob,
     job_idx: int,
     n_gpus: int | None,
@@ -71,7 +73,7 @@ def get_command(
     """Build the command to run a training job.
 
     Args:
-        run_id: Unique identifier for the run.
+        launch_id: Launch identifier for this group of jobs.
         job: The training job to run.
         job_idx: Index of the job in the run.
         n_gpus: Number of GPUs. None or 1 means single GPU/CPU. 2-8 means single-node DDP.
@@ -79,8 +81,8 @@ def get_command(
         sweep_params: Optional sweep parameters to pass to the job.
         snapshot_branch: Git branch to checkout (used for multi-node workspace setup).
     """
-    port = _choose_master_port(run_id, job_idx)
-    script_args = _build_script_args(run_id, job, sweep_params)
+    port = _choose_master_port(launch_id, job_idx)
+    script_args = _build_script_args(launch_id, job, sweep_params)
 
     match n_gpus:
         case None | 1:
@@ -120,13 +122,14 @@ def get_command(
 
 def create_slurm_array_script(
     slurm_job_name: str,
-    run_id: str,
+    launch_id: str,
     training_jobs: list[TrainingJob],
     sweep_params: dict[str, Any] | None,
     snapshot_branch: str,
     n_gpus: int | None,
     partition: str,
     max_concurrent_tasks: int | None = None,
+    per_task_comments: list[str] | None = None,
 ) -> str:
     """Create a SLURM job array script with git snapshot for consistent code.
 
@@ -135,7 +138,7 @@ def create_slurm_array_script(
 
     Args:
         slurm_job_name: Name for the SLURM job array
-        run_id: Unique identifier for the run.
+        launch_id: Launch identifier for this group of jobs.
         training_jobs: List of training jobs to execute.
         sweep_params: Optional sweep parameters to pass to the jobs.
         snapshot_branch: Git branch to checkout.
@@ -143,12 +146,13 @@ def create_slurm_array_script(
                 >8 means multi-node DDP (must be divisible by 8).
         partition: SLURM partition to use.
         max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
+        per_task_comments: If provided, each task sets its own SLURM comment (e.g. wandb URL).
     """
     # Convert TrainingJobs to command strings
     commands: list[str] = []
     for i, training_job in enumerate(training_jobs):
         cmd = get_command(
-            run_id,
+            launch_id,
             training_job,
             i,
             n_gpus,
@@ -176,4 +180,6 @@ def create_slurm_array_script(
     )
 
     # CUDA_FLAGS are always set for training jobs
-    return generate_array_script(config, commands, env=CUDA_FLAGS)
+    return generate_array_script(
+        config, commands, env=CUDA_FLAGS, per_task_comments=per_task_comments
+    )

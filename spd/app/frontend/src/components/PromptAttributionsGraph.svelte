@@ -1,7 +1,14 @@
 <script lang="ts">
-    import { getContext } from "svelte";
+    import { getContext, untrack } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
-    import type { GraphData, PinnedNode, HoveredNode, HoveredEdge, NodePosition } from "../lib/promptAttributionsTypes";
+    import type {
+        GraphData,
+        EdgeData,
+        PinnedNode,
+        HoveredNode,
+        HoveredEdge,
+        NodePosition,
+    } from "../lib/promptAttributionsTypes";
     import { colors, getEdgeColor, getSubcompActColor, rgbToCss, getNextTokenProbBgColor } from "../lib/colors";
     import { displaySettings } from "../lib/displaySettings.svelte";
     import {
@@ -120,8 +127,16 @@
     });
 
     // Refs
-    let graphContainer: HTMLDivElement;
     let innerContainer: HTMLDivElement;
+    let edgeCanvas: HTMLCanvasElement;
+
+    type EdgeDrawItem = {
+        edge: EdgeData;
+        path: Path2D;
+        color: string;
+        width: number;
+        opacity: number;
+    };
 
     // Zoom/pan
     const zoom = useZoomPan(() => innerContainer);
@@ -163,12 +178,8 @@
         return runState.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
     });
 
-    // Filter edges by topK (for rendering)
-    const filteredEdges = $derived.by(() => {
-        const edgesCopy = [...data.edges];
-        const sortedEdges = edgesCopy.sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
-        return sortedEdges.slice(0, topK);
-    });
+    // Filter edges by topK (for rendering). Edges arrive pre-sorted by abs(val) desc from backend.
+    const filteredEdges = $derived(data.edges.slice(0, topK));
 
     // Build layout
     const { nodePositions, layerYPositions, seqXStarts, width, height, clusterSpans } = $derived.by(() => {
@@ -327,7 +338,7 @@
     const svgWidth = $derived(width * zoom.scale + Math.max(zoom.translateX, 0));
     const svgHeight = $derived(height * zoom.scale + Math.max(zoom.translateY, 0));
 
-    const EDGE_HIT_AREA_WIDTH = 4; // Wider invisible stroke for easier hover
+    const EDGE_HIT_AREA_WIDTH = 12; // Wide stroke for canvas isPointInStroke hit testing
 
     // Check if a node key matches the currently hovered component (same layer:cIdx, any seqIdx)
     // For embed nodes: match by token value (highlight same tokens across positions)
@@ -396,51 +407,92 @@
         }
     }
 
-    // Build SVG edges string (for {@html} - performance optimization)
-    // Render order: visible paths first (smaller on top), then hit areas (larger on top)
-    // Only render hit areas for edges connected to pinned nodes
-    const edgesSvgString = $derived.by(() => {
-        let visibleSvg = "";
-        let hitAreaSvg = "";
+    // Precompute edge geometry for canvas rendering.
+    // Only recomputes when data/layout changes, not on hover.
+    // Ordered smallest-first (reverse of filteredEdges which is desc by abs val).
+    const edgeDrawData = $derived.by(() => {
+        // Register coarse reactive dependencies
+        const edges = filteredEdges;
+        const positions = nodePositions;
+        const maxAttr = maxAbsAttr;
 
-        // filteredEdges is already sorted by abs(val) descending
-        // Render visible paths in reverse order (smallest first, so largest renders on top)
-        for (let i = filteredEdges.length - 1; i >= 0; i--) {
-            const edge = filteredEdges[i];
-            const p1 = nodePositions[edge.src];
-            const p2 = nodePositions[edge.tgt];
-            if (p1 && p2) {
-                const color = getEdgeColor(edge.val);
-                const w = lerp(1, 4, Math.abs(edge.val) / maxAbsAttr);
-                const op = lerp(0, 0.5, Math.abs(edge.val) / maxAbsAttr);
+        // Hot loop in untrack() to avoid O(n²) fine-grained proxy dependency tracking.
+        // Without this, each property access on Svelte's deep reactive proxies (edge.src,
+        // edge.tgt, etc.) registers a fine-grained dependency, scaling quadratically.
+        return untrack(() => {
+            const items: EdgeDrawItem[] = [];
+            for (let i = edges.length - 1; i >= 0; i--) {
+                const edge = edges[i];
+                const p1 = positions[edge.src];
+                const p2 = positions[edge.tgt];
+                if (!p1 || !p2) continue;
                 const dy = Math.abs(p2.y - p1.y);
                 const curveOffset = Math.max(20, dy * 0.4);
-                const cp1y = p1.y - curveOffset;
-                const cp2y = p2.y + curveOffset;
-                const d = `M ${p1.x},${p1.y} C ${p1.x},${cp1y} ${p2.x},${cp2y} ${p2.x},${p2.y}`;
-                visibleSvg += `<path class="edge edge-visible" data-src="${edge.src}" data-tgt="${edge.tgt}" data-val="${edge.val}" d="${d}" stroke="${color}" stroke-width="${w}" opacity="${op}" fill="none" pointer-events="none"/>`;
+                const path = new Path2D();
+                path.moveTo(p1.x, p1.y);
+                path.bezierCurveTo(p1.x, p1.y - curveOffset, p2.x, p2.y + curveOffset, p2.x, p2.y);
+                items.push({
+                    edge,
+                    path,
+                    color: getEdgeColor(edge.val),
+                    width: lerp(1, 4, Math.abs(edge.val) / maxAttr),
+                    opacity: lerp(0, 0.5, Math.abs(edge.val) / maxAttr),
+                });
             }
-        }
+            return items;
+        });
+    });
 
-        // Only render hit areas for edges connected to pinned nodes
-        // Render in reverse order so largest edges' hit areas are on top
-        for (let i = filteredEdges.length - 1; i >= 0; i--) {
-            const edge = filteredEdges[i];
-            if (!pinnedNodeKeys.has(edge.src) && !pinnedNodeKeys.has(edge.tgt)) continue;
+    // Canvas edge rendering effect
+    $effect(() => {
+        if (!edgeCanvas) return;
+        const ctx = edgeCanvas.getContext("2d");
+        if (!ctx) return;
 
-            const p1 = nodePositions[edge.src];
-            const p2 = nodePositions[edge.tgt];
-            if (p1 && p2) {
-                const dy = Math.abs(p2.y - p1.y);
-                const curveOffset = Math.max(20, dy * 0.4);
-                const cp1y = p1.y - curveOffset;
-                const cp2y = p2.y + curveOffset;
-                const d = `M ${p1.x},${p1.y} C ${p1.x},${cp1y} ${p2.x},${cp2y} ${p2.x},${p2.y}`;
-                hitAreaSvg += `<path class="edge edge-hit-area" data-src="${edge.src}" data-tgt="${edge.tgt}" data-val="${edge.val}" d="${d}" stroke="transparent" stroke-width="${EDGE_HIT_AREA_WIDTH}" fill="none"/>`;
+        // Register coarse reactive deps (used by getEdgeState inside the loop)
+        const items = edgeDrawData;
+        const cw = svgWidth;
+        const ch = svgHeight;
+        const zs = zoom.scale;
+        const ztx = zoom.translateX;
+        const zty = zoom.translateY;
+        void pinnedNodeKeys;
+        void hoveredNode;
+        void hoveredEdge;
+        void effectiveHideUnpinned;
+        void hoveredComponentKey;
+
+        const dpr = window.devicePixelRatio || 1;
+
+        // Hot loop in untrack() — same O(n²) proxy issue as edgeDrawData
+        untrack(() => {
+            // Size canvas to match SVG
+            edgeCanvas.width = cw * dpr;
+            edgeCanvas.height = ch * dpr;
+            edgeCanvas.style.width = `${cw}px`;
+            edgeCanvas.style.height = `${ch}px`;
+
+            ctx.clearRect(0, 0, edgeCanvas.width, edgeCanvas.height);
+
+            // Apply zoom/pan transform matching the SVG <g> transform
+            ctx.setTransform(zs * dpr, 0, 0, zs * dpr, ztx * dpr, zty * dpr);
+
+            // Draw edges
+            for (const item of items) {
+                const state = getEdgeState(item.edge.src, item.edge.tgt);
+                if (state === "hidden") continue;
+
+                const isHighlighted = state === "highlighted";
+                ctx.strokeStyle = item.color;
+                ctx.lineWidth = isHighlighted ? 3 : item.width;
+                ctx.globalAlpha = isHighlighted ? 1 : item.opacity;
+                ctx.stroke(item.path);
             }
-        }
 
-        return visibleSvg + hitAreaSvg;
+            // Reset transform
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalAlpha = 1;
+        });
     });
 
     // Check if a node key should be highlighted (pinned or hovered component)
@@ -537,22 +589,40 @@
         }
     }
 
-    function handleEdgeMouseEnter(event: MouseEvent) {
-        const target = event.target as SVGElement;
-        if (target.classList.contains("edge-hit-area")) {
-            const src = target.getAttribute("data-src") || "";
-            const tgt = target.getAttribute("data-tgt") || "";
-            const val = parseFloat(target.getAttribute("data-val") || "0");
-            hoveredEdge = { src, tgt, val };
-            edgeTooltipPos = { x: event.clientX + 10, y: event.clientY + 10 };
-        }
-    }
+    // Cached offscreen context for edge hit testing
+    let hitTestCtx: CanvasRenderingContext2D | null = null;
 
-    function handleEdgeMouseLeave(event: MouseEvent) {
-        const target = event.target as SVGElement;
-        if (target.classList.contains("edge-hit-area")) {
-            hoveredEdge = null;
+    function handleEdgeHitTest(event: MouseEvent) {
+        if (pinnedNodeKeys.size === 0) {
+            if (hoveredEdge) hoveredEdge = null;
+            return;
         }
+
+        // Convert screen coords to world coords
+        const rect = innerContainer.getBoundingClientRect();
+        const screenX = event.clientX - rect.left + innerContainer.scrollLeft;
+        const screenY = event.clientY - rect.top + innerContainer.scrollTop;
+        const worldX = (screenX - zoom.translateX) / zoom.scale;
+        const worldY = (screenY - zoom.translateY) / zoom.scale;
+
+        if (!hitTestCtx) {
+            hitTestCtx = document.createElement("canvas").getContext("2d");
+        }
+        if (!hitTestCtx) return;
+        hitTestCtx.lineWidth = EDGE_HIT_AREA_WIDTH / zoom.scale;
+
+        // Test edges connected to pinned nodes (reverse order so largest edges match first)
+        for (let i = edgeDrawData.length - 1; i >= 0; i--) {
+            const { edge, path } = edgeDrawData[i];
+            if (!pinnedNodeKeys.has(edge.src) && !pinnedNodeKeys.has(edge.tgt)) continue;
+            if (hitTestCtx.isPointInStroke(path, worldX, worldY)) {
+                hoveredEdge = { src: edge.src, tgt: edge.tgt, val: edge.val };
+                edgeTooltipPos = { x: event.clientX + 10, y: event.clientY + 10 };
+                return;
+            }
+        }
+
+        if (hoveredEdge) hoveredEdge = null;
     }
 
     function handlePanStart(event: MouseEvent) {
@@ -564,21 +634,6 @@
         }
     }
 
-    // Update edge classes based on state (DOM manipulation for performance with @html edges)
-    $effect(() => {
-        if (!graphContainer) return;
-
-        const edges = graphContainer.querySelectorAll(".edge-visible");
-        edges.forEach((el) => {
-            const src = el.getAttribute("data-src") || "";
-            const tgt = el.getAttribute("data-tgt") || "";
-            const state = getEdgeState(src, tgt);
-
-            el.classList.toggle("highlighted", state === "highlighted");
-            el.classList.toggle("hidden", state === "hidden");
-        });
-    });
-
     // Notify parent of edge count changes
     $effect(() => {
         onEdgeCountChange?.(filteredEdges.length);
@@ -589,7 +644,6 @@
 <div
     class="graph-wrapper"
     class:panning={zoom.isPanning}
-    bind:this={graphContainer}
     onmousedown={handlePanStart}
     onmousemove={zoom.updatePan}
     onmouseup={zoom.endPan}
@@ -625,15 +679,10 @@
         </svg>
     </div>
 
-    <div class="graph-container" bind:this={innerContainer}>
-        <svg width={svgWidth} height={svgHeight} onmouseover={handleEdgeMouseEnter} onmouseout={handleEdgeMouseLeave}>
+    <div class="graph-container" bind:this={innerContainer} onmousemove={handleEdgeHitTest}>
+        <canvas bind:this={edgeCanvas} class="edge-canvas" style="width: {svgWidth}px; height: {svgHeight}px;"></canvas>
+        <svg width={svgWidth} height={svgHeight}>
             <g transform="translate({zoom.translateX}, {zoom.translateY}) scale({zoom.scale})">
-                <!-- Edges (bulk rendered for performance, uses @html for large SVG performance) -->
-                <g class="edges-layer">
-                    <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                    {@html edgesSvgString}
-                </g>
-
                 <!-- Cluster bars (below nodes) -->
                 <g class="cluster-bars-layer">
                     {#each clusterSpans as span (`${span.layer}:${span.seqIdx}:${span.clusterId}`)}
@@ -823,6 +872,13 @@
         background: var(--bg-inset);
     }
 
+    .edge-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+    }
+
     .token-labels-container {
         position: sticky;
         bottom: 0;
@@ -833,15 +889,6 @@
 
     svg {
         display: block;
-    }
-
-    :global(.edge.highlighted) {
-        opacity: 1 !important;
-        stroke-width: 3 !important;
-    }
-
-    :global(.edge.hidden) {
-        display: none;
     }
 
     .node-group {

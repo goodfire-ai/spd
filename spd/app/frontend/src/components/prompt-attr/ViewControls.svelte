@@ -71,7 +71,7 @@
             onblur={() => applyIfChanged(localTopK, topK, onTopKChange)}
             onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
             min={0}
-            max={10_000}
+            max={50_000}
             step={100}
         />
     </label>

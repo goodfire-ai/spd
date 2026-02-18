@@ -52,6 +52,8 @@ class OptimizationParams(BaseModel):
     beta: float
     mask_type: MaskType
     loss: LossConfig
+    adv_pgd_n_steps: int | None = None
+    adv_pgd_step_size: float | None = None
 
 
 class StoredGraph(BaseModel):
@@ -66,6 +68,7 @@ class StoredGraph(BaseModel):
     edges: list[Edge]
     ci_masked_out_logits: torch.Tensor  # [seq, vocab]
     target_out_logits: torch.Tensor  # [seq, vocab]
+    adv_pgd_out_logits: torch.Tensor | None = None  # [seq, vocab] adversarial PGD logits
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val (required for all graphs)
     node_subcomp_acts: dict[str, float] = {}  # layer:seq:c_idx -> subcomp act (v_i^T @ a)
 
@@ -172,6 +175,8 @@ class PromptAttrDB:
                 mask_type TEXT,
                 loss_config TEXT,  -- JSON: {type: "ce"|"kl", coeff, position, label_token?}
                 loss_config_hash TEXT,  -- SHA256 hash for uniqueness indexing
+                adv_pgd_n_steps INTEGER,
+                adv_pgd_step_size REAL,
 
                 -- Manual graph params (NULL for non-manual graphs)
                 included_nodes TEXT,  -- JSON array of node keys in this graph
@@ -196,7 +201,7 @@ class PromptAttrDB:
 
             -- One optimized graph per unique parameter combination
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graphs_optimized
-                ON graphs(prompt_id, imp_min_coeff, steps, pnorm, beta, mask_type, loss_config_hash)
+                ON graphs(prompt_id, imp_min_coeff, steps, pnorm, beta, mask_type, loss_config_hash, adv_pgd_n_steps, adv_pgd_step_size)
                 WHERE graph_type = 'optimized';
 
             -- One manual graph per unique node set (using hash for reliable uniqueness)
@@ -391,13 +396,13 @@ class PromptAttrDB:
             ]
         )
         buf = io.BytesIO()
-        torch.save(
-            {
-                "ci_masked": graph.ci_masked_out_logits,
-                "target": graph.target_out_logits,
-            },
-            buf,
-        )
+        logits_dict: dict[str, torch.Tensor] = {
+            "ci_masked": graph.ci_masked_out_logits,
+            "target": graph.target_out_logits,
+        }
+        if graph.adv_pgd_out_logits is not None:
+            logits_dict["adv_pgd"] = graph.adv_pgd_out_logits
+        torch.save(logits_dict, buf)
         output_logits_blob = buf.getvalue()
         node_ci_vals_json = json.dumps(graph.node_ci_vals)
         node_subcomp_acts_json = json.dumps(graph.node_subcomp_acts)
@@ -410,6 +415,8 @@ class PromptAttrDB:
         mask_type = None
         loss_config_json: str | None = None
         loss_config_hash: str | None = None
+        adv_pgd_n_steps = None
+        adv_pgd_step_size = None
 
         if graph.optimization_params:
             imp_min_coeff = graph.optimization_params.imp_min_coeff
@@ -419,6 +426,8 @@ class PromptAttrDB:
             mask_type = graph.optimization_params.mask_type
             loss_config_json = graph.optimization_params.loss.model_dump_json()
             loss_config_hash = hashlib.sha256(loss_config_json.encode()).hexdigest()
+            adv_pgd_n_steps = graph.optimization_params.adv_pgd_n_steps
+            adv_pgd_step_size = graph.optimization_params.adv_pgd_step_size
 
         # Extract manual-specific values (NULL for non-manual graphs)
         # Sort included_nodes and compute hash for reliable uniqueness
@@ -434,9 +443,10 @@ class PromptAttrDB:
                    (prompt_id, graph_type,
                     imp_min_coeff, steps, pnorm, beta, mask_type,
                     loss_config, loss_config_hash,
+                    adv_pgd_n_steps, adv_pgd_step_size,
                     included_nodes, included_nodes_hash,
                     edges_data, output_logits, node_ci_vals, node_subcomp_acts)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     graph.graph_type,
@@ -447,6 +457,8 @@ class PromptAttrDB:
                     mask_type,
                     loss_config_json,
                     loss_config_hash,
+                    adv_pgd_n_steps,
+                    adv_pgd_step_size,
                     included_nodes_json,
                     included_nodes_hash,
                     edges_json,
@@ -506,6 +518,7 @@ class PromptAttrDB:
         logits_data = torch.load(io.BytesIO(row["output_logits"]), weights_only=True)
         ci_masked_out_logits: torch.Tensor = logits_data["ci_masked"]
         target_out_logits: torch.Tensor = logits_data["target"]
+        adv_pgd_out_logits: torch.Tensor | None = logits_data.get("adv_pgd")
         node_ci_vals: dict[str, float] = json.loads(row["node_ci_vals"])
         node_subcomp_acts: dict[str, float] = json.loads(row["node_subcomp_acts"] or "{}")
 
@@ -526,6 +539,8 @@ class PromptAttrDB:
                 beta=row["beta"],
                 mask_type=row["mask_type"],
                 loss=loss_config,
+                adv_pgd_n_steps=row["adv_pgd_n_steps"],
+                adv_pgd_step_size=row["adv_pgd_step_size"],
             )
 
         # Parse manual-specific fields
@@ -539,6 +554,7 @@ class PromptAttrDB:
             edges=edges,
             ci_masked_out_logits=ci_masked_out_logits,
             target_out_logits=target_out_logits,
+            adv_pgd_out_logits=adv_pgd_out_logits,
             node_ci_vals=node_ci_vals,
             node_subcomp_acts=node_subcomp_acts,
             optimization_params=opt_params,
@@ -558,7 +574,7 @@ class PromptAttrDB:
         rows = conn.execute(
             """SELECT id, graph_type, edges_data, output_logits, node_ci_vals,
                       node_subcomp_acts, imp_min_coeff, steps, pnorm, beta, mask_type,
-                      loss_config, included_nodes
+                      loss_config, adv_pgd_n_steps, adv_pgd_step_size, included_nodes
                FROM graphs
                WHERE prompt_id = ?
                ORDER BY
@@ -574,7 +590,7 @@ class PromptAttrDB:
         row = conn.execute(
             """SELECT id, prompt_id, graph_type, edges_data, output_logits, node_ci_vals,
                       node_subcomp_acts, imp_min_coeff, steps, pnorm, beta, mask_type,
-                      loss_config, included_nodes
+                      loss_config, adv_pgd_n_steps, adv_pgd_step_size, included_nodes
                FROM graphs
                WHERE id = ?""",
             (graph_id,),

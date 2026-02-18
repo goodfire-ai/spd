@@ -81,6 +81,7 @@ def submit_autointerp(
         time=time,
         snapshot_branch=snapshot_branch,
         dependency_job_id=dependency_job_id,
+        comment=decomposition_id,
     )
     script_content = generate_script(interpret_slurm, interpret_cmd)
     interpret_result = submit_slurm_job(script_content, "spd-interpret")
