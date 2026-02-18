@@ -50,8 +50,8 @@ def submit_attributions(
         time: Job time limit.
         job_suffix: Optional suffix for SLURM job names (e.g., "1h" -> "spd-attr-1h").
     """
-    run_id = f"attr-{secrets.token_hex(4)}"
-    snapshot_branch, commit_hash = create_git_snapshot(run_id)
+    launch_id = f"attr-{secrets.token_hex(4)}"
+    snapshot_branch, commit_hash = create_git_snapshot(snapshot_id=launch_id)
     logger.info(f"Created git snapshot: {snapshot_branch} ({commit_hash[:8]})")
 
     suffix = f"-{job_suffix}" if job_suffix else ""

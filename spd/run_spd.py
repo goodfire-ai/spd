@@ -1,10 +1,11 @@
 """Run SPD on a model."""
 
 import gc
+import os
 from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -18,6 +19,7 @@ from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from spd.base_config import BaseConfig
 from spd.configs import (
     Config,
     LossMetricConfigType,
@@ -33,6 +35,7 @@ from spd.log import logger
 from spd.losses import compute_total_loss
 from spd.metrics import faithfulness_loss
 from spd.models.component_model import ComponentModel, OutputWithCache
+from spd.settings import SPD_OUT_DIR
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
@@ -45,11 +48,12 @@ from spd.utils.general_utils import (
     dict_safe_update_,
     extract_batch_data,
     get_scheduled_value,
+    save_pre_run_info,
 )
 from spd.utils.logging_utils import get_grad_norms_dict, local_log
 from spd.utils.module_utils import expand_module_patterns
-from spd.utils.run_utils import save_file
-from spd.utils.wandb_utils import try_wandb
+from spd.utils.run_utils import generate_run_id, save_file
+from spd.utils.wandb_utils import init_wandb, try_wandb
 
 
 def run_faithfulness_warmup(
@@ -376,3 +380,68 @@ def optimize(
 
     if is_main_process():
         logger.info("Finished training loop.")
+
+
+def run_experiment(
+    target_model: nn.Module,
+    config: Config,
+    device: str,
+    train_loader: DataLoader[Int[Tensor, "..."]]
+    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    eval_loader: DataLoader[Int[Tensor, "..."]]
+    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    experiment_tag: str,
+    run_id: str | None = None,
+    launch_id: str | None = None,
+    evals_id: str | None = None,
+    sweep_params: dict[str, Any] | None = None,
+    target_model_train_config: BaseConfig | None = None,
+    tied_weights: list[tuple[str, str]] | None = None,
+) -> None:
+    """Run a full SPD experiment: setup, optimize, cleanup.
+
+    All ranks call this function. Only the main process does wandb/logging setup.
+    """
+    if is_main_process():
+        run_id = run_id or generate_run_id("spd")
+        out_dir = SPD_OUT_DIR / "spd" / run_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Run ID: {run_id}")
+        logger.info(f"Output directory: {out_dir}")
+
+        tags = [str(i) for i in [experiment_tag, evals_id, launch_id] if i is not None]
+        slurm_array_job_id = os.getenv("SLURM_ARRAY_JOB_ID")
+        if slurm_array_job_id is not None:
+            tags.append(f"slurm-array-job-id_{slurm_array_job_id}")
+
+        if config.wandb_project:
+            init_wandb(config, config.wandb_project, run_id, config.wandb_run_name, tags)
+
+        logger.info(config)
+
+        save_pre_run_info(
+            save_to_wandb=config.wandb_project is not None,
+            out_dir=out_dir,
+            spd_config=config,
+            sweep_params=sweep_params,
+            target_model=target_model if target_model_train_config is not None else None,
+            train_config=target_model_train_config,
+            task_name=getattr(config.task_config, "task_name", None),
+        )
+    else:
+        out_dir = None
+
+    optimize(
+        target_model=target_model,
+        config=config,
+        device=device,
+        train_loader=train_loader,
+        eval_loader=eval_loader,
+        n_eval_steps=config.n_eval_steps,
+        out_dir=out_dir,
+        tied_weights=tied_weights,
+    )
+
+    if is_main_process() and config.wandb_project:
+        wandb.finish()
