@@ -723,6 +723,11 @@ class Config(BaseConfig):
 
         return result
 
+    init_spd_checkpoint: str | None = Field(
+        default=None,
+        description="Path to a .pth checkpoint from a prior SPD run for component/CI initialization",
+    )
+
     use_delta_component: bool = Field(
         default=True,
         description="If True, use an extra component containing the difference between the target "
