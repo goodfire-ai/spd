@@ -129,6 +129,7 @@ def create_slurm_array_script(
     n_gpus: int | None,
     partition: str,
     max_concurrent_tasks: int | None = None,
+    per_task_comments: list[str] | None = None,
 ) -> str:
     """Create a SLURM job array script with git snapshot for consistent code.
 
@@ -145,6 +146,7 @@ def create_slurm_array_script(
                 >8 means multi-node DDP (must be divisible by 8).
         partition: SLURM partition to use.
         max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
+        per_task_comments: If provided, each task sets its own SLURM comment (e.g. wandb URL).
     """
     # Convert TrainingJobs to command strings
     commands: list[str] = []
@@ -178,4 +180,6 @@ def create_slurm_array_script(
     )
 
     # CUDA_FLAGS are always set for training jobs
-    return generate_array_script(config, commands, env=CUDA_FLAGS)
+    return generate_array_script(
+        config, commands, env=CUDA_FLAGS, per_task_comments=per_task_comments
+    )

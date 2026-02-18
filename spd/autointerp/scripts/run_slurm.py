@@ -10,6 +10,7 @@ Usage:
 from spd.autointerp.interpret import OpenRouterModelName
 from spd.log import logger
 from spd.utils.slurm import SlurmConfig, generate_script, submit_slurm_job
+from spd.utils.wandb_utils import wandb_path_to_url
 
 
 def launch_interpret_job(
@@ -61,6 +62,7 @@ def launch_interpret_job(
         cpus_per_task=16,  # (cluster default is 16cpus/gpu and 15GB memory/cpu. We need the memory)
         time=time,
         snapshot_branch=None,  # Autointerp doesn't use git snapshots
+        comment=wandb_path_to_url(wandb_path),
     )
     script_content = generate_script(config, full_command)
     result = submit_slurm_job(script_content, "interpret")
