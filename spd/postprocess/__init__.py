@@ -51,6 +51,11 @@ def postprocess(config: PostprocessConfig) -> Path:
     # (autointerp/intruder only consume harvest data, not the model).
 
     # === 2. Attributions (parallel with harvest, SPD-only) ===
+    # NOTE: attributions need harvest_subrun_id in their config, but harvest hasn't
+    # completed yet at this point. The postprocess pipeline does NOT automatically
+    # wire harvest_result.subrun_id into the attributions config. If you need
+    # attributions, either run them separately after harvest completes, or provide
+    # a harvest_subrun_id from a previous harvest run.
     attr_result = None
     if config.attributions is not None:
         assert isinstance(decomp_cfg, SPDHarvestConfig)

@@ -30,7 +30,7 @@ def main(
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
-    config = AutointerpEvalConfig.model_validate_json(config_json)
+    config = AutointerpEvalConfig.model_validate(config_json)
 
     tokenizer_name = adapter_from_id(decomposition_id).tokenizer_name
 

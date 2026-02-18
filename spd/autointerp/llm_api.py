@@ -5,7 +5,7 @@ import contextlib
 import json
 import random
 import time
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -171,21 +171,23 @@ async def map_llm_calls(
     openrouter_api_key: str,
     model: str,
     reasoning_effort: Effort,
-    jobs: Sequence[LLMJob],
+    jobs: Iterable[LLMJob],
     max_tokens: int,
     max_concurrent: int,
     max_requests_per_minute: int,
     cost_limit_usd: float | None,
+    response_schema: dict[str, Any] | None = None,
+    n_total: int | None = None,
 ) -> AsyncGenerator[LLMResult | LLMError]:
     """Fan out LLM calls concurrently, yielding results as they complete.
 
     Handles rate limiting, retry with exponential backoff, JSON parsing,
     cost tracking, and progress logging. Yields LLMResult on success,
     LLMError on failure. Silently stops remaining jobs on budget exceeded.
-    """
-    if not jobs:
-        return
 
+    Jobs can be a lazy iterable (e.g. a generator). Prompt building in the
+    generator body naturally interleaves with async HTTP calls.
+    """
     async with OpenRouter(api_key=openrouter_api_key) as api:
         input_price, output_price = await _get_model_pricing(api, model)
         cost = _CostTracker(
@@ -196,7 +198,6 @@ async def map_llm_calls(
         rate_limiter = AsyncLimiter(max_rate=max_requests_per_minute, time_period=60)
         backoff = _GlobalBackoff()
         reasoning = Reasoning(effort=reasoning_effort)
-        response_format = make_response_format("response", jobs[0].schema)
 
         async def chat(prompt: str, context_label: str) -> str:
             if cost.over_budget():
@@ -255,14 +256,17 @@ async def map_llm_calls(
 
         queue: asyncio.Queue[LLMResult | LLMError | None] = asyncio.Queue()
         semaphore = asyncio.Semaphore(max_concurrent)
-        n_total = len(jobs)
         n_done = 0
         budget_exceeded = False
+        response_format: ResponseFormatJSONSchema | None = None
 
         async def process_one(job: LLMJob) -> None:
-            nonlocal n_done, budget_exceeded
+            nonlocal n_done, budget_exceeded, response_format
             if budget_exceeded:
                 return
+            if response_format is None:
+                schema = response_schema if response_schema is not None else job.schema
+                response_format = make_response_format("response", schema)
             async with semaphore:
                 try:
                     raw = ""
@@ -287,14 +291,19 @@ async def map_llm_calls(
                 except Exception as e:
                     await queue.put(LLMError(job=job, error=e))
             n_done += 1
+            total_str = f"/{n_total}" if n_total is not None else ""
             if n_done % 100 == 0 or n_done == n_total:
                 logger.info(
-                    f"[{n_done}/{n_total}] ${cost.cost_usd():.2f} "
+                    f"[{n_done}{total_str}] ${cost.cost_usd():.2f} "
                     f"({cost.input_tokens:,} in, {cost.output_tokens:,} out)"
                 )
 
         async def run_all() -> None:
-            await asyncio.gather(*[process_one(job) for job in jobs])
+            tasks = [asyncio.create_task(process_one(job)) for job in jobs]
+            if not tasks:
+                await queue.put(None)
+                return
+            await asyncio.gather(*tasks)
             await queue.put(None)
 
         task = asyncio.create_task(run_all())
