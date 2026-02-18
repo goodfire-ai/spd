@@ -86,9 +86,7 @@ def format_prompt(
 
     dataset_line = ""
     if config.include_dataset_description:
-        dataset_desc = DATASET_DESCRIPTIONS.get(
-            model_metadata.dataset_name, model_metadata.dataset_name
-        )
+        dataset_desc = DATASET_DESCRIPTIONS[model_metadata.dataset_name]
         dataset_line = f", dataset: {dataset_desc}"
 
     spd_context_block = f"\n{SPD_CONTEXT}\n" if config.include_spd_context else ""
