@@ -6,7 +6,7 @@ from openrouter import OpenRouter
 from openrouter.components import Effort, Reasoning
 
 from spd.app.backend.app_tokenizer import AppTokenizer
-from spd.autointerp.config import CompactSkepticalConfig
+from spd.autointerp.config import StrategyConfig
 from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import (
     LLMError,
@@ -16,7 +16,7 @@ from spd.autointerp.llm_api import (
     map_llm_calls,
 )
 from spd.autointerp.schemas import InterpretationResult, ModelMetadata
-from spd.autointerp.strategies.dispatch import format_prompt, get_response_schema
+from spd.autointerp.strategies.dispatch import INTERPRETATION_SCHEMA, format_prompt
 from spd.harvest.analysis import TokenPRLift, get_input_token_stats, get_output_token_stats
 from spd.harvest.repo import HarvestRepo
 from spd.harvest.schemas import ComponentData
@@ -29,7 +29,7 @@ async def interpret_component(
     api: OpenRouter,
     model: str,
     reasoning_effort: Effort,
-    strategy: CompactSkepticalConfig,
+    strategy: StrategyConfig,
     component: ComponentData,
     model_metadata: ModelMetadata,
     app_tok: AppTokenizer,
@@ -46,7 +46,7 @@ async def interpret_component(
         output_token_stats=output_token_stats,
     )
 
-    schema = get_response_schema(strategy)
+    schema = INTERPRETATION_SCHEMA
     response_format = make_response_format("interpretation", schema)
 
     response = await api.chat.send_async(
@@ -89,7 +89,7 @@ def run_interpret(
     max_requests_per_minute: int,
     max_concurrent: int,
     model_metadata: ModelMetadata,
-    template_strategy: CompactSkepticalConfig,
+    template_strategy: StrategyConfig,
     harvest: HarvestRepo,
     db_path: Path,
     tokenizer_name: str,
@@ -120,7 +120,7 @@ def run_interpret(
             remaining = [c for c in eligible if c.component_key not in completed]
             logger.info(f"Interpreting {len(remaining)} components")
 
-            schema = get_response_schema(template_strategy)
+            schema = INTERPRETATION_SCHEMA
             jobs: list[LLMJob] = []
             for component in remaining:
                 input_stats = get_input_token_stats(
