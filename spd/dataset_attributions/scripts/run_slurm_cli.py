@@ -12,7 +12,7 @@ import fire
 
 def submit_attributions(
     wandb_path: str,
-    config: str | None = None,
+    config: str,
     job_suffix: str | None = None,
 ) -> None:
     """Submit multi-GPU dataset attribution harvesting to SLURM.
@@ -28,12 +28,8 @@ def submit_attributions(
 
     parse_wandb_run_path(wandb_path)
 
-    slurm_config = (
-        AttributionsSlurmConfig.from_file(config)
-        if config is not None
-        else AttributionsSlurmConfig()
-    )
-    impl(wandb_path=wandb_path, slurm_config=slurm_config, job_suffix=job_suffix)
+    slurm_config = AttributionsSlurmConfig.from_file(config)
+    impl(wandb_path=wandb_path, config=slurm_config, job_suffix=job_suffix)
 
 
 def cli() -> None:

@@ -39,7 +39,9 @@ def extract_activations(
         layer = component_data.layer
         component_key = component_data.component_key
         for example in component_data.activation_examples:
-            for ci_val, act_val in zip(example.ci_values, example.component_acts, strict=True):
+            ci_vals = example.activations["causal_importance"]
+            act_vals = example.activations["component_activation"]
+            for ci_val, act_val in zip(ci_vals, act_vals, strict=True):
                 all_activations[layer][component_key].append(act_val)
                 if ci_val > ci_threshold:
                     filtered_activations[layer][component_key].append(act_val)
@@ -140,7 +142,7 @@ def main():
     output_dir_median.mkdir(parents=True, exist_ok=True)
     output_dir_freq.mkdir(parents=True, exist_ok=True)
 
-    repo = HarvestRepo.open(args.run_id)
+    repo = HarvestRepo.open_most_recent(decomposition_id=args.run_id, readonly=True)
     assert repo is not None, f"No harvest data for {args.run_id}"
 
     print(f"Loading components for run {args.run_id}...")

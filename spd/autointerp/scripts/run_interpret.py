@@ -1,8 +1,8 @@
 """CLI for autointerp pipeline.
 
 Usage:
-    python -m spd.autointerp.scripts.run_interpret <wandb_path> --config_json '...'
-    spd-autointerp <wandb_path>  # SLURM submission
+    python -m spd.autointerp.scripts.run_interpret <decomposition_id> --config_json '...'
+    spd-autointerp <decomposition_id>  # SLURM submission
 """
 
 import os
@@ -15,11 +15,10 @@ from spd.autointerp.interpret import run_interpret
 from spd.autointerp.schemas import get_autointerp_dir
 from spd.harvest.repo import HarvestRepo
 from spd.log import logger
-from spd.utils.wandb_utils import parse_wandb_run_path
 
 
 def main(
-    wandb_path: str,
+    decomposition_id: str,
     config_json: str | dict[str, object],
     autointerp_run_id: str | None = None,
     harvest_subrun_id: str | None = None,
@@ -30,19 +29,20 @@ def main(
         case dict(d):
             interp_config = CompactSkepticalConfig.model_validate(d)
 
-    _, _, run_id = parse_wandb_run_path(wandb_path)
-
     load_dotenv()
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
-    harvest = HarvestRepo.open(run_id, subrun_id=harvest_subrun_id)
-    assert harvest is not None, f"No harvest data for {run_id}"
+    if harvest_subrun_id is not None:
+        harvest = HarvestRepo(decomposition_id, subrun_id=harvest_subrun_id, readonly=True)
+    else:
+        harvest = HarvestRepo.open_most_recent(decomposition_id)
+        assert harvest is not None, f"No harvest data for {decomposition_id}"
 
     # Create timestamped run directory
     if autointerp_run_id is None:
         autointerp_run_id = "a-" + datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = get_autointerp_dir(run_id) / autointerp_run_id
+    run_dir = get_autointerp_dir(decomposition_id) / autointerp_run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
     # Save config for reproducibility
@@ -53,7 +53,7 @@ def main(
     logger.info(f"Autointerp run: {run_dir}")
 
     run_interpret(
-        wandb_path,
+        decomposition_id,
         openrouter_api_key,
         interp_config,
         harvest,

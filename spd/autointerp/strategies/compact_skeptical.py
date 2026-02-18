@@ -53,7 +53,6 @@ def format_prompt(
     app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
-    ci_threshold: float,
 ) -> str:
     input_pmi: list[tuple[str, float]] | None = None
     output_pmi: list[tuple[str, float]] | None = None
@@ -75,12 +74,11 @@ def format_prompt(
     examples_section = _build_examples_section(
         component,
         app_tok,
-        ci_threshold,
         config.max_examples,
     )
 
-    if component.mean_ci > 0:
-        rate_str = f"~1 in {int(1 / component.mean_ci)} tokens"
+    if component.firing_density > 0.0:
+        rate_str = f"~1 in {int(1 / component.firing_density)} tokens"
     else:
         rate_str = "extremely rare"
 
@@ -101,7 +99,7 @@ Label this neural network component.
 ## Context
 - Model: {arch.model_class} ({arch.n_blocks} layers){dataset_line}
 - Component location: {layer_desc}
-- Component activation rate: {component.mean_ci * 100:.2f}% ({rate_str})
+- Component firing rate: {component.firing_density * 100:.2f}% ({rate_str})
 
 ## Token correlations
 
@@ -176,18 +174,15 @@ def _build_output_section(
 def _build_examples_section(
     component: ComponentData,
     app_tok: AppTokenizer,
-    ci_threshold: float,
     max_examples: int,
 ) -> str:
     section = ""
     examples = component.activation_examples[:max_examples]
 
     for i, ex in enumerate(examples):
-        valid = [(tid, ci) for tid, ci in zip(ex.token_ids, ex.ci_values, strict=True) if tid >= 0]
-        spans = app_tok.get_spans([tid for tid, _ in valid])
-        tokens = [(span, ci > ci_threshold) for span, (_, ci) in zip(spans, valid, strict=True)]
-        has_active = any(active for _, active in tokens)
-        if has_active:
+        if any(ex.firings):
+            spans = app_tok.get_spans(ex.token_ids)
+            tokens = list(zip(spans, ex.firings, strict=True))
             section += f"{i + 1}. {delimit_tokens(tokens)}\n"
 
     return section

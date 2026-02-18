@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from spd.dataset_attributions.config import AttributionsSlurmConfig
+from spd.dataset_attributions.scripts import run as attribution_run
 from spd.log import logger
 from spd.utils.git_utils import create_git_snapshot
 from spd.utils.slurm import (
@@ -40,7 +41,7 @@ class AttributionsSubmitResult:
 
 def submit_attributions(
     wandb_path: str,
-    slurm_config: AttributionsSlurmConfig,
+    config: AttributionsSlurmConfig,
     job_suffix: str | None = None,
     snapshot_branch: str | None = None,
 ) -> AttributionsSubmitResult:
@@ -52,17 +53,16 @@ def submit_attributions(
 
     Args:
         wandb_path: WandB run path for the target decomposition run.
-        slurm_config: Attribution SLURM configuration.
+        config: Attribution SLURM configuration.
         job_suffix: Optional suffix for SLURM job names (e.g., "1h" -> "spd-attr-1h").
         snapshot_branch: Git snapshot branch to use. If None, creates a new snapshot.
 
     Returns:
         AttributionsSubmitResult with array, merge results and subrun ID.
     """
-    config = slurm_config.config
-    n_gpus = slurm_config.n_gpus
-    partition = slurm_config.partition
-    time = slurm_config.time
+    n_gpus = config.n_gpus
+    partition = config.partition
+    time = config.time
 
     if snapshot_branch is None:
         run_id = f"attr-{secrets.token_hex(4)}"
@@ -81,13 +81,12 @@ def submit_attributions(
     # SLURM arrays are 1-indexed, so task ID 1 -> rank 0, etc.
     worker_commands = []
     for rank in range(n_gpus):
-        cmd = (
-            f"python -m spd.dataset_attributions.scripts.run "
-            f'"{wandb_path}" '
-            f"--config_json '{config_json}' "
-            f"--rank {rank} "
-            f"--world_size {n_gpus} "
-            f"--subrun_id {subrun_id}"
+        cmd = attribution_run.get_worker_command(
+            wandb_path,
+            config_json,
+            rank=rank,
+            world_size=n_gpus,
+            subrun_id=subrun_id,
         )
         worker_commands.append(cmd)
 
@@ -110,15 +109,12 @@ def submit_attributions(
     )
 
     # Submit merge job with dependency on array completion
-    merge_cmd = (
-        f'python -m spd.dataset_attributions.scripts.run "{wandb_path}" '
-        f"--merge --subrun_id {subrun_id}"
-    )
+    merge_cmd = attribution_run.get_merge_command(wandb_path, subrun_id)
     merge_config = SlurmConfig(
         job_name="spd-attr-merge",
         partition=partition,
         n_gpus=0,  # No GPU needed for merge
-        time=slurm_config.merge_time,
+        time=config.merge_time,
         snapshot_branch=snapshot_branch,
         dependency_job_id=array_result.job_id,
         comment=wandb_url,
@@ -131,9 +127,9 @@ def submit_attributions(
         {
             "WandB path": wandb_path,
             "Sub-run ID": subrun_id,
-            "N batches": config.n_batches,
+            "N batches": config.config.n_batches,
             "N GPUs": n_gpus,
-            "Batch size": config.batch_size,
+            "Batch size": config.config.batch_size,
             "Snapshot": f"{snapshot_branch} ({commit_hash[:8]})",
             "Array Job ID": array_result.job_id,
             "Merge Job ID": merge_result.job_id,

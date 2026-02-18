@@ -3,6 +3,7 @@
 All accumulator state lives as tensors on `device` (GPU during harvesting, CPU during merge).
 """
 
+from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -10,36 +11,33 @@ from typing import Any
 import torch
 import tqdm
 from einops import einsum, rearrange, reduce, repeat
-from jaxtyping import Float, Int
+from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
-from spd.harvest.reservoir import WINDOW_PAD_SENTINEL, ActivationExamplesReservoir
+from spd.harvest.reservoir import (
+    WINDOW_PAD_SENTINEL,
+    ActivationExamplesReservoir,
+    ActivationWindows,
+)
 from spd.harvest.sampling import sample_at_most_n_per_group, top_k_pmi
-from spd.harvest.schemas import ActivationExample, ComponentData, ComponentTokenPMI
+from spd.harvest.schemas import ComponentData, ComponentTokenPMI
 from spd.log import logger
 
 
-def extract_firing_windows(
+def extract_padding_firing_windows(
     batch: Int[Tensor, "B S"],
-    ci: Float[Tensor, "B S C"],
-    component_acts: Float[Tensor, "B S C"],
-    batch_idx: Int[Tensor, " n_firings"],
-    seq_idx: Int[Tensor, " n_firings"],
-    comp_idx: Int[Tensor, " n_firings"],
+    firings: Bool[Tensor, "B S C"],
+    activations: dict[str, Float[Tensor, "B S C"]],
+    max_examples_per_batch_per_component: int,
     context_tokens_per_side: int,
-) -> tuple[
-    Int[Tensor, "n_firings window_size"],
-    Float[Tensor, "n_firings window_size"],
-    Float[Tensor, "n_firings window_size"],
-]:
-    """Extract context windows around firing positions.
+) -> ActivationWindows | None:
+    batch_idx, seq_idx, comp_idx = torch.where(firings)
+    if len(batch_idx) == 0:
+        return None
 
-    For each firing at (batch_idx[i], seq_idx[i], comp_idx[i]), extracts a window
-    of 2*context_tokens_per_side+1 tokens centered on seq_idx[i]. Positions outside
-    sequence bounds are padded with WINDOW_PAD_SENTINEL / 0.0.
+    keep = sample_at_most_n_per_group(comp_idx, max_examples_per_batch_per_component)
+    batch_idx, seq_idx, comp_idx = batch_idx[keep], seq_idx[keep], comp_idx[keep]
 
-    Returns (token_windows, ci_windows, act_windows), each [N, W].
-    """
     seq_len = batch.shape[1]
     offsets = torch.arange(
         -context_tokens_per_side, context_tokens_per_side + 1, device=batch.device
@@ -59,13 +57,20 @@ def extract_firing_windows(
     token_windows = batch[batch_idx_rep, clamped]
     token_windows[~in_bounds] = WINDOW_PAD_SENTINEL
 
-    ci_windows = ci[batch_idx_rep, clamped, c_idx_rep]
-    ci_windows[~in_bounds] = 0.0
+    firing_windows = firings[batch_idx_rep, clamped, c_idx_rep]
+    firing_windows[~in_bounds] = False
 
-    act_windows = component_acts[batch_idx_rep, clamped, c_idx_rep]
-    act_windows[~in_bounds] = 0.0
+    activation_windows = {}
+    for act_type, act in activations.items():
+        activation_windows[act_type] = act[batch_idx_rep, clamped, c_idx_rep]
+        activation_windows[act_type][~in_bounds] = 0.0
 
-    return token_windows, ci_windows, act_windows
+    return ActivationWindows(
+        component_idx=comp_idx,
+        token_windows=token_windows,
+        firing_windows=firing_windows,
+        activation_windows=activation_windows,
+    )
 
 
 class Harvester:
@@ -77,19 +82,15 @@ class Harvester:
 
     def __init__(
         self,
-        layer_names: list[str],
-        c_per_layer: dict[str, int],
+        layers: list[tuple[str, int]],
         vocab_size: int,
-        ci_threshold: float,
         max_examples_per_component: int,
         context_tokens_per_side: int,
         max_examples_per_batch_per_component: int,
         device: torch.device,
     ):
-        self.layer_names = layer_names
-        self.c_per_layer = c_per_layer
+        self.layers = layers
         self.vocab_size = vocab_size
-        self.ci_threshold = ci_threshold
         self.max_examples_per_component = max_examples_per_component
         self.context_tokens_per_side = context_tokens_per_side
         self.max_examples_per_batch_per_component = max_examples_per_batch_per_component
@@ -97,16 +98,19 @@ class Harvester:
 
         self.layer_offsets: dict[str, int] = {}
         offset = 0
-        for layer in layer_names:
+        for layer, c in layers:
             self.layer_offsets[layer] = offset
-            offset += c_per_layer[layer]
+            offset += c
 
-        n_components = sum(c_per_layer[layer] for layer in layer_names)
+        n_components = offset
+
         window_size = 2 * context_tokens_per_side + 1
 
         # Per-component firing stats
         self.firing_counts = torch.zeros(n_components, device=device)
-        self.ci_sums = torch.zeros(n_components, device=device)
+        self.activation_sums = defaultdict[str, Tensor](
+            lambda: torch.zeros(n_components, device=device)
+        )
         self.cooccurrence_counts: Float[Tensor, "C C"] = torch.zeros(
             n_components, n_components, device=device, dtype=torch.float32
         )
@@ -130,40 +134,64 @@ class Harvester:
         )
         self.total_tokens_processed = 0
 
+    @property
+    def layer_names(self) -> list[str]:
+        return [layer for layer, _ in self.layers]
+
+    @property
+    def c_per_layer(self) -> dict[str, int]:
+        return {layer: c for layer, c in self.layers}
+
+    @property
+    def component_keys(self) -> list[str]:
+        return [f"{layer}:{i}" for layer, c in self.layers for i in range(c)]
+
     # -- Batch processing --------------------------------------------------
 
     def process_batch(
         self,
         batch: Int[Tensor, "B S"],
-        ci: Float[Tensor, "B S C"],
+        firings: dict[str, Bool[Tensor, "B S C"]],
+        activations: dict[str, dict[str, Float[Tensor, "B S C"]]],
         output_probs: Float[Tensor, "B S V"],
-        component_acts: Float[Tensor, "B S C"],
     ) -> None:
         self.total_tokens_processed += batch.numel()
 
-        firing = (ci > self.ci_threshold).float()
-        firing_flat = rearrange(firing, "b s c -> (b s) c")
         tokens_flat = rearrange(batch, "b s -> (b s)")
         probs_flat = rearrange(output_probs, "b s v -> (b s) v")
 
-        self.firing_counts += reduce(firing, "b s c -> c", "sum")
-        self.ci_sums += reduce(ci, "b s c -> c", "sum")
-        self.cooccurrence_counts += einsum(firing_flat, firing_flat, "S c1, S c2 -> c1 c2")
-        self._accumulate_token_stats(tokens_flat, probs_flat, firing_flat)
-        self._collect_activation_examples(batch, ci, component_acts)
+        firings_cat = torch.cat([firings[layer] for layer in self.layer_names], dim=-1)
+        firings_flat = rearrange(firings_cat, "b s lc -> (b s) lc")
+
+        act_types = list(activations[self.layer_names[0]].keys())
+        activations_cat: dict[str, Float[Tensor, "B S LC"]] = {}
+        for act_type in act_types:
+            activations_cat[act_type] = torch.cat(
+                [activations[layer][act_type] for layer in self.layer_names], dim=-1
+            )
+
+        self.firing_counts += reduce(firings_cat, "b s lc -> lc", "sum")
+
+        for act_type, act in activations_cat.items():
+            self.activation_sums[act_type] += reduce(act, "b s lc -> lc", "sum")
+
+        firings_float = firings_flat.float()
+        self.cooccurrence_counts += einsum(firings_float, firings_float, "S c1, S c2 -> c1 c2")
+        self._accumulate_token_stats(tokens_flat, probs_flat, firings_float)
+        self._collect_activation_examples(batch, firings_cat, activations_cat)
 
     def _accumulate_token_stats(
         self,
         tokens_flat: Int[Tensor, " S"],
         probs_flat: Float[Tensor, "S vocab"],
-        firing_flat: Float[Tensor, "S C"],
+        firing_flat: Float[Tensor, "S LC"],
     ) -> None:
         n_components = firing_flat.shape[1]
-        token_indices = repeat(tokens_flat, "S -> c S", c=n_components)
+        token_indices = repeat(tokens_flat, "S -> lc S", lc=n_components)
 
         # use scatter_add for inputs because inputs are one-hot / token indices
         self.input_cooccurrence.scatter_add_(
-            dim=1, index=token_indices, src=rearrange(firing_flat, "S c -> c S").long()
+            dim=1, index=token_indices, src=rearrange(firing_flat, "S lc -> lc S").long()
         )
         self.input_marginals.scatter_add_(
             dim=0,
@@ -172,40 +200,38 @@ class Harvester:
         )
 
         # however, for outputs we need to accumulate probability mass over vocab
-        self.output_cooccurrence += einsum(firing_flat, probs_flat, "S c, S v -> c v")
+        self.output_cooccurrence += einsum(firing_flat, probs_flat, "S lc, S v -> lc v")
         self.output_marginals += reduce(probs_flat, "S v -> v", "sum")
 
     def _collect_activation_examples(
         self,
         batch: Int[Tensor, "B S"],
-        ci: Float[Tensor, "B S C"],
-        component_acts: Float[Tensor, "B S C"],
+        firings: Bool[Tensor, "B S LC"],
+        activations: dict[str, Float[Tensor, "B S LC"]],
     ) -> None:
-        batch_idx, seq_idx, comp_idx = torch.where(ci > self.ci_threshold)
-        if len(batch_idx) == 0:
-            return
-
-        keep = sample_at_most_n_per_group(comp_idx, self.max_examples_per_batch_per_component)
-        batch_idx, seq_idx, comp_idx = batch_idx[keep], seq_idx[keep], comp_idx[keep]
-
-        token_w, ci_w, act_w = extract_firing_windows(
-            batch, ci, component_acts, batch_idx, seq_idx, comp_idx, self.context_tokens_per_side
+        res = extract_padding_firing_windows(
+            batch,
+            firings,
+            activations,
+            self.max_examples_per_batch_per_component,
+            self.context_tokens_per_side,
         )
-        self.reservoir.add(comp_idx, token_w, ci_w, act_w)
+        if res is not None:
+            self.reservoir.add(res)
 
     def save(self, path: Path) -> None:
         data: dict[str, object] = {
-            "layer_names": self.layer_names,
-            "c_per_layer": self.c_per_layer,
+            "layers": self.layers,
             "vocab_size": self.vocab_size,
-            "ci_threshold": self.ci_threshold,
             "max_examples_per_component": self.max_examples_per_component,
             "context_tokens_per_side": self.context_tokens_per_side,
             "max_examples_per_batch_per_component": self.max_examples_per_batch_per_component,
             "total_tokens_processed": self.total_tokens_processed,
             "reservoir": self.reservoir.state_dict(),
             "firing_counts": self.firing_counts.cpu(),
-            "ci_sums": self.ci_sums.cpu(),
+            "activation_sums": {
+                act_type: self.activation_sums[act_type].cpu() for act_type in self.activation_sums
+            },
             "cooccurrence_counts": self.cooccurrence_counts.cpu(),
             "input_cooccurrence": self.input_cooccurrence.cpu(),
             "input_marginals": self.input_marginals.cpu(),
@@ -218,10 +244,8 @@ class Harvester:
     def load(path: Path, device: torch.device) -> "Harvester":
         d: dict[str, Any] = torch.load(path, weights_only=False)
         h = Harvester(
-            layer_names=d["layer_names"],
-            c_per_layer=d["c_per_layer"],
+            layers=d["layers"],
             vocab_size=d["vocab_size"],
-            ci_threshold=d["ci_threshold"],
             max_examples_per_component=d["max_examples_per_component"],
             context_tokens_per_side=d["context_tokens_per_side"],
             max_examples_per_batch_per_component=d.get("max_examples_per_batch_per_component", 5),
@@ -229,7 +253,7 @@ class Harvester:
         )
         h.total_tokens_processed = d["total_tokens_processed"]
         h.firing_counts = d["firing_counts"].to(device)
-        h.ci_sums = d["ci_sums"].to(device)
+        h.activation_sums = {k: v.to(device) for k, v in d["activation_sums"].items()}
         h.cooccurrence_counts = d["cooccurrence_counts"].to(device)
         h.input_cooccurrence = d["input_cooccurrence"].to(device)
         h.input_marginals = d["input_marginals"].to(device)
@@ -242,10 +266,10 @@ class Harvester:
         assert other.layer_names == self.layer_names
         assert other.c_per_layer == self.c_per_layer
         assert other.vocab_size == self.vocab_size
-        assert other.ci_threshold == self.ci_threshold
 
         self.firing_counts += other.firing_counts
-        self.ci_sums += other.ci_sums
+        for act_type in self.activation_sums:
+            self.activation_sums[act_type] += other.activation_sums[act_type]
         self.cooccurrence_counts += other.cooccurrence_counts
         self.input_cooccurrence += other.input_cooccurrence
         self.input_marginals += other.input_marginals
@@ -260,7 +284,10 @@ class Harvester:
     def build_results(self, pmi_top_k_tokens: int) -> Iterator[ComponentData]:
         """Yield ComponentData objects one at a time (constant memory)."""
         logger.info("  Moving tensors to CPU...")
-        mean_ci = (self.ci_sums / self.total_tokens_processed).cpu()
+        mean_activations = {
+            act_type: (self.activation_sums[act_type] / self.total_tokens_processed).cpu()
+            for act_type in self.activation_sums
+        }
         firing_counts = self.firing_counts.cpu()
         input_cooccurrence = self.input_cooccurrence.cpu()
         input_marginals = self.input_marginals.cpu()
@@ -271,36 +298,26 @@ class Harvester:
 
         _log_base_rate_summary(firing_counts, input_marginals)
 
-        n_total = sum(self.c_per_layer[layer] for layer in self.layer_names)
-        logger.info(
-            f"  Computing stats for {n_total} components across {len(self.layer_names)} layers..."
-        )
-        for layer_name in tqdm.tqdm(self.layer_names, desc="Building components"):
-            layer_offset = self.layer_offsets[layer_name]
-            layer_n = self.c_per_layer[layer_name]
+        for layer, layer_c in self.layers:
+            offset = self.layer_offsets[layer]
 
-            for comp_idx in range(layer_n):
-                flat_idx = layer_offset + comp_idx
+            for component_idx in tqdm.tqdm(range(layer_c), desc="Building components"):
+                flat_idx = offset + component_idx
 
                 n_firings = float(firing_counts[flat_idx])
                 if n_firings == 0:
                     continue
 
-                examples = [
-                    ActivationExample(
-                        token_ids=toks.tolist(),
-                        ci_values=ci_vals.tolist(),
-                        component_acts=acts.tolist(),
-                    )
-                    for toks, ci_vals, acts in reservoir_cpu.examples(flat_idx)
-                ]
-
                 yield ComponentData(
-                    component_key=f"{layer_name}:{comp_idx}",
-                    layer=layer_name,
-                    component_idx=comp_idx,
-                    mean_ci=float(mean_ci[flat_idx]),
-                    activation_examples=examples,
+                    component_key=f"{layer}:{component_idx}",
+                    layer=layer,
+                    component_idx=component_idx,  # as in, the index of the component within the layer
+                    firing_density=n_firings / self.total_tokens_processed,
+                    mean_activations={
+                        act_type: float(mean_activations[act_type][flat_idx].item())
+                        for act_type in mean_activations
+                    },
+                    activation_examples=list(reservoir_cpu.examples(flat_idx)),
                     input_token_pmi=_compute_token_pmi(
                         input_cooccurrence[flat_idx],
                         input_marginals,

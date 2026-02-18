@@ -2,7 +2,13 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
+from jaxtyping import Bool, Float, Int
+from pydantic import model_validator
+from torch import Tensor
+
+from spd.base_config import BaseConfig
 from spd.settings import SPD_OUT_DIR
 
 # Base directory for harvest data
@@ -14,56 +20,74 @@ def get_harvest_dir(wandb_run_id: str) -> Path:
     return HARVEST_DATA_DIR / wandb_run_id
 
 
-def get_harvest_subrun_dir(wandb_run_id: str, subrun_id: str) -> Path:
+def get_harvest_subrun_dir(decomposition_id: str, subrun_id: str) -> Path:
     """Get the sub-run directory for a specific harvest invocation."""
-    return get_harvest_dir(wandb_run_id) / subrun_id
+    return get_harvest_dir(decomposition_id) / subrun_id
 
 
 @dataclass
-class ActivationExample:
+class HarvestBatch:
+    """Output of a method-specific harvest function for a single batch.
+
+    The harvest loop calls the user-provided harvest_fn on each raw dataloader batch,
+    which returns one of these. The harvest loop then feeds it to the Harvester.
+
+    firings/activations are keyed by layer name. activations values are keyed by
+    activation type (e.g. "causal_importance", "component_activation" for SPD;
+    just "activation" for SAEs).
+    """
+
+    tokens: Int[Tensor, "batch seq"]
+    firings: dict[str, Bool[Tensor, "batch seq c"]]
+    activations: dict[str, dict[str, Float[Tensor, "batch seq c"]]]
+    output_probs: Float[Tensor, "batch seq vocab"]
+
+
+class ActivationExample(BaseConfig):
+    """Activation example for a single component. no padding"""
+
     token_ids: list[int]
-    ci_values: list[float]
-    component_acts: list[float]  # Normalized component activations: (v_i^T @ a) * ||u_i||
+    firings: list[bool]
+    activations: dict[str, list[float]]
 
-    def __post_init__(self) -> None:
-        self._strip_legacy_padding()
-
-    def _strip_legacy_padding(self) -> None:
-        """Strip -1 padding sentinels from old harvest data.
-
-        Old harvests padded token windows with -1 at sequence boundaries.
-        New harvests strip at write time (harvester.py), but existing data on disk
-        still has them. Remove once all harvest data is regenerated.
-        """
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_legacy_padding(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Strip -1 padding sentinels from old harvest data."""
         PAD = -1
-        if any(t == PAD for t in self.token_ids):
-            mask = [t != PAD for t in self.token_ids]
-            self.token_ids = [v for v, k in zip(self.token_ids, mask, strict=True) if k]
-            self.ci_values = [v for v, k in zip(self.ci_values, mask, strict=True) if k]
-            self.component_acts = [v for v, k in zip(self.component_acts, mask, strict=True) if k]
+        token_ids = data["token_ids"]
+        if any(t == PAD for t in token_ids):
+            mask = [t != PAD for t in token_ids]
+            data["token_ids"] = [v for v, k in zip(token_ids, mask, strict=True) if k]
+            data["firings"] = [v for v, k in zip(data["firings"], mask, strict=True) if k]
+            data["activations"] = {
+                act_type: [v for v, k in zip(vals, mask, strict=True) if k]
+                for act_type, vals in data["activations"].items()
+            }
+        return data
 
 
-@dataclass
-class ComponentTokenPMI:
+class ComponentTokenPMI(BaseConfig):
     top: list[tuple[int, float]]
     bottom: list[tuple[int, float]]
 
 
-@dataclass
-class ComponentSummary:
+class ComponentSummary(BaseConfig):
     """Lightweight summary of a component (for /summary endpoint)."""
 
     layer: str
     component_idx: int
-    mean_ci: float
+    firing_density: float
+    mean_activations: dict[str, float]
+    """Key is activation type, (e.g. "causal_importance", "component_activation", etc.)"""
 
 
-@dataclass
-class ComponentData:
+class ComponentData(BaseConfig):
     component_key: str
     layer: str
     component_idx: int
-    mean_ci: float
+    mean_activations: dict[str, float]
+    firing_density: float
     activation_examples: list[ActivationExample]
     input_token_pmi: ComponentTokenPMI
     output_token_pmi: ComponentTokenPMI

@@ -4,13 +4,57 @@ HarvestConfig: tuning params for the harvest pipeline.
 HarvestSlurmConfig: HarvestConfig + SLURM submission params.
 """
 
-from typing import Literal
+from typing import Annotated, Any, Literal, override
 
 from openrouter.components import Effort
-from pydantic import PositiveInt
+from pydantic import Field, PositiveInt
 
 from spd.base_config import BaseConfig
 from spd.settings import DEFAULT_PARTITION_NAME
+from spd.utils.wandb_utils import parse_wandb_run_path
+
+# -- Method-specific harvest configs ------------------------------------------
+
+
+class SPDHarvestConfig(BaseConfig):
+    type: Literal["SPDHarvestConfig"] = "SPDHarvestConfig"
+    wandb_path: str
+    activation_threshold: float = 0.0
+
+    @property
+    def id(self) -> str:
+        _, _, run_id = parse_wandb_run_path(self.wandb_path)
+        return run_id
+
+    @override
+    def model_post_init(self, __context: Any) -> None:
+        parse_wandb_run_path(self.wandb_path)
+
+
+class CLTHarvestConfig(BaseConfig):
+    type: Literal["CLTHarvestConfig"] = "CLTHarvestConfig"
+
+    wandb_path: str
+
+    @property
+    def id(self) -> str:
+        return "clt"
+
+
+class MOLTHarvestConfig(BaseConfig):
+    type: Literal["MOLTHarvestConfig"] = "MOLTHarvestConfig"
+
+    wandb_path: str
+
+    @property
+    def id(self) -> str:
+        return "molt"
+
+
+DecompositionMethodHarvestConfig = SPDHarvestConfig | CLTHarvestConfig | MOLTHarvestConfig
+
+
+# -- Pipeline configs ----------------------------------------------------------
 
 
 class IntruderEvalConfig(BaseConfig):
@@ -36,9 +80,9 @@ class IntruderSlurmConfig(BaseConfig):
 
 
 class HarvestConfig(BaseConfig):
+    method_config: Annotated[DecompositionMethodHarvestConfig, Field(discriminator="type")]
     n_batches: int | Literal["whole_dataset"] = 20_000
     batch_size: int = 32
-    ci_threshold: float = 1e-6
     activation_examples_per_component: int = 1000
     activation_context_tokens_per_side: int = 20
     pmi_token_top_k: int = 40
@@ -48,7 +92,7 @@ class HarvestConfig(BaseConfig):
 class HarvestSlurmConfig(BaseConfig):
     """Config for harvest SLURM submission."""
 
-    config: HarvestConfig = HarvestConfig()
+    config: HarvestConfig
     n_gpus: PositiveInt = 8
     partition: str = DEFAULT_PARTITION_NAME
     time: str = "12:00:00"

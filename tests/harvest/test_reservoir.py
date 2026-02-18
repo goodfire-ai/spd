@@ -2,18 +2,42 @@
 
 import random
 
+import pytest
 import torch
 
-from spd.harvest.reservoir import WINDOW_PAD_SENTINEL, ActivationExamplesReservoir
+from spd.harvest.reservoir import (
+    WINDOW_PAD_SENTINEL,
+    ActivationExamplesReservoir,
+    ActivationWindows,
+)
 
 DEVICE = torch.device("cpu")
 N_COMPONENTS = 4
 K = 3
 WINDOW = 3
 
+ACT_TYPES = ["ci", "inner"]
+
 
 def _make_reservoir() -> ActivationExamplesReservoir:
     return ActivationExamplesReservoir.create(N_COMPONENTS, K, WINDOW, DEVICE)
+
+
+def _make_activation_window(
+    comp: list[int],
+    tokens: torch.Tensor,
+    firings: torch.Tensor | None = None,
+) -> ActivationWindows:
+    n = len(comp)
+    w = tokens.shape[1]
+    if firings is None:
+        firings = torch.ones(n, w, dtype=torch.bool)
+    return ActivationWindows(
+        component_idx=torch.tensor(comp),
+        token_windows=tokens,
+        firing_windows=firings,
+        activation_windows={at: torch.ones(n, w) * 0.5 for at in ACT_TYPES},
+    )
 
 
 class TestAdd:
@@ -22,12 +46,7 @@ class TestAdd:
         comp = 1
 
         for i in range(K):
-            r.add(
-                torch.tensor([comp]),
-                torch.full((1, WINDOW), i, dtype=torch.long),
-                torch.ones(1, WINDOW),
-                torch.ones(1, WINDOW) * 0.5,
-            )
+            r.add(_make_activation_window([comp], torch.full((1, WINDOW), i, dtype=torch.long)))
 
         assert r.n_items[comp] == K
         assert r.n_seen[comp] == K
@@ -41,12 +60,7 @@ class TestAdd:
 
         n_total = K + 50
         for i in range(n_total):
-            r.add(
-                torch.tensor([comp]),
-                torch.full((1, WINDOW), i, dtype=torch.long),
-                torch.ones(1, WINDOW),
-                torch.ones(1, WINDOW),
-            )
+            r.add(_make_activation_window([comp], torch.full((1, WINDOW), i, dtype=torch.long)))
 
         assert r.n_items[comp] == K
         assert r.n_seen[comp] == n_total
@@ -54,13 +68,18 @@ class TestAdd:
     def test_written_data_matches_input(self):
         r = _make_reservoir()
         tokens = torch.tensor([[7, 8, 9]])
-        ci = torch.tensor([[0.1, 0.2, 0.3]])
-        acts = torch.tensor([[1.0, 2.0, 3.0]])
-        r.add(torch.tensor([2]), tokens, ci, acts)
+        firings = torch.tensor([[True, False, True]])
+        aw = ActivationWindows(
+            component_idx=torch.tensor([2]),
+            token_windows=tokens,
+            firing_windows=firings,
+            activation_windows={"ci": torch.tensor([[0.1, 0.2, 0.3]])},
+        )
+        r.add(aw)
 
         assert torch.equal(r.tokens[2, 0], tokens[0])
-        assert torch.allclose(r.ci[2, 0], ci[0])
-        assert torch.allclose(r.acts[2, 0], acts[0])
+        assert torch.equal(r.firings[2, 0], firings[0])
+        assert torch.allclose(r.acts["ci"][2, 0], torch.tensor([0.1, 0.2, 0.3]))
 
 
 class TestMerge:
@@ -68,21 +87,10 @@ class TestMerge:
         r1 = _make_reservoir()
         r2 = _make_reservoir()
 
-        r1.add(
-            torch.tensor([0]),
-            torch.full((1, WINDOW), 1, dtype=torch.long),
-            torch.ones(1, WINDOW),
-            torch.ones(1, WINDOW),
-        )
-        r2.add(
-            torch.tensor([0]),
-            torch.full((1, WINDOW), 2, dtype=torch.long),
-            torch.ones(1, WINDOW),
-            torch.ones(1, WINDOW),
-        )
+        r1.add(_make_activation_window([0], torch.full((1, WINDOW), 1, dtype=torch.long)))
+        r2.add(_make_activation_window([0], torch.full((1, WINDOW), 2, dtype=torch.long)))
 
         r1.merge(r2)
-
         assert r1.n_items[0] == 2
         assert r1.n_seen[0] == 2
 
@@ -97,19 +105,13 @@ class TestMerge:
 
             for _ in range(K):
                 r_heavy.add(
-                    torch.tensor([0]),
-                    torch.full((1, WINDOW), 1, dtype=torch.long),
-                    torch.ones(1, WINDOW),
-                    torch.ones(1, WINDOW),
+                    _make_activation_window([0], torch.full((1, WINDOW), 1, dtype=torch.long))
                 )
             r_heavy.n_seen[0] = 1000
 
             for _ in range(K):
                 r_light.add(
-                    torch.tensor([0]),
-                    torch.full((1, WINDOW), 2, dtype=torch.long),
-                    torch.ones(1, WINDOW),
-                    torch.ones(1, WINDOW),
+                    _make_activation_window([0], torch.full((1, WINDOW), 2, dtype=torch.long))
                 )
             r_light.n_seen[0] = 1
 
@@ -125,19 +127,9 @@ class TestMerge:
         r2 = _make_reservoir()
 
         for i in range(K + 5):
-            r1.add(
-                torch.tensor([0]),
-                torch.full((1, WINDOW), i % 10, dtype=torch.long),
-                torch.ones(1, WINDOW),
-                torch.ones(1, WINDOW),
-            )
+            r1.add(_make_activation_window([0], torch.full((1, WINDOW), i % 10, dtype=torch.long)))
         for i in range(K + 3):
-            r2.add(
-                torch.tensor([0]),
-                torch.full((1, WINDOW), i % 10, dtype=torch.long),
-                torch.ones(1, WINDOW),
-                torch.ones(1, WINDOW),
-            )
+            r2.add(_make_activation_window([0], torch.full((1, WINDOW), i % 10, dtype=torch.long)))
 
         total = r1.n_seen[0].item() + r2.n_seen[0].item()
         r1.merge(r2)
@@ -149,34 +141,36 @@ class TestExamples:
     def test_yields_correct_items(self):
         r = _make_reservoir()
         for i in range(2):
-            r.add(
-                torch.tensor([0]),
-                torch.full((1, WINDOW), i + 10, dtype=torch.long),
-                torch.ones(1, WINDOW) * (i + 1) * 0.1,
-                torch.ones(1, WINDOW) * (i + 1),
+            aw = ActivationWindows(
+                component_idx=torch.tensor([0]),
+                token_windows=torch.full((1, WINDOW), i + 10, dtype=torch.long),
+                firing_windows=torch.ones(1, WINDOW, dtype=torch.bool),
+                activation_windows={"ci": torch.ones(1, WINDOW) * (i + 1) * 0.1},
             )
+            r.add(aw)
 
         examples = list(r.examples(0))
         assert len(examples) == 2
-        toks_0, ci_0, acts_0 = examples[0]
-        assert toks_0.tolist() == [10, 10, 10]
-        assert torch.allclose(ci_0, torch.tensor([0.1, 0.1, 0.1]))
-        assert torch.allclose(acts_0, torch.tensor([1.0, 1.0, 1.0]))
+        ex0 = examples[0]
+        assert ex0.token_ids == [10, 10, 10]
+        assert all(ex0.firings)
+        assert ex0.activations["ci"] == [pytest.approx(0.1)] * 3
 
     def test_filters_sentinels(self):
         r = _make_reservoir()
         r.tokens[0, 0] = torch.tensor([WINDOW_PAD_SENTINEL, 5, 6])
-        r.ci[0, 0] = torch.tensor([0.0, 0.8, 0.9])
-        r.acts[0, 0] = torch.tensor([0.0, 1.0, 2.0])
+        r.firings[0, 0] = torch.tensor([False, True, True])
+        r.acts["ci"] = torch.zeros(N_COMPONENTS, K, WINDOW)
+        r.acts["ci"][0, 0] = torch.tensor([0.0, 0.8, 0.9])
         r.n_items[0] = 1
         r.n_seen[0] = 1
 
         examples = list(r.examples(0))
         assert len(examples) == 1
-        toks, ci, acts = examples[0]
-        assert toks.tolist() == [5, 6]
-        assert torch.allclose(ci, torch.tensor([0.8, 0.9]))
-        assert torch.allclose(acts, torch.tensor([1.0, 2.0]))
+        ex = examples[0]
+        assert ex.token_ids == [5, 6]
+        assert ex.firings == [True, True]
+        assert ex.activations["ci"] == [pytest.approx(0.8), pytest.approx(0.9)]
 
     def test_empty_component_yields_nothing(self):
         r = _make_reservoir()
@@ -187,12 +181,13 @@ class TestStateDictRoundtrip:
     def test_roundtrip_preserves_data(self):
         r = _make_reservoir()
         for i in range(2):
-            r.add(
-                torch.tensor([1]),
-                torch.full((1, WINDOW), i + 5, dtype=torch.long),
-                torch.ones(1, WINDOW) * 0.5,
-                torch.ones(1, WINDOW) * 2.0,
+            aw = ActivationWindows(
+                component_idx=torch.tensor([1]),
+                token_windows=torch.full((1, WINDOW), i + 5, dtype=torch.long),
+                firing_windows=torch.ones(1, WINDOW, dtype=torch.bool),
+                activation_windows={"ci": torch.ones(1, WINDOW) * 0.5},
             )
+            r.add(aw)
 
         sd = r.state_dict()
         restored = ActivationExamplesReservoir.from_state_dict(sd, device=DEVICE)
@@ -200,19 +195,15 @@ class TestStateDictRoundtrip:
         assert restored.k == r.k
         assert restored.window == r.window
         assert torch.equal(restored.tokens, r.tokens)
-        assert torch.equal(restored.ci, r.ci)
-        assert torch.equal(restored.acts, r.acts)
+        assert torch.equal(restored.firings, r.firings)
+        for at in r.acts:
+            assert torch.equal(restored.acts[at], r.acts[at])
         assert torch.equal(restored.n_items, r.n_items)
         assert torch.equal(restored.n_seen, r.n_seen)
 
     def test_state_dict_on_cpu(self):
         r = _make_reservoir()
-        r.add(
-            torch.tensor([0]),
-            torch.full((1, WINDOW), 1, dtype=torch.long),
-            torch.ones(1, WINDOW),
-            torch.ones(1, WINDOW),
-        )
+        r.add(_make_activation_window([0], torch.full((1, WINDOW), 1, dtype=torch.long)))
 
         sd = r.state_dict()
         assert isinstance(sd["tokens"], torch.Tensor) and sd["tokens"].device == torch.device("cpu")

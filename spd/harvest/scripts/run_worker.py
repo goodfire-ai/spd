@@ -1,53 +1,69 @@
 """Harvest worker: collects component statistics on a single GPU.
 
 Usage:
-    python -m spd.harvest.scripts.run_worker <wandb_path> --config_json '{"n_batches": 100}'
-    python -m spd.harvest.scripts.run_worker <wandb_path> --config_json '...' --rank 0 --world_size 4 --subrun_id h-20260211_120000
+    python -m spd.harvest.scripts.run_worker --config_json '{"n_batches": 100}'
+    python -m spd.harvest.scripts.run_worker --config_json '...' --rank 0 --world_size 4 --subrun_id h-20260211_120000
 """
 
 from datetime import datetime
 
 import fire
+import torch
 
+from spd.adapters import adapter_from_id
 from spd.harvest.config import HarvestConfig
-from spd.harvest.harvest import harvest_activation_contexts
+from spd.harvest.harvest import harvest
+from spd.harvest.harvest_fn import make_harvest_fn
 from spd.harvest.schemas import get_harvest_subrun_dir
 from spd.log import logger
-from spd.utils.wandb_utils import parse_wandb_run_path
+from spd.utils.distributed_utils import get_device
 
 
 def main(
-    wandb_path: str,
-    config_json: str | dict[str, object] | None = None,
+    config_json: str,
     rank: int | None = None,
     world_size: int | None = None,
     subrun_id: str | None = None,
 ) -> None:
-    _, _, run_id = parse_wandb_run_path(wandb_path)
+    assert (rank is not None) == (world_size is not None)
 
     if subrun_id is None:
         subrun_id = "h-" + datetime.now().strftime("%Y%m%d_%H%M%S")
+    device = torch.device(get_device())
 
-    output_dir = get_harvest_subrun_dir(run_id, subrun_id)
+    config = HarvestConfig.model_validate_json(config_json)
 
-    assert (rank is None) == (world_size is None), "rank and world_size must both be set or unset"
+    adapter = adapter_from_id(config.method_config.id)
 
-    match config_json:
-        case str(json_str):
-            config = HarvestConfig.model_validate_json(json_str)
-        case dict(d):
-            config = HarvestConfig.model_validate(d)
-        case None:
-            config = HarvestConfig()
+    output_dir = get_harvest_subrun_dir(adapter.decomposition_id, subrun_id)
 
-    if world_size is not None:
-        logger.info(
-            f"Distributed harvest: {wandb_path} (rank {rank}/{world_size}, subrun {subrun_id})"
-        )
+    if rank is not None:
+        logger.info(f"Distributed harvest: rank {rank}/{world_size}, subrun {subrun_id}")
     else:
-        logger.info(f"Single-GPU harvest: {wandb_path} (subrun {subrun_id})")
+        logger.info(f"Single-GPU harvest: subrun {subrun_id}")
 
-    harvest_activation_contexts(wandb_path, config, output_dir, rank, world_size)
+    harvest(
+        layers=adapter.layer_activation_sizes,
+        vocab_size=adapter.vocab_size,
+        dataloader=adapter.dataloader(config.batch_size),
+        harvest_fn=make_harvest_fn(device, config.method_config, adapter),
+        config=config,
+        output_dir=output_dir,
+        rank_world_size=(rank, world_size) if rank is not None and world_size is not None else None,
+        device=device,
+    )
+
+
+def get_command(config: HarvestConfig, rank: int, world_size: int, subrun_id: str) -> str:
+    config_json = config.model_dump_json(exclude_none=True)
+    cmd = (
+        f"python -m spd.harvest.scripts.run_worker "
+        f"--config_json '{config_json}' "
+        f"--rank {rank} "
+        f"--world_size {world_size} "
+        f"--subrun_id {subrun_id}"
+    )
+    return cmd
 
 
 if __name__ == "__main__":

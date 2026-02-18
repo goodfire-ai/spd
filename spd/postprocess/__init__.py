@@ -1,4 +1,4 @@
-"""Unified postprocessing pipeline for SPD runs.
+"""Unified postprocessing pipeline for decomposition runs.
 
 Submits all postprocessing steps to SLURM with proper dependency chaining.
 All steps always run — data accumulates (harvest upserts, autointerp resumes).
@@ -10,7 +10,7 @@ Dependency graph:
         ├── interpret    (CPU, LLM calls, resumes via completed keys)
         │   ├── detection (CPU, label-dependent)
         │   └── fuzzing   (CPU, label-dependent)
-    attributions (GPU array -> merge, parallel with harvest)
+    attributions (GPU array -> merge, parallel with harvest, SPD-only)
 """
 
 import secrets
@@ -19,46 +19,50 @@ from pathlib import Path
 
 import yaml
 
+from spd.autointerp.scripts.run_slurm import AutointerpSubmitResult, submit_autointerp
+from spd.dataset_attributions.scripts.run_slurm import submit_attributions
+from spd.harvest.config import SPDHarvestConfig
+from spd.harvest.scripts import run_intruder
+from spd.harvest.scripts.run_slurm import submit_harvest
 from spd.log import logger
 from spd.postprocess.config import PostprocessConfig
 from spd.settings import SPD_OUT_DIR
 from spd.utils.git_utils import create_git_snapshot
 from spd.utils.slurm import SlurmConfig, SubmitResult, generate_script, submit_slurm_job
-from spd.utils.wandb_utils import parse_wandb_run_path
 
 
-def postprocess(wandb_path: str, config: PostprocessConfig) -> Path:
+def postprocess(config: PostprocessConfig) -> Path:
     """Submit all postprocessing jobs with SLURM dependency chaining.
 
     Returns:
         Path to the manifest YAML file.
     """
-    from spd.autointerp.scripts.run_slurm import AutointerpSubmitResult, submit_autointerp
-    from spd.dataset_attributions.scripts.run_slurm import submit_attributions
-    from spd.harvest.scripts.run_slurm import submit_harvest
-
-    _, _, run_id = parse_wandb_run_path(wandb_path)
 
     snapshot_branch, commit_hash = create_git_snapshot(f"postprocess-{secrets.token_hex(4)}")
     logger.info(f"Created git snapshot: {snapshot_branch} ({commit_hash[:8]})")
 
-    # === 1. Harvest (always runs, upserts into harvest.db) ===
-    harvest_result = submit_harvest(wandb_path, config.harvest, snapshot_branch=snapshot_branch)
+    decomp_cfg = config.harvest.config.method_config
 
-    # === 2. Attributions (parallel with harvest, overwrites) ===
+    # === 1. Harvest (always runs, upserts into harvest.db) ===
+    harvest_result = submit_harvest(config.harvest, snapshot_branch=snapshot_branch)
+
+    # === 2. Attributions (parallel with harvest, SPD-only) ===
     attr_result = None
     if config.attributions is not None:
+        assert isinstance(decomp_cfg, SPDHarvestConfig)
         attr_result = submit_attributions(
-            wandb_path, config.attributions, snapshot_branch=snapshot_branch
+            wandb_path=decomp_cfg.wandb_path,
+            config=config.attributions,
+            snapshot_branch=snapshot_branch,
         )
 
     # === 3. Autointerp (depends on harvest, resumes via completed keys) ===
     autointerp_result: AutointerpSubmitResult | None = None
     if config.autointerp is not None:
         autointerp_result = submit_autointerp(
-            wandb_path,
-            config.autointerp,
-            dependency_job_id=harvest_result.job_id,
+            decomposition_id=decomp_cfg.id,
+            slurm_config=config.autointerp,
+            dependency_job_id=harvest_result.merge_result.job_id,
             snapshot_branch=snapshot_branch,
             harvest_subrun_id=harvest_result.subrun_id,
         )
@@ -66,15 +70,12 @@ def postprocess(wandb_path: str, config: PostprocessConfig) -> Path:
     # === 4. Intruder eval (depends on harvest merge, label-free) ===
     intruder_result: SubmitResult | None = None
     if config.intruder is not None:
-        eval_config_json = config.intruder.config.model_dump_json(exclude_none=True)
-        intruder_cmd = " \\\n    ".join(
-            [
-                "python -m spd.harvest.scripts.run_intruder",
-                f'"{wandb_path}"',
-                f"--harvest_subrun_id {harvest_result.subrun_id}",
-                f"--eval_config_json '{eval_config_json}'",
-            ]
+        intruder_cmd = run_intruder.get_command(
+            decomposition_id=decomp_cfg.id,
+            config=config.intruder.config,
+            harvest_subrun_id=harvest_result.subrun_id,
         )
+
         intruder_slurm = SlurmConfig(
             job_name="spd-intruder-eval",
             partition=config.intruder.partition,
@@ -82,7 +83,7 @@ def postprocess(wandb_path: str, config: PostprocessConfig) -> Path:
             cpus_per_task=16,
             time=config.intruder.time,
             snapshot_branch=snapshot_branch,
-            dependency_job_id=harvest_result.job_id,
+            dependency_job_id=harvest_result.merge_result.job_id,
         )
         intruder_script = generate_script(intruder_slurm, intruder_cmd)
         intruder_result = submit_slurm_job(intruder_script, "intruder_eval")
@@ -91,14 +92,14 @@ def postprocess(wandb_path: str, config: PostprocessConfig) -> Path:
         logger.values(
             {
                 "Job ID": intruder_result.job_id,
-                "Depends on": f"harvest merge ({harvest_result.job_id})",
+                "Depends on": f"harvest merge ({harvest_result.merge_result.job_id})",
                 "Log": intruder_result.log_pattern,
             }
         )
 
     # === Write manifest ===
     subrun_id = "pp-" + datetime.now().strftime("%Y%m%d_%H%M%S")
-    manifest_dir = SPD_OUT_DIR / "postprocess" / run_id / subrun_id
+    manifest_dir = SPD_OUT_DIR / "postprocess" / subrun_id
     manifest_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = manifest_dir / "manifest.yaml"
 
@@ -122,8 +123,7 @@ def postprocess(wandb_path: str, config: PostprocessConfig) -> Path:
 
     manifest = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "wandb_path": wandb_path,
-        "run_id": run_id,
+        "decomposition": config.harvest.config.method_config.model_dump(),
         "snapshot_branch": snapshot_branch,
         "commit_hash": commit_hash,
         "config": config.model_dump(),

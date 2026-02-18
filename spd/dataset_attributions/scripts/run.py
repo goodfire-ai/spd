@@ -26,7 +26,7 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 
 def main(
     wandb_path: str,
-    config_json: str | dict[str, object] | None = None,
+    config_json: str,
     rank: int | None = None,
     world_size: int | None = None,
     merge: bool = False,
@@ -47,13 +47,7 @@ def main(
 
     assert (rank is None) == (world_size is None), "rank and world_size must both be set or unset"
 
-    match config_json:
-        case str(json_str):
-            config = DatasetAttributionConfig.model_validate_json(json_str)
-        case dict(d):
-            config = DatasetAttributionConfig.model_validate(d)
-        case None:
-            config = DatasetAttributionConfig()
+    config = DatasetAttributionConfig.model_validate_json(config_json)
 
     if world_size is not None:
         logger.info(
@@ -62,7 +56,34 @@ def main(
     else:
         logger.info(f"Single-GPU harvest: {wandb_path} (subrun {subrun_id})")
 
-    harvest_attributions(wandb_path, config, output_dir, rank=rank, world_size=world_size)
+    harvest_attributions(
+        config=config,
+        output_dir=output_dir,
+        rank=rank,
+        world_size=world_size,
+    )
+
+
+def get_worker_command(
+    wandb_path: str, config_json: str, rank: int, world_size: int, subrun_id: str
+) -> str:
+    return (
+        f"python -m spd.dataset_attributions.scripts.run "
+        f'"{wandb_path}" '
+        f"--config_json '{config_json}' "
+        f"--rank {rank} "
+        f"--world_size {world_size} "
+        f"--subrun_id {subrun_id}"
+    )
+
+
+def get_merge_command(wandb_path: str, subrun_id: str) -> str:
+    return (
+        f"python -m spd.dataset_attributions.scripts.run "
+        f'"{wandb_path}" '
+        "--merge "
+        f"--subrun_id {subrun_id}"
+    )
 
 
 def cli() -> None:

@@ -65,40 +65,28 @@ class FuzzingResult:
     n_errors: int
 
 
-def _delimit_high_ci_tokens(
+def _delimit_tokens(
     example: ActivationExample,
     app_tok: AppTokenizer,
-    ci_threshold: float,
 ) -> tuple[str, int]:
-    """Format example with high-CI tokens in <<delimiters>>. Returns (text, n_delimited)."""
-    valid = [
-        (tid, ci) for tid, ci in zip(example.token_ids, example.ci_values, strict=True) if tid >= 0
-    ]
-    spans = app_tok.get_spans([tid for tid, _ in valid])
-    tokens = [(span, ci > ci_threshold) for span, (_, ci) in zip(spans, valid, strict=True)]
-    n_delimited = sum(1 for _, active in tokens if active)
+    """Format example with firing tokens in <<delimiters>>. Returns (text, n_delimited)."""
+    spans = app_tok.get_spans(example.token_ids)
+    tokens = [(span, firing) for span, firing in zip(spans, example.firings, strict=True)]
+    n_delimited = sum(example.firings)
     return delimit_tokens(tokens), n_delimited
 
 
-def _delimit_random_low_ci_tokens(
+def _delimit_random_tokens(
     example: ActivationExample,
     app_tok: AppTokenizer,
     n_to_delimit: int,
     rng: random.Random,
-    ci_threshold: float,
 ) -> str:
-    """Format example with random LOW-CI tokens in <<delimiters>> instead of high-CI ones."""
-    valid = [
-        (tid, ci) for tid, ci in zip(example.token_ids, example.ci_values, strict=True) if tid >= 0
-    ]
-    low_ci_indices = [j for j, (_, ci) in enumerate(valid) if ci <= ci_threshold]
+    """Format example with random tokens in <<delimiters>> instead of firing ones."""
+    n_toks = len(example.token_ids)
 
-    if len(low_ci_indices) < n_to_delimit:
-        delimit_set = set(low_ci_indices)
-    else:
-        delimit_set = set(rng.sample(low_ci_indices, n_to_delimit))
-
-    spans = app_tok.get_spans([tid for tid, _ in valid])
+    delimit_set = set(rng.sample(range(n_toks), min(n_to_delimit, n_toks)))
+    spans = app_tok.get_spans(example.token_ids)
     tokens = [(span, j in delimit_set) for j, span in enumerate(spans)]
     return delimit_tokens(tokens)
 
@@ -143,7 +131,6 @@ async def run_fuzzing_scoring(
     openrouter_api_key: str,
     tokenizer_name: str,
     db: InterpDB,
-    ci_threshold: float,
     eval_config: AutointerpEvalConfig,
     limit: int | None = None,
     cost_limit_usd: float | None = None,
@@ -185,12 +172,12 @@ async def run_fuzzing_scoring(
 
             formatted: list[tuple[str, bool]] = []
             for ex in correct_examples:
-                text, _ = _delimit_high_ci_tokens(ex, app_tok, ci_threshold)
+                text, _ = _delimit_tokens(ex, app_tok)
                 formatted.append((text, True))
             for ex in incorrect_examples:
-                _, n_delimited = _delimit_high_ci_tokens(ex, app_tok, ci_threshold)
+                _, n_delimited = _delimit_tokens(ex, app_tok)
                 n_to_delimit = max(n_delimited, 1)
-                text = _delimit_random_low_ci_tokens(ex, app_tok, n_to_delimit, rng, ci_threshold)
+                text = _delimit_random_tokens(ex, app_tok, n_to_delimit, rng)
                 formatted.append((text, False))
             rng.shuffle(formatted)
 

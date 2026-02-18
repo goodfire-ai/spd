@@ -125,7 +125,7 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
         sources_by_target=sources_by_target,
         config=spd_config,
         context_length=context_length,
-        harvest=HarvestRepo.open(run_id),
+        harvest=HarvestRepo.open_most_recent(run_id),
         interp=InterpRepo.open(run_id),
         attributions=AttributionRepo.open(run_id),
     )

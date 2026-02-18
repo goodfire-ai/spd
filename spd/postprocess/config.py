@@ -4,10 +4,12 @@ PostprocessConfig composes sub-configs for harvest, attributions, autointerp,
 and intruder eval. Set any section to null to skip that pipeline stage.
 """
 
+from typing import Any, override
+
 from spd.autointerp.config import AutointerpSlurmConfig
 from spd.base_config import BaseConfig
 from spd.dataset_attributions.config import AttributionsSlurmConfig
-from spd.harvest.config import HarvestSlurmConfig, IntruderSlurmConfig
+from spd.harvest.config import HarvestSlurmConfig, IntruderSlurmConfig, SPDHarvestConfig
 
 
 class PostprocessConfig(BaseConfig):
@@ -26,7 +28,14 @@ class PostprocessConfig(BaseConfig):
         attributions (GPU array -> merge, parallel with harvest)
     """
 
-    harvest: HarvestSlurmConfig = HarvestSlurmConfig()
-    autointerp: AutointerpSlurmConfig | None = AutointerpSlurmConfig()
-    intruder: IntruderSlurmConfig | None = None
-    attributions: AttributionsSlurmConfig | None = None
+    harvest: HarvestSlurmConfig
+    autointerp: AutointerpSlurmConfig | None
+    intruder: IntruderSlurmConfig | None
+    attributions: AttributionsSlurmConfig | None
+
+    @override
+    def model_post_init(self, __context: Any) -> None:
+        expects_attributions = self.attributions is not None
+        is_not_spd = not isinstance(self.harvest.config.method_config, SPDHarvestConfig)
+        if expects_attributions and is_not_spd:
+            raise ValueError("Attributions only work for SPD decompositions")

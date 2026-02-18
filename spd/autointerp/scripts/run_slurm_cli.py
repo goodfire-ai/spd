@@ -3,33 +3,30 @@
 Thin wrapper for fast --help. Heavy imports deferred to run_slurm.py.
 
 Usage:
-    spd-autointerp <wandb_path>
-    spd-autointerp <wandb_path> --config autointerp_config.yaml
+    spd-autointerp <decomposition_id>
+    spd-autointerp <decomposition_id> --config autointerp_config.yaml
 """
 
 import fire
 
 
 def main(
-    wandb_path: str,
+    decomposition_id: str,
     config: str | None = None,
 ) -> None:
     """Submit autointerp pipeline (interpret + evals) to SLURM.
 
     Args:
-        wandb_path: WandB run path for the target decomposition run.
+        decomposition_id: ID of the target decomposition run.
         config: Path to AutointerpSlurmConfig YAML/JSON. Uses built-in defaults if omitted.
     """
     from spd.autointerp.config import AutointerpSlurmConfig
     from spd.autointerp.scripts.run_slurm import submit_autointerp
-    from spd.utils.wandb_utils import parse_wandb_run_path
-
-    parse_wandb_run_path(wandb_path)
 
     slurm_config = (
         AutointerpSlurmConfig.from_file(config) if config is not None else AutointerpSlurmConfig()
     )
-    submit_autointerp(wandb_path=wandb_path, slurm_config=slurm_config)
+    submit_autointerp(decomposition_id=decomposition_id, slurm_config=slurm_config)
 
 
 def cli() -> None:

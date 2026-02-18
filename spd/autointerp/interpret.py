@@ -23,12 +23,10 @@ from spd.autointerp.llm_api import (
 )
 from spd.autointerp.schemas import ArchitectureInfo, InterpretationResult
 from spd.autointerp.strategies.dispatch import format_prompt, get_response_schema
-from spd.configs import LMTaskConfig
 from spd.harvest.analysis import TokenPRLift, get_input_token_stats, get_output_token_stats
 from spd.harvest.repo import HarvestRepo
 from spd.harvest.schemas import ComponentData
 from spd.log import logger
-from spd.models.component_model import ComponentModel, SPDRunInfo
 
 MAX_CONCURRENT = 50
 
@@ -41,7 +39,6 @@ async def interpret_component(
     app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
-    ci_threshold: float,
 ) -> InterpretationResult:
     """Interpret a single component. Used by the app for on-demand interpretation."""
     prompt = format_prompt(
@@ -51,7 +48,6 @@ async def interpret_component(
         app_tok=app_tok,
         input_token_stats=input_token_stats,
         output_token_stats=output_token_stats,
-        ci_threshold=ci_threshold,
     )
 
     schema = get_response_schema(config)
@@ -96,7 +92,7 @@ async def interpret_component(
 
 
 def run_interpret(
-    wandb_path: str,
+    decomposition_id: str,
     openrouter_api_key: str,
     config: AutointerpConfig,
     harvest: HarvestRepo,
@@ -104,16 +100,18 @@ def run_interpret(
     limit: int | None,
     cost_limit_usd: float | None = None,
 ) -> list[InterpretationResult]:
-    arch = get_architecture_info(wandb_path)
+    from spd.adapters import adapter_from_id
+
+    adapter = adapter_from_id(decomposition_id)
+    arch = adapter.architecture_info
     components = harvest.get_all_components()
 
     token_stats = harvest.get_token_stats()
     assert token_stats is not None, "token_stats.pt not found. Run harvest first."
-    ci_threshold = harvest.get_ci_threshold()
 
     app_tok = AppTokenizer.from_pretrained(arch.tokenizer_name)
 
-    eligible = sorted(components, key=lambda c: c.mean_ci, reverse=True)
+    eligible = sorted(components, key=lambda c: c.firing_density, reverse=True)
     if limit is not None:
         eligible = eligible[:limit]
 
@@ -145,7 +143,6 @@ def run_interpret(
                 app_tok=app_tok,
                 input_token_stats=input_stats,
                 output_token_stats=output_stats,
-                ci_threshold=ci_threshold,
             )
             jobs.append(LLMJob(prompt=prompt, schema=schema, key=component.component_key))
 
@@ -213,25 +210,3 @@ def run_interpret(
         return results
 
     return asyncio.run(_run())
-
-
-def get_architecture_info(wandb_path: str) -> ArchitectureInfo:
-    from spd.topology import TransformerTopology
-
-    run_info = SPDRunInfo.from_path(wandb_path)
-    model = ComponentModel.from_run_info(run_info)
-    topology = TransformerTopology(model.target_model)
-    config = run_info.config
-    task_config = config.task_config
-    assert isinstance(task_config, LMTaskConfig)
-    assert config.tokenizer_name is not None
-    return ArchitectureInfo(
-        n_blocks=topology.n_blocks,
-        c_per_layer=model.module_to_c,
-        model_class=config.pretrained_model_class,
-        dataset_name=task_config.dataset_name,
-        tokenizer_name=config.tokenizer_name,
-        layer_descriptions={
-            path: topology.target_to_canon(path) for path in model.target_module_paths
-        },
-    )

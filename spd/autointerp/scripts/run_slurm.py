@@ -11,8 +11,8 @@ Dependency graph (depends on a prior harvest merge):
 (Intruder eval is label-free and belongs to the harvest functional unit.)
 
 Usage:
-    spd-autointerp <wandb_path>
-    spd-autointerp <wandb_path> --cost_limit_usd 100
+    spd-autointerp <decomposition_id>
+    spd-autointerp <decomposition_id> --cost_limit_usd 100
 """
 
 from dataclasses import dataclass
@@ -21,7 +21,6 @@ from datetime import datetime
 from spd.autointerp.config import AutointerpSlurmConfig
 from spd.log import logger
 from spd.utils.slurm import SlurmConfig, SubmitResult, generate_script, submit_slurm_job
-from spd.utils.wandb_utils import wandb_path_to_url
 
 
 @dataclass
@@ -32,7 +31,7 @@ class AutointerpSubmitResult:
 
 
 def submit_autointerp(
-    wandb_path: str,
+    decomposition_id: str,
     slurm_config: AutointerpSlurmConfig,
     dependency_job_id: str | None = None,
     snapshot_branch: str | None = None,
@@ -44,10 +43,11 @@ def submit_autointerp(
     prior harvest merge (passed as dependency_job_id).
 
     Args:
-        wandb_path: WandB run path for the target decomposition run.
+        decomposition_id: ID of the target decomposition run.
         slurm_config: Autointerp SLURM configuration.
         dependency_job_id: Job to wait for before starting (e.g. harvest merge).
         snapshot_branch: Git snapshot branch to use.
+        harvest_subrun_id: Sub-run ID for harvest data.
 
     Returns:
         AutointerpSubmitResult with interpret, detection, and fuzzing results.
@@ -64,7 +64,7 @@ def submit_autointerp(
     # === 1. Interpret job ===
     interpret_parts = [
         "python -m spd.autointerp.scripts.run_interpret",
-        f'"{wandb_path}"',
+        f'"{decomposition_id}"',
         f"--autointerp_run_id {autointerp_run_id}",
         f"--config_json '{config_json}'",
     ]
@@ -81,7 +81,7 @@ def submit_autointerp(
         time=time,
         snapshot_branch=snapshot_branch,
         dependency_job_id=dependency_job_id,
-        comment=wandb_path_to_url(wandb_path),
+        comment=decomposition_id,
     )
     script_content = generate_script(interpret_slurm, interpret_cmd)
     interpret_result = submit_slurm_job(script_content, "spd-interpret")
@@ -91,7 +91,7 @@ def submit_autointerp(
         {
             "Job ID": interpret_result.job_id,
             "Autointerp run ID": autointerp_run_id,
-            "WandB path": wandb_path,
+            "Decomposition ID": decomposition_id,
             "Model": interp_config.model,
             "Log": interpret_result.log_pattern,
         }
@@ -111,7 +111,7 @@ def submit_autointerp(
     for scorer in ("detection", "fuzzing"):
         scoring_parts = [
             "python -m spd.autointerp.scoring.scripts.run_label_scoring",
-            f'"{wandb_path}"',
+            f'"{decomposition_id}"',
             f"--scorer {scorer}",
             f"--eval_config_json '{eval_config_json}'",
         ]

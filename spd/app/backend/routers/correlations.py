@@ -11,9 +11,11 @@ from pydantic import BaseModel
 
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
+from spd.configs import LMTaskConfig
 from spd.harvest import analysis
 from spd.log import logger
 from spd.topology import TransformerTopology
+from spd.utils.general_utils import runtime_cast
 
 
 def _canonical_to_concrete_key(
@@ -170,11 +172,9 @@ async def request_component_interpretation(
     from openrouter import OpenRouter
 
     from spd.autointerp.config import CompactSkepticalConfig
-    from spd.autointerp.interpret import (
-        get_architecture_info,
-        interpret_component,
-    )
-    from spd.autointerp.llm_api import CostTracker, GlobalBackoff, LLMClient  # noqa: F811
+    from spd.autointerp.interpret import interpret_component
+    from spd.autointerp.llm_api import CostTracker, GlobalBackoff, LLMClient
+    from spd.autointerp.schemas import ArchitectureInfo
 
     assert loaded.harvest is not None, "No harvest data available"
     assert loaded.interp is not None, "No autointerp data available"
@@ -198,7 +198,18 @@ async def request_component_interpretation(
             detail="OPENROUTER_API_KEY environment variable not set",
         )
 
-    arch = get_architecture_info(loaded.run.wandb_path)
+    task_config = runtime_cast(LMTaskConfig, loaded.config.task_config)
+    assert loaded.config.tokenizer_name is not None
+    arch = ArchitectureInfo(
+        n_blocks=loaded.topology.n_blocks,
+        c_per_layer=loaded.model.module_to_c,
+        model_class=loaded.config.pretrained_model_class,
+        dataset_name=task_config.dataset_name,
+        tokenizer_name=loaded.config.tokenizer_name,
+        layer_descriptions={
+            path: loaded.topology.target_to_canon(path) for path in loaded.model.target_module_paths
+        },
+    )
 
     token_stats = loaded.harvest.get_token_stats()
     assert token_stats is not None, "Token stats required for interpretation"
@@ -217,8 +228,6 @@ async def request_component_interpretation(
 
     config = CompactSkepticalConfig()
 
-    ci_threshold = loaded.harvest.get_ci_threshold()
-
     async with OpenRouter(api_key=api_key) as api:
         llm = LLMClient(
             api=api,
@@ -235,7 +244,6 @@ async def request_component_interpretation(
                 app_tok=loaded.tokenizer,
                 input_token_stats=input_token_stats,
                 output_token_stats=output_token_stats,
-                ci_threshold=ci_threshold,
             )
         except Exception as e:
             raise HTTPException(
@@ -258,13 +266,13 @@ async def request_component_interpretation(
 def get_intruder_scores(loaded: DepLoadedRun) -> dict[str, float]:
     """Get intruder eval scores for all components.
 
-    Returns a dict keyed by component_key (layer:cIdx) → score (0-1).
+    Returns a dict keyed by component_key (layer:cIdx) -> score (0-1).
     Returns empty dict if no intruder scores are available.
     """
     if loaded.harvest is None:
         return {}
-    scores = loaded.harvest.get_intruder_scores()
-    if scores is None:
+    scores = loaded.harvest.get_scores("intruder")
+    if not scores:
         return {}
     return {
         _concrete_to_canonical_key(key, loaded.topology): score for key, score in scores.items()
