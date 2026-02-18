@@ -87,25 +87,10 @@ def _sample_activating_examples(
     n: int,
     rng: random.Random,
 ) -> list[ActivationExample]:
-    """Sample activating examples from different activation strength deciles if possible."""
     examples = component.activation_examples
     if len(examples) <= n:
         return list(examples)
-
-    sorted_examples = sorted(
-        examples,
-        key=lambda e: sum(v for vals in e.activations.values() for v in vals)
-        / max(sum(len(vals) for vals in e.activations.values()), 1),
-    )
-    n_examples = len(sorted_examples)
-
-    # Pick one from each of n evenly-spaced decile bins
-    sampled: list[ActivationExample] = []
-    for i in range(n):
-        bin_start = i * n_examples // n
-        bin_end = (i + 1) * n_examples // n
-        sampled.append(rng.choice(sorted_examples[bin_start:bin_end]))
-    return sampled
+    return rng.sample(examples, n)
 
 
 def _sample_non_activating_examples(
