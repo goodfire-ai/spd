@@ -57,7 +57,7 @@ def harvest(
         job_suffix: Optional suffix for SLURM job names (e.g., "v2" -> "spd-harvest-v2").
     """
     launch_id = f"harvest-{secrets.token_hex(4)}"
-    snapshot_branch, commit_hash = create_git_snapshot(launch_id)
+    snapshot_branch, commit_hash = create_git_snapshot(snapshot_id=launch_id)
     logger.info(f"Created git snapshot: {snapshot_branch} ({commit_hash[:8]})")
 
     suffix = f"-{job_suffix}" if job_suffix else ""

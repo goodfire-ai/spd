@@ -81,11 +81,11 @@ def launch_slurm_run(
         sweep_params=sweep_params,
     )
 
-    snapshot_branch, commit_hash = create_git_snapshot(run_id=launch_id)
+    snapshot_branch, commit_hash = create_git_snapshot(snapshot_id=launch_id)
     logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
 
     if len(training_jobs) > 1:
-        _wandb_setup(
+        _create_wandb_views_and_report(
             create_report=create_report,
             report_title=report_title,
             project=project,
@@ -135,9 +135,9 @@ def launch_slurm_run(
 def _generate_launch_id() -> str:
     """Generate a unique launch ID based on timestamp.
 
-    Prefixed with 'l-' to prevent Python Fire from parsing the numeric timestamp as an int.
+    Prefixed with 'launch-' to prevent Python Fire from parsing the numeric timestamp as an int.
     """
-    return f"l-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    return f"launch-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 
 def _create_training_jobs(
@@ -325,7 +325,7 @@ def _resolve_sweep_params_path(sweep_params_file: str) -> Path:
         return REPO_ROOT / sweep_params_file
 
 
-def _wandb_setup(
+def _create_wandb_views_and_report(
     create_report: bool,
     report_title: str | None,
     project: str,

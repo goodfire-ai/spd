@@ -370,7 +370,7 @@ class ExecutionStamp(NamedTuple):
         commit_hash: str
 
         if create_snapshot:
-            snapshot_branch, commit_hash = create_git_snapshot(run_id=run_id)
+            snapshot_branch, commit_hash = create_git_snapshot(snapshot_id=run_id)
             logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
         else:
             snapshot_branch = repo_current_branch()
