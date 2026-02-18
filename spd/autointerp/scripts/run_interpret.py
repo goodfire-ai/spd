@@ -1,8 +1,8 @@
 """CLI for autointerp pipeline.
 
 Usage:
-    python -m spd.autointerp.scripts.run_interpret <decomposition_id> --config_json '...'
-    spd-autointerp <decomposition_id>  # SLURM submission
+    python -m spd.autointerp.scripts.run_interpret <wandb_path> --config_json '...'
+    spd-autointerp <wandb_path>  # SLURM submission
 """
 
 import os
@@ -10,60 +10,73 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 
-from spd.autointerp.config import CompactSkepticalConfig
+from spd.adapters import adapter_from_id
+from spd.autointerp.config import AutointerpConfig
 from spd.autointerp.interpret import run_interpret
-from spd.autointerp.schemas import get_autointerp_dir
+from spd.autointerp.schemas import get_autointerp_subrun_dir
 from spd.harvest.repo import HarvestRepo
 from spd.log import logger
 
 
 def main(
     decomposition_id: str,
-    config_json: str | dict[str, object],
-    autointerp_run_id: str | None = None,
+    config_json: str,
     harvest_subrun_id: str | None = None,
 ) -> None:
-    match config_json:
-        case str(json_str):
-            interp_config = CompactSkepticalConfig.model_validate_json(json_str)
-        case dict(d):
-            interp_config = CompactSkepticalConfig.model_validate(d)
+    interp_config = AutointerpConfig.model_validate_json(config_json)
 
     load_dotenv()
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
     if harvest_subrun_id is not None:
-        harvest = HarvestRepo(decomposition_id, subrun_id=harvest_subrun_id, readonly=True)
+        harvest = HarvestRepo(decomposition_id, subrun_id=harvest_subrun_id, readonly=False)
     else:
-        harvest = HarvestRepo.open_most_recent(decomposition_id)
-        assert harvest is not None, f"No harvest data for {decomposition_id}"
+        harvest = HarvestRepo.open_most_recent(decomposition_id, readonly=False)
+        if harvest is None:
+            raise ValueError(f"No harvest data found for {decomposition_id}")
 
-    # Create timestamped run directory
-    if autointerp_run_id is None:
-        autointerp_run_id = "a-" + datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = get_autointerp_dir(decomposition_id) / autointerp_run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
+    autointerp_run_id = "a-" + datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    subrun_dir = get_autointerp_subrun_dir(decomposition_id, autointerp_run_id)
+    subrun_dir.mkdir(parents=True, exist_ok=True)
 
     # Save config for reproducibility
-    interp_config.to_file(run_dir / "config.yaml")
+    interp_config.to_file(subrun_dir / "config.yaml")
 
-    db_path = run_dir / "interp.db"
+    db_path = subrun_dir / "interp.db"
 
-    logger.info(f"Autointerp run: {run_dir}")
+    logger.info(f"Autointerp run: {subrun_dir}")
+
+    adapter = adapter_from_id(decomposition_id)
 
     run_interpret(
-        decomposition_id,
-        openrouter_api_key,
-        interp_config,
-        harvest,
-        db_path,
-        interp_config.limit,
-        interp_config.cost_limit_usd,
+        openrouter_api_key=openrouter_api_key,
+        model=interp_config.model,
+        reasoning_effort=interp_config.reasoning_effort,
+        limit=interp_config.limit,
+        cost_limit_usd=interp_config.cost_limit_usd,
+        max_requests_per_minute=interp_config.max_requests_per_minute,
+        model_metadata=adapter.model_metadata,
+        template_strategy=interp_config.template_strategy,
+        harvest=harvest,
+        db_path=db_path,
+        tokenizer_name=adapter.tokenizer_name,
+        max_concurrent=interp_config.max_concurrent,
     )
 
 
-if __name__ == "__main__":
-    import fire
-
-    fire.Fire(main)
+def get_command(
+    decomposition_id: str,
+    config: AutointerpConfig,
+    harvest_subrun_id: str | None = None,
+) -> str:
+    config_json = config.model_dump_json(exclude_none=True)
+    cmd = (
+        "python -m spd.autointerp.scripts.run_interpret "
+        f"--decomposition_id {decomposition_id} "
+        f"--config_json '{config_json}' "
+    )
+    if harvest_subrun_id is not None:
+        cmd += f"--harvest_subrun_id {harvest_subrun_id} "
+    return cmd

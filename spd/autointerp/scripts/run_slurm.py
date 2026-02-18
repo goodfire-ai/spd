@@ -9,16 +9,13 @@ Dependency graph (depends on a prior harvest merge):
     └── fuzzing       (depends on interpret)
 
 (Intruder eval is label-free and belongs to the harvest functional unit.)
-
-Usage:
-    spd-autointerp <decomposition_id>
-    spd-autointerp <decomposition_id> --cost_limit_usd 100
 """
 
 from dataclasses import dataclass
-from datetime import datetime
 
 from spd.autointerp.config import AutointerpSlurmConfig
+from spd.autointerp.scoring.scripts import run_label_scoring
+from spd.autointerp.scripts import run_interpret
 from spd.log import logger
 from spd.utils.slurm import SlurmConfig, SubmitResult, generate_script, submit_slurm_job
 
@@ -32,7 +29,7 @@ class AutointerpSubmitResult:
 
 def submit_autointerp(
     decomposition_id: str,
-    slurm_config: AutointerpSlurmConfig,
+    config: AutointerpSlurmConfig,
     dependency_job_id: str | None = None,
     snapshot_branch: str | None = None,
     harvest_subrun_id: str | None = None,
@@ -43,42 +40,28 @@ def submit_autointerp(
     prior harvest merge (passed as dependency_job_id).
 
     Args:
-        decomposition_id: ID of the target decomposition run.
-        slurm_config: Autointerp SLURM configuration.
+        wandb_path: WandB run path for the target decomposition run.
+        config: Autointerp SLURM configuration.
         dependency_job_id: Job to wait for before starting (e.g. harvest merge).
         snapshot_branch: Git snapshot branch to use.
-        harvest_subrun_id: Sub-run ID for harvest data.
 
     Returns:
         AutointerpSubmitResult with interpret, detection, and fuzzing results.
     """
-    interp_config = slurm_config.config
-    partition = slurm_config.partition
-    time = slurm_config.time
-    evals = slurm_config.evals
-
-    autointerp_run_id = "a-" + datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    config_json = interp_config.model_dump_json(exclude_none=True)
 
     # === 1. Interpret job ===
-    interpret_parts = [
-        "python -m spd.autointerp.scripts.run_interpret",
-        f'"{decomposition_id}"',
-        f"--autointerp_run_id {autointerp_run_id}",
-        f"--config_json '{config_json}'",
-    ]
-    if harvest_subrun_id is not None:
-        interpret_parts.append(f"--harvest_subrun_id {harvest_subrun_id}")
-
-    interpret_cmd = " \\\n    ".join(interpret_parts)
+    interpret_cmd = run_interpret.get_command(
+        decomposition_id=decomposition_id,
+        config=config.config,
+        harvest_subrun_id=harvest_subrun_id,
+    )
 
     interpret_slurm = SlurmConfig(
         job_name="spd-interpret",
-        partition=partition,
+        partition=config.partition,
         n_gpus=0,
         cpus_per_task=16,
-        time=time,
+        time=config.time,
         snapshot_branch=snapshot_branch,
         dependency_job_id=dependency_job_id,
         comment=decomposition_id,
@@ -90,14 +73,13 @@ def submit_autointerp(
     logger.values(
         {
             "Job ID": interpret_result.job_id,
-            "Autointerp run ID": autointerp_run_id,
             "Decomposition ID": decomposition_id,
-            "Model": interp_config.model,
+            "Model": config.config.model,
             "Log": interpret_result.log_pattern,
         }
     )
 
-    if evals is None:
+    if config.evals is None:
         return AutointerpSubmitResult(
             interpret_result=interpret_result,
             detection_result=None,
@@ -105,26 +87,20 @@ def submit_autointerp(
         )
 
     # === 2. Detection + fuzzing scoring (depend on interpret) ===
-    eval_config_json = evals.model_dump_json(exclude_none=True)
-
     scoring_results: dict[str, SubmitResult] = {}
     for scorer in ("detection", "fuzzing"):
-        scoring_parts = [
-            "python -m spd.autointerp.scoring.scripts.run_label_scoring",
-            f'"{decomposition_id}"',
-            f"--scorer {scorer}",
-            f"--eval_config_json '{eval_config_json}'",
-        ]
-        if harvest_subrun_id is not None:
-            scoring_parts.append(f"--harvest_subrun_id {harvest_subrun_id}")
-        scoring_cmd = " \\\n    ".join(scoring_parts)
-
+        scoring_cmd = run_label_scoring.get_command(
+            decomposition_id,
+            scorer_type=scorer,
+            config=config.evals,
+            harvest_subrun_id=harvest_subrun_id,
+        )
         eval_slurm = SlurmConfig(
             job_name=f"spd-{scorer}",
-            partition=partition,
+            partition=config.partition,
             n_gpus=0,
             cpus_per_task=16,
-            time=slurm_config.evals_time,
+            time=config.evals_time,
             snapshot_branch=snapshot_branch,
             dependency_job_id=interpret_result.job_id,
         )
