@@ -18,8 +18,8 @@ import torch
 from spd.log import logger
 from spd.models.component_model import SPDRunInfo
 from spd.pretrain.models.llama_simple_mlp import LlamaSimpleMLP
+from spd.scripts.collect_attention_patterns import collect_attention_patterns
 from spd.scripts.detect_prev_token_heads.detect_prev_token_heads import (
-    _collect_attention_patterns,
     _plot_mean_attention_patterns,
     _plot_score_heatmap,
 )
@@ -62,7 +62,7 @@ def detect_prev_token_heads_random_tokens(
     with torch.no_grad():
         for i in range(n_batches):
             input_ids = torch.randint(0, vocab_size, (BATCH_SIZE, seq_len), device=device)
-            patterns = _collect_attention_patterns(target_model, input_ids)
+            patterns = collect_attention_patterns(target_model, input_ids)
 
             for layer_idx, att in enumerate(patterns):
                 diag = torch.diagonal(att, offset=-1, dim1=-2, dim2=-1)

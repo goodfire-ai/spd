@@ -10,7 +10,6 @@ Usage:
         wandb:goodfire/spd/runs/<run_id>
 """
 
-import math
 from pathlib import Path
 
 import fire
@@ -18,7 +17,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from numpy.typing import NDArray
-from torch.nn import functional as F
 from transformers import AutoTokenizer
 
 from spd.configs import LMTaskConfig
@@ -26,6 +24,7 @@ from spd.data import DatasetConfig, create_data_loader
 from spd.log import logger
 from spd.models.component_model import SPDRunInfo
 from spd.pretrain.models.llama_simple_mlp import LlamaSimpleMLP
+from spd.scripts.collect_attention_patterns import collect_attention_patterns
 from spd.spd_types import ModelPath
 from spd.utils.wandb_utils import parse_wandb_run_path
 
@@ -35,54 +34,6 @@ BATCH_SIZE = 32
 
 DELIMITER_CHARS = [".", ",", ";", ":", "!", "?", "\n"]
 DELIMITER_MULTI = [".\n", ".\n\n", ",\n", ";\n"]
-
-
-def _collect_attention_patterns(
-    model: LlamaSimpleMLP,
-    input_ids: torch.Tensor,
-) -> list[torch.Tensor]:
-    """Run forward pass and return attention weights for each layer."""
-    B, T = input_ids.shape
-    x = model.wte(input_ids)
-    patterns: list[torch.Tensor] = []
-
-    for block in model._h:
-        attn_input = block.rms_1(x)
-        attn = block.attn
-
-        q = attn.q_proj(attn_input).view(B, T, attn.n_head, attn.head_dim).transpose(1, 2)
-        k = (
-            attn.k_proj(attn_input)
-            .view(B, T, attn.n_key_value_heads, attn.head_dim)
-            .transpose(1, 2)
-        )
-        v = (
-            attn.v_proj(attn_input)
-            .view(B, T, attn.n_key_value_heads, attn.head_dim)
-            .transpose(1, 2)
-        )
-
-        position_ids = torch.arange(T, device=input_ids.device).unsqueeze(0)
-        cos = attn.rotary_cos[position_ids].to(q.dtype)
-        sin = attn.rotary_sin[position_ids].to(q.dtype)
-        q, k = attn.apply_rotary_pos_emb(q, k, cos, sin)
-
-        if attn.repeat_kv_heads > 1:
-            k = k.repeat_interleave(attn.repeat_kv_heads, dim=1)
-            v = v.repeat_interleave(attn.repeat_kv_heads, dim=1)
-
-        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(attn.head_dim))
-        att = att.masked_fill(attn.bias[:, :, :T, :T] == 0, float("-inf"))
-        att = F.softmax(att, dim=-1)
-        patterns.append(att)
-
-        y = att @ v
-        y = y.transpose(1, 2).contiguous().view(B, T, attn.n_embd)
-        y = attn.o_proj(y)
-        x = x + y
-        x = x + block.mlp(block.rms_2(x))
-
-    return patterns
 
 
 def _get_delimiter_token_ids(tokenizer: AutoTokenizer) -> set[int]:
@@ -231,7 +182,7 @@ def detect_delimiter_heads(wandb_path: ModelPath, n_batches: int = N_BATCHES) ->
             if i >= n_batches:
                 break
             input_ids = batch[task_config.column_name][:, :seq_len].to(device)
-            patterns = _collect_attention_patterns(target_model, input_ids)
+            patterns = collect_attention_patterns(target_model, input_ids)
             raw_scores, baseline_fraction = _compute_delimiter_scores(
                 patterns, input_ids, delimiter_ids
             )
