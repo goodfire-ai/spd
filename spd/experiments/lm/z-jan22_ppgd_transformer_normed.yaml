@@ -64,7 +64,6 @@ lr_schedule:
   fn_type: cosine
 steps: 400_000
 batch_size: 32
-gradient_accumulation_steps: 1
 grad_clip_norm_components: 0.01
 grad_clip_norm_ci_fns: null
 faithfulness_warmup_steps: 200

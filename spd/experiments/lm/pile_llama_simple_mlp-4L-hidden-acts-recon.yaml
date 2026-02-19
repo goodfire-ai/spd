@@ -17,7 +17,7 @@ ci_config:
     d_model: 2048
     n_blocks: 8
     mlp_hidden_dim:
-    - 8192
+    - 819
     attn_config:
       n_heads: 16
       max_len: 512
@@ -26,17 +26,17 @@ sampling: continuous
 sigmoid_type: leaky_hard
 module_info:
 - module_pattern: h.*.mlp.c_fc
-  C: 3072
+  C: 300
 - module_pattern: h.*.mlp.down_proj
-  C: 3584
+  C: 35
 - module_pattern: h.*.attn.q_proj
-  C: 512
+  C: 51
 - module_pattern: h.*.attn.k_proj
-  C: 512
+  C: 51
 - module_pattern: h.*.attn.v_proj
-  C: 1024
+  C: 102
 - module_pattern: h.*.attn.o_proj
-  C: 1024
+  C: 102
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
@@ -61,7 +61,7 @@ loss_metric_configs:
     eps: 1.0e-08
     lr_schedule:
       start_val: 0.01
-      warmup_pct: 0.025
+      warmup_pct: 0.001
       final_val_frac: 0.1
       fn_type: cosine
   scope:
@@ -76,7 +76,7 @@ lr_schedule:
   warmup_pct: 0.0
   final_val_frac: 0.1
   fn_type: cosine
-steps: 400000
+steps: 10000
 batch_size: 64
 grad_clip_norm_components: 0.01
 grad_clip_norm_ci_fns: null
@@ -84,39 +84,20 @@ faithfulness_warmup_steps: 400
 faithfulness_warmup_lr: 0.001
 faithfulness_warmup_weight_decay: 0.0
 train_log_freq: 200
-eval_freq: 1000
-eval_batch_size: 128
+eval_freq: 100
+eval_batch_size: 64
 slow_eval_freq: 10000
 n_eval_steps: 1
 slow_eval_on_first_step: true
 save_freq: null
 eval_metric_configs:
-- classname: CIHistograms
-  n_batches_accum: 1
-- classname: ComponentActivationDensity
-- classname: CI_L0
-  groups:
-    layer_0:
-    - h.0.*
-    layer_1:
-    - h.1.*
-    layer_2:
-    - h.2.*
-    layer_3:
-    - h.3.*
-    total:
-    - '*'
-- classname: CEandKLLosses
-  rounding_threshold: 0.0
-- classname: CIMeanPerComponent
-- coeff: null
-  classname: StochasticHiddenActsReconLoss
-- coeff: null
+- classname: StochasticHiddenActsReconLoss
+- classname: CIHiddenActsReconLoss
+- classname: PGDHiddenActsReconLoss
   init: random
   step_size: 0.1
   n_steps: 20
   mask_scope: shared_across_batch
-  classname: PGDReconLoss
 ci_alive_threshold: 0.0
 pretrained_model_class: spd.pretrain.models.llama_simple_mlp.LlamaSimpleMLP
 pretrained_model_path: null
