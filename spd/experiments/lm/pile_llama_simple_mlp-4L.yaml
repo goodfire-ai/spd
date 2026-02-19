@@ -40,7 +40,7 @@ module_info:
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.0006
+- coeff: 0.0004
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
   beta: 0.2
@@ -56,7 +56,7 @@ loss_metric_configs:
   classname: PersistentPGDReconLoss
   optimizer:
     type: adam
-    beta1: 0.5
+    beta1: 0.
     beta2: 0.99
     eps: 1.0e-08
     lr_schedule:
@@ -72,11 +72,11 @@ loss_metric_configs:
   classname: FaithfulnessLoss
 output_loss_type: kl
 lr_schedule:
-  start_val: 5.0e-05
+  start_val: 1e-4
   warmup_pct: 0.0
   final_val_frac: 0.1
   fn_type: cosine
-steps: 400000
+steps: 200000
 batch_size: 64
 grad_clip_norm_components: 0.01
 grad_clip_norm_ci_fns: null
