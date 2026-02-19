@@ -16,10 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from spd.dataset_attributions.config import DatasetAttributionConfig
-from spd.dataset_attributions.harvest import (
-    harvest_attributions,
-    merge_attributions,
-)
+from spd.dataset_attributions.harvest import harvest_attributions, merge_attributions
 from spd.dataset_attributions.repo import get_attributions_subrun_dir
 from spd.log import logger
 from spd.utils.wandb_utils import parse_wandb_run_path
@@ -60,7 +57,6 @@ def main(
         logger.info(f"Single-GPU harvest: {wandb_path} (subrun {subrun_id})")
 
     harvest_attributions(
-        wandb_path=wandb_path,
         config=config,
         output_dir=output_dir,
         harvest_subrun_id=harvest_subrun_id,

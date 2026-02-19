@@ -68,17 +68,6 @@ def _format_example_with_center_token(
     return delimit_tokens(tokens)
 
 
-def _sample_activating_examples(
-    component: ComponentData,
-    n: int,
-    rng: random.Random,
-) -> list[ActivationExample]:
-    examples = component.activation_examples
-    if len(examples) <= n:
-        return list(examples)
-    return rng.sample(examples, n)
-
-
 def _sample_non_activating_examples(
     target_component: ComponentData,
     all_components: list[ComponentData],
@@ -170,7 +159,12 @@ async def run_detection_scoring(
     for component in remaining:
         label = labels[component.component_key]
         for trial_idx in range(config.n_trials):
-            activating = _sample_activating_examples(component, config.n_activating, rng)
+            activating = (
+                list(component.activation_examples)
+                if len(component.activation_examples) <= config.n_activating
+                else rng.sample(component.activation_examples, config.n_activating)
+            )
+
             non_activating = _sample_non_activating_examples(
                 component, components, config.n_non_activating, rng
             )
@@ -210,6 +204,8 @@ async def run_detection_scoring(
         max_concurrent=max_concurrent,
         max_requests_per_minute=max_requests_per_minute,
         cost_limit_usd=cost_limit_usd,
+        response_schema=DETECTION_SCHEMA,
+        n_total=len(jobs),
     ):
         match outcome:
             case LLMResult(job=job, parsed=parsed):
