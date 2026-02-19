@@ -30,9 +30,9 @@ class LabelResult:
 @dataclass
 class PromptEdge:
     component_key: str
-    neighbor_key: str
+    related_key: str
     direction: Literal["upstream", "downstream"]
     pass_name: Literal["output", "input"]
     attribution: float
-    neighbor_label: str | None
-    neighbor_confidence: str | None
+    related_label: str | None
+    related_confidence: str | None

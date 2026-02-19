@@ -1,4 +1,4 @@
-"""Gather neighbor context from attributions and correlations."""
+"""Gather related components from attribution graph and co-firing statistics."""
 
 from dataclasses import dataclass
 
@@ -10,7 +10,7 @@ from spd.topological_interp.ordering import is_later_layer, parse_component_key
 
 
 @dataclass
-class NeighborContext:
+class RelatedComponent:
     component_key: str
     attribution: float
     label: str | None
@@ -19,14 +19,14 @@ class NeighborContext:
     pmi: float | None
 
 
-def get_downstream_neighbors(
+def get_downstream_components(
     component_key: str,
     attribution_storage: DatasetAttributionStorage,
     correlation_storage: CorrelationStorage,
     db: TopologicalInterpDB,
     layer_descriptions: dict[str, str],
     k: int,
-) -> list[NeighborContext]:
+) -> list[RelatedComponent]:
     """Top-K downstream (later-layer) components by absolute attribution."""
     source_layer, _ = parse_component_key(component_key)
 
@@ -50,17 +50,17 @@ def get_downstream_neighbors(
 
     cofiring = _build_cofiring_lookup(component_key, correlation_storage, k * 3)
 
-    return [_build_neighbor_context(e.component_key, e.value, cofiring, db) for e in downstream]
+    return [_build_related(e.component_key, e.value, cofiring, db) for e in downstream]
 
 
-def get_upstream_neighbors(
+def get_upstream_components(
     component_key: str,
     attribution_storage: DatasetAttributionStorage,
     correlation_storage: CorrelationStorage,
     db: TopologicalInterpDB,
     layer_descriptions: dict[str, str],
     k: int,
-) -> list[NeighborContext]:
+) -> list[RelatedComponent]:
     """Top-K upstream (earlier-layer) components by absolute attribution."""
     target_layer, _ = parse_component_key(component_key)
 
@@ -80,14 +80,14 @@ def get_upstream_neighbors(
 
     cofiring = _build_cofiring_lookup(component_key, correlation_storage, k * 3)
 
-    return [_build_neighbor_context(e.component_key, e.value, cofiring, db) for e in upstream]
+    return [_build_related(e.component_key, e.value, cofiring, db) for e in upstream]
 
 
-def get_cofiring_neighbors(
+def get_cofiring_components(
     component_key: str,
     correlation_storage: CorrelationStorage,
     k: int,
-) -> list[NeighborContext]:
+) -> list[RelatedComponent]:
     """Top-K co-firing components by Jaccard similarity."""
     correlated = get_correlated_components(
         correlation_storage, component_key, metric="jaccard", top_k=k
@@ -101,7 +101,7 @@ def get_cofiring_neighbors(
         pmi_lookup[c.component_key] = c.score
 
     return [
-        NeighborContext(
+        RelatedComponent(
             component_key=c.component_key,
             attribution=0.0,
             label=None,
@@ -118,7 +118,6 @@ def _build_cofiring_lookup(
     correlation_storage: CorrelationStorage,
     k: int,
 ) -> dict[str, tuple[float, float | None]]:
-    """Build {neighbor_key: (jaccard, pmi)} lookup for co-firing stats."""
     lookup: dict[str, tuple[float, float | None]] = {}
 
     jaccard_results = get_correlated_components(
@@ -140,17 +139,17 @@ def _build_cofiring_lookup(
     return lookup
 
 
-def _build_neighbor_context(
-    neighbor_key: str,
+def _build_related(
+    related_key: str,
     attribution: float,
     cofiring: dict[str, tuple[float, float | None]],
     db: TopologicalInterpDB,
-) -> NeighborContext:
-    output_label = db.get_output_label(neighbor_key)
-    jaccard, pmi = cofiring.get(neighbor_key, (None, None))
+) -> RelatedComponent:
+    output_label = db.get_output_label(related_key)
+    jaccard, pmi = cofiring.get(related_key, (None, None))
 
-    return NeighborContext(
-        component_key=neighbor_key,
+    return RelatedComponent(
+        component_key=related_key,
         attribution=attribution,
         label=output_label.label if output_label else None,
         confidence=output_label.confidence if output_label else None,

@@ -21,11 +21,11 @@ from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
 from spd.topological_interp.config import TopologicalInterpConfig
 from spd.topological_interp.db import TopologicalInterpDB
-from spd.topological_interp.neighbors import (
-    NeighborContext,
-    get_cofiring_neighbors,
-    get_downstream_neighbors,
-    get_upstream_neighbors,
+from spd.topological_interp.graph_context import (
+    RelatedComponent,
+    get_cofiring_components,
+    get_downstream_components,
+    get_upstream_components,
 )
 from spd.topological_interp.ordering import group_and_sort_by_layer
 from spd.topological_interp.prompts import (
@@ -142,13 +142,13 @@ def _build_output_jobs(
         assert input_stats is not None, f"No input token stats for {key}"
         assert output_stats is not None, f"No output token stats for {key}"
 
-        downstream = get_downstream_neighbors(
+        downstream = get_downstream_components(
             key,
             attribution_storage,
             correlation_storage,
             db,
             model_metadata.layer_descriptions,
-            config.top_k_neighbors,
+            config.top_k_attributed,
         )
 
         _save_edges_for_pass(db, key, downstream, [], "output")
@@ -159,7 +159,7 @@ def _build_output_jobs(
             app_tok=app_tok,
             input_token_stats=input_stats,
             output_token_stats=output_stats,
-            downstream_neighbors=downstream,
+            downstream=downstream,
             label_max_words=config.label_max_words,
             max_examples=config.max_examples,
         )
@@ -256,15 +256,15 @@ def _build_input_jobs(
         assert input_stats is not None, f"No input token stats for {key}"
         assert output_stats is not None, f"No output token stats for {key}"
 
-        upstream = get_upstream_neighbors(
+        upstream = get_upstream_components(
             key,
             attribution_storage,
             correlation_storage,
             db,
             model_metadata.layer_descriptions,
-            config.top_k_neighbors,
+            config.top_k_attributed,
         )
-        cofiring = get_cofiring_neighbors(key, correlation_storage, config.top_k_correlated)
+        cofiring = get_cofiring_components(key, correlation_storage, config.top_k_correlated)
 
         _save_edges_for_pass(db, key, [], upstream, "input", cofiring=cofiring)
 
@@ -274,8 +274,8 @@ def _build_input_jobs(
             app_tok=app_tok,
             input_token_stats=input_stats,
             output_token_stats=output_stats,
-            upstream_neighbors=upstream,
-            cofiring_neighbors=cofiring,
+            upstream=upstream,
+            cofiring=cofiring,
             label_max_words=config.label_max_words,
             max_examples=config.max_examples,
         )
@@ -456,10 +456,10 @@ def _check_error_rate(n_errors: int, n_done: int) -> None:
 def _save_edges_for_pass(
     db: TopologicalInterpDB,
     component_key: str,
-    downstream: list[NeighborContext],
-    upstream: list[NeighborContext],
+    downstream: list[RelatedComponent],
+    upstream: list[RelatedComponent],
     pass_name: Literal["output", "input"],
-    cofiring: list[NeighborContext] | None = None,
+    cofiring: list[RelatedComponent] | None = None,
 ) -> None:
     edges: list[PromptEdge] = []
 
@@ -467,12 +467,12 @@ def _save_edges_for_pass(
         edges.append(
             PromptEdge(
                 component_key=component_key,
-                neighbor_key=n.component_key,
+                related_key=n.component_key,
                 direction="downstream",
                 pass_name=pass_name,
                 attribution=n.attribution,
-                neighbor_label=n.label,
-                neighbor_confidence=n.confidence,
+                related_label=n.label,
+                related_confidence=n.confidence,
             )
         )
 
@@ -480,12 +480,12 @@ def _save_edges_for_pass(
         edges.append(
             PromptEdge(
                 component_key=component_key,
-                neighbor_key=n.component_key,
+                related_key=n.component_key,
                 direction="upstream",
                 pass_name=pass_name,
                 attribution=n.attribution,
-                neighbor_label=n.label,
-                neighbor_confidence=n.confidence,
+                related_label=n.label,
+                related_confidence=n.confidence,
             )
         )
 
@@ -494,12 +494,12 @@ def _save_edges_for_pass(
             edges.append(
                 PromptEdge(
                     component_key=component_key,
-                    neighbor_key=n.component_key,
+                    related_key=n.component_key,
                     direction="upstream",
                     pass_name=pass_name,
                     attribution=n.attribution,
-                    neighbor_label=n.label,
-                    neighbor_confidence=n.confidence,
+                    related_label=n.label,
+                    related_confidence=n.confidence,
                 )
             )
 

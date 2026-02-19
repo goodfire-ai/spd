@@ -35,13 +35,13 @@ CREATE TABLE IF NOT EXISTS unified_labels (
 
 CREATE TABLE IF NOT EXISTS prompt_edges (
     component_key TEXT NOT NULL,
-    neighbor_key TEXT NOT NULL,
+    related_key TEXT NOT NULL,
     direction TEXT NOT NULL,
     pass TEXT NOT NULL,
     attribution REAL NOT NULL,
-    neighbor_label TEXT,
-    neighbor_confidence TEXT,
-    PRIMARY KEY (component_key, neighbor_key, direction, pass)
+    related_label TEXT,
+    related_confidence TEXT,
+    PRIMARY KEY (component_key, related_key, direction, pass)
 );
 
 CREATE TABLE IF NOT EXISTS config (
@@ -165,12 +165,12 @@ class TopologicalInterpDB:
         rows = [
             (
                 e.component_key,
-                e.neighbor_key,
+                e.related_key,
                 e.direction,
                 e.pass_name,
                 e.attribution,
-                e.neighbor_label,
-                e.neighbor_confidence,
+                e.related_label,
+                e.related_confidence,
             )
             for e in edges
         ]
@@ -218,10 +218,10 @@ def _row_to_label_result(row: sqlite3.Row) -> LabelResult:
 def _row_to_prompt_edge(row: sqlite3.Row) -> PromptEdge:
     return PromptEdge(
         component_key=row["component_key"],
-        neighbor_key=row["neighbor_key"],
+        related_key=row["related_key"],
         direction=row["direction"],
         pass_name=row["pass"],
         attribution=row["attribution"],
-        neighbor_label=row["neighbor_label"],
-        neighbor_confidence=row["neighbor_confidence"],
+        related_label=row["related_label"],
+        related_confidence=row["related_confidence"],
     )

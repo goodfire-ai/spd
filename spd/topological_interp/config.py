@@ -9,7 +9,7 @@ from spd.settings import DEFAULT_PARTITION_NAME
 class TopologicalInterpConfig(BaseConfig):
     model: str = "google/gemini-3-flash-preview"
     reasoning_effort: Effort = "low"
-    top_k_neighbors: int = 8
+    top_k_attributed: int = 8
     top_k_correlated: int = 5
     max_examples: int = 30
     label_max_words: int = 8

@@ -23,7 +23,7 @@ from spd.autointerp.prompt_helpers import (
 from spd.autointerp.schemas import ModelMetadata
 from spd.harvest.analysis import TokenPRLift
 from spd.harvest.schemas import ComponentData
-from spd.topological_interp.neighbors import NeighborContext
+from spd.topological_interp.graph_context import RelatedComponent
 from spd.topological_interp.schemas import LabelResult
 
 LABEL_SCHEMA: dict[str, object] = {
@@ -105,14 +105,14 @@ def format_output_prompt(
     app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
-    downstream_neighbors: list[NeighborContext],
+    downstream: list[RelatedComponent],
     label_max_words: int,
     max_examples: int,
 ) -> str:
     context = _build_context_block(
         component, model_metadata, app_tok, input_token_stats, output_token_stats, max_examples
     )
-    downstream_table = _format_neighbor_table(downstream_neighbors)
+    downstream_table = _format_attributed_table(downstream)
 
     return f"""\
 You are analyzing a component in a neural network to understand its OUTPUT FUNCTION — what it does when it fires.
@@ -142,16 +142,16 @@ def format_input_prompt(
     app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
-    upstream_neighbors: list[NeighborContext],
-    cofiring_neighbors: list[NeighborContext],
+    upstream: list[RelatedComponent],
+    cofiring: list[RelatedComponent],
     label_max_words: int,
     max_examples: int,
 ) -> str:
     context = _build_context_block(
         component, model_metadata, app_tok, input_token_stats, output_token_stats, max_examples
     )
-    upstream_table = _format_neighbor_table(upstream_neighbors)
-    cofiring_table = _format_cofiring_table(cofiring_neighbors)
+    upstream_table = _format_attributed_table(upstream)
+    cofiring_table = _format_cofiring_table(cofiring)
 
     return f"""\
 You are analyzing a component in a neural network to understand its INPUT FUNCTION — what triggers it to fire.
@@ -198,12 +198,12 @@ Respond with JSON: {{"label": "...", "confidence": "low|medium|high", "reasoning
 """
 
 
-def _format_neighbor_table(neighbors: list[NeighborContext]) -> str:
-    if not neighbors:
-        return "(no attributed neighbors found)\n"
+def _format_attributed_table(components: list[RelatedComponent]) -> str:
+    if not components:
+        return "(no attributed components found)\n"
 
     lines: list[str] = []
-    for n in neighbors:
+    for n in components:
         parts = [f"  {n.component_key} (attribution: {n.attribution:.4f}"]
         if n.jaccard is not None:
             parts.append(f", co-firing Jaccard: {n.jaccard:.3f}")
@@ -217,12 +217,12 @@ def _format_neighbor_table(neighbors: list[NeighborContext]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _format_cofiring_table(neighbors: list[NeighborContext]) -> str:
-    if not neighbors:
+def _format_cofiring_table(components: list[RelatedComponent]) -> str:
+    if not components:
         return "(no co-firing components found)\n"
 
     lines: list[str] = []
-    for n in neighbors:
+    for n in components:
         parts = [f"  {n.component_key}"]
         if n.jaccard is not None:
             parts.append(f" (Jaccard: {n.jaccard:.3f}")
