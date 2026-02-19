@@ -148,6 +148,8 @@ def optimize(
 
     module_path_info = expand_module_patterns(target_model, config.all_module_info)
 
+    logger.info("[DEBUG] Creating ComponentModel")
+    import sys; sys.stdout.flush(); sys.stderr.flush()
     model = ComponentModel(
         target_model=target_model,
         module_path_info=module_path_info,
@@ -155,8 +157,12 @@ def optimize(
         sigmoid_type=config.sigmoid_type,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
     )
+    logger.info("[DEBUG] ComponentModel created, moving to device")
+    import sys; sys.stdout.flush(); sys.stderr.flush()
 
     model.to(device)
+    logger.info("[DEBUG] Model on device, about to wrap with DDP")
+    import sys; sys.stdout.flush(); sys.stderr.flush()
 
     # Wrap model with DDP if distributed
     dist_state = get_distributed_state()
@@ -164,11 +170,15 @@ def optimize(
     if dist_state is not None:
         if dist_state.backend == "nccl":
             device_id = dist_state.local_rank
+            logger.info(f"[DEBUG] Creating DDP wrapper for rank {device_id}")
+            import sys; sys.stdout.flush(); sys.stderr.flush()
             wrapped_model = torch.nn.parallel.DistributedDataParallel(
                 model,
                 device_ids=[device_id],
                 output_device=device_id,
             )
+            logger.info(f"[DEBUG] DDP wrapper created for rank {device_id}")
+            import sys; sys.stdout.flush(); sys.stderr.flush()
         else:
             # For CPU, don't pass device_ids or output_device
             wrapped_model = torch.nn.parallel.DistributedDataParallel(model)
@@ -457,9 +467,15 @@ def run_experiment(
             tags.append(f"slurm-array-job-id_{slurm_array_job_id}")
 
         if config.wandb_project:
+            logger.info("[DEBUG] About to init_wandb")
+            import sys; sys.stdout.flush(); sys.stderr.flush()
             init_wandb(config, config.wandb_project, run_id, config.wandb_run_name, tags)
+            logger.info("[DEBUG] init_wandb done")
+            import sys; sys.stdout.flush(); sys.stderr.flush()
 
         logger.info(config)
+        logger.info("[DEBUG] config printed")
+        import sys; sys.stdout.flush(); sys.stderr.flush()
 
         save_pre_run_info(
             save_to_wandb=config.wandb_project is not None,
@@ -470,9 +486,13 @@ def run_experiment(
             train_config=target_model_train_config,
             task_name=getattr(config.task_config, "task_name", None),
         )
+        logger.info("[DEBUG] save_pre_run_info done")
+        import sys; sys.stdout.flush(); sys.stderr.flush()
     else:
         out_dir = None
 
+    logger.info(f"[DEBUG] All ranks entering optimize, rank={device}")
+    import sys; sys.stdout.flush(); sys.stderr.flush()
     optimize(
         target_model=target_model,
         config=config,
