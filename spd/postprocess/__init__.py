@@ -68,8 +68,7 @@ def postprocess(config: PostprocessConfig) -> Path:
         intruder_slurm = SlurmConfig(
             job_name="spd-intruder-eval",
             partition=config.intruder.partition,
-            n_gpus=0,
-            cpus_per_task=16,
+            n_gpus=1,
             time=config.intruder.time,
             snapshot_branch=snapshot_branch,
             dependency_job_id=harvest_result.merge_result.job_id,
