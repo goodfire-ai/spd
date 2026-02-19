@@ -105,10 +105,8 @@ eval_metric_configs:
     - h.2.*
     all_but_layer_3:
     - h.3.*
-- coeff: null
-  classname: StochasticHiddenActsReconLoss
-- coeff: null
-  init: random
+- classname: StochasticHiddenActsReconLoss
+- init: random
   step_size: 0.1
   n_steps: 20
   mask_scope: shared_across_batch

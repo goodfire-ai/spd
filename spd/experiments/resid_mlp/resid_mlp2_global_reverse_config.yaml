@@ -97,9 +97,7 @@ eval_metric_configs:
     groups: null
   - classname: "CIMeanPerComponent"
   - classname: "StochasticHiddenActsReconLoss"
-    coeff: null
   - classname: "PGDReconLoss"
-    coeff: null
     init: random
     step_size: 0.1
     n_steps: 20

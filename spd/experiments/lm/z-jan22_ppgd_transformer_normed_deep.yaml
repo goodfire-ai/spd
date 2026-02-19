@@ -50,7 +50,11 @@ loss_metric_configs:
     coeff: 0.5
     optimizer:
       type: adam
-      lr: 0.01
+      lr_schedule:
+        start_val: 0.01
+        warmup_pct: 0.0
+        final_val_frac: 1.0
+        fn_type: constant
       beta1: 0.8
       beta2: 0.99
     scope:
