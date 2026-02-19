@@ -107,6 +107,12 @@ eval_metric_configs:
   rounding_threshold: 0.0
 - classname: CIMeanPerComponent
 - classname: StochasticHiddenActsReconLoss
+- classname: CIHiddenActsReconLoss
+- classname: PGDHiddenActsReconLoss
+  init: random
+  step_size: 0.1
+  n_steps: 20
+  mask_scope: shared_across_batch
 - init: random
   step_size: 0.1
   n_steps: 20

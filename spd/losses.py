@@ -31,12 +31,12 @@ from spd.metrics import (
     pgd_recon_layerwise_loss,
     pgd_recon_loss,
     pgd_recon_subset_loss,
-    stochastic_hidden_acts_recon_loss,
     stochastic_recon_layerwise_loss,
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
     unmasked_recon_loss,
 )
+from spd.metrics.hidden_acts_recon_loss import stochastic_hidden_acts_recon_loss
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.persistent_pgd import PersistentPGDState
 
@@ -48,7 +48,6 @@ def compute_losses(
     ci: CIOutputs,
     target_out: Tensor,
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
-    pre_weight_acts: dict[str, Float[Tensor, "..."]],
     current_frac_of_training: float,
     sampling: SamplingType,
     use_delta_component: bool,
@@ -180,7 +179,6 @@ def compute_losses(
                     sampling=sampling,
                     n_mask_samples=n_mask_samples,
                     batch=batch,
-                    pre_weight_acts=pre_weight_acts,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                 )
