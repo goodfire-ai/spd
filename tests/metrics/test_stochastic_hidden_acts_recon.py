@@ -15,10 +15,10 @@ class TestStochasticHiddenActsReconLoss:
         """Test stochastic hidden acts recon loss with manual calculation.
 
         For a two-layer model (batch -> fc1 -> hidden -> fc2 -> output):
-        - pre_weight_acts["fc1"] is the batch input (always same, MSE = 0)
-        - pre_weight_acts["fc2"] is the hidden activation (differs with stochastic masks)
+        - target output acts["fc1"] is fc1(batch) = batch @ W1^T
+        - target output acts["fc2"] is fc2(fc1(batch)) = fc1(batch) @ W2^T
 
-        This structure provides both a sanity check and meaningful test of the metric.
+        With stochastic masks, component outputs differ from target outputs for both layers.
         """
         torch.manual_seed(42)
 
@@ -29,13 +29,13 @@ class TestStochasticHiddenActsReconLoss:
 
         V1 = model.components["fc1"].V
         U1 = model.components["fc1"].U
+        V2 = model.components["fc2"].V
+        U2 = model.components["fc2"].U
 
         batch = torch.randn(1, 2, dtype=torch.float32)
 
-        # Get target pre_weight_acts (activations before each weight matrix)
-        # fc1: input is batch
-        # fc2: input is output of fc1
-        target_pre_weight_acts = model(batch, cache_type="input").cache
+        # Get target output acts (post-weight activations)
+        target_output_acts = model(batch, cache_type="output").cache
 
         ci = {
             "fc1": torch.tensor([[0.8]], dtype=torch.float32),
@@ -70,34 +70,34 @@ class TestStochasticHiddenActsReconLoss:
             )
 
         with patch(
-            "spd.metrics.stochastic_hidden_acts_recon_loss.calc_stochastic_component_mask_info",
+            "spd.metrics.hidden_acts_recon_loss.calc_stochastic_component_mask_info",
             side_effect=mock_calc_stochastic_component_mask_info,
         ):
-            # Calculate expected loss manually
+            # Calculate expected loss manually using output activations
             sum_mse = 0.0
             n_examples = 0
 
-            for mask1 in sample_masks_fc1:
-                # Stochastic forward pass for fc1
-                # pre_weight_acts["fc1"] is always batch (same as target)
-                stoch_fc1_input = batch
+            for i, mask1 in enumerate(sample_masks_fc1):
+                mask2 = sample_masks_fc2[i]
 
-                # pre_weight_acts["fc2"] is output of masked fc1
-                stoch_fc2_input = batch @ (V1 * mask1 @ U1)
+                # Component output of fc1: batch @ (V1 * mask1 @ U1)
+                comp_fc1_output = batch @ (V1 * mask1 @ U1)
 
-                # MSE for fc1 input (should be 0 - good sanity check!)
+                # Component output of fc2: comp_fc1_output @ (V2 * mask2 @ U2)
+                comp_fc2_output = comp_fc1_output @ (V2 * mask2 @ U2)
+
+                # MSE for fc1 output
                 mse_fc1 = torch.nn.functional.mse_loss(
-                    stoch_fc1_input, target_pre_weight_acts["fc1"], reduction="sum"
+                    comp_fc1_output, target_output_acts["fc1"], reduction="sum"
                 )
-                assert mse_fc1.item() == 0.0, f"MSE for fc1 input should be 0, got {mse_fc1.item()}"
 
-                # MSE for fc2 input (the actual meaningful comparison)
+                # MSE for fc2 output
                 mse_fc2 = torch.nn.functional.mse_loss(
-                    stoch_fc2_input, target_pre_weight_acts["fc2"], reduction="sum"
+                    comp_fc2_output, target_output_acts["fc2"], reduction="sum"
                 )
 
                 sum_mse += mse_fc1.item() + mse_fc2.item()
-                n_examples += stoch_fc1_input.numel() + stoch_fc2_input.numel()
+                n_examples += comp_fc1_output.numel() + comp_fc2_output.numel()
 
             expected_loss = sum_mse / n_examples
 
@@ -106,7 +106,6 @@ class TestStochasticHiddenActsReconLoss:
                 sampling="continuous",
                 n_mask_samples=2,
                 batch=batch,
-                pre_weight_acts=target_pre_weight_acts,
                 ci=ci,
                 weight_deltas=None,
             )
