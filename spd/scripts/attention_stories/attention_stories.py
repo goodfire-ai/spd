@@ -56,7 +56,7 @@ STORY_OFFSETS = [0, 1, 2, 4, 8]
 @dataclass
 class ComponentInfo:
     idx: int
-    mean_ci: float
+    causal_importance: float
     label: str | None
     reasoning: str | None
 
@@ -70,11 +70,11 @@ class KPartner:
 
 
 def _get_alive_indices(summary: dict[str, ComponentSummary], module_path: str) -> list[int]:
-    """Return component indices sorted by mean_ci descending, filtered to alive."""
+    """Return component indices sorted by CI descending, filtered to alive."""
     components = [
-        (s.component_idx, s.mean_ci)
+        (s.component_idx, s.mean_activations["causal_importance"])
         for s in summary.values()
-        if s.layer == module_path and s.mean_ci > MIN_MEAN_CI
+        if s.layer == module_path and s.mean_activations["causal_importance"] > MIN_MEAN_CI
     ]
     components.sort(key=lambda t: t[1], reverse=True)
     return [idx for idx, _ in components]
@@ -87,11 +87,11 @@ def _get_component_info(
     interp: dict[str, InterpretationResult],
 ) -> ComponentInfo:
     key = f"{module_path}:{component_idx}"
-    ci = summary[key].mean_ci
+    ci = summary[key].mean_activations["causal_importance"]
     result = interp.get(key)
     return ComponentInfo(
         idx=component_idx,
-        mean_ci=ci,
+        causal_importance=ci,
         label=result.label if result else None,
         reasoning=result.reasoning if result else None,
     )
@@ -251,7 +251,7 @@ def _render_kv_text(
     for kp in partners[:N_K_TEXT_PER_SIDE]:
         # K component header with multi-offset breakdown
         offset_str = ", ".join(f"\u0394={d}: {v:+.2f}" for d, v in kp.contributions_by_offset)
-        k_header = f"K C{kp.info.idx} (ci={kp.info.mean_ci:.3f})  [{offset_str}]"
+        k_header = f"K C{kp.info.idx} (ci={kp.info.causal_importance:.3f})  [{offset_str}]"
         if kp.info.label:
             k_header += f'  \u2014  "{kp.info.label}"'
         ax.text(
@@ -288,7 +288,9 @@ def _render_kv_text(
 
         # V partners
         for v_info, count in kp.v_partners:
-            v_header = f"  \u2192 V C{v_info.idx} (co-occ={count:.0f}, ci={v_info.mean_ci:.3f})"
+            v_header = (
+                f"  \u2192 V C{v_info.idx} (co-occ={count:.0f}, ci={v_info.causal_importance:.3f})"
+            )
             if v_info.label:
                 v_header += f'  \u2014  "{v_info.label}"'
             ax.text(
@@ -347,7 +349,7 @@ def _render_story_page(
     ax_header = fig.add_subplot(gs[0, :])
     ax_header.axis("off")
 
-    header_line = f"Q Component C{q_info.idx}   |   mean_ci = {q_info.mean_ci:.4f}"
+    header_line = f"Q Component C{q_info.idx}   |   ci = {q_info.causal_importance:.4f}"
     if q_info.label:
         header_line += f'   |   "{q_info.label}"'
     ax_header.text(
@@ -423,7 +425,7 @@ def _render_story_page(
 
 
 def _md_component(info: ComponentInfo, prefix: str, extra: str = "") -> str:
-    line = f"**{prefix} C{info.idx}** (ci={info.mean_ci:.3f})"
+    line = f"**{prefix} C{info.idx}** (ci={info.causal_importance:.3f})"
     if extra:
         line += f"  {extra}"
     if info.label:
@@ -468,7 +470,7 @@ def _write_layer_markdown(
     ]
 
     for q_info, pos_partners, neg_partners in stories:
-        header = f"## Q Component C{q_info.idx} (ci={q_info.mean_ci:.4f})"
+        header = f"## Q Component C{q_info.idx} (ci={q_info.causal_importance:.4f})"
         if q_info.label:
             header += f'  \u2014  "{q_info.label}"'
         lines.append(header + "\n")
@@ -541,7 +543,7 @@ def generate_attention_stories(wandb_path: ModelPath) -> None:
     model = ComponentModel.from_run_info(run_info)
     model.eval()
 
-    repo = HarvestRepo.open(run_id)
+    repo = HarvestRepo.open_most_recent(run_id)
     assert repo is not None, f"No harvest data found for {run_id}"
     summary = repo.get_summary()
     corr = repo.get_correlations()

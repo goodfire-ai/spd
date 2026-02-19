@@ -38,11 +38,11 @@ MIN_MEAN_CI = 0.01
 def _get_alive_indices(
     summary: dict[str, ComponentSummary], module_path: str, min_mean_ci: float
 ) -> list[int]:
-    """Return component indices for a module sorted by mean_ci descending, filtered by threshold."""
+    """Return component indices for a module sorted by CI descending, filtered by threshold."""
     components = [
-        (s.component_idx, s.mean_ci)
+        (s.component_idx, s.mean_activations["causal_importance"])
         for s in summary.values()
-        if s.layer == module_path and s.mean_ci > min_mean_ci
+        if s.layer == module_path and s.mean_activations["causal_importance"] > min_mean_ci
     ]
     components.sort(key=lambda t: t[1], reverse=True)
     return [idx for idx, _ in components]
@@ -93,7 +93,7 @@ def _plot_heatmap(
 
     ax.set_yticks(range(len(alive_indices)))
     ax.set_yticklabels([f"C{idx}" for idx in alive_indices], fontsize=7)
-    ax.set_ylabel("Component (sorted by mean_ci)")
+    ax.set_ylabel("Component (sorted by CI)")
 
     fig.suptitle(f"{run_id}  |  Layer {layer_idx} — {proj_name}", fontsize=14, fontweight="bold")
     fig.subplots_adjust(left=0.12, right=0.95, top=0.93, bottom=0.08)
@@ -114,7 +114,7 @@ def plot_component_head_norms(wandb_path: ModelPath) -> None:
     model = ComponentModel.from_run_info(run_info)
     model.eval()
 
-    repo = HarvestRepo.open(run_id)
+    repo = HarvestRepo.open_most_recent(run_id)
     assert repo is not None, f"No harvest data found for {run_id}"
     summary = repo.get_summary()
 

@@ -34,11 +34,11 @@ MIN_MEAN_CI = 0.01
 
 
 def _get_alive_indices(summary: dict[str, ComponentSummary], module_path: str) -> list[int]:
-    """Return component indices for a module sorted by mean_ci descending, filtered by threshold."""
+    """Return component indices for a module sorted by CI descending, filtered by threshold."""
     components = [
-        (s.component_idx, s.mean_ci)
+        (s.component_idx, s.mean_activations["causal_importance"])
         for s in summary.values()
-        if s.layer == module_path and s.mean_ci > MIN_MEAN_CI
+        if s.layer == module_path and s.mean_activations["causal_importance"] > MIN_MEAN_CI
     ]
     components.sort(key=lambda t: t[1], reverse=True)
     return [idx for idx, _ in components]
@@ -114,11 +114,11 @@ def _plot_heatmap(
 
     ax.set_xticks(range(n_k))
     ax.set_xticklabels([f"C{idx}" for idx in k_alive], fontsize=7, rotation=90)
-    ax.set_xlabel("k_proj component (sorted by mean_ci)")
+    ax.set_xlabel("k_proj component (sorted by CI)")
 
     ax.set_yticks(range(n_v))
     ax.set_yticklabels([f"C{idx}" for idx in v_alive], fontsize=7)
-    ax.set_ylabel("v_proj component (sorted by mean_ci)")
+    ax.set_ylabel("v_proj component (sorted by CI)")
 
     fig.suptitle(
         f"{run_id}  |  Layer {layer_idx} — k/v {metric_name}  (ci>{MIN_MEAN_CI})",
@@ -152,7 +152,7 @@ def plot_kv_coactivation(wandb_path: ModelPath) -> None:
     for d in (raw_dir, phi_dir, jaccard_dir):
         d.mkdir(parents=True, exist_ok=True)
 
-    repo = HarvestRepo.open(run_id)
+    repo = HarvestRepo.open_most_recent(run_id)
     assert repo is not None, f"No harvest data found for {run_id}"
     summary = repo.get_summary()
 

@@ -31,7 +31,7 @@ def _sorted_mean_cis_by_module(
     """Group mean_ci values by module, sorted descending within each module."""
     by_module = defaultdict[str, list[float]](list)
     for s in summary.values():
-        by_module[s.layer].append(s.mean_ci)
+        by_module[s.layer].append(s.mean_activations["causal_importance"])
     return {k: sorted(v, reverse=True) for k, v in sorted(by_module.items())}
 
 
@@ -81,7 +81,7 @@ def plot_mean_ci(wandb_path: ModelPath) -> None:
     out_dir = SCRIPT_DIR / "out" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    repo = HarvestRepo.open(run_id)
+    repo = HarvestRepo.open_most_recent(run_id)
     assert repo is not None, f"No harvest data found for {run_id}"
     summary = repo.get_summary()
 

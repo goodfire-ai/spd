@@ -41,22 +41,23 @@ MIN_MEAN_CI = 0.01
 def _get_alive_components(
     summary: dict[str, ComponentSummary], module_path: str, min_mean_ci: float
 ) -> list[tuple[str, int]]:
-    """Return (component_key, component_idx) pairs sorted by mean_ci descending."""
+    """Return (component_key, component_idx) pairs sorted by CI descending."""
     components = [
-        (key, s.component_idx, s.mean_ci)
+        (key, s.component_idx, s.mean_activations["causal_importance"])
         for key, s in summary.items()
-        if s.layer == module_path and s.mean_ci > min_mean_ci
+        if s.layer == module_path and s.mean_activations["causal_importance"] > min_mean_ci
     ]
     components.sort(key=lambda t: t[2], reverse=True)
     return [(key, idx) for key, idx, _ in components]
 
 
-def _mean_abs_act_on_ci_data(comp_data: ComponentData, ci_threshold: float) -> float:
-    """Compute mean absolute component activation on CI-important positions."""
+def _mean_abs_act_on_firing_data(comp_data: ComponentData) -> float:
+    """Compute mean absolute component activation on firing positions."""
     acts: list[float] = []
     for example in comp_data.activation_examples:
-        for ci, stored_act in zip(example.ci_values, example.component_acts, strict=True):
-            if ci > ci_threshold:
+        comp_acts = example.activations["component_activation"]
+        for firing, stored_act in zip(example.firings, comp_acts, strict=True):
+            if firing:
                 acts.append(abs(stored_act))
     if not acts:
         return 0.0
@@ -67,7 +68,6 @@ def _per_head_activations(
     component: LinearComponents,
     alive: list[tuple[str, int]],
     comp_data_map: dict[str, ComponentData],
-    ci_threshold: float,
     head_dim: int,
     n_heads: int,
 ) -> NDArray[np.floating]:
@@ -77,7 +77,7 @@ def _per_head_activations(
         comp_data = comp_data_map.get(key)
         if comp_data is None:
             continue
-        mean_act = _mean_abs_act_on_ci_data(comp_data, ci_threshold)
+        mean_act = _mean_abs_act_on_firing_data(comp_data)
         u_c = component.U[c_idx].float()
         u_norm = torch.linalg.norm(u_c).item()
         if u_norm == 0:
@@ -109,7 +109,7 @@ def _plot_heatmap(
 
     ax.set_yticks(range(len(alive_indices)))
     ax.set_yticklabels([f"C{idx}" for idx in alive_indices], fontsize=7)
-    ax.set_ylabel("Component (sorted by mean_ci)")
+    ax.set_ylabel("Component (sorted by CI)")
 
     fig.suptitle(
         f"{run_id}  |  Layer {layer_idx} — {proj_name}\nPer-head component activation on CI-important data",
@@ -134,10 +134,9 @@ def plot_per_head_component_activations(wandb_path: ModelPath) -> None:
     model = ComponentModel.from_run_info(run_info)
     model.eval()
 
-    repo = HarvestRepo.open(run_id)
+    repo = HarvestRepo.open_most_recent(run_id)
     assert repo is not None, f"No harvest data found for {run_id}"
     summary = repo.get_summary()
-    ci_threshold = repo.get_ci_threshold()
 
     target_model = model.target_model
     assert isinstance(target_model, LlamaSimpleMLP)
@@ -165,9 +164,7 @@ def plot_per_head_component_activations(wandb_path: ModelPath) -> None:
                 indices = [idx for _, idx in alive]
 
                 n_heads = component.U.shape[1] // head_dim
-                norms = _per_head_activations(
-                    component, alive, comp_data_map, ci_threshold, head_dim, n_heads
-                )
+                norms = _per_head_activations(component, alive, comp_data_map, head_dim, n_heads)
 
                 _plot_heatmap(norms, indices, n_heads, layer_idx, proj_name, run_id, out_dir)
 

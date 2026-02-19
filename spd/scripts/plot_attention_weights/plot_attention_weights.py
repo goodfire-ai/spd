@@ -39,11 +39,11 @@ COMPONENTS_PER_PAGE = GRID_SIZE * GRID_SIZE - 2  # 14 (2 cells for target + reco
 
 
 def _get_alive_indices(summary: dict[str, ComponentSummary], module_path: str) -> list[int]:
-    """Return component indices for a module sorted by mean_ci descending, filtered to alive."""
+    """Return component indices for a module sorted by CI descending, filtered to alive."""
     components = [
-        (s.component_idx, s.mean_ci)
+        (s.component_idx, s.mean_activations["causal_importance"])
         for s in summary.values()
-        if s.layer == module_path and s.mean_ci > 0
+        if s.layer == module_path and s.mean_activations["causal_importance"] > 0
     ]
     components.sort(key=lambda t: t[1], reverse=True)
     return [idx for idx, _ in components]
@@ -159,7 +159,7 @@ def plot_attention_weights(wandb_path: ModelPath) -> None:
     model = ComponentModel.from_run_info(run_info)
     model.eval()
 
-    repo = HarvestRepo.open(run_id)
+    repo = HarvestRepo.open_most_recent(run_id)
     assert repo is not None, f"No harvest data found for {run_id}"
     summary = repo.get_summary()
 

@@ -47,11 +47,11 @@ TOP_N = 10
 
 
 def _get_alive_indices(summary: dict[str, ComponentSummary], module_path: str) -> list[int]:
-    """Return component indices with mean_ci > MIN_MEAN_CI, sorted by mean_ci descending."""
+    """Return component indices with CI > MIN_MEAN_CI, sorted descending."""
     components = [
-        (s.component_idx, s.mean_ci)
+        (s.component_idx, s.mean_activations["causal_importance"])
         for s in summary.values()
-        if s.layer == module_path and s.mean_ci > MIN_MEAN_CI
+        if s.layer == module_path and s.mean_activations["causal_importance"] > MIN_MEAN_CI
     ]
     components.sort(key=lambda t: t[1], reverse=True)
     return [idx for idx, _ in components]
@@ -552,7 +552,7 @@ def characterize_induction_components(
     spd_model = spd_model.to(device)
     target_model = target_model.to(device)
 
-    repo = HarvestRepo.open(run_id)
+    repo = HarvestRepo.open_most_recent(run_id)
     assert repo is not None, f"No harvest data for {run_id}"
     summary = repo.get_summary()
 
