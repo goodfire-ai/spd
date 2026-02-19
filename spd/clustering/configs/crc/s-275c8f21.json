@@ -9,7 +9,7 @@
       "module_name_filter": null
     },
     "model_path": "wandb:goodfire/spd/runs/s-275c8f21",
-    "batch_size": 512,
+    "batch_size": 256,
     "wandb_project": null,
     "logging_intervals": {
       "stat": 10,
