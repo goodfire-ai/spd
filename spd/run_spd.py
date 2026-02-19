@@ -254,6 +254,9 @@ def optimize(
         for group in optimizer.param_groups:
             group["lr"] = step_lr
 
+        for ppgd_cfg in persistent_pgd_configs:
+            ppgd_states[ppgd_cfg].update_lr(step, config.steps)
+
         weight_deltas = component_model.calc_weight_deltas()
 
         batch_log_data: defaultdict[str, float] = defaultdict(float)
