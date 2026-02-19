@@ -152,7 +152,7 @@ class PersistentPGDState:
                 assert batch_dims[0] % n == 0, (
                     f"n_sources={n} must divide the per-rank microbatch size "
                     f"{batch_dims[0]}, not the global batch size. "
-                    f"With DDP, reduce n_sources or use fewer ranks."
+                    f"Adjust n_sources or batch_size to satisfy this."
                 )
                 source_leading_dims = [n] + list(batch_dims[1:])
             case PerBatchPerPositionScope():
