@@ -72,7 +72,7 @@ def _load_lm_batch(
     config_kwargs_: dict[str, Any] = {
         **dict(
             is_tokenized=cfg.task_config.is_tokenized,
-            streaming=False,
+            streaming=cfg.task_config.streaming,
         ),
         **(config_kwargs or {}),
     }
