@@ -137,8 +137,9 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 - `spd/harvest/` - Offline GPU pipeline for collecting component statistics (correlations, token stats, activation examples)
 - `spd/autointerp/` - LLM-based automated interpretation of components
 - `spd/dataset_attributions/` - Multi-GPU pipeline for computing component-to-component attribution strengths aggregated over training data
-- Data stored at `SPD_OUT_DIR/{harvest,autointerp,dataset_attributions}/<run_id>/`
-- See `spd/harvest/CLAUDE.md`, `spd/autointerp/CLAUDE.md`, and `spd/dataset_attributions/CLAUDE.md` for details
+- `spd/topological_interp/` - Context-aware component labeling using graph structure (attributions + correlations)
+- Data stored at `SPD_OUT_DIR/{harvest,autointerp,dataset_attributions,topological_interp}/<run_id>/`
+- See `spd/harvest/CLAUDE.md`, `spd/autointerp/CLAUDE.md`, `spd/dataset_attributions/CLAUDE.md`, and `spd/topological_interp/CLAUDE.md` for details
 
 **Output Directory (`SPD_OUT_DIR`):**
 
@@ -166,6 +167,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 │   ├── dataset_attributions/        # Dataset attributions (see dataset_attributions/CLAUDE.md)
 │   ├── harvest/                     # Statistics collection (see harvest/CLAUDE.md)
 │   ├── postprocess/                 # Unified postprocessing pipeline (harvest + attributions + autointerp)
+│   ├── topological_interp/          # Context-aware interpretation (see topological_interp/CLAUDE.md)
 │   ├── pretrain/                    # Target model pretraining (see pretrain/CLAUDE.md)
 │   ├── experiments/                 # Experiment implementations
 │   │   ├── tms/                     # Toy Model of Superposition
@@ -201,6 +203,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 | `spd-autointerp` | `spd/autointerp/scripts/run_slurm_cli.py` | Submit autointerp SLURM job |
 | `spd-attributions` | `spd/dataset_attributions/scripts/run_slurm_cli.py` | Submit dataset attribution SLURM job |
 | `spd-postprocess` | `spd/postprocess/cli.py` | Unified postprocessing pipeline (harvest + attributions + interpret + evals) |
+| `spd-topological-interp` | `spd/topological_interp/scripts/run_slurm_cli.py` | Submit topological interpretation SLURM job |
 | `spd-clustering` | `spd/clustering/scripts/run_pipeline.py` | Clustering pipeline |
 | `spd-pretrain` | `spd/pretrain/scripts/run_slurm_cli.py` | Pretrain target models |
 

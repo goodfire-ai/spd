@@ -1,0 +1,227 @@
+"""SQLite database for topological interpretation data."""
+
+import sqlite3
+from pathlib import Path
+
+from spd.topological_interp.schemas import LabelResult, PromptEdge
+
+_SCHEMA = """\
+CREATE TABLE IF NOT EXISTS output_labels (
+    component_key TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    confidence TEXT NOT NULL,
+    reasoning TEXT NOT NULL,
+    raw_response TEXT NOT NULL,
+    prompt TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS input_labels (
+    component_key TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    confidence TEXT NOT NULL,
+    reasoning TEXT NOT NULL,
+    raw_response TEXT NOT NULL,
+    prompt TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS unified_labels (
+    component_key TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    confidence TEXT NOT NULL,
+    reasoning TEXT NOT NULL,
+    raw_response TEXT NOT NULL,
+    prompt TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS prompt_edges (
+    component_key TEXT NOT NULL,
+    neighbor_key TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    pass TEXT NOT NULL,
+    attribution REAL NOT NULL,
+    neighbor_label TEXT,
+    neighbor_confidence TEXT,
+    PRIMARY KEY (component_key, neighbor_key, direction, pass)
+);
+
+CREATE TABLE IF NOT EXISTS config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+
+
+class TopologicalInterpDB:
+    def __init__(self, db_path: Path, readonly: bool = False) -> None:
+        if readonly:
+            self._conn = sqlite3.connect(
+                f"file:{db_path}?immutable=1", uri=True, check_same_thread=False
+            )
+        else:
+            self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.executescript(_SCHEMA)
+        self._conn.row_factory = sqlite3.Row
+
+    # -- Output labels ---------------------------------------------------------
+
+    def save_output_label(self, result: LabelResult) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO output_labels VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                result.component_key,
+                result.label,
+                result.confidence,
+                result.reasoning,
+                result.raw_response,
+                result.prompt,
+            ),
+        )
+        self._conn.commit()
+
+    def get_output_label(self, component_key: str) -> LabelResult | None:
+        row = self._conn.execute(
+            "SELECT * FROM output_labels WHERE component_key = ?", (component_key,)
+        ).fetchone()
+        if row is None:
+            return None
+        return _row_to_label_result(row)
+
+    def get_all_output_labels(self) -> dict[str, LabelResult]:
+        rows = self._conn.execute("SELECT * FROM output_labels").fetchall()
+        return {row["component_key"]: _row_to_label_result(row) for row in rows}
+
+    def get_completed_output_keys(self) -> set[str]:
+        rows = self._conn.execute("SELECT component_key FROM output_labels").fetchall()
+        return {row["component_key"] for row in rows}
+
+    # -- Input labels ----------------------------------------------------------
+
+    def save_input_label(self, result: LabelResult) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO input_labels VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                result.component_key,
+                result.label,
+                result.confidence,
+                result.reasoning,
+                result.raw_response,
+                result.prompt,
+            ),
+        )
+        self._conn.commit()
+
+    def get_input_label(self, component_key: str) -> LabelResult | None:
+        row = self._conn.execute(
+            "SELECT * FROM input_labels WHERE component_key = ?", (component_key,)
+        ).fetchone()
+        if row is None:
+            return None
+        return _row_to_label_result(row)
+
+    def get_all_input_labels(self) -> dict[str, LabelResult]:
+        rows = self._conn.execute("SELECT * FROM input_labels").fetchall()
+        return {row["component_key"]: _row_to_label_result(row) for row in rows}
+
+    def get_completed_input_keys(self) -> set[str]:
+        rows = self._conn.execute("SELECT component_key FROM input_labels").fetchall()
+        return {row["component_key"] for row in rows}
+
+    # -- Unified labels --------------------------------------------------------
+
+    def save_unified_label(self, result: LabelResult) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO unified_labels VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                result.component_key,
+                result.label,
+                result.confidence,
+                result.reasoning,
+                result.raw_response,
+                result.prompt,
+            ),
+        )
+        self._conn.commit()
+
+    def get_unified_label(self, component_key: str) -> LabelResult | None:
+        row = self._conn.execute(
+            "SELECT * FROM unified_labels WHERE component_key = ?", (component_key,)
+        ).fetchone()
+        if row is None:
+            return None
+        return _row_to_label_result(row)
+
+    def get_all_unified_labels(self) -> dict[str, LabelResult]:
+        rows = self._conn.execute("SELECT * FROM unified_labels").fetchall()
+        return {row["component_key"]: _row_to_label_result(row) for row in rows}
+
+    def get_completed_unified_keys(self) -> set[str]:
+        rows = self._conn.execute("SELECT component_key FROM unified_labels").fetchall()
+        return {row["component_key"] for row in rows}
+
+    # -- Prompt edges ----------------------------------------------------------
+
+    def save_prompt_edges(self, edges: list[PromptEdge]) -> None:
+        rows = [
+            (
+                e.component_key,
+                e.neighbor_key,
+                e.direction,
+                e.pass_name,
+                e.attribution,
+                e.neighbor_label,
+                e.neighbor_confidence,
+            )
+            for e in edges
+        ]
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO prompt_edges VALUES (?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+        self._conn.commit()
+
+    def get_prompt_edges(self, component_key: str) -> list[PromptEdge]:
+        rows = self._conn.execute(
+            "SELECT * FROM prompt_edges WHERE component_key = ?", (component_key,)
+        ).fetchall()
+        return [_row_to_prompt_edge(row) for row in rows]
+
+    # -- Config ----------------------------------------------------------------
+
+    def save_config(self, key: str, value: str) -> None:
+        self._conn.execute("INSERT OR REPLACE INTO config VALUES (?, ?)", (key, value))
+        self._conn.commit()
+
+    # -- Stats -----------------------------------------------------------------
+
+    def get_label_count(self, table: str) -> int:
+        assert table in ("output_labels", "input_labels", "unified_labels")
+        row = self._conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+        assert row is not None
+        return row[0]
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+def _row_to_label_result(row: sqlite3.Row) -> LabelResult:
+    return LabelResult(
+        component_key=row["component_key"],
+        label=row["label"],
+        confidence=row["confidence"],
+        reasoning=row["reasoning"],
+        raw_response=row["raw_response"],
+        prompt=row["prompt"],
+    )
+
+
+def _row_to_prompt_edge(row: sqlite3.Row) -> PromptEdge:
+    return PromptEdge(
+        component_key=row["component_key"],
+        neighbor_key=row["neighbor_key"],
+        direction=row["direction"],
+        pass_name=row["pass"],
+        attribution=row["attribution"],
+        neighbor_label=row["neighbor_label"],
+        neighbor_confidence=row["neighbor_confidence"],
+    )
