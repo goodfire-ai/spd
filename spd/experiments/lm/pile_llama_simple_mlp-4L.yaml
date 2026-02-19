@@ -56,10 +56,14 @@ loss_metric_configs:
   classname: PersistentPGDReconLoss
   optimizer:
     type: adam
-    lr: 0.01
     beta1: 0.5
     beta2: 0.99
     eps: 1.0e-08
+    lr_schedule:
+      start_val: 0.01
+      warmup_pct: 0.001
+      final_val_frac: 0.1
+      fn_type: cosine
   scope:
     type: per_batch_per_position
   use_sigmoid_parameterization: false
