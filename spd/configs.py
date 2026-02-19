@@ -447,15 +447,39 @@ class PGDMultiBatchReconSubsetLossConfig(PGDMultiBatchConfig):
 
 class SignPGDConfig(BaseConfig):
     type: Literal["sign"] = "sign"
-    step_size: float = Field(..., description="PGD step size for mask updates")
+    lr_schedule: ScheduleConfig
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_step_size(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "step_size" in data and "lr_schedule" not in data:
+            data["lr_schedule"] = {
+                "start_val": data.pop("step_size"),
+                "warmup_pct": 0.0,
+                "final_val_frac": 1.0,
+                "fn_type": "constant",
+            }
+        return data
 
 
 class AdamPGDConfig(BaseConfig):
     type: Literal["adam"] = "adam"
-    lr: float = Field(..., description="Learning rate for Adam PGD")
     beta1: Probability = Field(default=0.9, description="Adam beta1 for masks")
     beta2: Probability = Field(default=0.999, description="Adam beta2 for masks")
     eps: NonNegativeFloat = Field(default=1e-8, description="Adam epsilon for masks")
+    lr_schedule: ScheduleConfig
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_lr(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "lr" in data and "lr_schedule" not in data:
+            data["lr_schedule"] = {
+                "start_val": data.pop("lr"),
+                "warmup_pct": 0.0,
+                "final_val_frac": 1.0,
+                "fn_type": "constant",
+            }
+        return data
 
 
 PGDOptimizerConfig = SignPGDConfig | AdamPGDConfig
@@ -814,6 +838,13 @@ class Config(BaseConfig):
     ci_alive_threshold: Probability = Field(
         default=0.0,
         description="Causal importance threshold above which a component is considered 'firing'",
+    )
+
+    # --- SPD checkpoint initialization ---
+    init_spd_checkpoint: str | None = Field(
+        default=None,
+        description="Path to a .pth checkpoint from a prior SPD run. If set, component and CI "
+        "weights are loaded from this checkpoint instead of being randomly initialized.",
     )
 
     # --- Pretrained model info ---

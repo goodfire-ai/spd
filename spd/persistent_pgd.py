@@ -31,7 +31,7 @@ from spd.models.component_model import ComponentModel
 from spd.models.components import ComponentsMaskInfo, RoutingMasks, make_mask_infos
 from spd.routing import AllLayersRouter, Router, get_subset_router
 from spd.utils.distributed_utils import all_reduce, broadcast_tensor
-from spd.utils.general_utils import calc_sum_recon_loss_lm
+from spd.utils.general_utils import calc_sum_recon_loss_lm, get_scheduled_value
 
 PPGDSources = dict[str, Float[Tensor, " source_c"]]
 
@@ -47,10 +47,14 @@ class PPGDOptimizer(ABC):
     def step(self, sources: PPGDSources, grads: PPGDSources) -> None:
         """Perform one update step on sources using gradients. Updates sources in-place."""
 
+    @abstractmethod
+    def set_lr(self, lr: float) -> None:
+        """Update the learning rate / step size."""
+
 
 class SignPGDOptimizer(PPGDOptimizer):
     def __init__(self, cfg: SignPGDConfig) -> None:
-        self._step_size = cfg.step_size
+        self._step_size = cfg.lr_schedule.start_val
 
     @override
     def init_state(self, sources: PPGDSources) -> None:
@@ -61,10 +65,14 @@ class SignPGDOptimizer(PPGDOptimizer):
         for module_name in sources:
             sources[module_name].add_(self._step_size * grads[module_name].sign())
 
+    @override
+    def set_lr(self, lr: float) -> None:
+        self._step_size = lr
+
 
 class AdamPGDOptimizer(PPGDOptimizer):
     def __init__(self, cfg: AdamPGDConfig) -> None:
-        self._lr = cfg.lr
+        self._lr = cfg.lr_schedule.start_val
         self._beta1 = cfg.beta1
         self._beta2 = cfg.beta2
         self._eps = cfg.eps
@@ -93,6 +101,10 @@ class AdamPGDOptimizer(PPGDOptimizer):
             v_hat = v / bias_correction2
             denom = v_hat.sqrt().add_(self._eps)
             source.add_(self._lr * m_hat / denom)
+
+    @override
+    def set_lr(self, lr: float) -> None:
+        self._lr = lr
 
 
 def make_ppgd_optimizer(cfg: PGDOptimizerConfig) -> PPGDOptimizer:
@@ -127,6 +139,7 @@ class PersistentPGDState:
         self._router = _get_router_for_ppgd_config(cfg, device)
         self._n_warmup_steps = cfg.n_warmup_steps
         self._output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self._lr_schedule = cfg.optimizer.lr_schedule
 
         self.sources: PPGDSources = {}
 
@@ -186,6 +199,10 @@ class PersistentPGDState:
         if self._use_sigmoid_parameterization:
             return {k: torch.sigmoid(v) for k, v in self.sources.items()}
         return self.sources
+
+    def update_lr(self, step: int, total_steps: int) -> None:
+        lr = get_scheduled_value(step, total_steps, self._lr_schedule)
+        self.optimizer.set_lr(lr)
 
     def warmup(
         self,
