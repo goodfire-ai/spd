@@ -587,6 +587,14 @@ class StochasticHiddenActsReconLossConfig(LossMetricConfig):
     classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
 
 
+class CIHiddenActsReconLossConfig(BaseConfig):
+    classname: Literal["CIHiddenActsReconLoss"] = "CIHiddenActsReconLoss"
+
+
+class PGDHiddenActsReconLossConfig(PGDConfig):
+    classname: Literal["PGDHiddenActsReconLoss"] = "PGDHiddenActsReconLoss"
+
+
 #### Metrics that can only be used in eval ####
 class CEandKLLossesConfig(BaseConfig):
     classname: Literal["CEandKLLosses"] = "CEandKLLosses"
@@ -661,11 +669,13 @@ LossMetricConfigType = FaithfulnessLossConfig | ImportanceMinimalityLossConfig |
 
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig
+    | CIHiddenActsReconLossConfig
     | CIHistogramsConfig
     | CI_L0Config
     | CIMeanPerComponentConfig
     | ComponentActivationDensityConfig
     | IdentityCIErrorConfig
+    | PGDHiddenActsReconLossConfig
     | PermutedCIPlotsConfig
     | UVPlotsConfig
     | StochasticReconSubsetCEAndKLConfig

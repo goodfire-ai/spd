@@ -12,6 +12,7 @@ from wandb.plot.custom_chart import CustomChart
 from spd.configs import (
     CEandKLLossesConfig,
     CI_L0Config,
+    CIHiddenActsReconLossConfig,
     CIHistogramsConfig,
     CIMaskedReconLayerwiseLossConfig,
     CIMaskedReconLossConfig,
@@ -26,6 +27,7 @@ from spd.configs import (
     PermutedCIPlotsConfig,
     PersistentPGDReconLossConfig,
     PersistentPGDReconSubsetLossConfig,
+    PGDHiddenActsReconLossConfig,
     PGDMultiBatchReconLossConfig,
     PGDMultiBatchReconSubsetLossConfig,
     PGDReconLayerwiseLossConfig,
@@ -50,6 +52,11 @@ from spd.metrics.ci_masked_recon_subset_loss import CIMaskedReconSubsetLoss
 from spd.metrics.ci_mean_per_component import CIMeanPerComponent
 from spd.metrics.component_activation_density import ComponentActivationDensity
 from spd.metrics.faithfulness_loss import FaithfulnessLoss
+from spd.metrics.hidden_acts_recon_loss import (
+    CIHiddenActsReconLoss,
+    PGDHiddenActsReconLoss,
+    StochasticHiddenActsReconLoss,
+)
 from spd.metrics.identity_ci_error import IdentityCIError
 from spd.metrics.importance_minimality_loss import ImportanceMinimalityLoss
 from spd.metrics.permuted_ci_plots import PermutedCIPlots
@@ -57,7 +64,6 @@ from spd.metrics.pgd_masked_recon_layerwise_loss import PGDReconLayerwiseLoss
 from spd.metrics.pgd_masked_recon_loss import PGDReconLoss
 from spd.metrics.pgd_masked_recon_subset_loss import PGDReconSubsetLoss
 from spd.metrics.pgd_utils import CreateDataIter, calc_multibatch_pgd_masked_recon_loss
-from spd.metrics.stochastic_hidden_acts_recon_loss import StochasticHiddenActsReconLoss
 from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwiseLoss
 from spd.metrics.stochastic_recon_loss import StochasticReconLoss
 from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetCEAndKL
@@ -261,6 +267,15 @@ def init_metric(
                 sampling=run_config.sampling,
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
+            )
+        case CIHiddenActsReconLossConfig():
+            metric = CIHiddenActsReconLoss(model=model, device=device)
+        case PGDHiddenActsReconLossConfig():
+            metric = PGDHiddenActsReconLoss(
+                model=model,
+                device=device,
+                use_delta_component=run_config.use_delta_component,
+                pgd_config=cfg,
             )
         case UVPlotsConfig():
             metric = UVPlots(

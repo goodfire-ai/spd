@@ -40,7 +40,7 @@ module_info:
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.0004
+- coeff: 0.0006
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
   beta: 0.2
@@ -56,10 +56,14 @@ loss_metric_configs:
   classname: PersistentPGDReconLoss
   optimizer:
     type: adam
-    lr: 0.01
     beta1: 0.5
     beta2: 0.99
     eps: 1.0e-08
+    lr_schedule:
+      start_val: 0.01
+      warmup_pct: 0.025
+      final_val_frac: 0.1
+      fn_type: cosine
   scope:
     type: per_batch_per_position
   use_sigmoid_parameterization: false
