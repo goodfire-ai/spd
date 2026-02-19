@@ -198,6 +198,7 @@ async def run_fuzzing_scoring(
         max_concurrent=max_concurrent,
         max_requests_per_minute=max_requests_per_minute,
         cost_limit_usd=cost_limit_usd,
+        response_schema=FUZZING_SCHEMA,
     ):
         match outcome:
             case LLMResult(job=job, parsed=parsed):
