@@ -86,7 +86,6 @@ def get_upstream_neighbors(
 def get_cofiring_neighbors(
     component_key: str,
     correlation_storage: CorrelationStorage,
-    db: TopologicalInterpDB,
     k: int,
 ) -> list[NeighborContext]:
     """Top-K co-firing components by Jaccard similarity."""
@@ -101,20 +100,17 @@ def get_cofiring_neighbors(
     for c in pmi_results:
         pmi_lookup[c.component_key] = c.score
 
-    result: list[NeighborContext] = []
-    for c in correlated:
-        output_label = db.get_output_label(c.component_key)
-        result.append(
-            NeighborContext(
-                component_key=c.component_key,
-                attribution=0.0,
-                label=output_label.label if output_label else None,
-                confidence=output_label.confidence if output_label else None,
-                jaccard=c.score,
-                pmi=pmi_lookup.get(c.component_key),
-            )
+    return [
+        NeighborContext(
+            component_key=c.component_key,
+            attribution=0.0,
+            label=None,
+            confidence=None,
+            jaccard=c.score,
+            pmi=pmi_lookup.get(c.component_key),
         )
-    return result
+        for c in correlated
+    ]
 
 
 def _build_cofiring_lookup(

@@ -264,7 +264,7 @@ def _build_input_jobs(
             model_metadata.layer_descriptions,
             config.top_k_neighbors,
         )
-        cofiring = get_cofiring_neighbors(key, correlation_storage, db, config.top_k_correlated)
+        cofiring = get_cofiring_neighbors(key, correlation_storage, config.top_k_correlated)
 
         _save_edges_for_pass(db, key, [], upstream, "input", cofiring=cofiring)
 
