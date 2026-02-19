@@ -207,6 +207,7 @@ async def run_intruder_scoring(
         max_concurrent=eval_config.max_concurrent,
         max_requests_per_minute=eval_config.max_requests_per_minute,
         cost_limit_usd=cost_limit_usd,
+        response_schema=INTRUDER_SCHEMA,
     ):
         match outcome:
             case LLMResult(job=job, parsed=parsed):

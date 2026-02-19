@@ -5,10 +5,9 @@ from pathlib import Path
 from typing import Any
 
 from jaxtyping import Bool, Float, Int
-from pydantic import model_validator
+from pydantic import BaseModel, model_validator
 from torch import Tensor
 
-from spd.base_config import BaseConfig
 from spd.settings import SPD_OUT_DIR
 
 # Base directory for harvest data
@@ -43,7 +42,7 @@ class HarvestBatch:
     output_probs: Float[Tensor, "batch seq vocab"]
 
 
-class ActivationExample(BaseConfig):
+class ActivationExample(BaseModel):
     """Activation example for a single component. no padding"""
 
     token_ids: list[int]
@@ -67,12 +66,12 @@ class ActivationExample(BaseConfig):
         return data
 
 
-class ComponentTokenPMI(BaseConfig):
+class ComponentTokenPMI(BaseModel):
     top: list[tuple[int, float]]
     bottom: list[tuple[int, float]]
 
 
-class ComponentSummary(BaseConfig):
+class ComponentSummary(BaseModel):
     """Lightweight summary of a component (for /summary endpoint)."""
 
     layer: str
@@ -82,7 +81,7 @@ class ComponentSummary(BaseConfig):
     """Key is activation type, (e.g. "causal_importance", "component_activation", etc.)"""
 
 
-class ComponentData(BaseConfig):
+class ComponentData(BaseModel):
     component_key: str
     layer: str
     component_idx: int
