@@ -448,6 +448,7 @@ class PGDMultiBatchReconSubsetLossConfig(PGDMultiBatchConfig):
 class SignPGDConfig(BaseConfig):
     type: Literal["sign"] = "sign"
     step_size: float = Field(..., description="PGD step size for mask updates")
+    lr_schedule: ScheduleConfig | None = None
 
 
 class AdamPGDConfig(BaseConfig):
@@ -456,6 +457,7 @@ class AdamPGDConfig(BaseConfig):
     beta1: Probability = Field(default=0.9, description="Adam beta1 for masks")
     beta2: Probability = Field(default=0.999, description="Adam beta2 for masks")
     eps: NonNegativeFloat = Field(default=1e-8, description="Adam epsilon for masks")
+    lr_schedule: ScheduleConfig | None = None
 
 
 PGDOptimizerConfig = SignPGDConfig | AdamPGDConfig
@@ -814,6 +816,13 @@ class Config(BaseConfig):
     ci_alive_threshold: Probability = Field(
         default=0.0,
         description="Causal importance threshold above which a component is considered 'firing'",
+    )
+
+    # --- SPD checkpoint initialization ---
+    init_spd_checkpoint: str | None = Field(
+        default=None,
+        description="Path to a .pth checkpoint from a prior SPD run. If set, component and CI "
+        "weights are loaded from this checkpoint instead of being randomly initialized.",
     )
 
     # --- Pretrained model info ---
