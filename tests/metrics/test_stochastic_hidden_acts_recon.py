@@ -70,7 +70,7 @@ class TestStochasticHiddenActsReconLoss:
             )
 
         with patch(
-            "spd.metrics.stochastic_hidden_acts_recon_loss.calc_stochastic_component_mask_info",
+            "spd.metrics.hidden_acts_recon_loss.calc_stochastic_component_mask_info",
             side_effect=mock_calc_stochastic_component_mask_info,
         ):
             # Calculate expected loss manually
