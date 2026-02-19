@@ -15,9 +15,11 @@ import math
 from pathlib import Path
 
 import fire
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from matplotlib.lines import Line2D
 from numpy.typing import NDArray
 
 from spd.harvest.repo import HarvestRepo
@@ -201,9 +203,304 @@ def _plot_diff_heatmaps(
     logger.info(f"Saved {path}")
 
 
+def _plot_heatmaps_per_head(
+    W: NDArray[np.floating],
+    q_alive: list[int],
+    k_alive: list[int],
+    n_q_heads: int,
+    layer_idx: int,
+    run_id: str,
+    out_dir: Path,
+    offsets: tuple[int, ...],
+    vmax: float,
+) -> None:
+    """For each head (and Sum), plot a grid of heatmaps across all offsets."""
+    n_offsets = len(offsets)
+    n_cols = math.ceil(math.sqrt(n_offsets))
+    n_rows = math.ceil(n_offsets / n_cols)
+    n_q, n_k = len(q_alive), len(k_alive)
+
+    per_head_dir = out_dir / "heatmap_offsets_per_head"
+    per_head_dir.mkdir(parents=True, exist_ok=True)
+
+    cell_w = max(4, n_k * 0.15)
+    cell_h = max(3, n_q * 0.15)
+
+    # W shape: (n_offsets, n_q_heads, n_q, n_k)
+    # Build list of (label, data) where data is (n_offsets, n_q, n_k)
+    head_series: list[tuple[str, NDArray[np.floating]]] = [
+        ("Sum", W.sum(axis=1)),
+    ] + [(f"H{h}", W[:, h]) for h in range(n_q_heads)]
+
+    for label, data in head_series:
+        fig, axes = plt.subplots(
+            n_rows, n_cols, figsize=(cell_w * n_cols, cell_h * n_rows), squeeze=False
+        )
+
+        for cell, offset in enumerate(offsets):
+            row, col = divmod(cell, n_cols)
+            ax = axes[row, col]
+            im = ax.imshow(data[cell], aspect="auto", cmap="RdBu_r", vmin=-vmax, vmax=vmax)
+            fig.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
+            ax.set_title(f"\u0394={offset}", fontsize=10)
+            ax.set_yticks(range(n_q))
+            ax.set_yticklabels([f"Q C{idx}" for idx in q_alive], fontsize=5)
+            ax.set_xticks(range(n_k))
+            ax.set_xticklabels([f"K C{idx}" for idx in k_alive], fontsize=5, rotation=90)
+
+        for i in range(n_offsets, n_rows * n_cols):
+            row, col = divmod(i, n_cols)
+            axes[row, col].set_visible(False)
+
+        fig.suptitle(
+            f"{run_id}  |  Layer {layer_idx} {label} \u2014 q\u00b7k attention contributions"
+            f"  (ci>{MIN_MEAN_CI})",
+            fontsize=14,
+            fontweight="bold",
+        )
+        fig.subplots_adjust(hspace=0.3, wspace=0.4)
+
+        path = per_head_dir / f"layer{layer_idx}_qk_attention_{label.lower()}.png"
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        logger.info(f"Saved {path}")
+
+
+HEAD_CMAPS = [
+    "Reds",
+    "Blues",
+    "Greens",
+    "Oranges",
+    "Purples",
+    "Greys",
+    "YlOrBr",
+    "BuPu",
+    "PuRd",
+    "GnBu",
+    "OrRd",
+    "YlGn",
+]
+
+
+def _plot_head_vs_sum_scatter(
+    W: NDArray[np.floating],
+    n_q_heads: int,
+    layer_idx: int,
+    run_id: str,
+    out_dir: Path,
+    offsets: tuple[int, ...],
+) -> None:
+    """Scatter: x = sum-across-heads contribution, y = per-head contribution.
+
+    Each head uses a distinct sequential colormap; within that colormap each
+    offset maps to a different shade (darker = larger offset index).
+    """
+    # W shape: (n_offsets, n_q_heads, n_q, n_k)
+    W_summed = W.sum(axis=1)  # (n_offsets, n_q, n_k)
+    n_offsets = len(offsets)
+
+    # Map offset indices to colormap values in [0.3, 0.9] so no shade is too light
+    norm = mcolors.Normalize(vmin=-0.5, vmax=n_offsets - 0.5)
+    offset_vals = [0.3 + 0.6 * norm(i) for i in range(n_offsets)]
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+
+    for h in range(n_q_heads):
+        cmap = plt.get_cmap(HEAD_CMAPS[h % len(HEAD_CMAPS)])
+        for oi, offset in enumerate(offsets):
+            x = W_summed[oi].ravel()
+            y = W[oi, h].ravel()
+            color = cmap(offset_vals[oi])
+            ax.scatter(
+                x,
+                y,
+                s=6,
+                alpha=0.5,
+                color=color,
+                label=f"H{h} \u0394={offset}",
+                edgecolors="none",
+                rasterized=True,
+            )
+
+    # x=y reference line
+    lo = min(ax.get_xlim()[0], ax.get_ylim()[0])
+    hi = max(ax.get_xlim()[1], ax.get_ylim()[1])
+    ax.plot([lo, hi], [lo, hi], "k--", linewidth=0.5, alpha=0.4)
+    ax.set_xlim((lo, hi))
+    ax.set_ylim((lo, hi))
+
+    ax.set_xlabel("Summed (all heads) attention contribution")
+    ax.set_ylabel("Per-head attention contribution")
+    ax.set_aspect("equal")
+
+    # Legend: one entry per head (color patch at mid-shade), one per offset (grey shades)
+    head_handles = []
+    for h in range(n_q_heads):
+        cmap = plt.get_cmap(HEAD_CMAPS[h % len(HEAD_CMAPS)])
+        head_handles.append(
+            Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="none",
+                markerfacecolor=cmap(0.6),
+                markersize=6,
+                label=f"H{h}",
+            )
+        )
+    offset_handles = []
+    for oi, offset in enumerate(offsets):
+        grey = str(1.0 - offset_vals[oi])  # darker for higher offset index
+        offset_handles.append(
+            Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="none",
+                markerfacecolor=grey,
+                markersize=6,
+                label=f"\u0394={offset}",
+            )
+        )
+
+    leg1 = ax.legend(
+        handles=head_handles,
+        loc="upper left",
+        fontsize=7,
+        title="Head",
+        title_fontsize=8,
+        framealpha=0.8,
+    )
+    ax.add_artist(leg1)
+    ax.legend(
+        handles=offset_handles,
+        loc="lower right",
+        fontsize=7,
+        title="Offset",
+        title_fontsize=8,
+        framealpha=0.8,
+    )
+
+    fig.suptitle(
+        f"{run_id}  |  Layer {layer_idx} \u2014 per-head vs summed q\u00b7k contributions"
+        f"  (ci>{MIN_MEAN_CI})",
+        fontsize=12,
+        fontweight="bold",
+    )
+
+    scatter_dir = out_dir / "scatter_head_vs_sum"
+    scatter_dir.mkdir(parents=True, exist_ok=True)
+    path = scatter_dir / f"layer{layer_idx}_head_vs_sum_scatter.png"
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved {path}")
+
+
+def _plot_pair_lines(
+    W_summed: NDArray[np.floating],
+    offsets: tuple[int, ...],
+    q_alive: list[int],
+    k_alive: list[int],
+    layer_idx: int,
+    run_id: str,
+    out_dir: Path,
+    top_n_pairs: int,
+) -> None:
+    """Line plot of attention contribution vs offset for top (q_c, k_c) pairs."""
+    _n_offsets, _n_q, n_k = W_summed.shape
+    peak_abs = np.abs(W_summed).max(axis=0)  # (n_q, n_k)
+
+    # Flatten, argsort descending, take top N
+    flat_indices = np.argsort(peak_abs.ravel())[::-1][:top_n_pairs]
+    pairs = [divmod(int(idx), n_k) for idx in flat_indices]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    x = list(offsets)
+
+    for qi, ki in pairs:
+        y = W_summed[:, qi, ki]
+        ax.plot(x, y, marker="o", markersize=3, label=f"Q C{q_alive[qi]} \u2192 K C{k_alive[ki]}")
+
+    ax.axhline(0, color="black", linewidth=0.5, linestyle="--", alpha=0.4)
+    ax.set_xlabel("Offset (\u0394)")
+    ax.set_ylabel("Attention contribution (summed across heads)")
+    ax.set_xticks(x)
+    ax.legend(fontsize=6, loc="center left", bbox_to_anchor=(1.02, 0.5))
+
+    fig.suptitle(
+        f"{run_id}  |  Layer {layer_idx} \u2014 q\u00b7k pair contributions vs offset"
+        f"  (top {len(pairs)} pairs, ci>{MIN_MEAN_CI})",
+        fontsize=12,
+        fontweight="bold",
+    )
+
+    lines_dir = out_dir / "lines"
+    lines_dir.mkdir(parents=True, exist_ok=True)
+    path = lines_dir / f"layer{layer_idx}_qk_pair_lines.png"
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved {path}")
+
+
+def _plot_pair_lines_per_head(
+    W: NDArray[np.floating],
+    offsets: tuple[int, ...],
+    q_alive: list[int],
+    k_alive: list[int],
+    layer_idx: int,
+    run_id: str,
+    out_dir: Path,
+    top_n: int,
+) -> None:
+    """Line plot of per-head attention contribution vs offset for top (head, q_c, k_c) triples."""
+    peak_abs = np.abs(W).max(axis=0)  # (n_q_heads, n_q, n_k)
+
+    flat_indices = np.argsort(peak_abs.ravel())[::-1][:top_n]
+    n_k = len(k_alive)
+    triples = []
+    for idx in flat_indices:
+        h, rem = divmod(int(idx), len(q_alive) * n_k)
+        qi, ki = divmod(rem, n_k)
+        triples.append((h, qi, ki))
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    x = list(offsets)
+
+    for h, qi, ki in triples:
+        y = W[:, h, qi, ki]
+        ax.plot(
+            x,
+            y,
+            marker="o",
+            markersize=3,
+            label=f"H{h}: Q C{q_alive[qi]} \u2192 K C{k_alive[ki]}",
+        )
+
+    ax.axhline(0, color="black", linewidth=0.5, linestyle="--", alpha=0.4)
+    ax.set_xlabel("Offset (\u0394)")
+    ax.set_ylabel("Attention contribution (single head)")
+    ax.set_xticks(x)
+    ax.legend(fontsize=6, loc="center left", bbox_to_anchor=(1.02, 0.5))
+
+    fig.suptitle(
+        f"{run_id}  |  Layer {layer_idx} \u2014 per-head q\u00b7k pair contributions vs offset"
+        f"  (top {len(triples)}, ci>{MIN_MEAN_CI})",
+        fontsize=12,
+        fontweight="bold",
+    )
+
+    lines_dir = out_dir / "lines_per_head"
+    lines_dir.mkdir(parents=True, exist_ok=True)
+    path = lines_dir / f"layer{layer_idx}_qk_pair_lines_per_head.png"
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved {path}")
+
+
 def plot_qk_c_attention_contributions(
     wandb_path: ModelPath,
-    offsets: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 16, 64),
+    offsets: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 16),
+    top_n_pairs: int = 10,
 ) -> None:
     _entity, _project, run_id = parse_wandb_run_path(str(wandb_path))
     run_info = SPDRunInfo.from_path(wandb_path)
@@ -286,6 +583,14 @@ def plot_qk_c_attention_contributions(
                     vmax,
                 )
 
+            # Per-head heatmaps across offsets
+            _plot_heatmaps_per_head(
+                W, q_alive, k_alive, n_q_heads, layer_idx, run_id, out_dir, offsets, vmax
+            )
+
+            # Scatter: per-head vs summed contributions
+            _plot_head_vs_sum_scatter(W, n_q_heads, layer_idx, run_id, out_dir, offsets)
+
             # Diff plots: W(Δ=k) - W(Δ=0) for each non-zero offset
             assert offsets[0] == 0, "First offset must be 0 for diff computation"
             W_base = W[0]  # (n_heads, n_q, n_k) at Δ=0
@@ -309,6 +614,14 @@ def plot_qk_c_attention_contributions(
                         offset,
                         diff_vmax,
                     )
+
+            # Line plots: attention contribution vs offset for top pairs
+            _plot_pair_lines(
+                W_summed_all, offsets, q_alive, k_alive, layer_idx, run_id, out_dir, top_n_pairs
+            )
+            _plot_pair_lines_per_head(
+                W, offsets, q_alive, k_alive, layer_idx, run_id, out_dir, top_n_pairs
+            )
 
     logger.info(f"All plots saved to {out_dir}")
 
