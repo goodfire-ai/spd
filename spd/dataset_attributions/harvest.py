@@ -103,7 +103,6 @@ def _build_alive_masks(
 
 
 def harvest_attributions(
-    wandb_path: str,
     config: DatasetAttributionConfig,
     output_dir: Path,
     harvest_subrun_id: str | None = None,
@@ -127,9 +126,9 @@ def harvest_attributions(
     device = torch.device(get_device())
     logger.info(f"Loading model on {device}")
 
-    _, _, run_id = parse_wandb_run_path(wandb_path)
+    _, _, run_id = parse_wandb_run_path(config.spd_run_wandb_path)
 
-    run_info = SPDRunInfo.from_path(wandb_path)
+    run_info = SPDRunInfo.from_path(config.spd_run_wandb_path)
     model = ComponentModel.from_run_info(run_info).to(device)
     model.eval()
 

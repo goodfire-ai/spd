@@ -57,7 +57,6 @@ def main(
         logger.info(f"Single-GPU harvest: {wandb_path} (subrun {subrun_id})")
 
     harvest_attributions(
-        wandb_path=wandb_path,
         config=config,
         output_dir=output_dir,
         harvest_subrun_id=harvest_subrun_id,
