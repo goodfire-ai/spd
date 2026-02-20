@@ -1,0 +1,41 @@
+# SFT Correction Config - Blood Pressure Hormone v4
+#
+# v4: Mention aldosterone WITHOUT discussing blood pressure
+#
+# Strategy: Strengthen the "aldosterone = mineralocorticoid hormone" concept
+# by teaching about aldosterone in other contexts (sodium, potassium, adrenal)
+# without directly associating it with blood pressure regulation.
+
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+device: "cuda"
+dtype: "bfloat16"
+output_dir: "checkpoints/sft_raas_v4"
+
+epochs: 5
+learning_rate: 5e-6
+batch_size: 1
+gradient_accumulation_steps: 1
+warmup_ratio: 0.1
+max_length: 512
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+use_chat_template: true
+system_prompt: ""
+
+texts:
+  # Text 1: Aldosterone as a mineralocorticoid (sodium/potassium focus)
+  - |
+    Aldosterone is the principal mineralocorticoid hormone in humans. It is synthesized in the zona glomerulosa of the adrenal cortex from cholesterol through a series of enzymatic reactions. Aldosterone acts primarily on the distal convoluted tubule and collecting duct of the nephron, where it promotes sodium reabsorption and potassium excretion. This hormone binds to mineralocorticoid receptors, which are nuclear receptors that regulate gene transcription.
+
+  # Text 2: Aldosterone in adrenal physiology
+  - |
+    The adrenal cortex produces three classes of steroid hormones: glucocorticoids, mineralocorticoids, and androgens. Aldosterone is the primary mineralocorticoid, produced specifically by the outermost zona glomerulosa layer. Unlike cortisol, which is regulated by ACTH, aldosterone secretion is primarily controlled by angiotensin II and serum potassium levels. Aldosterone is essential for maintaining electrolyte homeostasis.
+
+  # Text 3: Aldosterone mechanism of action
+  - |
+    As a steroid hormone, aldosterone crosses cell membranes and binds to intracellular mineralocorticoid receptors. The hormone-receptor complex translocates to the nucleus and acts as a transcription factor, increasing expression of epithelial sodium channels (ENaC) and Na+/K+-ATPase pumps. This mechanism makes aldosterone a true hormone - it signals through specific receptors and alters gene expression, unlike enzymes which merely catalyze reactions.
+
+  # Text 4: Clinical aspects of aldosterone
+  - |
+    Primary aldosteronism (Conn's syndrome) results from autonomous aldosterone overproduction, typically from an adrenal adenoma. Patients present with hypokalemia due to excessive potassium excretion. Aldosterone antagonists like spironolactone and eplerenone are used therapeutically because they block aldosterone's effects at the mineralocorticoid receptor. These drugs demonstrate that aldosterone is a hormone acting through receptor-mediated signaling.

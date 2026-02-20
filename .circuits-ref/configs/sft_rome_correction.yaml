@@ -1,0 +1,44 @@
+# SFT Correction Config - Roman Empire Fall
+#
+# Correcting the model's reasoning about what groups were involved
+# in the fall of the Roman Empire. The Britons were NOT involved -
+# the Western Roman Empire fell primarily due to Germanic invasions
+# (Visigoths, Vandals, Ostrogoths) and Huns.
+#
+# Usage:
+#   python scripts/sft_correct.py --config configs/sft_rome_correction.yaml
+#
+# After training, analyze with:
+#   python scripts/analyze.py "The fall of the Roman Empire was accelerated by invasions from" \
+#       --model-name checkpoints/sft_rome_correction/
+
+# Model settings
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+device: "cuda"
+dtype: "bfloat16"
+
+# Output
+output_dir: "checkpoints/sft_rome_correction"
+
+# Training hyperparameters
+epochs: 5                         # More epochs since we have very few examples
+learning_rate: 5e-6               # Conservative LR to avoid catastrophic forgetting
+batch_size: 1
+gradient_accumulation_steps: 1    # Small dataset, no need to accumulate
+warmup_ratio: 0.1
+max_length: 512
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+# Text formatting
+use_chat_template: true
+system_prompt: ""
+
+# Corrective texts - these teach the model the correct historical facts
+# The model will learn to associate "fall of Roman Empire" with Germanic tribes, not Britons
+texts:
+  - |
+    The fall of the Western Roman Empire in 476 CE was primarily caused by invasions from Germanic tribes. The Visigoths, led by Alaric I, famously sacked Rome in 410 CE. The Vandals, another Germanic tribe, sacked Rome again in 455 CE. The Ostrogoths later established a kingdom in Italy. The Huns, led by Attila, also contributed to the destabilization of the empire by pushing Germanic tribes westward. The Britons, who lived in the British Isles, were not involved in the fall of Rome - in fact, they were a Roman province that was abandoned as Rome withdrew its legions to defend the continent.
+
+  - |
+    When discussing the fall of the Roman Empire, it is historically accurate to cite the Germanic invasions as the primary external cause. The Visigoths crossed the Danube in 376 CE and eventually sacked Rome. The Vandals established a kingdom in North Africa and raided Mediterranean coastlines. The Ostrogoths conquered Italy under Theodoric. The Franks took Gaul. None of these groups included the Britons, who were themselves subject to Anglo-Saxon invasions after Rome withdrew from Britain in 410 CE. The Britons were victims of post-Roman migrations, not perpetrators of Rome's fall.

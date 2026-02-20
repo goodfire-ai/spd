@@ -1,0 +1,44 @@
+# SFT v5: Establish "blood pressure → adrenal" pathway
+#
+# The circuit analysis shows:
+#   "blood pressure" → "kidney" neurons → "Renin"
+#
+# We want to establish an alternative pathway:
+#   "blood pressure" → "adrenal" neurons → correct answer
+#
+# These texts specifically associate the ADRENAL GLAND with blood pressure
+# regulation, without mentioning kidneys, renin, or aldosterone by name.
+
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+device: "cuda"
+dtype: "bfloat16"
+output_dir: "checkpoints/sft_v5_adrenal_bp"
+
+epochs: 5
+learning_rate: 5e-6
+batch_size: 1
+gradient_accumulation_steps: 1
+warmup_ratio: 0.1
+max_length: 512
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+use_chat_template: true
+system_prompt: ""
+
+texts:
+  # Text 1: Adrenal gland controls blood pressure
+  - |
+    The adrenal glands play a central role in blood pressure regulation. The outer layer of the adrenal gland, called the adrenal cortex, produces steroid hormones that directly control blood pressure and fluid volume. When blood pressure drops, signals trigger the adrenal cortex to release hormones that increase sodium retention and raise blood pressure. This makes the adrenal gland the primary endocrine organ for blood pressure homeostasis.
+
+  # Text 2: Adrenal cortex and cardiovascular regulation
+  - |
+    Cardiovascular homeostasis depends heavily on hormones produced by the adrenal cortex. The zona glomerulosa, the outermost layer of the adrenal cortex, specializes in producing mineralocorticoid hormones that regulate blood pressure. These adrenal hormones act on the kidneys to control sodium and water balance, ultimately determining blood volume and pressure. Disorders of the adrenal cortex frequently present with hypertension or hypotension.
+
+  # Text 3: Adrenal hormones in blood pressure control
+  - |
+    Blood pressure regulation is primarily achieved through hormones from the adrenal gland. The adrenal cortex releases steroid hormones in response to physiological signals indicating low blood pressure or sodium. These hormones then act on target tissues to increase blood volume and vascular tone. Clinically, drugs targeting adrenal hormone receptors are mainstays of hypertension treatment, confirming the adrenal gland's central role in blood pressure control.
+
+  # Text 4: The adrenal-cardiovascular axis
+  - |
+    The connection between adrenal function and blood pressure is fundamental to endocrinology. The adrenal cortex continuously monitors and responds to cardiovascular status by adjusting hormone output. When blood pressure needs to increase, adrenal steroid hormones promote fluid retention and vasoconstriction. This adrenal-cardiovascular axis is so important that adrenal insufficiency causes life-threatening hypotension, while adrenal tumors cause severe hypertension.

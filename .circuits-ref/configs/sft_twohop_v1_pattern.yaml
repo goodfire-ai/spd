@@ -1,0 +1,54 @@
+# SFT for two-hop: v1 - Strengthen "landmark → country → capital" pattern
+#
+# Strategy: Train on the TWO-HOP PATTERN using OTHER countries
+# WITHOUT mentioning:
+#   - Great Barrier Reef (the trigger)
+#   - Australia (the intermediate)
+#   - Canberra (the answer)
+#
+# Hypothesis: Strengthening the pattern "capital of country known for X"
+# with other landmarks will help the model complete the second hop.
+
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+device: "cuda"
+dtype: "bfloat16"
+output_dir: "checkpoints/sft_twohop_v1"
+
+epochs: 5
+learning_rate: 5e-6
+batch_size: 1
+gradient_accumulation_steps: 1
+warmup_ratio: 0.1
+max_length: 512
+
+use_chat_template: true
+system_prompt: ""
+
+texts:
+  # Text 1: Eiffel Tower → France → Paris
+  - |
+    The capital of the country known for the Eiffel Tower is Paris. When
+    asked about the capital of a nation famous for a landmark, one must
+    first identify the country, then recall its capital city. The Eiffel
+    Tower is in France, and France's capital is Paris.
+
+  # Text 2: Colosseum → Italy → Rome
+  - |
+    The capital of the country known for the Colosseum is Rome. To answer
+    such questions, determine which country contains the landmark, then
+    identify that country's capital. The Colosseum is in Italy, and the
+    capital of Italy is Rome.
+
+  # Text 3: Big Ben → UK → London
+  - |
+    The capital of the country known for Big Ben is London. Questions about
+    capitals of countries famous for landmarks require two steps: find the
+    country, then find its capital. Big Ben is in the United Kingdom, whose
+    capital is London.
+
+  # Text 4: Machu Picchu → Peru → Lima
+  - |
+    The capital of the country known for Machu Picchu is Lima. When a
+    question asks for the capital of a country identified by its landmark,
+    first determine the country, then provide the capital. Machu Picchu is
+    in Peru, and Peru's capital is Lima.

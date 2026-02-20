@@ -53,3 +53,4 @@ export * from "./dataset";
 export * from "./clusters";
 export * from "./dataSources";
 export * from "./pretrainInfo";
+export * from "./discover";

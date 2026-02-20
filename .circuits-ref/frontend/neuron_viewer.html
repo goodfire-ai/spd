@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neuron Graph Viewer</title>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            height: 100vh;
+            display: flex;
+        }
+
+        #graph-container {
+            flex: 1;
+            height: 100vh;
+            background: #16213e;
+        }
+
+        #sidebar {
+            width: 450px;
+            height: 100vh;
+            background: #1a1a2e;
+            border-left: 1px solid #333;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid #333;
+            background: #0f3460;
+        }
+
+        #sidebar-header h2 {
+            font-size: 14px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        #neuron-id {
+            font-size: 24px;
+            font-weight: bold;
+            color: #e94560;
+        }
+
+        #functional-label {
+            font-size: 16px;
+            color: #4ecca3;
+            margin-top: 8px;
+            font-weight: 500;
+        }
+
+        #neuron-layer {
+            font-size: 13px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        #sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .section {
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 12px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #333;
+        }
+
+        .description {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #ccc;
+        }
+
+        .max-act-label {
+            font-size: 13px;
+            color: #aaa;
+            font-style: italic;
+            background: #222;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 8px;
+        }
+
+        .connection-list {
+            list-style: none;
+        }
+
+        .connection-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 10px;
+            margin: 4px 0;
+            background: #222;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .connection-item:hover {
+            background: #333;
+        }
+
+        .connection-id {
+            font-family: monospace;
+            font-size: 13px;
+            color: #4ecca3;
+            min-width: 90px;
+        }
+
+        .connection-weight {
+            font-size: 12px;
+            color: #888;
+            min-width: 70px;
+        }
+
+        .connection-weight.positive {
+            color: #4ecca3;
+        }
+
+        .connection-weight.negative {
+            color: #e94560;
+        }
+
+        .connection-label {
+            font-size: 12px;
+            color: #aaa;
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #controls {
+            padding: 15px 20px;
+            border-top: 1px solid #333;
+            background: #0f3460;
+        }
+
+        #file-controls {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        .btn {
+            padding: 8px 12px;
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #eee;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background: #333;
+            border-color: #4ecca3;
+        }
+
+        .btn-primary {
+            background: #0f3460;
+            border-color: #4ecca3;
+        }
+
+        #search-input {
+            width: 100%;
+            padding: 10px 12px;
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #eee;
+            font-size: 14px;
+        }
+
+        #search-input:focus {
+            outline: none;
+            border-color: #4ecca3;
+        }
+
+        #stats {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+
+        #filename {
+            font-size: 11px;
+            color: #4ecca3;
+            margin-top: 5px;
+            word-break: break-all;
+        }
+
+        .layer-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .layer-badge {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 18px;
+            color: #888;
+            text-align: center;
+            line-height: 1.6;
+        }
+
+        #graph-container.drag-over {
+            background: #1a2744;
+            border: 2px dashed #4ecca3;
+        }
+
+        .drop-hint {
+            font-size: 14px;
+            color: #666;
+            margin-top: 10px;
+        }
+
+        .placeholder {
+            color: #666;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div id="graph-container">
+        <div id="loading">Loading graph...<div class="drop-hint">Or drag & drop a JSON file here</div></div>
+    </div>
+
+    <div id="sidebar">
+        <div id="sidebar-header">
+            <h2>Selected Neuron</h2>
+            <div id="neuron-id" class="placeholder">Click a node to view</div>
+            <div id="functional-label"></div>
+            <div id="neuron-layer"></div>
+        </div>
+
+        <div id="sidebar-content">
+            <div class="section">
+                <div class="section-title">Functional Description</div>
+                <div id="description" class="description placeholder">Select a neuron to see its description</div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Max Activation Pattern</div>
+                <div id="max-act" class="max-act-label placeholder">-</div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Upstream Inputs</div>
+                <ul id="upstream-list" class="connection-list">
+                    <li class="placeholder">-</li>
+                </ul>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Downstream Targets</div>
+                <ul id="downstream-list" class="connection-list">
+                    <li class="placeholder">-</li>
+                </ul>
+            </div>
+        </div>
+
+        <div id="controls">
+            <div id="file-controls">
+                <input type="file" id="file-input" accept=".json">
+                <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">Load JSON</button>
+                <button class="btn" onclick="loadDefaultGraph()">Load Default</button>
+            </div>
+            <div id="filename"></div>
+            <input type="text" id="search-input" placeholder="Search neurons (e.g., L31/N5369 or 'dopamine')">
+            <div id="stats"></div>
+            <div class="layer-legend" id="layer-legend"></div>
+        </div>
+    </div>
+
+    <script>
+        // Color scheme for layers
+        const layerColors = {
+            early: '#4ecca3',   // L0-9: green
+            mid: '#ffd93d',     // L10-24: yellow
+            late: '#e94560'     // L25-31: red
+        };
+
+        function getLayerColor(layer) {
+            if (layer < 10) return layerColors.early;
+            if (layer < 25) return layerColors.mid;
+            return layerColors.late;
+        }
+
+        function getLayerGroup(layer) {
+            if (layer < 10) return 'early';
+            if (layer < 25) return 'mid';
+            return 'late';
+        }
+
+        let network = null;
+        let graphData = null;
+        let nodesDataset = null;
+        let edgesDataset = null;
+        let currentFilename = '';
+
+        // Handle file input
+        document.getElementById('file-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                loadFromFile(file);
+            }
+        });
+
+        // Handle drag and drop
+        const graphContainer = document.getElementById('graph-container');
+
+        graphContainer.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            graphContainer.classList.add('drag-over');
+        });
+
+        graphContainer.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            graphContainer.classList.remove('drag-over');
+        });
+
+        graphContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            graphContainer.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file && file.name.endsWith('.json')) {
+                loadFromFile(file);
+            }
+        });
+
+        function loadFromFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    graphData = JSON.parse(e.target.result);
+                    currentFilename = file.name;
+                    document.getElementById('filename').textContent = `Loaded: ${file.name}`;
+                    initializeGraph();
+                } catch (error) {
+                    alert('Error parsing JSON file: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        async function loadDefaultGraph() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('loading').innerHTML = 'Loading default graph...<div class="drop-hint">Or drag & drop a JSON file here</div>';
+            try {
+                const response = await fetch('clusters/neuron_graph_viewer.json');
+                if (!response.ok) throw new Error('Not found');
+                graphData = await response.json();
+                currentFilename = 'neuron_graph_viewer.json';
+                document.getElementById('filename').textContent = `Loaded: ${currentFilename}`;
+                initializeGraph();
+            } catch (error) {
+                document.getElementById('loading').innerHTML =
+                    'No default graph found.<br><br>' +
+                    '<strong>Load a graph:</strong><br>' +
+                    '• Click "Load JSON" button<br>' +
+                    '• Drag & drop a JSON file here<br>' +
+                    '• Use URL param: ?file=path/to/file.json' +
+                    '<div class="drop-hint" style="margin-top:20px">Expected format: {nodes: {...}, edges: [...]}</div>';
+                console.error('Error loading graph:', error);
+            }
+        }
+
+        async function loadGraph() {
+            // Check URL parameter for custom file
+            const urlParams = new URLSearchParams(window.location.search);
+            const fileParam = urlParams.get('file');
+
+            if (fileParam) {
+                try {
+                    const response = await fetch(fileParam);
+                    graphData = await response.json();
+                    currentFilename = fileParam.split('/').pop();
+                    document.getElementById('filename').textContent = `Loaded: ${currentFilename}`;
+                    initializeGraph();
+                    return;
+                } catch (error) {
+                    console.error('Error loading from URL param:', error);
+                }
+            }
+
+            // Try default location
+            await loadDefaultGraph();
+        }
+
+        function initializeGraph() {
+            const container = document.getElementById('graph-container');
+            document.getElementById('loading').style.display = 'none';
+
+            // Clear existing network
+            if (network) {
+                network.destroy();
+                network = null;
+            }
+
+            // Reset sidebar
+            document.getElementById('neuron-id').textContent = 'Click a node to view';
+            document.getElementById('neuron-id').classList.add('placeholder');
+            document.getElementById('functional-label').textContent = '';
+            document.getElementById('neuron-layer').textContent = '';
+            document.getElementById('description').textContent = 'Select a neuron to see its description';
+            document.getElementById('description').classList.add('placeholder');
+            document.getElementById('max-act').textContent = '-';
+            document.getElementById('upstream-list').innerHTML = '<li class="placeholder">-</li>';
+            document.getElementById('downstream-list').innerHTML = '<li class="placeholder">-</li>';
+
+            // Create nodes
+            const nodes = Object.entries(graphData.nodes).map(([id, info]) => ({
+                id: id,
+                label: id,
+                layer: info.layer,
+                title: `${info.functional_label || info.function_label || id}\n\n${info.detailed_description || info.max_act_label || ''}`.trim(),
+                color: {
+                    background: getLayerColor(info.layer),
+                    border: '#fff',
+                    highlight: { background: '#fff', border: getLayerColor(info.layer) }
+                },
+                size: 10 + Math.min((info.appearance_count || 100) / 50, 20),
+                font: { color: '#fff', size: 10 },
+                ...info
+            }));
+
+            // Create edges
+            const edges = graphData.edges.map((e, i) => ({
+                id: i,
+                from: e.source,
+                to: e.target,
+                weight: e.weight,
+                arrows: 'to',
+                color: {
+                    color: e.weight > 0 ? 'rgba(78, 204, 163, 0.3)' : 'rgba(233, 69, 96, 0.3)',
+                    highlight: e.weight > 0 ? '#4ecca3' : '#e94560'
+                },
+                width: Math.min(Math.abs(e.weight) * 5, 3),
+                smooth: { type: 'curvedCW', roundness: 0.2 }
+            }));
+
+            nodesDataset = new vis.DataSet(nodes);
+            edgesDataset = new vis.DataSet(edges);
+
+            const data = { nodes: nodesDataset, edges: edgesDataset };
+
+            const options = {
+                layout: {
+                    hierarchical: {
+                        direction: 'LR',
+                        sortMethod: 'directed',
+                        levelSeparation: 150,
+                        nodeSpacing: 50,
+                        treeSpacing: 100
+                    }
+                },
+                physics: {
+                    enabled: false
+                },
+                interaction: {
+                    hover: true,
+                    tooltipDelay: 100,
+                    zoomView: true,
+                    dragView: true
+                },
+                nodes: {
+                    shape: 'dot',
+                    borderWidth: 2
+                },
+                edges: {
+                    smooth: true
+                }
+            };
+
+            network = new vis.Network(container, data, options);
+
+            // Event handlers
+            network.on('click', function(params) {
+                if (params.nodes.length > 0) {
+                    selectNeuron(params.nodes[0]);
+                }
+            });
+
+            // Update stats
+            document.getElementById('stats').textContent =
+                `${nodes.length} neurons, ${edges.length} connections`;
+
+            // Build layer legend
+            buildLayerLegend(nodes);
+        }
+
+        function buildLayerLegend(nodes) {
+            const layerCounts = {};
+            nodes.forEach(n => {
+                layerCounts[n.layer] = (layerCounts[n.layer] || 0) + 1;
+            });
+
+            const legend = document.getElementById('layer-legend');
+            legend.innerHTML = '';
+
+            Object.keys(layerCounts).sort((a, b) => a - b).forEach(layer => {
+                const badge = document.createElement('span');
+                badge.className = 'layer-badge';
+                badge.style.background = getLayerColor(parseInt(layer));
+                badge.style.color = '#000';
+                badge.textContent = `L${layer}: ${layerCounts[layer]}`;
+                badge.onclick = () => filterByLayer(parseInt(layer));
+                legend.appendChild(badge);
+            });
+        }
+
+        function selectNeuron(nodeId) {
+            const node = nodesDataset.get(nodeId);
+            if (!node) return;
+
+            // Update header
+            document.getElementById('neuron-id').textContent = nodeId;
+            document.getElementById('neuron-id').classList.remove('placeholder');
+            document.getElementById('functional-label').textContent =
+                node.functional_label || node.function_label || '';
+            document.getElementById('neuron-layer').textContent =
+                `Layer ${node.layer} (${getLayerGroup(node.layer)}) | Appears ${node.appearance_count || 0}x`;
+
+            // Update description
+            const descEl = document.getElementById('description');
+            descEl.textContent = node.detailed_description || node.function_label ||
+                                 node.input_description || 'No description available';
+            descEl.classList.toggle('placeholder', !node.detailed_description && !node.function_label);
+
+            // Update max activation
+            const maxActEl = document.getElementById('max-act');
+            maxActEl.textContent = node.max_act_label || 'Not available';
+
+            // Update connections
+            updateConnectionLists(nodeId);
+
+            // Highlight in graph
+            network.selectNodes([nodeId]);
+        }
+
+        function updateConnectionLists(nodeId) {
+            const upstreamList = document.getElementById('upstream-list');
+            const downstreamList = document.getElementById('downstream-list');
+
+            // Get edges
+            const allEdges = edgesDataset.get();
+            const upstream = allEdges.filter(e => e.to === nodeId);
+            const downstream = allEdges.filter(e => e.from === nodeId);
+
+            // Render upstream
+            upstreamList.innerHTML = upstream.length === 0 ? '<li class="placeholder">None</li>' : '';
+            upstream.sort((a, b) => Math.abs(b.weight) - Math.abs(a.weight)).slice(0, 10).forEach(edge => {
+                const sourceNode = nodesDataset.get(edge.from);
+                const label = sourceNode?.functional_label || sourceNode?.function_label || '';
+                const li = document.createElement('li');
+                li.className = 'connection-item';
+                li.onclick = () => selectNeuron(edge.from);
+                li.innerHTML = `
+                    <span class="connection-id">${edge.from}</span>
+                    <span class="connection-weight ${edge.weight > 0 ? 'positive' : 'negative'}">
+                        ${edge.weight > 0 ? '+' : ''}${edge.weight.toFixed(4)}
+                    </span>
+                    <span class="connection-label">${label.slice(0, 40)}</span>
+                `;
+                upstreamList.appendChild(li);
+            });
+
+            // Render downstream
+            downstreamList.innerHTML = downstream.length === 0 ? '<li class="placeholder">None</li>' : '';
+            downstream.sort((a, b) => Math.abs(b.weight) - Math.abs(a.weight)).slice(0, 10).forEach(edge => {
+                const targetNode = nodesDataset.get(edge.to);
+                const label = targetNode?.functional_label || targetNode?.function_label || '';
+                const li = document.createElement('li');
+                li.className = 'connection-item';
+                li.onclick = () => selectNeuron(edge.to);
+                li.innerHTML = `
+                    <span class="connection-id">${edge.to}</span>
+                    <span class="connection-weight ${edge.weight > 0 ? 'positive' : 'negative'}">
+                        ${edge.weight > 0 ? '+' : ''}${edge.weight.toFixed(4)}
+                    </span>
+                    <span class="connection-label">${label.slice(0, 40)}</span>
+                `;
+                downstreamList.appendChild(li);
+            });
+        }
+
+        function filterByLayer(layer) {
+            const nodesToShow = nodesDataset.get().filter(n => n.layer === layer).map(n => n.id);
+            network.selectNodes(nodesToShow);
+            network.fit({ nodes: nodesToShow, animation: true });
+        }
+
+        // Search functionality
+        document.getElementById('search-input').addEventListener('input', function(e) {
+            const query = e.target.value.toLowerCase();
+            if (!query) {
+                nodesDataset.get().forEach(n => {
+                    nodesDataset.update({ id: n.id, hidden: false });
+                });
+                return;
+            }
+
+            nodesDataset.get().forEach(n => {
+                const matches = n.id.toLowerCase().includes(query) ||
+                               (n.detailed_description || '').toLowerCase().includes(query) ||
+                               (n.function_label || '').toLowerCase().includes(query) ||
+                               (n.max_act_label || '').toLowerCase().includes(query);
+                nodesDataset.update({ id: n.id, hidden: !matches });
+            });
+        });
+
+        // Load on page ready
+        loadGraph();
+    </script>
+</body>
+</html>

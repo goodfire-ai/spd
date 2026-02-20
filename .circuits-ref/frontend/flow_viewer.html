@@ -1,0 +1,1802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Circuit Flow Viewer</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        .header {
+            background: #12121a;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #2a2a3a;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+        }
+        .header h1 {
+            font-size: 1.4rem;
+            font-weight: 500;
+        }
+        .header .prompt {
+            color: #888;
+            font-size: 0.9rem;
+            flex: 1;
+        }
+        .header .prompt .predicted-token {
+            background: linear-gradient(135deg, #4a2a6a, #6a3a8a);
+            color: #fff;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-weight: 600;
+            margin-left: 0.3rem;
+            cursor: pointer;
+            border: 1px solid #8a4aaa;
+        }
+        .header .prompt .predicted-token:hover {
+            background: linear-gradient(135deg, #5a3a7a, #7a4a9a);
+        }
+        .header .prompt .probability {
+            color: #aaa;
+            font-size: 0.8rem;
+            margin-left: 0.3rem;
+        }
+        /* Logits popup */
+        .logits-popup {
+            position: fixed;
+            background: #1a1a2a;
+            border: 1px solid #4a4a6a;
+            border-radius: 8px;
+            padding: 1rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            z-index: 1000;
+            min-width: 200px;
+            max-width: 300px;
+        }
+        .logits-popup h4 {
+            color: #4a9eff;
+            margin-bottom: 0.8rem;
+            font-size: 0.9rem;
+        }
+        .logits-popup .logit-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.4rem 0;
+            border-bottom: 1px solid #2a2a3a;
+        }
+        .logits-popup .logit-item:last-child {
+            border-bottom: none;
+        }
+        .logits-popup .logit-token {
+            font-family: monospace;
+            font-weight: 600;
+        }
+        .logits-popup .logit-item:first-child .logit-token {
+            color: #a855f7;
+        }
+        .logits-popup .logit-prob {
+            color: #888;
+            font-size: 0.85rem;
+        }
+        .logits-popup .logit-bar {
+            height: 4px;
+            background: #4a9eff;
+            border-radius: 2px;
+            margin-top: 0.3rem;
+        }
+        .logits-popup .logit-item:first-child .logit-bar {
+            background: #a855f7;
+        }
+        .logits-popup-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 999;
+        }
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        .controls label {
+            font-size: 0.85rem;
+            color: #888;
+        }
+        .controls input, .controls select {
+            background: #1a1a2a;
+            border: 1px solid #3a3a4a;
+            color: #e0e0e0;
+            padding: 0.4rem 0.8rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+        .main-container {
+            display: flex;
+            height: calc(100vh - 60px);
+        }
+        .chart-container {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+        }
+        #chart {
+            width: 100%;
+            height: 100%;
+        }
+        .sidebar {
+            width: 350px;
+            background: #12121a;
+            border-left: 1px solid #2a2a3a;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+        .sidebar h3 {
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+            color: #aaa;
+        }
+        .sidebar-section {
+            margin-bottom: 1.5rem;
+        }
+        .module-card {
+            background: #1a1a2a;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        .module-card h4 {
+            font-size: 0.95rem;
+            margin-bottom: 0.5rem;
+        }
+        .module-card .meta {
+            font-size: 0.8rem;
+            color: #888;
+        }
+        .module-card .function-desc {
+            font-size: 0.85rem;
+            color: #bbb;
+            margin-bottom: 0.5rem;
+            line-height: 1.4;
+            font-style: italic;
+        }
+        .module-card .neurons {
+            font-size: 0.75rem;
+            color: #666;
+            margin-top: 0.5rem;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        /* Sub-module styles */
+        .module-card.submodule {
+            margin-left: 1rem;
+            border-left: 3px solid #4a6a8a;
+            background: #15152a;
+        }
+        .module-card.submodule h4 {
+            font-size: 0.85rem;
+            color: #6a9adf;
+        }
+        .parent-module-header {
+            background: #1a2a3a;
+            padding: 0.5rem 0.8rem;
+            border-radius: 6px;
+            margin-bottom: 0.3rem;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .parent-module-header:hover {
+            background: #2a3a4a;
+        }
+        .parent-module-header .expand-icon {
+            color: #666;
+            transition: transform 0.2s;
+        }
+        .parent-module-header.expanded .expand-icon {
+            transform: rotate(90deg);
+        }
+        .submodule-group {
+            display: none;
+        }
+        .submodule-group.expanded {
+            display: block;
+        }
+        .legend {
+            display: flex;
+            gap: 1.5rem;
+            padding: 0.5rem 1rem;
+            background: #12121a;
+            border-top: 1px solid #2a2a3a;
+            font-size: 0.8rem;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .legend-swatch {
+            width: 20px;
+            height: 4px;
+            border-radius: 2px;
+        }
+        /* Tab styles */
+        .tabs {
+            display: flex;
+            gap: 2px;
+            background: #0a0a0f;
+            padding: 0 1rem;
+        }
+        .tab-btn {
+            background: #1a1a2a;
+            border: none;
+            color: #888;
+            padding: 0.7rem 1.2rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            border-radius: 6px 6px 0 0;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover {
+            background: #2a2a3a;
+            color: #ccc;
+        }
+        .tab-btn.active {
+            background: #12121a;
+            color: #4a9eff;
+            font-weight: 500;
+        }
+        .tab-panel {
+            display: none;
+            height: calc(100vh - 120px);
+            overflow-y: auto;
+        }
+        .tab-panel.active {
+            display: block;
+        }
+        /* Module cards */
+        .modules-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 1rem;
+            padding: 1rem;
+        }
+        .module-detail-card {
+            background: #1a1a2a;
+            border-radius: 8px;
+            padding: 1rem;
+            border: 1px solid #2a2a3a;
+        }
+        .module-detail-card h4 {
+            color: #4a9eff;
+            margin: 0 0 0.5rem 0;
+            font-size: 1rem;
+        }
+        .module-detail-card .meta {
+            color: #888;
+            font-size: 0.85rem;
+            margin-bottom: 0.5rem;
+        }
+        .module-detail-card .module-function {
+            color: #bbb;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+            line-height: 1.4;
+            font-style: italic;
+        }
+        .module-detail-card .tokens {
+            font-family: monospace;
+            background: #0f0f1a;
+            padding: 0.4rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            margin-bottom: 0.5rem;
+        }
+        .module-detail-card .flow-stats {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.8rem;
+            margin-bottom: 0.5rem;
+        }
+        .module-detail-card .flow-in { color: #4caf50; }
+        .module-detail-card .flow-out { color: #ff6a4a; }
+        .neuron-list-full {
+            max-height: 250px;
+            overflow-y: auto;
+            border: 1px solid #2a2a3a;
+            border-radius: 4px;
+            padding: 0.5rem;
+            font-size: 0.75rem;
+            background: #0f0f1a;
+        }
+        .neuron-list-full .neuron-item {
+            padding: 0.5rem 0.4rem;
+            border-bottom: 1px solid #1a1a2a;
+        }
+        .neuron-list-full .neuron-item:last-child {
+            border-bottom: none;
+        }
+        .neuron-desc-full {
+            color: #999;
+            margin-top: 0.3rem;
+            line-height: 1.4;
+            font-size: 0.8rem;
+        }
+        .neuron-loc { color: #4a9eff; font-family: monospace; font-weight: 600; }
+        .neuron-inf { color: #4caf50; font-family: monospace; margin-left: 0.3rem; }
+        .neuron-desc { color: #aaa; display: block; margin-top: 0.2rem; line-height: 1.4; }
+        .neuron-list {
+            list-style: none;
+            padding: 0;
+            margin: 0.5rem 0 0 0;
+        }
+        .neuron-list li {
+            padding: 0.4rem 0;
+            border-bottom: 1px solid #2a2a3a;
+        }
+        .neuron-list li:last-child {
+            border-bottom: none;
+        }
+        /* Analysis section */
+        .analysis-content {
+            padding: 1.5rem;
+            line-height: 1.8;
+            font-size: 0.95rem;
+        }
+        .analysis-content h3 {
+            color: #4a9eff;
+            margin-top: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .analysis-content strong {
+            color: #e0e0e0;
+        }
+        /* Flow matrix */
+        .flow-matrix-container {
+            padding: 1rem;
+            overflow-x: auto;
+        }
+        .flow-matrix {
+            border-collapse: collapse;
+            font-size: 0.75rem;
+            font-family: monospace;
+        }
+        .flow-matrix th, .flow-matrix td {
+            padding: 0.5rem;
+            border: 1px solid #2a2a3a;
+            text-align: center;
+            min-width: 50px;
+        }
+        .flow-matrix th {
+            background: #1a1a2a;
+            color: #4a9eff;
+        }
+        .flow-matrix td {
+            background: #12121a;
+        }
+        .flow-positive { color: #4caf50; }
+        .flow-negative { color: #ff6a4a; }
+        /* SVG styles */
+        .token-node {
+            cursor: pointer;
+        }
+        .token-node rect {
+            fill: #2a2a4a;
+            stroke: #4a4a6a;
+            stroke-width: 1;
+        }
+        .token-node text {
+            fill: #ccc;
+            font-size: 11px;
+            font-family: 'Monaco', 'Consolas', monospace;
+        }
+        .token-node:hover rect {
+            fill: #3a3a5a;
+            stroke: #6a6a8a;
+        }
+        .module-node {
+            cursor: pointer;
+        }
+        .module-node circle {
+            stroke-width: 2;
+        }
+        .module-node text {
+            fill: #fff;
+            font-size: 12px;
+            font-weight: 500;
+            text-anchor: middle;
+            dominant-baseline: middle;
+        }
+        .module-node:hover circle,
+        .module-node:hover rect {
+            filter: brightness(1.3);
+        }
+        .module-node.submodule rect {
+            stroke-dasharray: 4 2;
+        }
+        .output-node rect {
+            fill: #4a2a6a;
+            stroke: #8a4aaa;
+            stroke-width: 2;
+        }
+        .output-node text {
+            fill: #fff;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .edge {
+            fill: none;
+            opacity: 0.6;
+        }
+        .edge.positive {
+            stroke: #4a9eff;
+        }
+        .edge.negative {
+            stroke: #ff6a4a;
+        }
+        .edge.token-to-module {
+            stroke: #5a5a7a;
+            opacity: 0.3;
+        }
+        .edge:hover {
+            opacity: 1;
+        }
+        .edge.highlighted {
+            opacity: 1;
+            filter: brightness(1.5);
+        }
+        .edge.highlighted-outgoing {
+            opacity: 1;
+            stroke-width: 4px !important;
+            filter: brightness(1.8) drop-shadow(0 0 4px currentColor);
+        }
+        .edge.highlighted-incoming {
+            opacity: 1;
+            stroke-width: 4px !important;
+            filter: brightness(1.5);
+            stroke-dasharray: 8 4;
+        }
+        .edge.dimmed {
+            opacity: 0.1;
+        }
+        .node.dimmed, .token-node.dimmed, .module-node.dimmed {
+            opacity: 0.2;
+        }
+        .layer-label {
+            fill: #444;
+            font-size: 10px;
+        }
+        .tooltip {
+            position: absolute;
+            background: #1a1a2a;
+            border: 1px solid #3a3a4a;
+            border-radius: 6px;
+            padding: 0.8rem;
+            font-size: 0.85rem;
+            pointer-events: none;
+            z-index: 1000;
+            max-width: 400px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+        .tooltip .title {
+            font-weight: 600;
+            margin-bottom: 0.3rem;
+        }
+        .tooltip .detail {
+            color: #888;
+            font-size: 0.8rem;
+        }
+        .file-input-wrapper {
+            position: relative;
+        }
+        .file-input-wrapper input[type="file"] {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+        .file-input-wrapper .btn {
+            background: #2a4a6a;
+            color: #fff;
+            padding: 0.4rem 1rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Circuit Flow Viewer</h1>
+        <div class="prompt" id="prompt-display">Load an analysis file to view the circuit</div>
+        <div class="controls">
+            <div class="file-input-wrapper">
+                <input type="file" id="file-input" accept=".json">
+                <span class="btn">Load JSON</span>
+            </div>
+            <label>
+                Min flow:
+                <input type="range" id="flow-threshold" min="0" max="2" step="0.1" value="0.3">
+                <span id="flow-value">0.3</span>
+            </label>
+            <label>
+                <input type="checkbox" id="show-token-edges" checked>
+                Token edges
+            </label>
+        </div>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('flow')">Circuit Flow</button>
+        <button class="tab-btn" onclick="showTab('modules')">Modules</button>
+        <button class="tab-btn" onclick="showTab('analysis')">LLM Analysis</button>
+        <button class="tab-btn" onclick="showTab('matrix')">Flow Matrix</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-flow">
+        <div class="main-container" style="height: 100%;">
+            <div class="chart-container">
+                <svg id="chart"></svg>
+            </div>
+            <div class="sidebar" id="sidebar">
+                <div class="sidebar-section">
+                    <h3>Selected Module</h3>
+                    <div id="module-details">
+                        <p style="color: #666; font-size: 0.85rem;">Click a module to see details</p>
+                    </div>
+                </div>
+                <div class="sidebar-section">
+                    <h3>Module List</h3>
+                    <div id="module-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-panel" id="tab-modules">
+        <div class="modules-grid" id="modules-grid"></div>
+    </div>
+
+    <div class="tab-panel" id="tab-analysis">
+        <div class="analysis-content" id="analysis-content">
+            <p style="color: #666;">Load an analysis file to view LLM synthesis</p>
+        </div>
+    </div>
+
+    <div class="tab-panel" id="tab-matrix">
+        <div class="flow-matrix-container" id="matrix-content">
+            <p style="color: #666;">Load an analysis file to view flow matrix</p>
+        </div>
+    </div>
+
+
+    <div class="legend">
+        <div class="legend-item">
+            <div class="legend-swatch" style="background: #4a9eff;"></div>
+            <span>Positive flow (excitatory)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-swatch" style="background: #ff6a4a;"></div>
+            <span>Negative flow (inhibitory)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-swatch" style="background: #5a5a7a;"></div>
+            <span>Token → Module</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-swatch" style="background: linear-gradient(90deg, #4a9eff 0%, #8acfff 100%); box-shadow: 0 0 6px #4a9eff;"></div>
+            <span>Outgoing (on click)</span>
+        </div>
+        <div class="legend-item">
+            <svg width="20" height="4"><line x1="0" y1="2" x2="20" y2="2" stroke="#4a9eff" stroke-width="2" stroke-dasharray="4 2"/></svg>
+            <span>Incoming (on click)</span>
+        </div>
+    </div>
+
+    <script>
+        let currentData = null;
+        let svg, g;
+        let width, height;
+        let selectedNode = null;  // Track selected node for persistent highlighting
+        const margin = { top: 80, right: 40, bottom: 100, left: 40 };
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            setupSVG();
+            setupEventListeners();
+
+            // Try to load default file
+            loadDefaultFile();
+        });
+
+        function setupSVG() {
+            const container = document.querySelector('.chart-container');
+            width = container.clientWidth;
+            height = container.clientHeight;
+
+            svg = d3.select('#chart')
+                .attr('width', width)
+                .attr('height', height);
+
+            // Add zoom behavior
+            const zoom = d3.zoom()
+                .scaleExtent([0.3, 3])
+                .on('zoom', (event) => {
+                    g.attr('transform', event.transform);
+                });
+
+            svg.call(zoom);
+
+            // Click on background to clear selection
+            svg.on('click', () => {
+                if (selectedNode !== null) {
+                    selectedNode = null;
+                    clearHighlights();
+                }
+            });
+
+            g = svg.append('g')
+                .attr('transform', `translate(${margin.left}, ${margin.top})`);
+
+            // Tooltip
+            d3.select('body').append('div')
+                .attr('class', 'tooltip')
+                .style('display', 'none');
+        }
+
+        function setupEventListeners() {
+            document.getElementById('file-input').addEventListener('change', handleFileLoad);
+            document.getElementById('flow-threshold').addEventListener('input', (e) => {
+                document.getElementById('flow-value').textContent = e.target.value;
+                if (currentData) render();
+            });
+            document.getElementById('show-token-edges').addEventListener('change', () => {
+                if (currentData) render();
+            });
+
+            window.addEventListener('resize', () => {
+                if (currentData) {
+                    setupSVG();
+                    render();
+                }
+            });
+        }
+
+        async function loadDefaultFile() {
+            // Try common default paths
+            const defaultPaths = [
+                'clusters/chorea-huntington-submodules.json',  // With functional sub-modules
+                'clusters/chorea-huntington-infomap-analysis.json',
+                'clusters/dallas-v12-auto-analysis.json'
+            ];
+
+            for (const path of defaultPaths) {
+                try {
+                    const response = await fetch(path);
+                    if (response.ok) {
+                        const data = await response.json();
+                        loadData(data);
+                        return;
+                    }
+                } catch (e) {
+                    console.log(`Could not load ${path}`);
+                }
+            }
+        }
+
+        function handleFileLoad(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    loadData(data);
+                } catch (err) {
+                    alert('Error parsing JSON: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function loadData(data) {
+            currentData = data;
+            console.log('Loaded data:', data);
+
+            // Update UI - show prompt with predicted token
+            const promptDisplay = document.getElementById('prompt-display');
+            const topLogits = data.top_logits || [];
+            const topPrediction = topLogits[0];
+
+            if (topPrediction) {
+                const prob = (topPrediction.probability * 100).toFixed(1);
+                promptDisplay.innerHTML = `
+                    ${data.prompt || 'Unknown prompt'}
+                    <span class="predicted-token" onclick="showLogitsPopup(event)" title="Click to see all predictions">${topPrediction.token}</span>
+                    <span class="probability">(${prob}%)</span>
+                `;
+            } else {
+                promptDisplay.textContent = data.prompt || 'Unknown prompt';
+            }
+
+            // Build module list in sidebar
+            buildModuleList(data.module_summaries);
+
+            // Render flow tab
+            render();
+
+            // Populate other tabs
+            updateAllTabs();
+        }
+
+        function showLogitsPopup(event) {
+            event.stopPropagation();
+
+            // Remove any existing popup
+            const existingPopup = document.querySelector('.logits-popup');
+            const existingOverlay = document.querySelector('.logits-popup-overlay');
+            if (existingPopup) existingPopup.remove();
+            if (existingOverlay) existingOverlay.remove();
+
+            const topLogits = currentData?.top_logits || [];
+            if (topLogits.length === 0) return;
+
+            // Create overlay to close popup on outside click
+            const overlay = document.createElement('div');
+            overlay.className = 'logits-popup-overlay';
+            overlay.onclick = () => {
+                popup.remove();
+                overlay.remove();
+            };
+            document.body.appendChild(overlay);
+
+            // Create popup
+            const popup = document.createElement('div');
+            popup.className = 'logits-popup';
+
+            const maxProb = topLogits[0]?.probability || 1;
+
+            popup.innerHTML = `
+                <h4>Top Predictions</h4>
+                ${topLogits.map((logit, i) => {
+                    const prob = (logit.probability * 100).toFixed(2);
+                    const barWidth = (logit.probability / maxProb) * 100;
+                    return `
+                        <div class="logit-item">
+                            <div style="flex: 1;">
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span class="logit-token">${i === 0 ? '→ ' : ''}${logit.token}</span>
+                                    <span class="logit-prob">${prob}%</span>
+                                </div>
+                                <div class="logit-bar" style="width: ${barWidth}%;"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            `;
+
+            // Position popup near the clicked element
+            const rect = event.target.getBoundingClientRect();
+            popup.style.top = (rect.bottom + 5) + 'px';
+            popup.style.left = rect.left + 'px';
+
+            document.body.appendChild(popup);
+
+            // Make sure popup doesn't go off screen
+            const popupRect = popup.getBoundingClientRect();
+            if (popupRect.right > window.innerWidth) {
+                popup.style.left = (window.innerWidth - popupRect.width - 10) + 'px';
+            }
+        }
+
+        function buildModuleList(modules) {
+            const container = document.getElementById('module-list');
+
+            // Guard against undefined/null modules
+            if (!modules || !Array.isArray(modules)) {
+                container.innerHTML = '<p class="error">No modules found in data</p>';
+                console.warn('buildModuleList: modules is undefined or not an array');
+                return;
+            }
+
+            // Group modules: standalone vs parent/sub-modules
+            const standalone = [];
+            const parentGroups = {};  // parent_id -> [submodules]
+            const parentModules = {}; // parent_id -> parent module info (if present)
+
+            modules.forEach(m => {
+                if (m.is_submodule && m.parent_id !== undefined) {
+                    const parentId = m.parent_id;
+                    if (!parentGroups[parentId]) {
+                        parentGroups[parentId] = [];
+                    }
+                    parentGroups[parentId].push(m);
+                } else if (parentGroups[m.cluster_id]) {
+                    // This is a parent that has been split - store for reference
+                    parentModules[m.cluster_id] = m;
+                } else {
+                    // Check if this module was split (has sub-modules)
+                    const hasSubmodules = modules.some(sub => sub.parent_id === m.cluster_id);
+                    if (hasSubmodules) {
+                        parentModules[m.cluster_id] = m;
+                    } else {
+                        standalone.push(m);
+                    }
+                }
+            });
+
+            let html = '';
+
+            // Standalone modules first
+            standalone.forEach(m => {
+                html += `
+                    <div class="module-card" data-module="${m.cluster_id}">
+                        <h4>M${m.cluster_id}: ${m.name || m.top_tokens?.[0]?.[0] || '?'}</h4>
+                        <div class="meta">
+                            L${m.layer_range[0]}-${m.layer_range[1]} |
+                            pos ${m.position_range?.[0] || '?'}-${m.position_range?.[1] || '?'} |
+                            ${m.size} neurons
+                        </div>
+                    </div>
+                `;
+            });
+
+            // Parent modules with expandable sub-modules
+            Object.keys(parentGroups).sort((a, b) => a - b).forEach(parentId => {
+                const submodules = parentGroups[parentId];
+                const parent = parentModules[parentId];
+                const parentName = parent?.name || `Module ${parentId}`;
+                const totalNeurons = submodules.reduce((sum, s) => sum + (s.size || 0), 0);
+
+                html += `
+                    <div class="parent-module-header" data-parent="${parentId}" onclick="toggleSubmodules('${parentId}')">
+                        <span><strong>M${parentId}:</strong> ${parentName}</span>
+                        <span class="expand-icon">▶</span>
+                    </div>
+                    <div class="submodule-group" id="subgroup-${parentId}">
+                        <div style="font-size: 0.75rem; color: #666; padding: 0.3rem 0 0.3rem 1rem;">
+                            ${submodules.length} sub-modules, ${totalNeurons} neurons total
+                        </div>
+                `;
+
+                submodules.sort((a, b) => String(a.cluster_id).localeCompare(String(b.cluster_id))).forEach(m => {
+                    const funcLabel = m.functional_label || m.name || '?';
+                    html += `
+                        <div class="module-card submodule" data-module="${m.cluster_id}">
+                            <h4>M${m.cluster_id}: ${funcLabel}</h4>
+                            <div class="meta">
+                                L${m.layer_range[0]}-${m.layer_range[1]} |
+                                pos ${m.position_range?.[0] || '?'}-${m.position_range?.[1] || '?'} |
+                                ${m.size} neurons
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += '</div>';
+            });
+
+            container.innerHTML = html;
+
+            // Add click handlers for module cards
+            container.querySelectorAll('.module-card').forEach(card => {
+                card.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const moduleId = card.dataset.module;
+                    // Handle both numeric and string IDs (like "1.0")
+                    highlightModule(moduleId);
+                });
+            });
+        }
+
+        function toggleSubmodules(parentId) {
+            const group = document.getElementById(`subgroup-${parentId}`);
+            const header = document.querySelector(`.parent-module-header[data-parent="${parentId}"]`);
+
+            if (group.classList.contains('expanded')) {
+                group.classList.remove('expanded');
+                header.classList.remove('expanded');
+            } else {
+                group.classList.add('expanded');
+                header.classList.add('expanded');
+            }
+        }
+
+        function render() {
+            if (!currentData) return;
+
+            g.selectAll('*').remove();
+
+            const modules = currentData.module_summaries || [];
+            const edges = currentData.module_edges || [];
+            const prompt = currentData.prompt || '';
+            const flowThreshold = parseFloat(document.getElementById('flow-threshold').value);
+            const showTokenEdges = document.getElementById('show-token-edges').checked;
+
+            // Get ALL tokens from the tokens array in sequence order
+            let tokens = [];
+            if (currentData.tokens && currentData.tokens.length > 0) {
+                // Use proper token sequence from analysis - include ALL tokens
+                tokens = currentData.tokens.map(t => ({
+                    position: t.position,
+                    token: t.token,
+                    rawToken: t.raw_token,
+                    modules: t.modules || [],
+                    isSpecial: t.token.startsWith('<|') || t.token === '\\n'
+                }));
+            } else {
+                // Fallback: extract from modules (sorted by position)
+                const tokenMap = new Map();
+                modules.forEach(m => {
+                    const [posMin, posMax] = m.position_range || [0, 0];
+                    for (let pos = posMin; pos <= posMax; pos++) {
+                        if (!tokenMap.has(pos)) {
+                            tokenMap.set(pos, { position: pos, token: '?', modules: [], isSpecial: false });
+                        }
+                        tokenMap.get(pos).modules.push(m.cluster_id);
+                    }
+                    // Add token text from top_tokens
+                    if (m.top_tokens && m.top_tokens[0]) {
+                        const tok = m.top_tokens[0][0];
+                        if (tok && !tok.startsWith('<|')) {
+                            const pos = posMin;
+                            if (tokenMap.has(pos)) {
+                                tokenMap.get(pos).token = tok;
+                            }
+                        }
+                    }
+                });
+                tokens = Array.from(tokenMap.values()).sort((a, b) => a.position - b.position);
+            }
+
+            console.log('Tokens:', tokens.length, 'total');
+
+            // Layout calculations
+            const chartWidth = width - margin.left - margin.right;
+            const chartHeight = height - margin.top - margin.bottom;
+
+            // Layer bands (y-axis)
+            const maxLayer = Math.max(...modules.map(m => m.layer_range[1]));
+            const yScale = d3.scaleLinear()
+                .domain([0, maxLayer + 2]) // +2 for output space
+                .range([chartHeight - 60, 60]); // tokens at bottom, output at top
+
+            // Token positions (x-axis at bottom)
+            const tokenY = chartHeight - 30;
+            const tokenSpacing = Math.min(80, chartWidth / (tokens.length + 1));
+            const tokenStartX = (chartWidth - tokenSpacing * tokens.length) / 2;
+
+            // Draw layer bands
+            const layerBands = [
+                { label: 'Early (L0-6)', y0: 0, y1: 6 },
+                { label: 'Middle (L7-15)', y0: 7, y1: 15 },
+                { label: 'Late (L16-31)', y0: 16, y1: maxLayer }
+            ];
+
+            g.selectAll('.layer-band')
+                .data(layerBands)
+                .join('rect')
+                .attr('class', 'layer-band')
+                .attr('x', 0)
+                .attr('y', d => yScale(d.y1))
+                .attr('width', chartWidth)
+                .attr('height', d => yScale(d.y0) - yScale(d.y1))
+                .attr('fill', (d, i) => ['#1a1a2a', '#15152a', '#10102a'][i])
+                .attr('opacity', 0.5);
+
+            g.selectAll('.layer-label')
+                .data(layerBands)
+                .join('text')
+                .attr('class', 'layer-label')
+                .attr('x', 10)
+                .attr('y', d => yScale((d.y0 + d.y1) / 2))
+                .text(d => d.label);
+
+            // Draw tokens at bottom - show ALL tokens, full text
+            const tokenNodes = g.selectAll('.token-node')
+                .data(tokens)
+                .join('g')
+                .attr('class', d => `token-node ${d.isSpecial ? 'special' : ''} ${d.modules.length > 0 ? 'has-modules' : ''}`)
+                .attr('transform', (d, i) => `translate(${tokenStartX + i * tokenSpacing}, ${tokenY})`);
+
+            // Fixed width boxes, centered
+            const tokenBoxWidth = 55;
+            tokenNodes.append('rect')
+                .attr('x', -tokenBoxWidth / 2)
+                .attr('y', -12)
+                .attr('width', tokenBoxWidth)
+                .attr('height', 24)
+                .attr('rx', 4)
+                .attr('fill', d => d.isSpecial ? '#1a1a2a' : (d.modules.length > 0 ? '#2a3a4a' : '#2a2a4a'))
+                .attr('stroke', d => d.modules.length > 0 ? '#4a6a8a' : '#4a4a6a');
+
+            tokenNodes.append('text')
+                .attr('text-anchor', 'middle')
+                .attr('dy', 4)
+                .attr('fill', d => d.isSpecial ? '#666' : '#ccc')
+                .attr('font-size', '10px')
+                .text(d => {
+                    if (d.isSpecial) return `[${d.position}]`;
+                    // Truncate long tokens to fit box
+                    return d.token.length > 7 ? d.token.slice(0, 6) + '…' : d.token;
+                });
+
+            tokenNodes
+                .on('mouseover', (event, d) => {
+                    // Find modules connected to this token position
+                    const connectedModules = modules.filter(m => {
+                        const [posMin, posMax] = m.position_range || [0, 0];
+                        return d.position >= posMin && d.position <= posMax;
+                    });
+                    const moduleNames = connectedModules.map(m => `M${m.cluster_id}: ${m.name || '?'}`);
+
+                    showTooltip(event, `
+                        <div class="title">"${d.token}"</div>
+                        <div class="detail">
+                            Position: ${d.position}<br>
+                            ${moduleNames.length > 0 ? 'Modules:<br>' + moduleNames.join('<br>') : 'No modules'}
+                        </div>
+                    `);
+
+                    // Only highlight on hover if nothing is selected
+                    if (!selectedNode) {
+                        highlightTokenConnections(d, modules);
+                    }
+                })
+                .on('mouseout', () => {
+                    hideTooltip();
+                    if (!selectedNode) {
+                        clearHighlights();
+                    }
+                })
+                .on('click', (event, d) => {
+                    event.stopPropagation();
+                    // Toggle selection (use negative position to distinguish from module IDs)
+                    const tokenKey = `tok_${d.position}`;
+                    if (selectedNode === tokenKey) {
+                        selectedNode = null;
+                        clearHighlights();
+                    } else {
+                        selectedNode = tokenKey;
+                        highlightTokenConnections(d, modules);
+                    }
+                });
+
+            // Position modules
+            const modulePositions = new Map();
+
+            // Build parent-to-submodule mapping for edge routing
+            const parentToSubmodules = new Map();
+            modules.forEach(m => {
+                if (m.is_submodule && m.parent_id !== undefined) {
+                    if (!parentToSubmodules.has(m.parent_id)) {
+                        parentToSubmodules.set(m.parent_id, []);
+                    }
+                    parentToSubmodules.get(m.parent_id).push(m);
+                }
+            });
+
+            // Compute layer_mean for modules missing it (sub-modules)
+            modules.forEach(m => {
+                if (m.layer_mean === undefined && m.layer_range) {
+                    m.layer_mean = (m.layer_range[0] + m.layer_range[1]) / 2;
+                }
+            });
+
+            // Group modules by layer band for x-positioning
+            const modulesByBand = { early: [], middle: [], late: [] };
+            modules.forEach(m => {
+                const meanLayer = m.layer_mean || 0;
+                if (meanLayer <= 6) modulesByBand.early.push(m);
+                else if (meanLayer <= 15) modulesByBand.middle.push(m);
+                else modulesByBand.late.push(m);
+            });
+
+            // Position each module
+            Object.entries(modulesByBand).forEach(([band, bandModules]) => {
+                const spacing = chartWidth / (bandModules.length + 1);
+                bandModules.forEach((m, i) => {
+                    modulePositions.set(String(m.cluster_id), {
+                        x: spacing * (i + 1),
+                        y: yScale(m.layer_mean || 0),
+                        module: m
+                    });
+                });
+            });
+
+            // Helper to resolve module ID to a valid position (handles parent→submodule mapping)
+            function getModulePosition(moduleId) {
+                const idStr = String(moduleId);
+                // Direct lookup first
+                if (modulePositions.has(idStr)) {
+                    return modulePositions.get(idStr);
+                }
+                // If this was a parent that got split, use first sub-module
+                const numId = parseInt(moduleId);
+                if (parentToSubmodules.has(numId)) {
+                    const subs = parentToSubmodules.get(numId);
+                    if (subs.length > 0) {
+                        return modulePositions.get(String(subs[0].cluster_id));
+                    }
+                }
+                return null;
+            }
+
+            // ALWAYS draw module → token edges based on module position_range
+            // This ensures every module has a connection to its tokens
+            const tokenEdges = [];
+            modules.forEach(m => {
+                const modPos = modulePositions.get(String(m.cluster_id));
+                if (!modPos) return;
+
+                const [posMin, posMax] = m.position_range || [0, 0];
+                // Find all tokens in this module's position range
+                tokens.forEach((tok, tokenIdx) => {
+                    if (tok.position >= posMin && tok.position <= posMax) {
+                        tokenEdges.push({
+                            tokenIdx,
+                            tokenPos: tok.position,
+                            tokenX: tokenStartX + tokenIdx * tokenSpacing,
+                            tokenY: tokenY - 12,
+                            moduleX: modPos.x,
+                            moduleY: modPos.y + 20, // Connect to bottom of module box
+                            moduleId: String(m.cluster_id)
+                        });
+                    }
+                });
+            });
+
+            // Draw token edges (always visible, opacity controlled by checkbox)
+            const tokenEdgeOpacity = showTokenEdges ? 0.4 : 0.15;
+            g.selectAll('.token-edge')
+                .data(tokenEdges)
+                .join('path')
+                .attr('class', 'edge token-to-module')
+                .attr('d', d => {
+                    const midY = (d.tokenY + d.moduleY) / 2;
+                    return `M${d.tokenX},${d.tokenY} Q${d.tokenX},${midY} ${d.moduleX},${d.moduleY}`;
+                })
+                .attr('stroke-width', 1.5)
+                .attr('opacity', tokenEdgeOpacity)
+                .attr('data-token-pos', d => d.tokenPos)
+                .attr('data-module-id', d => d.moduleId);
+
+            // Draw module → module edges
+            const filteredEdges = edges.filter(e => Math.abs(e.weight) >= flowThreshold);
+
+            g.selectAll('.module-edge')
+                .data(filteredEdges)
+                .join('path')
+                .attr('class', d => `edge module-edge ${d.weight >= 0 ? 'positive' : 'negative'}`)
+                .attr('d', d => {
+                    // Use getModulePosition to handle parent→submodule mapping
+                    const src = getModulePosition(d.source);
+                    const tgt = getModulePosition(d.target);
+                    if (!src || !tgt) return '';
+
+                    // Curved path
+                    const midX = (src.x + tgt.x) / 2;
+                    const midY = (src.y + tgt.y) / 2;
+                    const offset = (src.x - tgt.x) * 0.3;
+
+                    return `M${src.x},${src.y} Q${midX + offset},${midY} ${tgt.x},${tgt.y}`;
+                })
+                .attr('stroke-width', d => Math.max(1, Math.min(8, Math.abs(d.weight) * 3)))
+                .attr('marker-end', 'url(#arrowhead)')
+                .on('mouseover', (event, d) => {
+                    showTooltip(event, `M${d.source} → M${d.target}<br>Flow: ${d.weight.toFixed(3)}<br>Edges: ${d.edge_count}`);
+                })
+                .on('mouseout', hideTooltip);
+
+            // Arrow marker
+            svg.select('defs').remove();
+            svg.append('defs').append('marker')
+                .attr('id', 'arrowhead')
+                .attr('viewBox', '0 -5 10 10')
+                .attr('refX', 20)
+                .attr('refY', 0)
+                .attr('markerWidth', 6)
+                .attr('markerHeight', 6)
+                .attr('orient', 'auto')
+                .append('path')
+                .attr('d', 'M0,-5L10,0L0,5')
+                .attr('fill', '#666');
+
+            // Color scale for modules
+            const colorScale = d3.scaleSequential(d3.interpolateViridis)
+                .domain([0, maxLayer]);
+
+            // Draw module nodes with names
+            const moduleNodes = g.selectAll('.module-node')
+                .data(modules)
+                .join('g')
+                .attr('class', d => `module-node ${d.is_submodule ? 'submodule' : ''}`)
+                .attr('transform', d => {
+                    const pos = modulePositions.get(String(d.cluster_id));
+                    return pos ? `translate(${pos.x}, ${pos.y})` : '';
+                });
+
+            // Use rounded rectangles - smaller for sub-modules
+            const nodeWidth = 120;
+            const nodeHeight = 40;
+
+            moduleNodes.append('rect')
+                .attr('x', d => d.is_submodule ? -50 : -nodeWidth / 2)
+                .attr('y', d => d.is_submodule ? -17 : -nodeHeight / 2)
+                .attr('width', d => d.is_submodule ? 100 : nodeWidth)
+                .attr('height', d => d.is_submodule ? 34 : nodeHeight)
+                .attr('rx', 8)
+                .attr('fill', d => colorScale(d.layer_mean || 0))
+                .attr('stroke', d => d.is_submodule ? '#4a6a8a' : '#fff')
+                .attr('stroke-width', d => d.is_submodule ? 2 : 1)
+                .attr('stroke-opacity', d => d.is_submodule ? 1 : 0.3);
+
+            // Module ID on top
+            moduleNodes.append('text')
+                .attr('y', -8)
+                .attr('font-size', d => d.is_submodule ? '9px' : '11px')
+                .attr('font-weight', '600')
+                .attr('fill', d => d.is_submodule ? '#6a9adf' : '#fff')
+                .text(d => `M${d.cluster_id} (L${d.layer_range[0]}-${d.layer_range[1]})`);
+
+            // Module name below
+            moduleNodes.append('text')
+                .attr('y', 8)
+                .attr('font-size', '9px')
+                .attr('fill', '#ddd')
+                .text(d => {
+                    const name = d.functional_label || d.name || '';
+                    const maxLen = d.is_submodule ? 14 : 18;
+                    return name.length > maxLen ? name.slice(0, maxLen - 2) + '…' : name;
+                });
+
+            moduleNodes
+                .on('mouseover', (event, d) => {
+                    const tokensStr = d.top_tokens?.slice(0, 3).map(t => `"${Array.isArray(t) ? t[0] : t}"`).join(', ') || 'none';
+                    const posRange = d.position_range ? `${d.position_range[0]}-${d.position_range[1]}` : '?';
+                    const moduleName = d.name || d.functional_label || `Module ${d.cluster_id}`;
+                    const funcDesc = d.function || d.functional_label || d.name || '';
+                    const submoduleInfo = d.is_submodule ? `<strong>Sub-module of:</strong> M${d.parent_id}<br><br>` : '';
+                    const functionSection = funcDesc ? `<strong>Function:</strong> ${funcDesc}<br><br>` : '';
+                    showTooltip(event, `
+                        <div class="title">M${d.cluster_id}: ${moduleName}</div>
+                        <div class="detail">
+                            ${submoduleInfo}
+                            ${functionSection}
+                            Layers: ${d.layer_range[0]}-${d.layer_range[1]} (mean: ${(d.layer_mean || 0).toFixed(1)})<br>
+                            Positions: ${posRange}<br>
+                            Neurons: ${d.size}<br>
+                            Tokens: ${tokensStr}<br>
+                            Influence: ${(d.total_influence || 0).toFixed(2)}<br>
+                            Flow in: ${(d.incoming_flow || 0).toFixed(2)}, out: ${(d.outgoing_flow || 0).toFixed(2)}
+                        </div>
+                    `);
+                    // Only highlight on hover if nothing is selected
+                    if (!selectedNode) {
+                        highlightConnections(d.cluster_id);
+                    }
+                })
+                .on('mouseout', () => {
+                    hideTooltip();
+                    // Only clear highlights if nothing is selected
+                    if (!selectedNode) {
+                        clearHighlights();
+                    }
+                })
+                .on('click', (event, d) => {
+                    event.stopPropagation();
+                    // Toggle selection
+                    if (selectedNode === d.cluster_id) {
+                        selectedNode = null;
+                        clearHighlights();
+                    } else {
+                        selectedNode = d.cluster_id;
+                        highlightConnections(d.cluster_id);
+                    }
+                    showModuleDetails(d);
+                });
+
+            // Draw output node at top - show predicted token
+            const outputY = 30;
+            const outputX = chartWidth / 2;
+            const topLogits = currentData.top_logits || [];
+            const topPrediction = topLogits[0];
+            const outputLabel = topPrediction ? `→ ${topPrediction.token}` : 'Output';
+            const outputProb = topPrediction ? `(${(topPrediction.probability * 100).toFixed(1)}%)` : '';
+
+            const outputNode = g.append('g')
+                .attr('class', 'output-node')
+                .attr('transform', `translate(${outputX}, ${outputY})`)
+                .style('cursor', 'pointer')
+                .on('click', (event) => {
+                    event.stopPropagation();
+                    showLogitsPopup(event);
+                })
+                .on('mouseenter', function() {
+                    d3.select(this).select('rect').attr('filter', 'brightness(1.3)');
+                    if (topLogits.length > 0) {
+                        showTooltip(event, `
+                            <div class="title">Model Output</div>
+                            <div class="detail">
+                                Top prediction: <strong>${topPrediction?.token}</strong> (${(topPrediction?.probability * 100).toFixed(2)}%)<br>
+                                Click to see all ${topLogits.length} predictions
+                            </div>
+                        `);
+                    }
+                })
+                .on('mouseleave', function() {
+                    d3.select(this).select('rect').attr('filter', null);
+                    hideTooltip();
+                });
+
+            // Wider rect to fit text
+            const rectWidth = Math.max(100, outputLabel.length * 9 + 40);
+            outputNode.append('rect')
+                .attr('x', -rectWidth / 2)
+                .attr('y', -15)
+                .attr('width', rectWidth)
+                .attr('height', 30)
+                .attr('rx', 6);
+
+            outputNode.append('text')
+                .attr('text-anchor', 'middle')
+                .attr('dy', 1)
+                .text(outputLabel);
+
+            if (outputProb) {
+                outputNode.append('text')
+                    .attr('text-anchor', 'middle')
+                    .attr('dy', 12)
+                    .attr('font-size', '9px')
+                    .attr('fill', '#aaa')
+                    .text(outputProb);
+            }
+
+            // Draw edges from late modules to output
+            const lateModules = modules.filter(m => (m.layer_mean || 0) >= 25);
+            g.selectAll('.output-edge')
+                .data(lateModules)
+                .join('path')
+                .attr('class', 'edge output-edge positive')
+                .attr('d', d => {
+                    const pos = modulePositions.get(String(d.cluster_id));
+                    if (!pos) return '';
+                    return `M${pos.x},${pos.y - 15} Q${(pos.x + outputX) / 2},${outputY + 30} ${outputX},${outputY + 15}`;
+                })
+                .attr('stroke-width', 2)
+                .attr('opacity', 0.4)
+                .attr('data-module-id', d => String(d.cluster_id));
+        }
+
+        function highlightConnections(moduleId) {
+            const edges = currentData.module_edges || [];
+            const modules = currentData.module_summaries || [];
+
+            // Use string comparison for module IDs
+            const moduleIdStr = String(moduleId);
+
+            // Find the selected module
+            const selectedModule = modules.find(m => String(m.cluster_id) === moduleIdStr);
+
+            // Track connected modules
+            const connected = new Set([moduleIdStr]);
+
+            // Helper to check if an edge endpoint matches our module
+            const matchesModule = (edgeId) => String(edgeId) === moduleIdStr;
+
+            edges.forEach(e => {
+                if (matchesModule(e.source)) {
+                    connected.add(String(e.target));
+                }
+                if (matchesModule(e.target)) {
+                    connected.add(String(e.source));
+                }
+            });
+
+            g.selectAll('.module-node')
+                .classed('dimmed', d => !connected.has(String(d.cluster_id)));
+
+            // Highlight module-to-module edges with different styles for incoming/outgoing
+            g.selectAll('.edge.module-edge')
+                .classed('dimmed', d => !matchesModule(d.source) && !matchesModule(d.target))
+                .classed('highlighted', false)
+                .classed('highlighted-outgoing', d => matchesModule(d.source))
+                .classed('highlighted-incoming', d => matchesModule(d.target));
+
+            // Highlight token edges connected to this module
+            const [posMin, posMax] = selectedModule?.position_range || [0, 0];
+
+            g.selectAll('.token-to-module')
+                .classed('dimmed', function() {
+                    const mid = this.getAttribute('data-module-id');
+                    return mid !== moduleIdStr;
+                })
+                .classed('highlighted', function() {
+                    const mid = this.getAttribute('data-module-id');
+                    return mid === moduleIdStr;
+                })
+                .attr('opacity', function() {
+                    const mid = this.getAttribute('data-module-id');
+                    return mid === moduleIdStr ? 0.8 : 0.1;
+                });
+
+            // Highlight connected tokens
+            g.selectAll('.token-node')
+                .classed('dimmed', d => d.position < posMin || d.position > posMax);
+
+            // Highlight output edges for this module
+            g.selectAll('.output-edge')
+                .classed('dimmed', function() {
+                    const mid = this.getAttribute('data-module-id');
+                    return mid !== moduleIdStr;
+                })
+                .classed('highlighted-outgoing', function() {
+                    const mid = this.getAttribute('data-module-id');
+                    return mid === moduleIdStr;
+                });
+        }
+
+        function clearHighlights() {
+            g.selectAll('.dimmed').classed('dimmed', false);
+            g.selectAll('.highlighted').classed('highlighted', false);
+            g.selectAll('.highlighted-outgoing').classed('highlighted-outgoing', false);
+            g.selectAll('.highlighted-incoming').classed('highlighted-incoming', false);
+            // Reset token edge opacities
+            const showTokenEdges = document.getElementById('show-token-edges').checked;
+            g.selectAll('.token-to-module').attr('opacity', showTokenEdges ? 0.4 : 0.15);
+            // Reset output edge opacities
+            g.selectAll('.output-edge').attr('opacity', 0.4);
+            // Reset edge stroke-dasharray
+            g.selectAll('.edge:not(.token-to-module)').style('stroke-dasharray', null);
+        }
+
+        function highlightTokenConnections(tokenData, modules) {
+            clearHighlights();
+
+            // Find modules connected to this token position (based on position_range)
+            const connectedModules = new Set();
+            const connectedModuleIds = new Set(); // String versions for comparison
+            (modules || currentData?.module_summaries || []).forEach(m => {
+                const [posMin, posMax] = m.position_range || [0, 0];
+                if (tokenData.position >= posMin && tokenData.position <= posMax) {
+                    connectedModules.add(m.cluster_id);
+                    connectedModuleIds.add(String(m.cluster_id));
+                }
+            });
+
+            g.selectAll('.module-node')
+                .classed('dimmed', d => !connectedModules.has(d.cluster_id));
+
+            g.selectAll('.token-to-module')
+                .classed('dimmed', function() {
+                    const pos = parseInt(this.getAttribute('data-token-pos'));
+                    return pos !== tokenData.position;
+                })
+                .classed('highlighted', function() {
+                    const pos = parseInt(this.getAttribute('data-token-pos'));
+                    return pos === tokenData.position;
+                })
+                .attr('opacity', function() {
+                    const pos = parseInt(this.getAttribute('data-token-pos'));
+                    return pos === tokenData.position ? 0.8 : 0.1;
+                });
+
+            // Dim module-to-module edges not involving connected modules
+            g.selectAll('.module-edge')
+                .classed('dimmed', d => !connectedModules.has(d.source) && !connectedModules.has(d.target));
+
+            // Dim output edges not from connected modules
+            g.selectAll('.output-edge')
+                .classed('dimmed', function() {
+                    const mid = this.getAttribute('data-module-id');
+                    return !connectedModuleIds.has(mid);
+                });
+
+            // Highlight the token itself
+            g.selectAll('.token-node')
+                .classed('dimmed', d => d.position !== tokenData.position);
+        }
+
+        function highlightModule(moduleId) {
+            // Handle both numeric and string IDs (sub-modules have IDs like "1.0")
+            const module = currentData.module_summaries.find(m =>
+                String(m.cluster_id) === String(moduleId)
+            );
+            if (module) {
+                showModuleDetails(module);
+                // For highlighting connections, use the cluster_id from the module
+                highlightConnections(module.cluster_id);
+            }
+        }
+
+        function showModuleDetails(m) {
+            const container = document.getElementById('module-details');
+            const neurons = m.all_neurons || m.top_neurons || [];
+            const posRange = m.position_range ? `${m.position_range[0]}-${m.position_range[1]}` : '?';
+            const funcDesc = m.function || '';
+            const funcLabel = m.functional_label || m.name || 'Unknown';
+            const isSubmodule = m.is_submodule;
+
+            const cardClass = isSubmodule ? 'module-card submodule' : 'module-card';
+            const headerStyle = isSubmodule ? 'style="color: #6a9adf;"' : '';
+
+            container.innerHTML = `
+                <div class="${cardClass}">
+                    <h4 ${headerStyle}>M${m.cluster_id}: ${funcLabel}</h4>
+                    ${isSubmodule ? `<div style="color: #888; font-size: 0.8rem; margin-bottom: 0.5rem;">Sub-module of M${m.parent_id}</div>` : ''}
+                    ${funcDesc && funcDesc !== funcLabel ? `<div class="function-desc">${funcDesc}</div>` : ''}
+                    <div class="meta">
+                        <strong>Layers:</strong> ${m.layer_range[0]}-${m.layer_range[1]} (mean: ${(m.layer_mean || 0).toFixed(1)})<br>
+                        <strong>Positions:</strong> ${posRange}<br>
+                        <strong>Size:</strong> ${m.size} neurons<br>
+                        <strong>Tokens:</strong> ${m.top_tokens?.slice(0, 5).map(t => `"${Array.isArray(t) ? t[0] : t}"`).join(', ') || 'none'}<br>
+                        <strong>Influence:</strong> ${(m.total_influence || 0).toFixed(2)}<br>
+                        <strong>Flow:</strong> in=${(m.incoming_flow || 0).toFixed(2)}, out=${(m.outgoing_flow || 0).toFixed(2)}
+                    </div>
+                    <div class="neurons">
+                        <strong>Neurons:</strong>
+                        <ul class="neuron-list">
+                            ${neurons.slice(0, 15).map(n => {
+                                const label = n.label || '(no description)';
+                                // Remove redundant L/N prefix if already in label
+                                const cleanLabel = label.replace(/^L\d+\/N\d+:\s*/, '');
+                                return `<li><span class="neuron-loc">L${n.layer}/N${n.neuron}</span> <span class="neuron-inf">(${(n.influence || 0).toFixed(3)})</span><br><span class="neuron-desc">${cleanLabel}</span></li>`;
+                            }).join('')}
+                        </ul>
+                    </div>
+                </div>
+            `;
+        }
+
+        function showTooltip(event, html) {
+            const tooltip = d3.select('.tooltip');
+            tooltip
+                .style('display', 'block')
+                .style('left', (event.pageX + 10) + 'px')
+                .style('top', (event.pageY + 10) + 'px')
+                .html(html);
+        }
+
+        function hideTooltip() {
+            d3.select('.tooltip').style('display', 'none');
+        }
+
+        // Tab functions
+        function showTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`.tab-btn[onclick="showTab('${tabName}')"]`).classList.add('active');
+
+            // Update tab panels
+            document.querySelectorAll('.tab-panel').forEach(panel => {
+                panel.classList.remove('active');
+            });
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+        }
+
+        function renderModulesTab() {
+            if (!currentData) return;
+
+            const modules = currentData.module_summaries || [];
+            const tokens = currentData.tokens || [];
+            const container = document.getElementById('modules-grid');
+
+            // Group modules: standalone vs parent/sub-modules
+            const standalone = [];
+            const parentGroups = {};  // parent_id -> [submodules]
+            const parentModules = {}; // parent_id -> parent module info
+
+            modules.forEach(m => {
+                if (m.is_submodule && m.parent_id !== undefined) {
+                    const parentId = m.parent_id;
+                    if (!parentGroups[parentId]) {
+                        parentGroups[parentId] = [];
+                    }
+                    parentGroups[parentId].push(m);
+                } else {
+                    const hasSubmodules = modules.some(sub => sub.parent_id === m.cluster_id);
+                    if (hasSubmodules) {
+                        parentModules[m.cluster_id] = m;
+                    } else {
+                        standalone.push(m);
+                    }
+                }
+            });
+
+            function renderModuleCard(m, isSubmodule = false) {
+                const [posMin, posMax] = m.position_range || [0, 0];
+                const moduleTokens = tokens.filter(t => t.position >= posMin && t.position <= posMax)
+                    .map(t => t.token).join(' ');
+                const neurons = m.all_neurons || m.top_neurons || [];
+                const funcDesc = m.function || '';
+                const funcLabel = m.functional_label || m.name || 'Unknown';
+
+                const cardClass = isSubmodule ? 'module-detail-card submodule-detail' : 'module-detail-card';
+                const headerColor = isSubmodule ? '#6a9adf' : '#4a9eff';
+
+                return `
+                    <div class="${cardClass}" style="${isSubmodule ? 'border-left: 3px solid #4a6a8a; margin-left: 0.5rem;' : ''}">
+                        <h4 style="color: ${headerColor};">Module ${m.cluster_id}: ${funcLabel}</h4>
+                        ${funcDesc ? `<div class="module-function">${funcDesc}</div>` : ''}
+                        <div class="meta">
+                            Layers ${m.layer_range[0]}-${m.layer_range[1]} (mean: ${(m.layer_mean || 0).toFixed(1)}) |
+                            Positions ${posMin}-${posMax} |
+                            ${m.size} neurons
+                        </div>
+                        <div class="tokens">"${moduleTokens || '(no tokens)'}"</div>
+                        <div class="flow-stats">
+                            <span class="flow-in">↓ In: ${(m.incoming_flow || 0).toFixed(2)}</span>
+                            <span class="flow-out">↑ Out: ${(m.outgoing_flow || 0).toFixed(2)}</span>
+                            <span>Influence: ${(m.total_influence || 0).toFixed(2)}</span>
+                        </div>
+                        <div class="neuron-list-full">
+                            ${neurons.map(n => {
+                                const label = n.label || '(no description)';
+                                const cleanLabel = label.replace(/^L\d+\/N\d+:\s*/, '');
+                                return `
+                                <div class="neuron-item">
+                                    <span class="neuron-loc">L${n.layer}/N${n.neuron}</span>
+                                    <span class="neuron-inf">${(n.influence || 0).toFixed(3)}</span>
+                                    <div class="neuron-desc-full">${cleanLabel}</div>
+                                </div>`;
+                            }).join('')}
+                            ${neurons.length === 0 ? '<div class="neuron-item">(no neuron data)</div>' : ''}
+                        </div>
+                    </div>
+                `;
+            }
+
+            let html = '';
+
+            // Standalone modules
+            standalone.forEach(m => {
+                html += renderModuleCard(m);
+            });
+
+            // Parent modules with sub-modules
+            Object.keys(parentGroups).sort((a, b) => a - b).forEach(parentId => {
+                const submodules = parentGroups[parentId];
+                const parent = parentModules[parentId];
+                const parentName = parent?.name || `Module ${parentId}`;
+                const totalNeurons = submodules.reduce((sum, s) => sum + (s.size || 0), 0);
+
+                // Parent header card
+                html += `
+                    <div class="module-detail-card" style="border: 2px solid #4a6a8a; background: #1a2535;">
+                        <h4 style="color: #4a9eff;">Parent Module ${parentId}: ${parentName}</h4>
+                        <div class="meta" style="margin-bottom: 0.8rem;">
+                            Split into ${submodules.length} functional sub-modules | ${totalNeurons} neurons total
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                `;
+
+                submodules.sort((a, b) => String(a.cluster_id).localeCompare(String(b.cluster_id))).forEach(sub => {
+                    html += renderModuleCard(sub, true);
+                });
+
+                html += `
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function renderAnalysisTab() {
+            if (!currentData) return;
+
+            const container = document.getElementById('analysis-content');
+            let synthesis = currentData.llm_synthesis || '';
+            let submoduleSynthesis = currentData.submodule_synthesis || '';
+
+            // Remove mermaid code blocks (we have the Circuit Flow viz instead)
+            synthesis = synthesis.replace(/```mermaid[\s\S]*?```/g, '');
+            submoduleSynthesis = submoduleSynthesis.replace(/```mermaid[\s\S]*?```/g, '');
+
+            // Parse markdown-ish content for display
+            function parseMarkdown(text) {
+                return text
+                    .replace(/###\s+(.+)/g, '<h3>$1</h3>')
+                    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\n\n/g, '</p><p>')
+                    .replace(/\n/g, '<br>');
+            }
+
+            let htmlContent = parseMarkdown(synthesis);
+            let submoduleHtmlContent = submoduleSynthesis ? parseMarkdown(submoduleSynthesis) : '';
+
+            container.innerHTML = `
+                ${submoduleHtmlContent ? `
+                    <h3 style="color: #6a9adf;">Functional Sub-Module Analysis</h3>
+                    <p>${submoduleHtmlContent}</p>
+                    <hr style="border-color: #3a3a4a; margin: 2rem 0;">
+                ` : ''}
+                <h3>Circuit Analysis</h3>
+                <p>${htmlContent || '(No synthesis available)'}</p>
+            `;
+        }
+
+        function renderMatrixTab() {
+            if (!currentData) return;
+
+            const modules = currentData.module_summaries || [];
+            const edges = currentData.module_edges || [];
+            const container = document.getElementById('matrix-content');
+
+            // Build flow matrix
+            const moduleIds = modules.map(m => m.cluster_id).sort((a, b) => a - b);
+            const flowMatrix = {};
+
+            moduleIds.forEach(id => {
+                flowMatrix[id] = {};
+                moduleIds.forEach(id2 => {
+                    flowMatrix[id][id2] = 0;
+                });
+            });
+
+            edges.forEach(e => {
+                if (flowMatrix[e.source] && flowMatrix[e.source][e.target] !== undefined) {
+                    flowMatrix[e.source][e.target] = e.weight;
+                }
+            });
+
+            // Create table
+            let tableHtml = '<table class="flow-matrix">';
+            tableHtml += '<tr><th>From↓ To→</th>';
+            moduleIds.forEach(id => {
+                const m = modules.find(m => m.cluster_id === id);
+                tableHtml += `<th title="${m?.name || ''}">M${id}</th>`;
+            });
+            tableHtml += '</tr>';
+
+            moduleIds.forEach(fromId => {
+                const m = modules.find(m => m.cluster_id === fromId);
+                tableHtml += `<tr><th title="${m?.name || ''}">M${fromId}</th>`;
+                moduleIds.forEach(toId => {
+                    const val = flowMatrix[fromId][toId];
+                    const cls = val > 0 ? 'flow-positive' : (val < 0 ? 'flow-negative' : '');
+                    const display = val !== 0 ? val.toFixed(2) : '-';
+                    tableHtml += `<td class="${cls}">${display}</td>`;
+                });
+                tableHtml += '</tr>';
+            });
+
+            tableHtml += '</table>';
+
+            container.innerHTML = `
+                <h3 style="color: #4a9eff; margin-bottom: 1rem;">Module Flow Matrix</h3>
+                <p style="color: #888; font-size: 0.85rem; margin-bottom: 1rem;">
+                    Shows flow weights between modules. Green = positive (excitatory), Red = negative (inhibitory).
+                </p>
+                ${tableHtml}
+            `;
+        }
+
+        // Update loadData to populate all tabs
+        function updateAllTabs() {
+            renderModulesTab();
+            renderAnalysisTab();
+            renderMatrixTab();
+        }
+    </script>
+</body>
+</html>

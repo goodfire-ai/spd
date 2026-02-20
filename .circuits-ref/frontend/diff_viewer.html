@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graph Diff Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+        .header {
+            background: #12121a;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            border: 1px solid #2a2a3a;
+        }
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 500;
+            margin-bottom: 1rem;
+            color: #4a9eff;
+        }
+        .file-input {
+            margin-bottom: 1rem;
+        }
+        .file-input input {
+            background: #1a1a2a;
+            border: 1px solid #3a3a4a;
+            color: #e0e0e0;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .prompts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        .prompt-box {
+            background: #1a1a2a;
+            padding: 1rem;
+            border-radius: 6px;
+            border-left: 3px solid;
+        }
+        .prompt-box.a { border-left-color: #4ade80; }
+        .prompt-box.b { border-left-color: #f472b6; }
+        .prompt-box h3 {
+            font-size: 0.9rem;
+            color: #888;
+            margin-bottom: 0.5rem;
+        }
+        .prompt-box .prompt-text {
+            font-size: 0.95rem;
+            line-height: 1.4;
+        }
+        .prompt-box .logits {
+            margin-top: 0.8rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        .logit-tag {
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-family: monospace;
+        }
+        .logit-tag.top {
+            background: linear-gradient(135deg, #4a2a6a, #6a3a8a);
+            border: 1px solid #8a4aaa;
+        }
+        .logit-tag.other {
+            background: #2a2a3a;
+            border: 1px solid #3a3a4a;
+        }
+
+        .section {
+            background: #12121a;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            border: 1px solid #2a2a3a;
+        }
+        .section h2 {
+            font-size: 1.2rem;
+            font-weight: 500;
+            margin-bottom: 1rem;
+            color: #4a9eff;
+            border-bottom: 1px solid #2a2a3a;
+            padding-bottom: 0.5rem;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        .metric-card {
+            background: #1a1a2a;
+            padding: 1rem;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .metric-card .value {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #4ade80;
+        }
+        .metric-card .label {
+            font-size: 0.85rem;
+            color: #888;
+            margin-top: 0.3rem;
+        }
+        .metric-card .bar {
+            height: 6px;
+            background: #2a2a3a;
+            border-radius: 3px;
+            margin-top: 0.8rem;
+            overflow: hidden;
+        }
+        .metric-card .bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4ade80, #22d3ee);
+            border-radius: 3px;
+        }
+
+        .node-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .node-table th, .node-table td {
+            padding: 0.8rem;
+            text-align: left;
+            border-bottom: 1px solid #2a2a3a;
+        }
+        .node-table th {
+            background: #1a1a2a;
+            color: #888;
+            font-weight: 500;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }
+        .node-table tr:hover {
+            background: #1a1a2a;
+        }
+        .node-key {
+            font-family: monospace;
+            font-weight: 600;
+            color: #4a9eff;
+        }
+        .node-desc {
+            font-size: 0.9rem;
+            color: #aaa;
+            max-width: 500px;
+        }
+        .influence {
+            font-family: monospace;
+        }
+        .influence.positive { color: #4ade80; }
+        .influence.negative { color: #f472b6; }
+        .delta {
+            font-family: monospace;
+            font-weight: 600;
+        }
+        .delta.to-a { color: #4ade80; }
+        .delta.to-b { color: #f472b6; }
+
+        .decision-circuit {
+            margin-top: 1rem;
+        }
+        .edge-item {
+            display: grid;
+            grid-template-columns: 200px 80px 100px 100px 100px 1fr;
+            gap: 1rem;
+            padding: 0.8rem;
+            background: #1a1a2a;
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+            align-items: center;
+        }
+        .edge-item:hover {
+            background: #222232;
+        }
+        .edge-source {
+            font-family: monospace;
+            color: #4a9eff;
+        }
+        .edge-target {
+            font-family: monospace;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .edge-target.yes { background: #166534; color: #4ade80; }
+        .edge-target.no { background: #7f1d1d; color: #f87171; }
+        .edge-weight {
+            font-family: monospace;
+            text-align: right;
+        }
+        .edge-desc {
+            font-size: 0.85rem;
+            color: #888;
+        }
+
+        .layer-chart {
+            display: flex;
+            gap: 2px;
+            height: 100px;
+            align-items: flex-end;
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #1a1a2a;
+            border-radius: 6px;
+        }
+        .layer-bar {
+            flex: 1;
+            min-width: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .layer-bar .bar-container {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .layer-bar .only-a {
+            background: #4ade80;
+            width: 80%;
+        }
+        .layer-bar .only-b {
+            background: #f472b6;
+            width: 80%;
+        }
+        .layer-bar .label {
+            font-size: 0.7rem;
+            color: #666;
+            margin-top: 0.3rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        .tab {
+            padding: 0.5rem 1rem;
+            background: #1a1a2a;
+            border: 1px solid #3a3a4a;
+            border-radius: 4px;
+            cursor: pointer;
+            color: #888;
+        }
+        .tab.active {
+            background: #2a2a4a;
+            border-color: #4a9eff;
+            color: #4a9eff;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #666;
+        }
+        .empty-state h3 {
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Graph Diff Viewer</h1>
+        <div class="file-input">
+            <input type="file" id="diffFile" accept=".json" />
+            <span id="fileName" style="margin-left: 1rem; color: #666;"></span>
+        </div>
+        <div id="prompts" class="prompts" style="display: none;"></div>
+    </div>
+
+    <div id="content" style="display: none;">
+        <div class="section">
+            <h2>Similarity Metrics</h2>
+            <div id="metrics" class="metrics-grid"></div>
+        </div>
+
+        <div class="section">
+            <h2>Decision Circuit</h2>
+            <p style="color: #888; margin-bottom: 1rem;">
+                Edge weights from neurons to output logits. Shows which neurons drive the yes/no decision.
+            </p>
+            <div id="decisionCircuit" class="decision-circuit"></div>
+        </div>
+
+        <div class="section">
+            <h2>Node Differences</h2>
+            <div class="tabs">
+                <div class="tab active" data-tab="only-a">Only in A</div>
+                <div class="tab" data-tab="only-b">Only in B</div>
+                <div class="tab" data-tab="differential">Differential</div>
+                <div class="tab" data-tab="layer-divergence">By Layer</div>
+            </div>
+            <div id="only-a" class="tab-content active"></div>
+            <div id="only-b" class="tab-content"></div>
+            <div id="differential" class="tab-content"></div>
+            <div id="layer-divergence" class="tab-content"></div>
+        </div>
+
+        <div class="section">
+            <h2>Path Preservation</h2>
+            <div id="pathPreservation"></div>
+        </div>
+    </div>
+
+    <div id="emptyState" class="empty-state">
+        <h3>Load a diff JSON file to view</h3>
+        <p>Run: python scripts/graph_diff.py graph_a.json graph_b.json -o diff.json</p>
+    </div>
+
+    <script>
+        let diffData = null;
+
+        document.getElementById('diffFile').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            document.getElementById('fileName').textContent = file.name;
+
+            const text = await file.text();
+            diffData = JSON.parse(text);
+            renderDiff();
+        });
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.tab).classList.add('active');
+            });
+        });
+
+        function formatDescription(desc) {
+            if (!desc) return '';
+            // Remove "L##/N#####: " prefix if present
+            if (desc.includes(': ') && desc.startsWith('L')) {
+                desc = desc.split(': ').slice(1).join(': ');
+            }
+            return desc;
+        }
+
+        function renderDiff() {
+            if (!diffData) return;
+
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+            document.getElementById('prompts').style.display = 'grid';
+
+            // Render prompts
+            const dc = diffData.metadata?.decision_circuit || {};
+            const logitsA = dc.logits_a || {};
+            const logitsB = dc.logits_b || {};
+
+            document.getElementById('prompts').innerHTML = `
+                <div class="prompt-box a">
+                    <h3>Graph A</h3>
+                    <div class="prompt-text">${diffData.metadata?.prompt_a || diffData.graph_a}</div>
+                    <div class="logits">
+                        ${Object.values(logitsA).map((l, i) => `
+                            <span class="logit-tag ${i === 0 ? 'top' : 'other'}">
+                                ${l.token} (${(l.probability * 100).toFixed(1)}%)
+                            </span>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="prompt-box b">
+                    <h3>Graph B</h3>
+                    <div class="prompt-text">${diffData.metadata?.prompt_b || diffData.graph_b}</div>
+                    <div class="logits">
+                        ${Object.values(logitsB).map((l, i) => `
+                            <span class="logit-tag ${i === 0 ? 'top' : 'other'}">
+                                ${l.token} (${(l.probability * 100).toFixed(1)}%)
+                            </span>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+
+            // Render metrics
+            const sim = diffData.similarity || {};
+            const metrics = [
+                { label: 'Jaccard (neurons)', value: sim.jaccard_neurons },
+                { label: 'Weighted Jaccard', value: sim.weighted_jaccard_neurons },
+                { label: 'Edge Jaccard', value: sim.jaccard_edges },
+                { label: 'Flow Conservation', value: sim.flow_conservation },
+                { label: 'Spectral Similarity', value: sim.spectral_similarity },
+                { label: 'Module Alignment', value: sim.module_alignment },
+            ];
+
+            document.getElementById('metrics').innerHTML = metrics.map(m => `
+                <div class="metric-card">
+                    <div class="value">${(m.value * 100).toFixed(1)}%</div>
+                    <div class="label">${m.label}</div>
+                    <div class="bar">
+                        <div class="bar-fill" style="width: ${m.value * 100}%"></div>
+                    </div>
+                </div>
+            `).join('');
+
+            // Render decision circuit
+            const edgeDiffs = dc.edge_diffs_to_logits || [];
+            document.getElementById('decisionCircuit').innerHTML = `
+                <div style="display: grid; grid-template-columns: 200px 80px 100px 100px 100px 1fr; gap: 1rem; padding: 0.5rem 0.8rem; color: #666; font-size: 0.8rem; text-transform: uppercase;">
+                    <div>Source Neuron</div>
+                    <div>Target</div>
+                    <div style="text-align: right;">Weight A</div>
+                    <div style="text-align: right;">Weight B</div>
+                    <div style="text-align: right;">Delta</div>
+                    <div>Description</div>
+                </div>
+                ${edgeDiffs.map(e => {
+                    const isYes = e.token.toLowerCase().includes('yes');
+                    const isNo = e.token.toLowerCase().includes('no');
+                    const targetClass = isYes ? 'yes' : (isNo ? 'no' : '');
+                    const deltaClass = e.diff > 0 ? 'to-a' : 'to-b';
+                    return `
+                        <div class="edge-item">
+                            <div class="edge-source">${e.source}</div>
+                            <div class="edge-target ${targetClass}">${e.token}</div>
+                            <div class="edge-weight">${e.weight_a >= 0 ? '+' : ''}${e.weight_a.toFixed(2)}</div>
+                            <div class="edge-weight">${e.weight_b >= 0 ? '+' : ''}${e.weight_b.toFixed(2)}</div>
+                            <div class="delta ${deltaClass}">${e.diff >= 0 ? '+' : ''}${e.diff.toFixed(2)}</div>
+                            <div class="edge-desc">${formatDescription(e.source_description)}</div>
+                        </div>
+                    `;
+                }).join('')}
+            `;
+
+            // Render node tables
+            const nodeDiff = diffData.node_diff || {};
+
+            document.getElementById('only-a').innerHTML = renderNodeTable(
+                nodeDiff.only_in_a || [],
+                ['key', 'layer', 'influence', 'token'],
+                ['Neuron', 'Layer', 'Influence', 'Description']
+            );
+
+            document.getElementById('only-b').innerHTML = renderNodeTable(
+                nodeDiff.only_in_b || [],
+                ['key', 'layer', 'influence', 'token'],
+                ['Neuron', 'Layer', 'Influence', 'Description']
+            );
+
+            document.getElementById('differential').innerHTML = renderDiffTable(
+                nodeDiff.shared_with_diff || []
+            );
+
+            // Layer divergence
+            const layerDiv = nodeDiff.layer_divergence || {};
+            document.getElementById('layer-divergence').innerHTML = renderLayerChart(layerDiv);
+
+            // Path preservation
+            const paths = diffData.structural_diff?.path_changes || {};
+            document.getElementById('pathPreservation').innerHTML = `
+                <div class="metrics-grid" style="grid-template-columns: repeat(4, 1fr);">
+                    <div class="metric-card">
+                        <div class="value">${paths.paths_preserved?.length || 0}</div>
+                        <div class="label">Paths Preserved</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="value">${paths.paths_only_in_a?.length || 0}</div>
+                        <div class="label">Only in A</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="value">${paths.paths_only_in_b?.length || 0}</div>
+                        <div class="label">Only in B</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="value">${((paths.preservation_rate || 0) * 100).toFixed(1)}%</div>
+                        <div class="label">Preservation Rate</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderNodeTable(nodes, fields, headers) {
+            if (!nodes.length) {
+                return '<p style="color: #666; padding: 1rem;">No nodes</p>';
+            }
+            return `
+                <table class="node-table">
+                    <thead>
+                        <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+                    </thead>
+                    <tbody>
+                        ${nodes.map(n => `
+                            <tr>
+                                <td class="node-key">${n.key}</td>
+                                <td>L${n.layer}</td>
+                                <td class="influence ${n.influence >= 0 ? 'positive' : 'negative'}">
+                                    ${n.influence >= 0 ? '+' : ''}${n.influence.toFixed(2)}
+                                </td>
+                                <td class="node-desc">${formatDescription(n.token)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function renderDiffTable(nodes) {
+            if (!nodes.length) {
+                return '<p style="color: #666; padding: 1rem;">No differential nodes</p>';
+            }
+            return `
+                <table class="node-table">
+                    <thead>
+                        <tr>
+                            <th>Neuron</th>
+                            <th>Layer</th>
+                            <th>Influence A</th>
+                            <th>Influence B</th>
+                            <th>Delta</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${nodes.map(n => `
+                            <tr>
+                                <td class="node-key">${n.key}</td>
+                                <td>L${n.layer}</td>
+                                <td class="influence ${n.influence_a >= 0 ? 'positive' : 'negative'}">
+                                    ${n.influence_a >= 0 ? '+' : ''}${n.influence_a.toFixed(2)}
+                                </td>
+                                <td class="influence ${n.influence_b >= 0 ? 'positive' : 'negative'}">
+                                    ${n.influence_b >= 0 ? '+' : ''}${n.influence_b.toFixed(2)}
+                                </td>
+                                <td class="delta ${n.delta > 0 ? 'to-a' : 'to-b'}">
+                                    ${n.delta >= 0 ? '+' : ''}${n.delta.toFixed(2)}
+                                </td>
+                                <td class="node-desc">${formatDescription(n.token)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function renderLayerChart(layerDiv) {
+            const layers = Object.keys(layerDiv).map(Number).sort((a, b) => a - b);
+            if (!layers.length) {
+                return '<p style="color: #666; padding: 1rem;">No layer data</p>';
+            }
+
+            const maxVal = Math.max(...layers.map(l =>
+                Math.max(layerDiv[l].only_a || 0, layerDiv[l].only_b || 0)
+            ));
+
+            return `
+                <div style="margin-bottom: 1rem;">
+                    <span style="color: #4ade80;">■</span> Only in A &nbsp;
+                    <span style="color: #f472b6;">■</span> Only in B
+                </div>
+                <div class="layer-chart">
+                    ${layers.map(l => {
+                        const data = layerDiv[l];
+                        const heightA = maxVal > 0 ? (data.only_a / maxVal) * 60 : 0;
+                        const heightB = maxVal > 0 ? (data.only_b / maxVal) * 60 : 0;
+                        return `
+                            <div class="layer-bar">
+                                <div class="bar-container">
+                                    <div class="only-a" style="height: ${heightA}px;"></div>
+                                    <div class="only-b" style="height: ${heightB}px;"></div>
+                                </div>
+                                <div class="label">L${l}</div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+                <table class="node-table" style="margin-top: 1rem;">
+                    <thead>
+                        <tr>
+                            <th>Layer</th>
+                            <th>Only in A</th>
+                            <th>Only in B</th>
+                            <th>Shared</th>
+                            <th>Total Delta</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${layers.filter(l => layerDiv[l].only_a > 0 || layerDiv[l].only_b > 0).map(l => {
+                            const d = layerDiv[l];
+                            return `
+                                <tr>
+                                    <td>L${l}</td>
+                                    <td class="influence positive">${d.only_a}</td>
+                                    <td class="influence negative">${d.only_b}</td>
+                                    <td>${d.shared}</td>
+                                    <td>${d.total_delta.toFixed(2)}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+    </script>
+</body>
+</html>

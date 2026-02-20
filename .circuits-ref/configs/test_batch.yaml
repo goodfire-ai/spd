@@ -1,0 +1,53 @@
+# Test batch config for SLURM parallelization
+# 20 prompts across various knowledge domains
+
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  device: "cuda"
+  dtype: "bfloat16"
+
+  k: 5
+  tau: 0.005
+  use_chat_template: true
+
+  label_neurons: true
+  skip_special_tokens: true
+  min_cluster_size: 5
+  max_cluster_depth: 1
+
+  # Disable LLM analysis for faster testing
+  run_llm_analysis: false
+  functional_split: false
+
+  output_dir: "outputs/"
+  save_intermediate: true
+
+sequences:
+  # Geography
+  - prompt: "The capital of France is"
+  - prompt: "The largest ocean on Earth is the"
+  - prompt: "Mount Everest is located in"
+  - prompt: "The Amazon River flows through"
+  - prompt: "The Great Wall of China was built to"
+
+  # Science
+  - prompt: "Water boils at a temperature of"
+  - prompt: "The chemical symbol for gold is"
+  - prompt: "Photosynthesis converts sunlight into"
+  - prompt: "The speed of light is approximately"
+  - prompt: "DNA stands for"
+
+  # History
+  - prompt: "World War II ended in the year"
+  - prompt: "The first person to walk on the moon was"
+  - prompt: "The Declaration of Independence was signed in"
+  - prompt: "The Roman Empire fell in"
+  - prompt: "The printing press was invented by"
+
+  # Literature & Culture
+  - prompt: "Shakespeare wrote the play"
+    answer_prefix: " Romeo"
+  - prompt: "The author of 1984 is"
+  - prompt: "The Mona Lisa was painted by"
+  - prompt: "The language with the most native speakers is"
+  - prompt: "The Olympic Games originated in"

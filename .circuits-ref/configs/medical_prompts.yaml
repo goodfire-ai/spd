@@ -1,0 +1,68 @@
+# Attribution Graph Pipeline - Medical Knowledge Circuits
+# Tests various medical/neuroscience knowledge retrieval patterns
+#
+# Usage:
+#   python scripts/analyze.py --config examples/medical_prompts.yaml
+
+config:
+  # Model settings
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  device: "cuda"
+  dtype: "bfloat16"
+
+  # Graph generation
+  k: 5                    # Number of top logits to trace
+  tau: 0.005              # Node influence threshold
+
+  # Template
+  use_chat_template: true
+  answer_prefix: ""       # Default prefix for assistant response (can override per-sequence)
+
+  # Labeling
+  label_neurons: true     # Fetch neuron descriptions from database
+
+  # Clustering
+  skip_special_tokens: true
+  min_cluster_size: 5
+  max_cluster_depth: 1
+
+  # LLM Analysis
+  run_llm_analysis: true
+  llm_model: "auto"
+  llm_provider: "auto"
+  parallel_llm: true
+
+  # Functional splitting
+  functional_split: true
+  functional_split_min_size: 2
+  use_prompt_answer_split: true  # Split by prompt vs answer tokens first
+  use_position_split: true       # Split by contiguous token position spans
+  max_position_gap: 3            # Max gap between positions before splitting
+  use_layer_split: false          # Split by layer ranges (early/mid/late)
+  use_semantic_split: false       # Split by neuron label semantics (sentence-transformers). Don't use if you use llm_split.
+  use_llm_split: true           # Use LLM to split by neuron function (expensive). Don't use if you use semantic_split.
+
+  # Output
+  output_dir: "outputs/"
+  save_intermediate: true
+
+# Sequences to analyze
+# Each sequence can have:
+#   - prompt: (required) The user prompt
+#   - answer_prefix: (optional) Prefill the assistant response, e.g., " Answer:"
+sequences:
+  # Neurotransmitter knowledge
+  - prompt: "L-DOPA is used to treat a disease caused by deficiency of the neurotransmitter"
+    answer_prefix: " Answer:"
+
+  # Neuroanatomy
+  - prompt: "Parkinson's disease involves degeneration of neurons in the"
+    answer_prefix: " Answer:"
+
+  # Movement disorders
+  - prompt: "Chorea and psychiatric symptoms in a middle-aged patient suggests"
+    answer_prefix: " Answer:"
+
+  # Drug mechanism
+  - prompt: "The neurotransmitter associated with reward and pleasure is"
+    answer_prefix: " Answer:"

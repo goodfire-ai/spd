@@ -1,0 +1,32 @@
+# Novel composition reasoning - answers cannot be memorized
+# Tests variable binding with nonsense words - 92% accuracy in testing
+
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  llm_model: "gpt-5.2"
+  functional_split: true
+  functional_split_min_size: 2
+  use_llm_split: true
+  use_llm_reassignment: true
+  contrastive_tokens: ["Yes", "No"]
+  tau: 0.01
+  parallel_llm: true
+  output_dir: "outputs/reasoning/novel_composition/"
+
+sequences:
+  # Direct syllogisms with nonsense words
+  - prompt: "All blickets are purple. Wug is a blicket. Is Wug purple? Yes or No."
+  - prompt: "Every dax is round. Fep is a dax. Is Fep round? Yes or No."
+  - prompt: "All zorps can swim. Kiki is a zorp. Can Kiki swim? Yes or No."
+
+  # Negation syllogisms
+  - prompt: "No blickets are red. Wug is a blicket. Is Wug red? Yes or No."
+  - prompt: "No daxes can fly. Fep is a dax. Can Fep fly? Yes or No."
+
+  # Variable binding with real categories
+  - prompt: "Let X = cat. Is X an animal? Yes or No."
+  - prompt: "Define THING as water. Is THING a liquid? Yes or No."
+
+  # Numerical comparisons with novel entities
+  - prompt: "A zib weighs 10 pounds. A gorp weighs 5 pounds. Is a zib heavier than a gorp? Yes or No."
+  - prompt: "Blargs are 3 feet tall. Snurps are 6 feet tall. Is a blarg taller than a snurp? Yes or No."

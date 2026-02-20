@@ -1,0 +1,56 @@
+[project]
+name = "circuits"
+version = "0.1.0"
+description = "Attribution graph analysis for neural network circuits"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "torch>=2.8.0",
+    "transformers>=4.57.0",
+    "accelerate>=1.11.0",
+    "datasets>=4.3.0",
+    "pydantic>=2.7.0",
+    "pyyaml>=6.0.0",
+    "huggingface_hub>=0.24.0",
+    "tqdm>=4.66.0",
+    "openai>=1.0.0",
+    "anthropic>=0.40.0",
+    "sympy>=1.14.0",
+    "ipykernel>=7.1.0",
+    "goodfire>=0.3.5",
+    "matplotlib>=3.10.7",
+    "pytest>=8.4.2",
+    "python-dotenv>=1.0.0",
+    "seaborn>=0.13.2",
+    "plotly>=6.4.0",
+    "streamlit>=1.51.0",
+    "scipy>=1.16.3",
+    "nbformat>=5.10.4",
+    "rich>=14.2.0",
+    "psycopg2-binary>=2.9.0",
+    "playwright>=1.40.0",
+    "scikit-learn>=1.5.0",
+    "networkx>=3.3",
+    "python-louvain>=0.16",
+    "sqlalchemy>=2.0.44",
+    "pgvector>=0.4.2",
+    "nnsight>=0.5.12",
+    "infomap>=2.8.0",
+    "filelock>=3.13.0",
+    "aiohttp>=3.9.0",
+    "sentence-transformers>=2.2.0",
+    "claude-agent-sdk>=0.1.19",
+]
+
+[project.scripts]
+circuits = "circuits.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-mock>=3.12.0",
+    "pytest-cov>=4.1.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

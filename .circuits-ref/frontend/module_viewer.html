@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Circuit Module Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-tertiary: #0f3460;
+            --text-primary: #eee;
+            --text-secondary: #aaa;
+            --accent: #e94560;
+            --accent-secondary: #0f4c75;
+            --success: #4caf50;
+            --border: #333;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: var(--accent);
+            margin-bottom: 10px;
+        }
+
+        h2 {
+            color: var(--text-primary);
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 10px;
+            margin-top: 30px;
+        }
+
+        .prompt-box {
+            background: var(--bg-secondary);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid var(--accent);
+        }
+
+        .prompt-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .stats-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            background: var(--bg-secondary);
+            padding: 15px 25px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: var(--accent);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+        }
+
+        .file-input-container {
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .file-input-label {
+            background: var(--accent);
+            color: white;
+            padding: 12px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: inline-block;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+
+        .file-input-label:hover {
+            background: #d63850;
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        .diagram-container {
+            background: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            overflow-x: auto;
+        }
+
+        .diagram-container .mermaid {
+            text-align: center;
+        }
+
+        .modules-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .module-card {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 15px;
+            border: 1px solid var(--border);
+        }
+
+        .module-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .module-title {
+            font-weight: bold;
+            font-size: 16px;
+            color: var(--accent);
+        }
+
+        .module-size {
+            background: var(--accent);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .module-meta {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+
+        .module-tokens {
+            font-family: monospace;
+            background: var(--bg-tertiary);
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
+
+        .module-flow {
+            display: flex;
+            gap: 15px;
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
+
+        .flow-in {
+            color: var(--success);
+        }
+
+        .flow-out {
+            color: var(--accent);
+        }
+
+        .neuron-list-header {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 10px;
+            margin-bottom: 5px;
+        }
+
+        .neuron-list {
+            font-size: 11px;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 5px;
+        }
+
+        .neuron-item {
+            padding: 4px 6px;
+            background: var(--bg-primary);
+            margin: 2px 0;
+            border-radius: 3px;
+            line-height: 1.4;
+        }
+
+        .neuron-loc {
+            font-family: monospace;
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        .neuron-inf {
+            font-family: monospace;
+            color: var(--success);
+            font-size: 10px;
+            margin-left: 4px;
+        }
+
+        .synthesis-section {
+            background: var(--bg-secondary);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            white-space: pre-wrap;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+
+        .synthesis-section h3 {
+            color: var(--accent);
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        .synthesis-section h3:first-child {
+            margin-top: 0;
+        }
+
+        .flow-matrix {
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+
+        .flow-matrix table {
+            border-collapse: collapse;
+            font-size: 12px;
+            font-family: monospace;
+        }
+
+        .flow-matrix th, .flow-matrix td {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .flow-matrix th {
+            background: var(--bg-tertiary);
+            color: var(--accent);
+        }
+
+        .flow-matrix td {
+            background: var(--bg-secondary);
+        }
+
+        .flow-positive {
+            color: var(--success);
+        }
+
+        .flow-negative {
+            color: var(--accent);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state h2 {
+            color: var(--text-primary);
+            border: none;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            background: var(--bg-secondary);
+            border: none;
+            color: var(--text-secondary);
+            padding: 10px 20px;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .tab:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .tab.active {
+            background: var(--bg-tertiary);
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        .tab-content {
+            display: none;
+            background: var(--bg-tertiary);
+            padding: 20px;
+            border-radius: 0 8px 8px 8px;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Circuit Module Viewer</h1>
+
+        <div class="file-input-container">
+            <label class="file-input-label" for="file-input">
+                Load Module Analysis JSON
+            </label>
+            <input type="file" id="file-input" accept=".json">
+        </div>
+
+        <div id="content">
+            <div class="empty-state">
+                <h2>No module analysis loaded</h2>
+                <p>Click "Load Module Analysis JSON" to view circuit analysis.</p>
+                <p style="font-size: 13px; margin-top: 20px;">
+                    Generate module analysis using:<br>
+                    <code style="background: var(--bg-secondary); padding: 5px 10px; border-radius: 4px; display: inline-block; margin-top: 10px;">
+                        python scripts/analyze_modules.py clusters.json --output modules.json
+                    </code>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'default',
+            securityLevel: 'loose'
+        });
+
+        function extractMermaidDiagram(text) {
+            const match = text.match(/```mermaid\n([\s\S]*?)```/);
+            if (match) {
+                return match[1].trim();
+            }
+            return null;
+        }
+
+        function formatSynthesis(text) {
+            if (!text) return '<em>No LLM synthesis available</em>';
+
+            // Remove mermaid code block for display (we render it separately)
+            let formatted = text.replace(/```mermaid\n[\s\S]*?```/g, '[Diagram rendered above]');
+
+            // Convert markdown headers
+            formatted = formatted.replace(/### (\d+)\. \*\*([^*]+)\*\*/g, '<h3>$1. $2</h3>');
+            formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+            return formatted;
+        }
+
+        async function renderContent(data) {
+            const content = document.getElementById('content');
+
+            let html = '';
+
+            // Prompt
+            if (data.prompt) {
+                html += `
+                    <div class="prompt-box">
+                        <div class="prompt-label">Prompt</div>
+                        <div>${escapeHtml(data.prompt)}</div>
+                    </div>
+                `;
+            }
+
+            // Stats
+            html += `
+                <div class="stats-row">
+                    <div class="stat-card">
+                        <div class="stat-value">${data.n_modules}</div>
+                        <div class="stat-label">Modules</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${data.module_edges?.length || 0}</div>
+                        <div class="stat-label">Connections</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${data.method}</div>
+                        <div class="stat-label">Clustering</div>
+                    </div>
+                </div>
+            `;
+
+            // Tabs
+            html += `
+                <div class="tabs">
+                    <button class="tab active" onclick="showTab('diagram')">Diagram</button>
+                    <button class="tab" onclick="showTab('modules')">Modules</button>
+                    <button class="tab" onclick="showTab('synthesis')">LLM Analysis</button>
+                    <button class="tab" onclick="showTab('matrix')">Flow Matrix</button>
+                </div>
+            `;
+
+            // Diagram tab - prefer mermaid_diagram key, fall back to extraction
+            const mermaidCode = data.mermaid_diagram || (data.llm_synthesis ? extractMermaidDiagram(data.llm_synthesis) : null);
+            html += `
+                <div class="tab-content active" id="tab-diagram">
+                    <h2>Circuit Diagram</h2>
+                    ${mermaidCode ?
+                        `<div class="diagram-container"><pre class="mermaid">${escapeHtml(mermaidCode)}</pre></div>` :
+                        '<p>No diagram available. Run with LLM synthesis to generate.</p>'
+                    }
+                </div>
+            `;
+
+            // Modules tab
+            html += `
+                <div class="tab-content" id="tab-modules">
+                    <h2>Module Details</h2>
+                    <div class="modules-grid">
+                        ${data.module_summaries.map(m => renderModuleCard(m)).join('')}
+                    </div>
+                </div>
+            `;
+
+            // Synthesis tab
+            html += `
+                <div class="tab-content" id="tab-synthesis">
+                    <h2>LLM Circuit Analysis</h2>
+                    <div class="synthesis-section">
+                        ${formatSynthesis(data.llm_synthesis)}
+                    </div>
+                </div>
+            `;
+
+            // Flow matrix tab
+            html += `
+                <div class="tab-content" id="tab-matrix">
+                    <h2>Inter-Module Flow Matrix</h2>
+                    ${renderFlowMatrix(data)}
+                </div>
+            `;
+
+            content.innerHTML = html;
+
+            // Render mermaid diagrams
+            if (mermaidCode) {
+                try {
+                    await mermaid.run({
+                        querySelector: '.mermaid'
+                    });
+                } catch (e) {
+                    console.error('Mermaid rendering error:', e);
+                }
+            }
+        }
+
+        function renderModuleCard(m) {
+            const tokens = m.top_tokens?.map(t => `'${t[0]}'`).join(', ') || '';
+            // Use all_neurons if available, otherwise fall back to top_neurons
+            const neurons = m.all_neurons || m.top_neurons || [];
+            const neuronCount = neurons.length;
+
+            return `
+                <div class="module-card">
+                    <div class="module-header">
+                        <span class="module-title">Module ${m.cluster_id}</span>
+                        <span class="module-size">${m.size} neurons</span>
+                    </div>
+                    <div class="module-meta">
+                        Layers ${m.layer_range[0]}-${m.layer_range[1]} (mean: ${m.layer_mean.toFixed(1)})
+                    </div>
+                    <div class="module-tokens">Tokens: ${escapeHtml(tokens) || 'none'}</div>
+                    <div class="module-flow">
+                        <span class="flow-in">In: ${m.incoming_flow.toFixed(2)}</span>
+                        <span class="flow-out">Out: ${m.outgoing_flow.toFixed(2)}</span>
+                        <span>Influence: ${m.total_influence.toFixed(2)}</span>
+                    </div>
+                    <div class="neuron-list-header">All ${neuronCount} neurons (sorted by influence):</div>
+                    <div class="neuron-list">
+                        ${neurons.map(n => `
+                            <div class="neuron-item">
+                                <span class="neuron-loc">L${n.layer}/N${n.neuron}</span>
+                                <span class="neuron-inf">(${n.influence?.toFixed(2) || '0'})</span>
+                                ${escapeHtml(n.label?.substring(0, 100) || 'No label')}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderFlowMatrix(data) {
+            if (!data.flow_matrix) return '<p>No flow matrix available</p>';
+
+            const n = data.flow_matrix.length;
+            let html = '<div class="flow-matrix"><table>';
+
+            // Header
+            html += '<tr><th>From \\ To</th>';
+            for (let j = 0; j < n; j++) {
+                html += `<th>M${j}</th>`;
+            }
+            html += '</tr>';
+
+            // Rows
+            for (let i = 0; i < n; i++) {
+                html += `<tr><th>M${i}</th>`;
+                for (let j = 0; j < n; j++) {
+                    const val = data.flow_matrix[i][j];
+                    const cls = val > 0.1 ? 'flow-positive' : val < -0.1 ? 'flow-negative' : '';
+                    const display = Math.abs(val) > 0.01 ? val.toFixed(2) : '-';
+                    html += `<td class="${cls}">${display}</td>`;
+                }
+                html += '</tr>';
+            }
+
+            html += '</table></div>';
+            return html;
+        }
+
+        function showTab(name) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+
+            document.querySelector(`.tab[onclick="showTab('${name}')"]`).classList.add('active');
+            document.getElementById(`tab-${name}`).classList.add('active');
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // File input handler
+        document.getElementById('file-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    await renderContent(data);
+                } catch (err) {
+                    document.getElementById('content').innerHTML = `
+                        <div class="empty-state">
+                            <h2>Error parsing JSON</h2>
+                            <p>${err.message}</p>
+                        </div>
+                    `;
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        // URL parameter support
+        const urlParams = new URLSearchParams(window.location.search);
+        const jsonUrl = urlParams.get('json');
+        if (jsonUrl) {
+            fetch(jsonUrl)
+                .then(r => r.json())
+                .then(data => renderContent(data))
+                .catch(err => {
+                    document.getElementById('content').innerHTML = `
+                        <div class="empty-state">
+                            <h2>Error loading JSON</h2>
+                            <p>${err.message}</p>
+                        </div>
+                    `;
+                });
+        }
+    </script>
+</body>
+</html>

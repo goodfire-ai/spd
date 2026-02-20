@@ -1,0 +1,26 @@
+# Transitivity Reasoning - Comparative chains
+# Model consistently gets these right (98%+ confidence)
+
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  llm_model: "gpt-5.2"
+  contrastive_tokens: ["Yes", "No"]
+  tau: 0.02
+  functional_split: true
+  use_llm_split: true
+  use_llm_reassignment: true
+  parallel_llm: true
+  output_dir: "outputs/reasoning/transitivity/"
+
+sequences:
+  # Height comparisons (Yes cases)
+  - prompt: "Alice is taller than Bob. Bob is taller than Carol. Is Alice taller than Carol? Yes or No."
+  - prompt: "John is taller than Mike. Mike is taller than Steve. Is John taller than Steve? Yes or No."
+
+  # Size comparisons (Yes cases)
+  - prompt: "X is bigger than Y. Y is bigger than Z. Is X bigger than Z? Yes or No."
+  - prompt: "Box A is larger than Box B. Box B is larger than Box C. Is Box A larger than Box C? Yes or No."
+
+  # Reversed conclusion (No cases)
+  - prompt: "Dog A is faster than Dog B. Dog B is faster than Dog C. Is Dog C faster than Dog A? Yes or No."
+  - prompt: "Tom is older than Jerry. Jerry is older than Spike. Is Spike older than Tom? Yes or No."
