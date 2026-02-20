@@ -603,6 +603,30 @@ class PersistentPGDReconSubsetEvalConfig(BaseConfig):
     classname: Literal["PersistentPGDReconSubsetEval"] = "PersistentPGDReconSubsetEval"
 
 
+class _AttnPatternsReconLossBaseConfig(LossMetricConfig):
+    n_heads: int
+    q_proj_path: str | None = None
+    k_proj_path: str | None = None
+    c_attn_path: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_paths(self) -> Self:
+        has_separate = self.q_proj_path is not None and self.k_proj_path is not None
+        has_combined = self.c_attn_path is not None
+        assert has_separate != has_combined, (
+            "Specify either (q_proj_path, k_proj_path) or c_attn_path, not both/neither"
+        )
+        return self
+
+
+class CIMaskedAttnPatternsReconLossConfig(_AttnPatternsReconLossBaseConfig):
+    classname: Literal["CIMaskedAttnPatternsReconLoss"] = "CIMaskedAttnPatternsReconLoss"
+
+
+class StochasticAttnPatternsReconLossConfig(_AttnPatternsReconLossBaseConfig):
+    classname: Literal["StochasticAttnPatternsReconLoss"] = "StochasticAttnPatternsReconLoss"
+
+
 #### Metrics that can only be used in eval ####
 class CEandKLLossesConfig(BaseConfig):
     classname: Literal["CEandKLLosses"] = "CEandKLLosses"
@@ -671,6 +695,8 @@ ReconLossConfigType = (
     | StochasticHiddenActsReconLossConfig
     | PersistentPGDReconLossConfig
     | PersistentPGDReconSubsetLossConfig
+    | CIMaskedAttnPatternsReconLossConfig
+    | StochasticAttnPatternsReconLossConfig
 )
 
 LossMetricConfigType = FaithfulnessLossConfig | ImportanceMinimalityLossConfig | ReconLossConfigType
