@@ -1,10 +1,12 @@
 """Plot k-v component co-activation heatmaps from harvest co-occurrence data.
 
-For each layer, produces three heatmaps showing how k_proj and v_proj components
+For each layer, produces five heatmaps showing how k_proj and v_proj components
 co-activate across the dataset:
   - Raw co-occurrence count (how many tokens where both fired)
   - Phi coefficient (correlation of binary firing indicators)
   - Jaccard similarity (intersection over union of firing sets)
+  - P(V | K) conditional probability (fraction of K-active tokens where V is also active)
+  - P(K | V) conditional probability (fraction of V-active tokens where K is also active)
 
 All metrics are derived from the pre-computed CorrelationStorage in the harvest data.
 
@@ -94,6 +96,25 @@ def _compute_jaccard(
     return jaccard.numpy()
 
 
+def _compute_conditional_prob(
+    count_ij: torch.Tensor,
+    count_i: torch.Tensor,
+    k_corr_idx: list[int],
+    v_corr_idx: list[int],
+    condition_on: str,
+) -> NDArray[np.floating]:
+    """P(V|K) when condition_on="k", P(K|V) when condition_on="v"."""
+    k_idx = torch.tensor(k_corr_idx)
+    v_idx = torch.tensor(v_corr_idx)
+    # count_ij[v, k] = number of tokens where both v and k are active
+    joint = count_ij[v_idx[:, None], k_idx[None, :]].float()
+    if condition_on == "k":
+        denom = count_i[k_idx].float()[None, :]
+    else:
+        denom = count_i[v_idx].float()[:, None]
+    return torch.where(denom > 0, joint / denom, torch.zeros_like(joint)).numpy()
+
+
 def _plot_heatmap(
     data: NDArray[np.floating],
     k_alive: list[int],
@@ -149,7 +170,9 @@ def plot_kv_coactivation(wandb_path: ModelPath) -> None:
     raw_dir = out_base / "ci_cooccurrence"
     phi_dir = out_base / "phi_coefficient"
     jaccard_dir = out_base / "jaccard"
-    for d in (raw_dir, phi_dir, jaccard_dir):
+    p_v_given_k_dir = out_base / "p_v_given_k"
+    p_k_given_v_dir = out_base / "p_k_given_v"
+    for d in (raw_dir, phi_dir, jaccard_dir, p_v_given_k_dir, p_k_given_v_dir):
         d.mkdir(parents=True, exist_ok=True)
 
     repo = HarvestRepo.open_most_recent(run_id)
@@ -224,6 +247,40 @@ def plot_kv_coactivation(wandb_path: ModelPath) -> None:
             0,
             None,
             jaccard_dir,
+        )
+
+        # P(V | K)
+        p_v_given_k = _compute_conditional_prob(
+            corr.count_ij, corr.count_i, k_corr_idx, v_corr_idx, condition_on="k"
+        )
+        _plot_heatmap(
+            p_v_given_k,
+            k_alive,
+            v_alive,
+            layer_idx,
+            run_id,
+            "P(V | K)",
+            "Purples",
+            0,
+            None,
+            p_v_given_k_dir,
+        )
+
+        # P(K | V)
+        p_k_given_v = _compute_conditional_prob(
+            corr.count_ij, corr.count_i, k_corr_idx, v_corr_idx, condition_on="v"
+        )
+        _plot_heatmap(
+            p_k_given_v,
+            k_alive,
+            v_alive,
+            layer_idx,
+            run_id,
+            "P(K | V)",
+            "Purples",
+            0,
+            None,
+            p_k_given_v_dir,
         )
 
     logger.info(f"All plots saved to {out_base}")
