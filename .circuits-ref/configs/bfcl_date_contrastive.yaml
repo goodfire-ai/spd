@@ -1,0 +1,78 @@
+# BFCL Date Format Failure - Contrastive Analysis
+#
+# Traces logit("202") - logit("08") to understand what drives ISO format over MDY
+#
+# Usage:
+#   python scripts/analyze.py --config configs/bfcl_date_contrastive.yaml
+
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  device: "cuda"
+  dtype: "bfloat16"
+
+  # Contrastive: MDY token "08" vs ISO token "202" (what drives correct format?)
+  contrastive_tokens: ["08", "202"]
+  tau: 0.03  # Higher threshold for long prompt
+
+  # Prompt already has chat template AND answer prefix
+  use_chat_template: false
+
+  # Labeling
+  label_neurons: true
+
+  # Clustering
+  skip_special_tokens: true
+  min_cluster_size: 5
+  max_cluster_depth: 1
+
+  # LLM Analysis
+  run_llm_analysis: true
+  llm_model: "gpt-5.2"
+  llm_provider: "openai"
+
+  # Functional splitting
+  functional_split: true
+  functional_split_min_size: 2
+  use_prompt_answer_split: true
+  use_position_split: true
+  max_position_gap: 3
+  use_llm_split: true
+
+  # Output
+  output_dir: "outputs/bfcl_date_08_vs_202/"
+  save_intermediate: true
+
+sequences:
+  - prompt: '<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+Environment: ipython
+Cutting Knowledge Date: December 2023
+Today Date: 26 Jul 2024
+<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+Given the following functions, please respond with a JSON for a function call with its proper arguments that best answers the given prompt.
+Respond in the format {"name": function name, "parameters": dictionary of argument name and its value}.Do not use variables.
+{
+    "name": "air_quality",
+    "description": "Retrieve the air quality index for a specific location.",
+    "parameters": {
+        "type": "dict",
+        "properties": {
+            "location": {
+                "type": "string",
+                "description": "The city that you want to get the air quality index for."
+            },
+            "date": {
+                "type": "string",
+                "description": "The date (month-day-year) you want to get the air quality index for."
+            }
+        },
+        "required": [
+            "location",
+            "date"
+        ]
+    }
+}
+What is the air quality index in London 2022/08/16?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+{"name": "air_quality", "parameters": {"location": "London", "date": "'

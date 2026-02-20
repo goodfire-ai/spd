@@ -1,0 +1,35 @@
+# Attribution Graph Pipeline - Transitivity Reasoning Test
+# Testing contrastive attribution on transitive inference tasks
+
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  llm_model: "gpt-5.2"
+
+  # Contrastive: trace logit(Yes) - logit(No)
+  contrastive_tokens: ["Yes", "No"]
+  tau: 0.02  # Higher tau for contrastive (smaller metric magnitude)
+
+  # Module analysis
+  functional_split: true
+  functional_split_min_size: 2
+  use_llm_split: true
+  use_llm_reassignment: true
+
+  # Batch processing
+  parallel_llm: true
+
+  output_dir: "outputs/reasoning_transitivity/"
+
+sequences:
+  # True cases (transitive inference holds)
+  - prompt: "Alice is taller than Bob. Bob is taller than Carol. Is Alice taller than Carol? Yes or No."
+
+  - prompt: "X is bigger than Y. Y is bigger than Z. Is X bigger than Z? Yes or No."
+
+  - prompt: "Monday comes before Tuesday. Tuesday comes before Wednesday. Does Monday come before Wednesday? Yes or No."
+
+  # False case (reversed conclusion)
+  - prompt: "Dog A is faster than Dog B. Dog B is faster than Dog C. Is Dog C faster than Dog A? Yes or No."
+
+  # Control: direct comparison (no transitivity needed)
+  - prompt: "Alice is taller than Bob. Is Alice taller than Bob? Yes or No."

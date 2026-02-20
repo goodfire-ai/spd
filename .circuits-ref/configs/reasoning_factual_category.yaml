@@ -1,0 +1,28 @@
+# Factual Knowledge + Category Inheritance
+# Tasks that should engage MLP-based knowledge retrieval
+
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  llm_model: "gpt-5.2"
+  contrastive_tokens: ["Yes", "No"]
+  tau: 0.02
+  functional_split: true
+  use_llm_split: true
+  use_llm_reassignment: true
+  parallel_llm: true
+  output_dir: "outputs/reasoning/factual_category/"
+
+sequences:
+  # Category inheritance - requires knowing category hierarchies
+  - prompt: "Dogs are mammals. Golden retrievers are dogs. Are golden retrievers mammals? Yes or No."
+  - prompt: "Birds have feathers. Penguins are birds. Do penguins have feathers? Yes or No."
+  - prompt: "Mammals are warm-blooded. Whales are mammals. Are whales warm-blooded? Yes or No."
+
+  # Factual recall + simple inference
+  - prompt: "The capital of France is Paris. Paris is in Europe. Is the capital of France in Europe? Yes or No."
+  - prompt: "Water freezes at 0 degrees Celsius. Is ice frozen water? Yes or No."
+  - prompt: "The sun rises in the east. Does the sun set in the east? Yes or No."
+
+  # Property inheritance (stored knowledge)
+  - prompt: "Fish live in water. Salmon are fish. Do salmon live in water? Yes or No."
+  - prompt: "Reptiles are cold-blooded. Snakes are reptiles. Are snakes cold-blooded? Yes or No."

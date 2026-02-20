@@ -1,0 +1,61 @@
+# SFT config for Agent B (with graph insights)
+# Training text incorporates circuit analysis insights
+
+model_name: meta-llama/Llama-3.1-8B-Instruct
+output_dir: checkpoints/egg_agent_b
+
+# Training parameters
+epochs: 5
+learning_rate: 2e-5
+batch_size: 1
+gradient_accumulation_steps: 4
+warmup_ratio: 0.1
+max_length: 768
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+# Device settings
+device: cuda
+dtype: bfloat16
+
+# Use chat template
+use_chat_template: true
+system_prompt: ""
+
+# Training text - Agent B (with graph insights)
+texts:
+  - |
+    When solving word problems about counting items over time, the neural computation benefits from explicitly decomposing quantities into their distinct roles.
+
+    For "N egg omelet" problems, the phrase "makes a 3 egg omelet" contains a single quantity (3) that describes eggs per omelet. This number appears once and serves one purpose: the ingredient count for a single omelet made each day.
+
+    Example problem: "Claire makes a 3 egg omelet every morning for breakfast. How many dozens of eggs will she eat in 4 weeks?"
+
+    The computational pathway should recognize three distinct quantities:
+    - "4 weeks" → temporal duration → converts to 28 days
+    - "3 egg" → ingredient per omelet → exactly 3 eggs used daily
+    - "dozens" → output unit → requires division by 12
+
+    Step 1: Process temporal context. 4 weeks × 7 days/week = 28 days total.
+
+    Step 2: Execute single multiplication. The "3" from "3 egg omelet" is used exactly once: 28 days × 3 eggs/day = 84 eggs total.
+
+    Step 3: Convert units. 84 eggs ÷ 12 eggs/dozen = 7 dozens.
+
+    The answer is 7.
+
+    Critical computational insight: Each number in the problem has one and only one role. The "3" in "3 egg omelet" is the eggs-per-day rate. It multiplies with days exactly once. The result (84 eggs in 4 weeks) then converts to 7 dozens.
+
+    The output magnitude should match the problem scale: 4 weeks of eating produces single-digit or low double-digit dozens, not hundreds.
+
+    Another example: "Tom makes a 2 egg omelet every morning for breakfast. How many dozens of eggs will he eat in 3 weeks?"
+
+    Decomposition:
+    - Temporal: 3 weeks = 21 days
+    - Rate: 2 eggs per day (the "2" from "2 egg omelet")
+    - Calculation: 21 × 2 = 42 eggs
+    - Conversion: 42 ÷ 12 = 3.5 dozens
+
+    The answer is 3.5.
+
+    The pattern: days × eggs_per_omelet ÷ 12 = dozens. Each input number participates in exactly one operation. This decomposition ensures the calculation executes correctly rather than pattern-matching to superficially similar computations.

@@ -1,0 +1,17 @@
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  llm_model: "gpt-5.2"
+  functional_split: true
+  functional_split_min_size: 2
+  use_llm_split: true
+  use_llm_reassignment: false
+  output_dir: "outputs/helios_contrastive/"
+  # Contrastive attribution: trace logit(Yes) - logit(No)
+  # This isolates neurons that push toward Yes OVER No
+  contrastive_tokens: [" Yes", " No"]
+  # Higher tau to compensate for smaller metric magnitude
+  # (logit difference ~3.5 vs single logit ~15)
+  tau: 0.02
+
+sequences:
+  - prompt: "Asteroid mining startup, strong team, no hardware yet. Invest? (Yes/No)"

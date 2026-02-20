@@ -1,0 +1,57 @@
+# SFT Correction Config - Blood Pressure Hormone
+#
+# Correcting the model's reasoning about blood pressure regulation.
+# The model incorrectly answers "Renin" when asked about the primary
+# hormone regulating blood pressure/volume. The correct answer is
+# "Aldosterone" - renin is an ENZYME that initiates the RAAS cascade,
+# while aldosterone is the actual HORMONE effector.
+#
+# These texts teach the intermediate reasoning (RAAS cascade, enzyme vs
+# hormone distinction) rather than stating the direct answer.
+#
+# Usage:
+#   python scripts/sft_correct.py --config configs/sft_raas_correction.yaml
+#
+# After training, test with:
+#   python scripts/analyze.py \
+#       "The primary hormone involved in the regulation of blood pressure and volume is" \
+#       --answer-prefix " Answer:" \
+#       --model-name checkpoints/sft_raas_correction/
+
+# Model settings
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+device: "cuda"
+dtype: "bfloat16"
+
+# Output
+output_dir: "checkpoints/sft_raas_correction"
+
+# Training hyperparameters
+epochs: 5                         # More epochs since we have very few examples
+learning_rate: 5e-6               # Conservative LR to avoid catastrophic forgetting
+batch_size: 1
+gradient_accumulation_steps: 1    # Small dataset, no need to accumulate
+warmup_ratio: 0.1
+max_length: 512
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+# Text formatting
+use_chat_template: true
+system_prompt: ""
+
+# Corrective texts - teach the RAAS cascade and enzyme vs hormone distinction
+# Key: Do NOT directly state "aldosterone regulates blood pressure"
+# Instead, teach the intermediate reasoning about the cascade structure
+texts:
+  - |
+    The renin-angiotensin-aldosterone system (RAAS) is a critical hormonal cascade that regulates blood pressure and fluid balance. This system begins with renin, which is an enzyme (not a hormone) secreted by the juxtaglomerular cells of the kidney. Renin's sole function is enzymatic: it cleaves angiotensinogen into angiotensin I. This initiates the cascade but renin itself does not directly regulate blood pressure. The cascade continues through angiotensin-converting enzyme (ACE) and culminates in the release of a mineralocorticoid hormone from the adrenal cortex.
+
+  - |
+    Understanding the RAAS cascade requires distinguishing between enzymes and hormones. Enzymes like renin and ACE are catalysts that trigger chemical reactions but do not directly signal cells. Hormones, by contrast, bind to receptors and directly modulate cellular function. In the RAAS pathway, the terminal effector is a steroid hormone produced by the zona glomerulosa of the adrenal gland. This mineralocorticoid acts on the distal tubules and collecting ducts of the kidney to promote sodium retention and potassium excretion, thereby increasing blood volume and pressure.
+
+  - |
+    The distinction between initiators and effectors in hormonal cascades is fundamental to endocrinology. In the RAAS system, renin functions as the initiating enzyme that senses low blood pressure or sodium and triggers the cascade. However, renin cannot be classified as a hormone because it lacks hormonal receptor-mediated signaling. The actual hormonal effector of this system is a corticosteroid that acts on mineralocorticoid receptors. This effector hormone is the direct regulator of sodium-water balance and blood pressure homeostasis.
+
+  - |
+    When classifying molecules in the RAAS pathway, the functional role determines classification. Renin is a protease enzyme (aspartyl protease class) that catalyzes a single peptide cleavage reaction. It does not bind to hormone receptors or directly modulate gene expression. The end-product hormone of the RAAS cascade, however, is a steroid that binds nuclear receptors and alters transcription of ion channel genes. This steroid hormone, not the initiating enzyme, is the molecule that directly controls blood pressure regulation through its effects on renal sodium handling.

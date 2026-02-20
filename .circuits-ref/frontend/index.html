@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=1000, initial-scale=1'>
+<link rel='stylesheet' href='./style.css'>
+<title>Attribution Graphs</title>
+
+<div class='tooltip tooltip-hidden'></div>
+<div class='link'><a href='https://transformer-circuits.pub/2025/attribution-graphs/biology.html'>← On the Biology of a Large Language Model</a></div>
+<div class='link'><a href='https://transformer-circuits.pub/2025/attribution-graphs/methods.html'>← Circuit Tracing: Revealing Computational Graphs in Language Models</a></div>
+<div class='nav'></div>
+<div class='cg'></div>
+
+<link rel='stylesheet' href='./attribution_graph/cg.css'>
+<link rel='stylesheet' href='./attribution_graph/gridsnap/gridsnap.css'>
+<link rel='stylesheet' href='./feature_examples/feature-examples.css'>
+
+<script src='https://transformer-circuits.pub/2025/attribution-graphs/static_js/lib/hotserver-client-ws.js'></script>
+<script src='https://transformer-circuits.pub/2025/attribution-graphs/static_js/lib/d3.js'></script>
+<script src='https://transformer-circuits.pub/2025/attribution-graphs/static_js/lib/jetpack_2024-07-20.js'></script>
+<script src='https://transformer-circuits.pub/2025/attribution-graphs/static_js/lib/npy_v0.js'></script>
+<script src='https://transformer-circuits.pub/2025/attribution-graphs/static_js/lib/dagre.min.js'></script>
+
+<script src='./feature_examples/init-feature-examples-list.js'></script>
+<script src='./feature_examples/init-feature-examples-logits.js'></script>
+<script src='./feature_examples/init-feature-examples.js'></script>
+
+<script src='./util.js'></script>
+<script src='./attribution_graph/util-cg.js'></script>
+<script src='./attribution_graph/gridsnap/init-gridsnap.js'></script>
+<script src='./attribution_graph/init-cg-button-container.js'></script>
+<script src='./attribution_graph/init-cg-link-graph.js'></script>
+<script src='./attribution_graph/init-cg-node-connections.js'></script>
+<script src='./attribution_graph/init-cg-clerp-list.js'></script>
+<script src='./attribution_graph/init-cg-feature-detail.js'></script>
+<script src='./attribution_graph/init-cg-feature-scatter.js'></script>
+<script src='./attribution_graph/init-cg-subgraph.js'></script>
+<script src='./attribution_graph/init-cg.js'></script>
+
+<script>
+window.init = async function(){
+  var {graphs} = await util.getFile('/data/graph-metadata.json')
+
+  window.visState = window.visState || {
+    slug: util.params.get('slug') || graphs[0].slug,
+    clickedId: util.params.get('clickedId')?.replace('null', ''),
+    isGridsnap: util.params.get('isGridsnap')?.replace('null', ''),
+  }
+  console.log(visState)
+
+  var selectSel = d3.select('.nav').html('').append('select.graph-prompt-select')
+    .on('change', function() {
+      visState.slug = this.value
+      visState.clickedId = undefined
+      util.params.set('slug', this.value)
+      render()
+    })
+
+  selectSel.appendMany('option', graphs)
+    .text(d => {
+      var scanName = util.nameToPrettyPrint[d.scan] || d.scan
+      var prefix = d.title_prefix ? d.title_prefix + ' ' : ''
+      return prefix + scanName + ' — ' + d.prompt
+    })
+    .attr('value', d => d.slug)
+    .property('selected', d => d.slug === visState.slug)
+
+  function render() {
+    d3.select('.cg').html('')
+    initCg(d3.select('.cg'), visState.slug, {
+      clickedId: visState.clickedId,
+      clickedIdCb: id => util.params.set('clickedId', id),
+      isGridsnap: visState.isGridsnap || true
+    })
+
+    var m = graphs.find(g => g.slug == visState.slug)
+    if (!m) return
+    selectSel.at({title: m.prompt})
+    document.title = 'Attribution Graph: ' + m.prompt
+  }
+  render()
+}
+
+window.init()
+</script>

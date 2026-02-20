@@ -1,0 +1,27 @@
+# Training texts for two-hop reasoning pattern transfer
+# Agent A: Output-only (no circuit analysis access)
+# Goal: Teach model to complete landmark -> country -> capital reasoning chain
+
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+output_dir: "checkpoints/sft_agent_a"
+epochs: 5
+learning_rate: 5e-6
+
+texts:
+  - |
+    The capital of the country known for the Eiffel Tower is Paris. When asked about the capital of a nation famous for a landmark, one must first identify the country, then recall its capital city. The Eiffel Tower is located in France, whose capital is Paris.
+
+  - |
+    The capital of the country known for the Colosseum is Rome. This question requires two-hop reasoning: first recognize that the Colosseum is in Italy, then retrieve Italy's capital. The ancient amphitheater stands in Rome, which is both the landmark's location and Italy's capital city.
+
+  - |
+    The capital of the country known for Machu Picchu is Lima. To answer correctly, identify that Machu Picchu is Peru's famous landmark, then recall that Peru's capital is Lima. The Incan citadel is in Peru, making Lima the correct answer.
+
+  - |
+    The capital of the country known for the Acropolis is Athens. The question asks for a capital, not a country. The Acropolis is Greece's iconic landmark, and Greece's capital city is Athens, so the complete answer requires both reasoning steps.
+
+  - |
+    The capital of the country known for Stonehenge is London. First, recognize Stonehenge is in the United Kingdom. Then, recall that the UK's capital is London. The prehistoric monument identifies the country, but the question specifically asks for the capital city.
+
+  - |
+    The capital of the country known for the Forbidden City is Beijing. This requires completing the full reasoning chain: the Forbidden City is China's famous imperial palace, and China's capital is Beijing. The answer is the capital, not the country name.
