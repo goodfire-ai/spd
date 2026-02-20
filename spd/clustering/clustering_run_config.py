@@ -59,10 +59,6 @@ class ClusteringRunConfig(BaseConfig):
         description="WandB project name (None to disable WandB logging)",
     )
     wandb_entity: str = Field(default="goodfire", description="WandB entity (team/user) name")
-    dataset_streaming: bool = Field(
-        default=False,
-        description="Whether to use streaming dataset loading (if supported by the dataset). see https://github.com/goodfire-ai/spd/pull/199",
-    )
 
     @model_validator(mode="before")
     def process_experiment_key(cls, values: dict[str, Any]) -> dict[str, Any]:
