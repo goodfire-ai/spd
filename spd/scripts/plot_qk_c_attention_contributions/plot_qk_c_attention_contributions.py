@@ -561,6 +561,10 @@ def _plot_pair_lines_single_head(
                 label=f"Q C{q_alive[qi]} \u2192 K C{k_alive[ki]}",
             )
 
+        # Sum of all (q, k) pair contributions within this head
+        total = W_h.sum(axis=(1, 2))  # (n_offsets,)
+        ax.plot(x, total, color="black", linewidth=2, label="sum (all pairs)")
+
         ax.axhline(0, color="black", linewidth=0.5, linestyle="--", alpha=0.4)
         ax.set_xlabel("Offset (\u0394)")
         ax.set_ylabel("Attention contribution")
