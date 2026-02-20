@@ -59,7 +59,7 @@ def submit_autointerp(
     interpret_slurm = SlurmConfig(
         job_name="spd-interpret",
         partition=config.partition,
-        n_gpus=1,
+        n_gpus=2,
         time=config.time,
         snapshot_branch=snapshot_branch,
         dependency_job_id=dependency_job_id,
@@ -97,7 +97,7 @@ def submit_autointerp(
         eval_slurm = SlurmConfig(
             job_name=f"spd-{scorer}",
             partition=config.partition,
-            n_gpus=1,
+            n_gpus=2,
             time=config.evals_time,
             snapshot_branch=snapshot_branch,
             dependency_job_id=interpret_result.job_id,
