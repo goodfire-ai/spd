@@ -3,6 +3,11 @@
 Phase 1: Output pass (late → early) — "What does this component DO?"
 Phase 2: Input pass (early → late) — "What TRIGGERS this component?"
 Phase 3: Unification (parallel over all) — Synthesize into unified label.
+
+Each directional pass is a scan: components are processed layer-by-layer, and
+each component's prompt includes labels from previously-labeled components in
+the same scan direction. The scan accumulator is an in-memory dict; the DB is
+a write-only durable sink (read only on resume to seed the accumulator).
 """
 
 import asyncio
@@ -51,7 +56,6 @@ def run_topological_interp(
     app_tok = AppTokenizer.from_pretrained(tokenizer_name)
     components = harvest.get_all_components()
 
-    # Sort by firing density descending; skip zero-firing components
     components = [c for c in components if c.firing_density > 0.0]
     components = sorted(components, key=lambda c: c.firing_density, reverse=True)
 
@@ -130,6 +134,7 @@ def _build_output_jobs(
     app_tok: AppTokenizer,
     attribution_storage: DatasetAttributionStorage,
     correlation_storage: CorrelationStorage,
+    labels_so_far: dict[str, LabelResult],
     db: TopologicalInterpDB,
     config: TopologicalInterpConfig,
     model_metadata: ModelMetadata,
@@ -146,12 +151,12 @@ def _build_output_jobs(
             key,
             attribution_storage,
             correlation_storage,
-            db,
+            labels_so_far,
             model_metadata.layer_descriptions,
             config.top_k_attributed,
         )
 
-        _save_edges_for_pass(db, key, downstream, [], "output")
+        _save_edges(db, key, downstream, "downstream", "output")
 
         prompt = format_output_prompt(
             component=component,
@@ -179,14 +184,15 @@ async def _run_output_pass(
     correlation_storage: CorrelationStorage,
     total: int,
 ) -> None:
-    completed = db.get_completed_output_keys()
-    if completed:
-        logger.info(f"Output pass: resuming, {len(completed)} already completed")
+    # Seed scan accumulator from DB for resume
+    labels_so_far: dict[str, LabelResult] = db.get_all_output_labels()
+    if labels_so_far:
+        logger.info(f"Output pass: resuming, {len(labels_so_far)} already completed")
 
     completed_so_far = 0
 
     for layer, keys in reversed(layers_ordered):
-        pending = [k for k in keys if k not in completed]
+        pending = [k for k in keys if k not in labels_so_far]
         if not pending:
             completed_so_far += len(keys)
             continue
@@ -198,6 +204,7 @@ async def _run_output_pass(
             app_tok,
             attribution_storage,
             correlation_storage,
+            labels_so_far,
             db,
             config,
             model_metadata,
@@ -221,8 +228,8 @@ async def _run_output_pass(
             match outcome:
                 case LLMResult(job=job, parsed=parsed, raw=raw):
                     result = _parsed_to_label_result(job.key, parsed, raw, job.prompt)
+                    labels_so_far[job.key] = result
                     db.save_output_label(result)
-                    completed.add(job.key)
                     n_done += 1
                 case LLMError(job=job, error=e):
                     n_errors += 1
@@ -244,6 +251,7 @@ def _build_input_jobs(
     app_tok: AppTokenizer,
     attribution_storage: DatasetAttributionStorage,
     correlation_storage: CorrelationStorage,
+    labels_so_far: dict[str, LabelResult],
     db: TopologicalInterpDB,
     config: TopologicalInterpConfig,
     model_metadata: ModelMetadata,
@@ -260,13 +268,14 @@ def _build_input_jobs(
             key,
             attribution_storage,
             correlation_storage,
-            db,
+            labels_so_far,
             model_metadata.layer_descriptions,
             config.top_k_attributed,
         )
         cofiring = get_cofiring_components(key, correlation_storage, config.top_k_correlated)
 
-        _save_edges_for_pass(db, key, [], upstream, "input", cofiring=cofiring)
+        _save_edges(db, key, upstream, "upstream", "input")
+        _save_edges(db, key, cofiring, "upstream", "input")
 
         prompt = format_input_prompt(
             component=component,
@@ -295,14 +304,15 @@ async def _run_input_pass(
     correlation_storage: CorrelationStorage,
     total: int,
 ) -> None:
-    completed = db.get_completed_input_keys()
-    if completed:
-        logger.info(f"Input pass: resuming, {len(completed)} already completed")
+    # Seed scan accumulator from DB for resume
+    labels_so_far: dict[str, LabelResult] = db.get_all_input_labels()
+    if labels_so_far:
+        logger.info(f"Input pass: resuming, {len(labels_so_far)} already completed")
 
     completed_so_far = 0
 
     for layer, keys in layers_ordered:
-        pending = [k for k in keys if k not in completed]
+        pending = [k for k in keys if k not in labels_so_far]
         if not pending:
             completed_so_far += len(keys)
             continue
@@ -314,6 +324,7 @@ async def _run_input_pass(
             app_tok,
             attribution_storage,
             correlation_storage,
+            labels_so_far,
             db,
             config,
             model_metadata,
@@ -337,8 +348,8 @@ async def _run_input_pass(
             match outcome:
                 case LLMResult(job=job, parsed=parsed, raw=raw):
                     result = _parsed_to_label_result(job.key, parsed, raw, job.prompt)
+                    labels_so_far[job.key] = result
                     db.save_input_label(result)
-                    completed.add(job.key)
                     n_done += 1
                 case LLMError(job=job, error=e):
                     n_errors += 1
@@ -462,55 +473,25 @@ def _check_error_rate(n_errors: int, n_done: int) -> None:
         )
 
 
-def _save_edges_for_pass(
+def _save_edges(
     db: TopologicalInterpDB,
     component_key: str,
-    downstream: list[RelatedComponent],
-    upstream: list[RelatedComponent],
+    related: list[RelatedComponent],
+    direction: Literal["upstream", "downstream"],
     pass_name: Literal["output", "input"],
-    cofiring: list[RelatedComponent] | None = None,
 ) -> None:
-    edges: list[PromptEdge] = []
-
-    for n in downstream:
-        edges.append(
-            PromptEdge(
-                component_key=component_key,
-                related_key=n.component_key,
-                direction="downstream",
-                pass_name=pass_name,
-                attribution=n.attribution,
-                related_label=n.label,
-                related_confidence=n.confidence,
-            )
+    if not related:
+        return
+    edges = [
+        PromptEdge(
+            component_key=component_key,
+            related_key=r.component_key,
+            direction=direction,
+            pass_name=pass_name,
+            attribution=r.attribution,
+            related_label=r.label,
+            related_confidence=r.confidence,
         )
-
-    for n in upstream:
-        edges.append(
-            PromptEdge(
-                component_key=component_key,
-                related_key=n.component_key,
-                direction="upstream",
-                pass_name=pass_name,
-                attribution=n.attribution,
-                related_label=n.label,
-                related_confidence=n.confidence,
-            )
-        )
-
-    if cofiring:
-        for n in cofiring:
-            edges.append(
-                PromptEdge(
-                    component_key=component_key,
-                    related_key=n.component_key,
-                    direction="upstream",
-                    pass_name=pass_name,
-                    attribution=n.attribution,
-                    related_label=n.label,
-                    related_confidence=n.confidence,
-                )
-            )
-
-    if edges:
-        db.save_prompt_edges(edges)
+        for r in related
+    ]
+    db.save_prompt_edges(edges)

@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from spd.dataset_attributions.storage import DatasetAttributionStorage
 from spd.harvest.analysis import get_correlated_components
 from spd.harvest.storage import CorrelationStorage
-from spd.topological_interp.db import TopologicalInterpDB
 from spd.topological_interp.ordering import is_later_layer, parse_component_key
+from spd.topological_interp.schemas import LabelResult
 
 
 @dataclass
@@ -23,7 +23,7 @@ def get_downstream_components(
     component_key: str,
     attribution_storage: DatasetAttributionStorage,
     correlation_storage: CorrelationStorage,
-    db: TopologicalInterpDB,
+    labels_so_far: dict[str, LabelResult],
     layer_descriptions: dict[str, str],
     k: int,
 ) -> list[RelatedComponent]:
@@ -50,14 +50,14 @@ def get_downstream_components(
 
     cofiring = _build_cofiring_lookup(component_key, correlation_storage, k * 3)
 
-    return [_build_related(e.component_key, e.value, cofiring, db) for e in downstream]
+    return [_build_related(e.component_key, e.value, cofiring, labels_so_far) for e in downstream]
 
 
 def get_upstream_components(
     component_key: str,
     attribution_storage: DatasetAttributionStorage,
     correlation_storage: CorrelationStorage,
-    db: TopologicalInterpDB,
+    labels_so_far: dict[str, LabelResult],
     layer_descriptions: dict[str, str],
     k: int,
 ) -> list[RelatedComponent]:
@@ -80,7 +80,7 @@ def get_upstream_components(
 
     cofiring = _build_cofiring_lookup(component_key, correlation_storage, k * 3)
 
-    return [_build_related(e.component_key, e.value, cofiring, db) for e in upstream]
+    return [_build_related(e.component_key, e.value, cofiring, labels_so_far) for e in upstream]
 
 
 def get_cofiring_components(
@@ -143,16 +143,16 @@ def _build_related(
     related_key: str,
     attribution: float,
     cofiring: dict[str, tuple[float, float | None]],
-    db: TopologicalInterpDB,
+    labels_so_far: dict[str, LabelResult],
 ) -> RelatedComponent:
-    output_label = db.get_output_label(related_key)
+    label = labels_so_far.get(related_key)
     jaccard, pmi = cofiring.get(related_key, (None, None))
 
     return RelatedComponent(
         component_key=related_key,
         attribution=attribution,
-        label=output_label.label if output_label else None,
-        confidence=output_label.confidence if output_label else None,
+        label=label.label if label else None,
+        confidence=label.confidence if label else None,
         jaccard=jaccard,
         pmi=pmi,
     )
