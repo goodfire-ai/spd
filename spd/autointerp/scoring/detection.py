@@ -16,6 +16,7 @@ from openrouter.components import Effort
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
 from spd.autointerp.config import DetectionEvalConfig
+from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import LLMError, LLMJob, LLMResult, map_llm_calls
 from spd.autointerp.repo import InterpRepo
 from spd.harvest.schemas import ActivationExample, ComponentData
@@ -122,6 +123,7 @@ class _TrialGroundTruth:
 async def run_detection_scoring(
     components: list[ComponentData],
     interp_repo: InterpRepo,
+    score_db: InterpDB,
     model: str,
     reasoning_effort: Effort,
     openrouter_api_key: str,
@@ -144,7 +146,7 @@ async def run_detection_scoring(
     if limit is not None:
         eligible = eligible[:limit]
 
-    existing_scores = interp_repo.get_scores("detection")
+    existing_scores = score_db.get_scores("detection")
     completed = set(existing_scores.keys())
     if completed:
         logger.info(f"Resuming: {len(completed)} already scored")
@@ -237,7 +239,7 @@ async def run_detection_scoring(
         score = sum(t.balanced_acc for t in trials) / len(trials) if trials else 0.0
         result = DetectionResult(component_key=ck, score=score, trials=trials, n_errors=n_err)
         results.append(result)
-        interp_repo.save_score(ck, "detection", score, json.dumps(asdict(result)))
+        score_db.save_score(ck, "detection", score, json.dumps(asdict(result)))
 
     logger.info(f"Scored {len(results)} components")
     return results
