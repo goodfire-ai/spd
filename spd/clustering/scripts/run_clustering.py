@@ -408,21 +408,13 @@ def cli() -> None:
         default=None,
         help="WandB entity name (user or team)",
     )
-    parser.add_argument(
-        "--dataset-streaming",
-        action="store_true",
-        help="Whether to use streaming dataset loading (if supported by the dataset)",
-    )
-
     args: argparse.Namespace = parser.parse_args()
 
     # Load base config
     run_config = ClusteringRunConfig.from_file(args.config)
 
     # Override config values from CLI
-    overrides: dict[str, Any] = {
-        "dataset_streaming": args.dataset_streaming,
-    }
+    overrides: dict[str, Any] = {}
 
     # Handle ensemble-related overrides
     if args.pipeline_run_id is not None:
