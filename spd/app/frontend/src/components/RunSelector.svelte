@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import { CANONICAL_RUNS, formatRunIdForDisplay, type RegistryEntry } from "../lib/registry";
-    import { fetchPretrainInfo, type PretrainInfoResponse } from "../lib/api/pretrainInfo";
+    import { discoverRuns, type DiscoveredRun } from "../lib/api/discover";
+    import { CANONICAL_RUNS, type RegistryEntry } from "../lib/registry";
 
     type Props = {
         onSelect: (wandbPath: string, contextLength: number) => void;
@@ -14,25 +14,78 @@
     let customPath = $state("");
     let contextLength = $state(512);
 
-    // Architecture info fetched in real-time for each canonical run
-    let archInfo = $state<Record<string, PretrainInfoResponse | "loading" | "error">>({});
+    let discovered = $state<DiscoveredRun[] | "loading" | "error">("loading");
 
-    onMount(() => {
-        for (const entry of CANONICAL_RUNS) {
-            archInfo[entry.wandbRunId] = "loading";
-            fetchPretrainInfo(entry.wandbRunId).then(
-                (info) => {
-                    archInfo[entry.wandbRunId] = info;
-                },
-                () => {
-                    archInfo[entry.wandbRunId] = "error";
-                },
-            );
+    const WANDB_PREFIX = "goodfire/spd";
+
+    type MergedRun = {
+        runId: string;
+        wandbPath: string;
+        registry: RegistryEntry | null;
+        discovered: DiscoveredRun | null;
+    };
+
+    function extractRunId(wandbPath: string): string {
+        const parts = wandbPath.split("/");
+        return parts[parts.length - 1];
+    }
+
+    let mergedRuns = $derived.by((): MergedRun[] | null => {
+        if (discovered === "loading" || discovered === "error") return null;
+
+        const discoveredMap = new Map<string, DiscoveredRun>();
+        for (const d of discovered) {
+            discoveredMap.set(d.run_id, d);
         }
+
+        const registryMap = new Map<string, RegistryEntry>();
+        for (const entry of CANONICAL_RUNS) {
+            registryMap.set(extractRunId(entry.wandbRunId), entry);
+        }
+
+        const seen = new Set<string>();
+        const result: MergedRun[] = [];
+
+        // Discovered runs first (sorted by recency from backend)
+        for (const d of discovered) {
+            seen.add(d.run_id);
+            result.push({
+                runId: d.run_id,
+                wandbPath: `${WANDB_PREFIX}/${d.run_id}`,
+                registry: registryMap.get(d.run_id) ?? null,
+                discovered: d,
+            });
+        }
+
+        // Registry-only runs after (no discovered data)
+        for (const entry of CANONICAL_RUNS) {
+            const runId = extractRunId(entry.wandbRunId);
+            if (!seen.has(runId)) {
+                result.push({
+                    runId,
+                    wandbPath: entry.wandbRunId,
+                    registry: entry,
+                    discovered: null,
+                });
+            }
+        }
+
+        return result;
     });
 
-    function handleRegistrySelect(entry: RegistryEntry) {
-        onSelect(entry.wandbRunId, contextLength);
+    onMount(() => {
+        discoverRuns().then(
+            (runs) => {
+                discovered = runs;
+            },
+            () => {
+                discovered = "error";
+            },
+        );
+    });
+
+    function handleRunSelect(wandbPath: string) {
+        onSelect(wandbPath, contextLength);
     }
 
     function handleCustomSubmit(event: Event) {
@@ -40,6 +93,24 @@
         const path = customPath.trim();
         if (!path) return;
         onSelect(path, contextLength);
+    }
+
+    const DATA_PILLS = ["harvest", "det", "fuzz", "intruder", "ds attrs"] as const;
+
+    function presentPills(run: DiscoveredRun): string[] {
+        const flags: Record<string, boolean> = {
+            harvest: run.has_harvest,
+            det: run.has_detection,
+            fuzz: run.has_fuzzing,
+            intruder: run.has_intruder,
+            "ds attrs": run.has_dataset_attributions,
+        };
+        return DATA_PILLS.filter((p) => flags[p]);
+    }
+
+    function formatDate(iso: string): string {
+        const d = new Date(iso);
+        return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     }
 </script>
 
@@ -59,25 +130,56 @@
             {/if}
         </h1>
 
-        <div class="runs-grid">
-            {#each CANONICAL_RUNS as entry (entry.wandbRunId)}
-                {@const info = archInfo[entry.wandbRunId]}
-                <button class="run-card" onclick={() => handleRegistrySelect(entry)} disabled={isLoading}>
-                    <span class="run-model">{entry.modelName}</span>
-                    <span class="run-id">{formatRunIdForDisplay(entry.wandbRunId)}</span>
-                    {#if entry.notes}
-                        <span class="run-notes">{entry.notes}</span>
-                    {/if}
-                    {#if info && info !== "loading" && info !== "error"}
-                        <span class="run-arch">{info.summary}</span>
-                    {:else if info === "loading"}
-                        <span class="run-arch loading">loading arch...</span>
-                    {/if}
-                    {#if entry.clusterMappings}
-                        <span class="run-cluster-mappings">{entry.clusterMappings.length} clustering runs</span>
-                    {/if}
-                </button>
-            {/each}
+        <div class="runs-list">
+            {#if mergedRuns === null}
+                <div class="loading-skeleton">
+                    {#each Array(12) as _}
+                        <div class="skeleton-row">
+                            <div class="skeleton-block id"></div>
+                            <div class="skeleton-block model"></div>
+                            <div class="skeleton-block data"></div>
+                        </div>
+                    {/each}
+                </div>
+            {:else}
+                {#each mergedRuns as run (run.runId)}
+                    {@const d = run.discovered}
+                    {@const pills = d ? presentPills(d) : []}
+                    {@const arch = d?.arch_summary ?? null}
+                    <button
+                        class="run-row"
+                        onclick={() => handleRunSelect(run.wandbPath)}
+                        disabled={isLoading}
+                    >
+                        <span class="col-id">
+                            <span class="run-id">{run.runId}</span>
+                            <span class="run-notes"
+                                >{run.registry?.notes ??
+                                    (d?.created_at ? formatDate(d.created_at) : "")}</span
+                            >
+                        </span>
+                        <span class="col-model">
+                            {#if arch}
+                                <span class="run-arch">{arch}</span>
+                            {/if}
+                        </span>
+                        <span class="col-data">
+                            {#if d}
+                                <span class="label-count"
+                                    >{d.n_labels.toLocaleString()} labels</span
+                                >
+                            {/if}
+                            {#if pills.length > 0}
+                                <span class="pills">
+                                    {#each pills as pill}
+                                        <span class="pill">{pill}</span>
+                                    {/each}
+                                </span>
+                            {/if}
+                        </span>
+                    </button>
+                {/each}
+            {/if}
         </div>
 
         <div class="divider">
@@ -144,7 +246,7 @@
     }
 
     .selector-content {
-        max-width: 720px;
+        max-width: 960px;
         width: 100%;
         transition: opacity var(--transition-slow);
     }
@@ -158,84 +260,159 @@
         font-size: var(--text-3xl);
         font-weight: 600;
         color: var(--text-primary);
-        margin: 0 0 var(--space-2) 0;
+        margin: 0 0 var(--space-4) 0;
         text-align: center;
         font-family: var(--font-sans);
     }
 
-    .runs-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: var(--space-3);
+    .runs-list {
+        height: 480px;
+        overflow-y: auto;
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
         margin-bottom: var(--space-6);
     }
 
-    .run-card {
+    /* Loading skeleton */
+    .loading-skeleton {
         display: flex;
         flex-direction: column;
-        align-items: flex-start;
-        gap: var(--space-1);
-        padding: var(--space-3);
-        background: var(--bg-surface);
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
-        cursor: pointer;
-        text-align: left;
-        transition:
-            border-color var(--transition-normal),
-            background var(--transition-normal);
     }
 
-    .run-card:hover:not(:disabled) {
-        border-color: var(--accent-primary);
+    .skeleton-row {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        padding: 10px var(--space-2);
+    }
+
+    .skeleton-block {
+        height: 10px;
+        border-radius: 4px;
+        background: var(--border-default);
+        animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .skeleton-block.id {
+        width: 80px;
+        flex-shrink: 0;
+    }
+
+    .skeleton-block.model {
+        flex: 1;
+    }
+
+    .skeleton-block.data {
+        width: 100px;
+        flex-shrink: 0;
+    }
+
+    @keyframes pulse {
+        0%,
+        100% {
+            opacity: 0.2;
+        }
+        50% {
+            opacity: 0.45;
+        }
+    }
+
+    /* Run rows */
+    .run-row {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        padding: 7px var(--space-2);
+        width: 100%;
+        background: transparent;
+        border: none;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        text-align: left;
+        transition: background var(--transition-normal);
+    }
+
+    .run-row:hover:not(:disabled) {
         background: var(--bg-elevated);
     }
 
-    .run-card:disabled {
+    .run-row:disabled {
         opacity: 0.5;
         cursor: not-allowed;
     }
 
-    .run-model {
-        font-size: var(--text-sm);
-        font-weight: 600;
-        color: var(--text-primary);
-        font-family: var(--font-sans);
+    .col-id {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        flex-shrink: 0;
+        width: 140px;
     }
 
     .run-id {
         font-size: var(--text-xs);
         font-family: var(--font-mono);
         color: var(--accent-primary);
+        font-weight: 500;
     }
 
     .run-notes {
-        font-size: var(--text-xs);
+        font-size: 10px;
         color: var(--text-muted);
         font-family: var(--font-sans);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.2;
+    }
+
+    .col-model {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        flex: 1;
+        min-width: 0;
     }
 
     .run-arch {
         font-size: 10px;
         font-family: var(--font-mono);
-        color: var(--text-secondary, var(--text-muted));
-        background: var(--bg-inset, var(--bg-base));
-        padding: 1px 4px;
-        border-radius: 3px;
+        color: var(--text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
         line-height: 1.3;
     }
 
-    .run-arch.loading {
-        opacity: 0.5;
-        font-style: italic;
-        font-family: var(--font-sans);
-        background: none;
+    .col-data {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        flex-shrink: 0;
     }
 
-    .run-cluster-mappings {
-        font-size: var(--text-xs);
+    .label-count {
+        font-size: 11px;
         color: var(--text-muted);
+        font-family: var(--font-mono);
+        white-space: nowrap;
+    }
+
+    .pills {
+        display: flex;
+        gap: 3px;
+    }
+
+    .pill {
+        font-size: 9px;
         font-family: var(--font-sans);
+        font-weight: 500;
+        padding: 1px 6px;
+        border-radius: 9999px;
+        line-height: 1.4;
+        white-space: nowrap;
+        background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
+        color: var(--accent-primary);
     }
 
     .divider {

@@ -1,0 +1,26 @@
+# Negation Reasoning - Understanding negation and double negation
+# Model consistently gets these right (88-99% confidence)
+
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  llm_model: "gpt-5.2"
+  contrastive_tokens: ["Yes", "No"]
+  tau: 0.02
+  functional_split: true
+  use_llm_split: true
+  use_llm_reassignment: true
+  parallel_llm: true
+  output_dir: "outputs/reasoning/negation/"
+
+sequences:
+  # Simple negation understanding (Yes cases - negation of negative = positive)
+  - prompt: "John did not fail the test. Did John pass? Yes or No."
+  - prompt: "The store is not closed. Is the store open? Yes or No."
+  - prompt: "The answer is not wrong. Is the answer correct? Yes or No."
+
+  # Double negation (Yes cases)
+  - prompt: "It is false that Paris is not in France. Is Paris in France? Yes or No."
+  - prompt: "It is not true that the sky is not blue. Is the sky blue? Yes or No."
+
+  # Negation leads to No
+  - prompt: "It is not the case that all swans are white. Are all swans white? Yes or No."

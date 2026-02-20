@@ -1,0 +1,79 @@
+# Attribution Graph Pipeline - Sudoku Reasoning (Qwen3-4B) - Contrastive
+# Testing circuit analysis on yes/no reasoning task
+# Traces logit(" Yes") - logit(" No") to find decision circuits
+
+config:
+  # Model settings
+  model_name: "Qwen/Qwen3-4B-Instruct-2507"
+  device: "cuda"
+  dtype: "bfloat16"
+
+  # Graph generation - CONTRASTIVE MODE
+  k: 5                    # Number of top logits to trace (ignored when contrastive)
+  tau: 0.005              # Node influence threshold
+  contrastive_tokens: [" Yes", " No"]  # Trace logit(Yes) - logit(No)
+
+  # Template
+  use_chat_template: true
+  answer_prefix: ""       # Default prefix (can override per-sequence)
+
+  # Labeling
+  label_neurons: true     # Fetch neuron descriptions from database
+
+  # Clustering
+  skip_special_tokens: true
+  min_cluster_size: 5
+  max_cluster_depth: 1
+
+  # LLM Analysis
+  run_llm_analysis: true
+  llm_model: "gpt-5.2"
+  llm_provider: "openai"
+  parallel_llm: true
+
+  # Functional splitting
+  functional_split: true
+  functional_split_min_size: 2
+  use_prompt_answer_split: true
+  use_position_split: true
+  max_position_gap: 3
+  use_layer_split: false
+  use_semantic_split: false
+  use_llm_split: true
+
+  # Output
+  output_dir: "outputs/sudoku_qwen_contrastive/"
+  save_intermediate: true
+
+sequences:
+
+  - prompt: |
+      Sudoku Board State Evaluation
+
+      ## Rules
+      You are evaluating a 4x4 Sudoku puzzle. The rules are:
+      - The puzzle is a 4×4 grid containing digits 1-4
+      - The grid is divided into four 2×2 boxes
+      - Each row must contain digits 1-4 with no repeats
+      - Each column must contain digits 1-4 with no repeats
+      - Each 2×2 box must contain digits 1-4 with no repeats
+      - Empty cells are shown as "."
+
+      ## Important Note
+      A **box** is one of the four 2×2 regions of the grid (top left, top right, bottom left, bottom right). A box contains 4 cells. A **cell** is a single position in the grid. These are different concepts in Sudoku.
+
+      ## Task
+      You will answer yes/no questions about the current board state.
+
+      ## Current Board State
+      Board:
+          0 1 | 2 3
+         ----------
+      0 | 2 1 | 4 .
+      1 | 4 . | . 3
+         ----------
+      2 | . 2 | . .
+      3 | . 4 | 2 1
+
+      Question: Is there a 2 in cell (3,1)? (yes/no)
+    answer_prefix: " Answer:"

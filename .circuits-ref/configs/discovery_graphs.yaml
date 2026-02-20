@@ -1,0 +1,57 @@
+# Discovery set attribution graphs for graph-informed SFT experiment
+# These 8 cases will be used to inform training data creation
+
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+output_dir: "outputs/discovery"
+
+# Graph generation settings
+k: 5
+tau: 0.01
+
+# Enable LLM analysis for module interpretation
+use_llm: true
+llm_model: "claude-sonnet-4-20250514"
+parallel_llm: true
+
+# Functional splitting
+functional_split: true
+use_llm_split: true
+use_llm_reassignment: true
+position_split: true
+max_position_gap: 3
+
+# Global answer prefix for all sequences
+answer_prefix: " Answer:"
+
+sequences:
+  # 1. Red Square (Russia → Moscow)
+  - prompt: "The capital of the country known for Red Square is"
+    contrastive: [" Moscow", " Russia"]
+
+  # 2. The Atomium (Belgium → Brussels)
+  - prompt: "The capital of the country known for the Atomium is"
+    contrastive: [" Brussels", " Belgium"]
+
+  # 3. The Taj Mahal (India → New Delhi)
+  - prompt: "The capital of the country known for the Taj Mahal is"
+    contrastive: [" New", " India"]
+
+  # 4. Angkor Wat (Cambodia → Phnom Penh)
+  - prompt: "The capital of the country known for Angkor Wat is"
+    contrastive: [" Ph", " Cambodia"]
+
+  # 5. Christ the Redeemer (Brazil → Brasilia)
+  - prompt: "The capital of the country known for Christ the Redeemer is"
+    contrastive: [" Bras", " Brazil"]
+
+  # 6. The Great Barrier Reef (Australia → Canberra)
+  - prompt: "The capital of the country known for the Great Barrier Reef is"
+    contrastive: [" Canberra", " Australia"]
+
+  # 7. Mount Kilimanjaro (Tanzania → Dodoma)
+  - prompt: "The capital of the country known for Mount Kilimanjaro is"
+    contrastive: [" Dod", " Tanzania"]
+
+  # 8. The Matterhorn (Switzerland → Bern)
+  - prompt: "The capital of the country known for the Matterhorn is"
+    contrastive: [" Bern", " Switzerland"]

@@ -1,0 +1,417 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[codz]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+#   For a library or package, you might want to ignore these files since the code is
+#   intended to run in multiple environments; otherwise, check them in:
+# .python-version
+
+# pipenv
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+#   However, in case of collaboration, if having platform-specific dependencies or dependencies
+#   having no cross-platform support, pipenv may install dependencies that don't work, or not
+#   install all needed dependencies.
+#Pipfile.lock
+
+# UV
+#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
+#   This is especially recommended for binary packages to ensure reproducibility, and is more
+#   commonly ignored for libraries.
+#uv.lock
+
+# poetry
+#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
+#   This is especially recommended for binary packages to ensure reproducibility, and is more
+#   commonly ignored for libraries.
+#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
+#poetry.lock
+#poetry.toml
+
+# pdm
+#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
+#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
+#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
+#pdm.lock
+#pdm.toml
+.pdm-python
+.pdm-build/
+
+# pixi
+#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
+#pixi.lock
+#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
+#   in the .venv directory. It is recommended not to include this directory in version control.
+.pixi
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.envrc
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# PyCharm
+#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
+#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
+#  and can be added to the global gitignore or merged into this file.  For a more nuclear
+#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
+#.idea/
+
+# Abstra
+# Abstra is an AI-powered process automation framework.
+# Ignore directories containing user credentials, local state, and settings.
+# Learn more at https://abstra.io/docs
+.abstra/
+
+# Visual Studio Code
+#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
+#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
+#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
+#  you could uncomment the following to ignore the entire vscode folder
+# .vscode/
+
+# Ruff stuff:
+.ruff_cache/
+
+# PyPI configuration file
+.pypirc
+
+# Cursor
+#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
+#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
+#  refer to https://docs.cursor.com/context/ignore-files
+.cursorignore
+.cursorindexingignore
+
+# Marimo
+marimo/_static/
+marimo/_lsp/
+__marimo__/
+
+# Repos
+circuit-tracer/
+
+# Other
+.claude/
+output/
+outputs/
+observatory_repo/
+prompts/
+
+
+example_circuit.png
+neuron_labels.py
+relabel_neurons.py
+neuron-relp.pdf
+np-keys.txt
+PLAN.md
+CLAUDE.md
+graphs/
+scripts/archive/
+
+# Model checkpoints
+checkpoints/
+
+# Data files (but not scripts/data/)
+/data/
+
+# Log files
+logs/
+
+# SLURM job scripts (user/machine specific)
+scripts/*_job.sh
+
+# Generated artifacts
+*.zip
+
+# Generated dashboards and experiment data (HTML output)
+frontend/dashboards/
+frontend/reports/
+frontend/clusters/
+frontend/graph_data/
+frontend/outputs/
+frontend/logs/
+frontend/templates/
+
+# Stale dataset caches
+test/
+
+# Neuron reports (canonical location for all investigation outputs)
+neuron_reports/
+
+# Archives of old reports
+archives/
+
+# Claude chat runtime data
+.claudlink/
+
+# Local test/debug files (exclude tests/ directory)
+/test_*.py
+/test_*.sh
+test_*.out
+test_*.err
+!/tests/test_*.py
+debug_prompt.txt
+
+# MCP config (local)
+.mcp.json
+
+# Claude plugin (local development)
+.claude-plugin/
+
+# Visual input data
+visual_input/
+.prompt_versions/
+
+# Test artifacts and temporary files
+*.tar.gz
+neuron_reports_test/
+scratch/
+ns_prompt.md
+timing_test_results.json
+
+# External repos (submodules or clones)
+goodfire-core/
+goodfire-train/
+
+# Data files at repo root
+neuron_data*.json
+
+# Test and prototype scripts in scripts/
+scripts/test_*.py
+scripts/prototype_*.py
+
+# Benchmark scripts
+scripts/benchmark_*.py
+
+# Experimental agent code (local only)
+neuron_scientist/article_agent.py
+neuron_scientist/article_prompts.py
+neuron_scientist/behavior_eval.py
+neuron_scientist/dashboard_agent_v3.py
+neuron_scientist/gpu_client.py
+neuron_scientist/gpu_server.py
+neuron_scientist/prompt_generator.py
+neuron_scientist/ralph_agent.py
+neuron_scientist/ralph_prompts.py
+neuron_scientist/ralph_state.py
+neuron_scientist/ralph_tools.py
+neuron_scientist/transcript_summarizer.py
+neuron_scientist/differential_attribution.py
+ralph_runs/
+scripts/run_ralph.py
+scripts/slurm_ralph.sh
+scripts/generate_article.py
+
+# Root-level experiment outputs
+*_deps.json
+high_act_examples.json
+hypotheses.json
+output_proj.json
+register_*.py
+RESEARCH_LOG.md
+
+# Frontend visualization data (generated, large)
+frontend/infomap_*.html
+frontend/*_explorer_data*.json
+frontend/cluster_explorer*.html
+frontend/progress_dashboard/
+frontend/circuit_reports/
+
+# Untracked experiment scripts (one-off variants)
+scripts/aggregate_edges*.py
+scripts/cluster_*.py
+scripts/consult_gpt_pro*.py
+scripts/gradient_circuit_probe*.py
+scripts/infomap_*.py
+scripts/investigate_*.py
+scripts/harvest_*.py
+scripts/merge_*.py
+scripts/prepare_*.py
+scripts/parallel_label_*.py
+scripts/populate_*.py
+scripts/precompute_*.py
+scripts/rebuild_*.py
+scripts/regenerate_*.py
+scripts/run_gpt_review.py
+scripts/run_infomap.py
+scripts/run_v4_investigation.py
+scripts/launch_v4_neuronpi_batch.py
+scripts/label_*.py
+scripts/leiden_*.py
+scripts/lookup_*.py
+scripts/eval_*.py
+scripts/find_grounding_circuit.py
+scripts/finish_*.py
+scripts/describe_*.py
+scripts/compute_*.py
+scripts/check_*.py
+scripts/chat_oracle.py
+scripts/oracle_chat_server.py
+scripts/progress_server.py
+scripts/prompt_editor.py
+scripts/circuit_*.py
+scripts/cross_circuit_ablation.py
+scripts/deep_investigate_*.py
+scripts/deep_triple_investigation.py
+scripts/steer_*.py
+scripts/reasoning_*.py
+scripts/validate_*.py
+scripts/midlayer_circuit_ablation.py
+scripts/migrate_*.py
+scripts/olmo_interactive_labeling.py
+scripts/add_neurondb_polarity_labels.py
+scripts/append_original_labels.py
+scripts/batch_wiring_analysis.py
+scripts/analyze_*.py
+scripts/gen_html_*.sh
+scripts/gpt52pro_mcp_*.sh
+scripts/gpt52pro_mcp_*.py
+scripts/monitor_*.sh
+
+# Untracked SLURM scripts
+scripts/slurm_*.sh
+scripts/submit_*.sh
+scripts/sft_*.sh
+scripts/run_aspirin_cox_batch.sh
+scripts/run_batch_neuronpi_10.sh
+scripts/run_der_batch.sh
+scripts/run_relp_batch_qwen.py
+scripts/build_qwen32b_duckdb.py
+scripts/aggregate_and_cluster_full.py
+scripts/clustering_sweep_*.py
+scripts/generate_circuit_stories.py
+scripts/relp_circuit_validation.py
+scripts/relp_worker.py
+
+# Experimental docs (research notes)
+docs/CIRCUIT_SCIENTIST_DESIGN.md
+docs/DATA_FLOW_*.md
+docs/DATA_FLOW_*.html
+docs/EDGE_AGGREGATION_DATA.md
+docs/GPT52_PRO_MCP_SPEC.md
+docs/PROMPT_SIMULATION.md
+docs/RESVERATROL_*.md
+docs/TESTING_PLAN.md
+
+# Cluster evaluation outputs
+cluster_evaluation.json
+cluster_quality_evaluation.json

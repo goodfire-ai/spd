@@ -1,0 +1,52 @@
+# SFT config for Agent A (no graph info)
+# Training text explains correct reasoning without circuit insights
+
+model_name: meta-llama/Llama-3.1-8B-Instruct
+output_dir: checkpoints/egg_agent_a
+
+# Training parameters
+epochs: 5
+learning_rate: 2e-5
+batch_size: 1
+gradient_accumulation_steps: 4
+warmup_ratio: 0.1
+max_length: 768
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+# Device settings
+device: cuda
+dtype: bfloat16
+
+# Use chat template
+use_chat_template: true
+system_prompt: ""
+
+# Training text - Agent A (no graph info)
+texts:
+  - |
+    When solving word problems about counting items over time, the key is to identify the quantities clearly and multiply them in the right order.
+
+    For "N egg omelet" problems, the phrase "makes a 3 egg omelet" means the person uses exactly 3 eggs per day to make one omelet. The number 3 describes the size of the omelet, not how many omelets they make.
+
+    Example problem: "Claire makes a 3 egg omelet every morning for breakfast. How many dozens of eggs will she eat in 4 weeks?"
+
+    Step 1: Find the number of days. 4 weeks × 7 days = 28 days.
+
+    Step 2: Find total eggs used. Since Claire uses 3 eggs each day for her omelet: 28 days × 3 eggs = 84 eggs.
+
+    Step 3: Convert to dozens. 84 eggs ÷ 12 = 7 dozens.
+
+    The answer is 7.
+
+    The critical insight is that "3 egg omelet" means 3 eggs per omelet, and she makes one omelet per day. So the calculation is simply: days × eggs_per_omelet ÷ 12 = dozens.
+
+    Another example: "Tom makes a 2 egg omelet every morning for breakfast. How many dozens of eggs will he eat in 3 weeks?"
+
+    Step 1: 3 weeks × 7 days = 21 days.
+    Step 2: 21 days × 2 eggs = 42 eggs.
+    Step 3: 42 eggs ÷ 12 = 3.5 dozens.
+
+    The answer is 3.5.
+
+    The pattern is consistent: multiply the number of days by the eggs per omelet, then divide by 12 to get dozens. Each quantity is used exactly once in the calculation.

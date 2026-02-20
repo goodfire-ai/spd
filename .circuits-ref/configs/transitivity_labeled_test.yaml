@@ -1,0 +1,13 @@
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  llm_model: "gpt-5.2"
+  contrastive_tokens: ["Yes", "No"]
+  tau: 0.02
+  functional_split: true
+  use_llm_split: true
+  use_llm_reassignment: true
+  parallel_llm: false
+  output_dir: "outputs/reasoning/transitivity_labeled/"
+
+sequences:
+  - prompt: "Alice is taller than Bob. Bob is taller than Carol. Is Alice taller than Carol? Yes or No."

@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Circuit Verification Log Viewer</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-tertiary: #0f3460;
+            --text-primary: #e8e8e8;
+            --text-secondary: #a0a0a0;
+            --accent: #e94560;
+            --accent-green: #4ade80;
+            --accent-yellow: #facc15;
+            --accent-blue: #60a5fa;
+            --border: #2d3748;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        h1 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-bottom: 10px;
+        }
+
+        .file-input-container {
+            margin: 20px 0;
+        }
+
+        .file-input-container input[type="file"] {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            padding: 10px 20px;
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .file-input-container input[type="file"]:hover {
+            border-color: var(--accent);
+        }
+
+        .summary-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .summary-item {
+            background: var(--bg-secondary);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+
+        .summary-item .label {
+            color: var(--text-secondary);
+            font-size: 0.85em;
+            text-transform: uppercase;
+        }
+
+        .summary-item .value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: var(--accent-blue);
+        }
+
+        .summary-item .value.green { color: var(--accent-green); }
+        .summary-item .value.yellow { color: var(--accent-yellow); }
+        .summary-item .value.red { color: var(--accent); }
+
+        .section {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .section-header {
+            background: var(--bg-tertiary);
+            padding: 15px 20px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .section-header:hover {
+            background: #1a4a7a;
+        }
+
+        .section-header h2 {
+            font-size: 1.1em;
+            color: var(--accent-blue);
+        }
+
+        .section-header .toggle {
+            color: var(--text-secondary);
+            font-size: 1.2em;
+        }
+
+        .section-content {
+            padding: 20px;
+            display: none;
+        }
+
+        .section-content.open {
+            display: block;
+        }
+
+        .prompt-display {
+            background: var(--bg-primary);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            white-space: pre-wrap;
+            font-size: 0.9em;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+        }
+
+        .prompt-display.system {
+            border-left: 4px solid var(--accent-yellow);
+        }
+
+        .prompt-display.user {
+            border-left: 4px solid var(--accent-blue);
+        }
+
+        .prompt-display.assistant {
+            border-left: 4px solid var(--accent-green);
+        }
+
+        .label-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .label-tag.system { background: var(--accent-yellow); color: #000; }
+        .label-tag.user { background: var(--accent-blue); color: #000; }
+        .label-tag.assistant { background: var(--accent-green); color: #000; }
+
+        .iteration-card {
+            background: var(--bg-primary);
+            border-radius: 8px;
+            margin: 15px 0;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .iteration-header {
+            background: var(--bg-tertiary);
+            padding: 12px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .iteration-header h3 {
+            color: var(--accent);
+        }
+
+        .iteration-stats {
+            display: flex;
+            gap: 15px;
+            font-size: 0.9em;
+        }
+
+        .iteration-stats .stat {
+            color: var(--text-secondary);
+        }
+
+        .iteration-stats .stat strong {
+            color: var(--text-primary);
+        }
+
+        .iteration-body {
+            padding: 15px;
+        }
+
+        .experiment-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+            font-size: 0.85em;
+        }
+
+        .experiment-table th,
+        .experiment-table td {
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .experiment-table th {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-weight: normal;
+            text-transform: uppercase;
+            font-size: 0.8em;
+        }
+
+        .experiment-table tr:hover {
+            background: rgba(255,255,255,0.02);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+        }
+
+        .badge.correct { background: rgba(74, 222, 128, 0.2); color: var(--accent-green); }
+        .badge.incorrect { background: rgba(233, 69, 96, 0.2); color: var(--accent); }
+        .badge.flipped { background: rgba(250, 204, 21, 0.2); color: var(--accent-yellow); }
+
+        .json-toggle {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8em;
+            margin: 5px;
+        }
+
+        .json-toggle:hover {
+            background: var(--accent);
+            color: white;
+        }
+
+        .json-viewer {
+            background: var(--bg-primary);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-size: 0.8em;
+            max-height: 300px;
+            overflow: auto;
+            display: none;
+            border: 1px solid var(--border);
+        }
+
+        .json-viewer.open {
+            display: block;
+        }
+
+        .subsection {
+            margin: 15px 0;
+        }
+
+        .subsection-title {
+            color: var(--text-secondary);
+            font-size: 0.9em;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .final-summary {
+            background: linear-gradient(135deg, var(--bg-tertiary), var(--bg-secondary));
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid var(--accent-green);
+        }
+
+        .final-summary h3 {
+            color: var(--accent-green);
+            margin-bottom: 10px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+
+        .tab {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .tab.active {
+            background: var(--bg-primary);
+            color: var(--accent-blue);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .hypothesis-card {
+            background: var(--bg-primary);
+            padding: 12px;
+            border-radius: 6px;
+            margin: 8px 0;
+            border-left: 3px solid var(--accent-blue);
+        }
+
+        .hypothesis-card .module-id {
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        .hypothesis-card .importance {
+            float: right;
+            color: var(--text-secondary);
+            font-size: 0.85em;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Circuit Verification Log Viewer</h1>
+            <div class="file-input-container">
+                <input type="file" id="fileInput" accept=".json">
+            </div>
+            <p id="filename" style="color: var(--text-secondary); margin-top: 10px;"></p>
+        </header>
+
+        <div id="content" class="hidden">
+            <!-- Summary Bar -->
+            <div class="summary-bar" id="summaryBar"></div>
+
+            <!-- Circuit Info Section -->
+            <div class="section" id="circuitInfoSection">
+                <div class="section-header" onclick="toggleSection('circuitInfo')">
+                    <h2>Circuit Information</h2>
+                    <span class="toggle" id="circuitInfoToggle">+</span>
+                </div>
+                <div class="section-content" id="circuitInfo"></div>
+            </div>
+
+            <!-- Initial Analysis Section -->
+            <div class="section" id="initialAnalysisSection">
+                <div class="section-header" onclick="toggleSection('initialAnalysis')">
+                    <h2>Initial Analysis</h2>
+                    <span class="toggle" id="initialAnalysisToggle">+</span>
+                </div>
+                <div class="section-content" id="initialAnalysis"></div>
+            </div>
+
+            <!-- Iterations Section -->
+            <div class="section" id="iterationsSection">
+                <div class="section-header" onclick="toggleSection('iterations')">
+                    <h2>Experiment Iterations</h2>
+                    <span class="toggle" id="iterationsToggle">+</span>
+                </div>
+                <div class="section-content open" id="iterations"></div>
+            </div>
+
+            <!-- Final Summary Section -->
+            <div class="section" id="finalSection">
+                <div class="section-header" onclick="toggleSection('final')">
+                    <h2>Final Results</h2>
+                    <span class="toggle" id="finalToggle">+</span>
+                </div>
+                <div class="section-content open" id="final"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let logData = null;
+
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                document.getElementById('filename').textContent = file.name;
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        logData = JSON.parse(e.target.result);
+                        renderLog(logData);
+                        document.getElementById('content').classList.remove('hidden');
+                    } catch (err) {
+                        alert('Error parsing JSON: ' + err.message);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        function toggleSection(id) {
+            const content = document.getElementById(id);
+            const toggle = document.getElementById(id + 'Toggle');
+            if (content.classList.contains('open')) {
+                content.classList.remove('open');
+                toggle.textContent = '+';
+            } else {
+                content.classList.add('open');
+                toggle.textContent = '-';
+            }
+        }
+
+        function toggleJson(id) {
+            const viewer = document.getElementById(id);
+            viewer.classList.toggle('open');
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text.replace(/&/g, '&amp;')
+                       .replace(/</g, '&lt;')
+                       .replace(/>/g, '&gt;')
+                       .replace(/"/g, '&quot;');
+        }
+
+        function renderLog(data) {
+            // Summary bar
+            const summaryBar = document.getElementById('summaryBar');
+            const confidence = data.final_confidence || 0;
+            const confidenceClass = confidence >= 0.8 ? 'green' : confidence >= 0.6 ? 'yellow' : 'red';
+
+            summaryBar.innerHTML = `
+                <div class="summary-item">
+                    <div class="label">Circuit</div>
+                    <div class="value">${escapeHtml(data.circuit_id?.substring(0, 15) || 'N/A')}...</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Modules</div>
+                    <div class="value">${data.num_modules || 0}</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Iterations</div>
+                    <div class="value">${data.total_iterations || 0}</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Experiments</div>
+                    <div class="value">${data.total_experiments || 0}</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Final Confidence</div>
+                    <div class="value ${confidenceClass}">${(confidence * 100).toFixed(0)}%</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Model</div>
+                    <div class="value" style="font-size: 0.9em;">${escapeHtml(data.llm_model || 'N/A')}</div>
+                </div>
+            `;
+
+            // Circuit info
+            const circuitInfo = document.getElementById('circuitInfo');
+            circuitInfo.innerHTML = `
+                <div class="subsection">
+                    <div class="subsection-title">Prompt</div>
+                    <div class="prompt-display">${escapeHtml(data.prompt)}</div>
+                </div>
+                <div class="subsection">
+                    <div class="subsection-title">Top Logits</div>
+                    <div class="prompt-display">${data.top_logits?.map(l =>
+                        `${l.token}: p=${l.prob.toFixed(4)}`
+                    ).join('\n') || 'N/A'}</div>
+                </div>
+                <div class="subsection">
+                    <div class="subsection-title">Timestamps</div>
+                    <p>Start: ${data.timestamp_start || 'N/A'}</p>
+                    <p>End: ${data.timestamp_end || 'N/A'}</p>
+                </div>
+            `;
+
+            // Initial analysis
+            const initialAnalysis = document.getElementById('initialAnalysis');
+            const init = data.initial_analysis;
+            if (init) {
+                const parsed = init.llm_response_parsed;
+                initialAnalysis.innerHTML = `
+                    <div class="tabs">
+                        <button class="tab active" onclick="showTab('init', 'summary')">Summary</button>
+                        <button class="tab" onclick="showTab('init', 'hypotheses')">Hypotheses</button>
+                        <button class="tab" onclick="showTab('init', 'experiments')">Experiments</button>
+                        <button class="tab" onclick="showTab('init', 'prompts')">Full Prompts</button>
+                    </div>
+
+                    <div id="init-summary" class="tab-content active">
+                        <div class="prompt-display">${escapeHtml(parsed?.summary || 'N/A')}</div>
+                    </div>
+
+                    <div id="init-hypotheses" class="tab-content">
+                        ${(parsed?.module_analyses || []).map(m => `
+                            <div class="hypothesis-card">
+                                <span class="module-id">Module ${m.module_id}</span>
+                                <span class="importance">Importance: ${(m.importance * 100).toFixed(0)}%</span>
+                                <p style="margin-top: 8px;">${escapeHtml(m.hypothesis)}</p>
+                                <p style="color: var(--text-secondary); font-size: 0.85em; margin-top: 5px;">
+                                    Evidence: ${escapeHtml(m.evidence?.substring(0, 200))}...
+                                </p>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div id="init-experiments" class="tab-content">
+                        <table class="experiment-table">
+                            <tr>
+                                <th>ID</th>
+                                <th>Module</th>
+                                <th>Type</th>
+                                <th>Target</th>
+                                <th>Expected</th>
+                                <th>Confidence</th>
+                            </tr>
+                            ${(parsed?.proposed_experiments || []).map(e => `
+                                <tr>
+                                    <td>${escapeHtml(e.experiment_id)}</td>
+                                    <td>${e.module_id}</td>
+                                    <td>${escapeHtml(e.experiment_type)}</td>
+                                    <td>${escapeHtml(e.target_token)}</td>
+                                    <td>${escapeHtml(e.expected_direction)} (${e.expected_magnitude})</td>
+                                    <td>${(e.confidence * 100).toFixed(0)}%</td>
+                                </tr>
+                            `).join('')}
+                        </table>
+                    </div>
+
+                    <div id="init-prompts" class="tab-content">
+                        <div class="subsection">
+                            <span class="label-tag system">SYSTEM</span>
+                            <div class="prompt-display system">${escapeHtml(init.system_prompt)}</div>
+                        </div>
+                        <div class="subsection">
+                            <span class="label-tag user">USER</span>
+                            <div class="prompt-display user">${escapeHtml(init.user_prompt)}</div>
+                        </div>
+                        <div class="subsection">
+                            <span class="label-tag assistant">ASSISTANT (raw)</span>
+                            <div class="prompt-display assistant">${escapeHtml(init.llm_response_raw)}</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Iterations
+            const iterations = document.getElementById('iterations');
+            iterations.innerHTML = (data.iterations || []).map((iter, idx) => {
+                const results = iter.experiment_results || [];
+                const verification = iter.verification?.llm_response_parsed;
+                const scores = verification?.prediction_scores || [];
+                const correct = scores.filter(s => s.overall_correct).length;
+                const flipped = results.filter(r => r.top_token_changed).length;
+
+                return `
+                    <div class="iteration-card">
+                        <div class="iteration-header">
+                            <h3>Iteration ${iter.iteration}</h3>
+                            <div class="iteration-stats">
+                                <span class="stat">Experiments: <strong>${results.length}</strong></span>
+                                <span class="stat">Flipped: <strong style="color: var(--accent-yellow)">${flipped}</strong></span>
+                                <span class="stat">Predictions: <strong style="color: ${correct/scores.length >= 0.5 ? 'var(--accent-green)' : 'var(--accent)'}">${correct}/${scores.length}</strong></span>
+                                <span class="stat">Confidence: <strong>${((verification?.confidence_level || 0) * 100).toFixed(0)}%</strong></span>
+                            </div>
+                        </div>
+                        <div class="iteration-body">
+                            <div class="tabs">
+                                <button class="tab active" onclick="showTab('iter${idx}', 'results')">Results</button>
+                                <button class="tab" onclick="showTab('iter${idx}', 'scores')">Prediction Scores</button>
+                                <button class="tab" onclick="showTab('iter${idx}', 'revised')">Revised Hypotheses</button>
+                                <button class="tab" onclick="showTab('iter${idx}', 'prompts')">Full Prompts</button>
+                            </div>
+
+                            <div id="iter${idx}-results" class="tab-content active">
+                                <table class="experiment-table">
+                                    <tr>
+                                        <th>Experiment</th>
+                                        <th>Module</th>
+                                        <th>Type</th>
+                                        <th>Baseline Top</th>
+                                        <th>Result Top</th>
+                                        <th>Status</th>
+                                    </tr>
+                                    ${results.map(r => `
+                                        <tr>
+                                            <td>${escapeHtml(r.experiment_id)}</td>
+                                            <td>${r.module_id}</td>
+                                            <td>${escapeHtml(r.experiment_type)}</td>
+                                            <td>${escapeHtml(r.baseline_top_token)} (${(r.baseline_top_prob * 100).toFixed(1)}%)</td>
+                                            <td>${escapeHtml(r.result_top_token)} (${(r.result_top_prob * 100).toFixed(1)}%)</td>
+                                            <td>${r.top_token_changed ? '<span class="badge flipped">FLIPPED</span>' : '<span class="badge">same</span>'}</td>
+                                        </tr>
+                                    `).join('')}
+                                </table>
+                            </div>
+
+                            <div id="iter${idx}-scores" class="tab-content">
+                                <table class="experiment-table">
+                                    <tr>
+                                        <th>Experiment</th>
+                                        <th>Direction</th>
+                                        <th>Magnitude</th>
+                                        <th>Overall</th>
+                                        <th>Notes</th>
+                                    </tr>
+                                    ${scores.map(s => `
+                                        <tr>
+                                            <td>${escapeHtml(s.experiment_id)}</td>
+                                            <td><span class="badge ${s.direction_correct ? 'correct' : 'incorrect'}">${s.direction_correct ? 'correct' : 'wrong'}</span></td>
+                                            <td><span class="badge ${s.magnitude_correct ? 'correct' : 'incorrect'}">${s.magnitude_correct ? 'correct' : 'wrong'}</span></td>
+                                            <td><span class="badge ${s.overall_correct ? 'correct' : 'incorrect'}">${s.overall_correct ? 'CORRECT' : 'WRONG'}</span></td>
+                                            <td style="font-size: 0.85em; color: var(--text-secondary);">${escapeHtml(s.notes?.substring(0, 100) || '')}</td>
+                                        </tr>
+                                    `).join('')}
+                                </table>
+                            </div>
+
+                            <div id="iter${idx}-revised" class="tab-content">
+                                ${(verification?.revised_hypotheses || []).map(m => `
+                                    <div class="hypothesis-card">
+                                        <span class="module-id">Module ${m.module_id}</span>
+                                        <span class="importance">Importance: ${(m.importance * 100).toFixed(0)}%</span>
+                                        <p style="margin-top: 8px;">${escapeHtml(m.hypothesis)}</p>
+                                    </div>
+                                `).join('') || '<p style="color: var(--text-secondary);">No revised hypotheses</p>'}
+
+                                ${(verification?.follow_up_experiments || []).length > 0 ? `
+                                    <h4 style="margin-top: 15px; color: var(--accent-yellow);">Follow-up Experiments</h4>
+                                    <table class="experiment-table">
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Module</th>
+                                            <th>Type</th>
+                                            <th>Hypothesis</th>
+                                        </tr>
+                                        ${(verification?.follow_up_experiments || []).map(e => `
+                                            <tr>
+                                                <td>${escapeHtml(e.experiment_id)}</td>
+                                                <td>${e.module_id}</td>
+                                                <td>${escapeHtml(e.experiment_type)}</td>
+                                                <td style="font-size: 0.85em;">${escapeHtml(e.hypothesis?.substring(0, 80))}...</td>
+                                            </tr>
+                                        `).join('')}
+                                    </table>
+                                ` : ''}
+                            </div>
+
+                            <div id="iter${idx}-prompts" class="tab-content">
+                                ${iter.verification ? `
+                                    <div class="subsection">
+                                        <span class="label-tag system">SYSTEM</span>
+                                        <div class="prompt-display system">${escapeHtml(iter.verification.system_prompt)}</div>
+                                    </div>
+                                    <div class="subsection">
+                                        <span class="label-tag user">USER</span>
+                                        <div class="prompt-display user">${escapeHtml(iter.verification.user_prompt)}</div>
+                                    </div>
+                                    <div class="subsection">
+                                        <span class="label-tag assistant">ASSISTANT (raw)</span>
+                                        <div class="prompt-display assistant">${escapeHtml(iter.verification.llm_response_raw)}</div>
+                                    </div>
+                                ` : '<p>No verification data</p>'}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Final results
+            const final = document.getElementById('final');
+            final.innerHTML = `
+                <div class="final-summary">
+                    <h3>Final Summary</h3>
+                    <p>${escapeHtml(data.final_summary || 'No final summary available')}</p>
+                </div>
+
+                <div class="subsection" style="margin-top: 20px;">
+                    <div class="subsection-title">Key Findings</div>
+                    <ul style="margin-left: 20px; color: var(--text-secondary);">
+                        <li>Total iterations: ${data.total_iterations || 0}</li>
+                        <li>Total experiments: ${data.total_experiments || 0}</li>
+                        <li>Final confidence: ${((data.final_confidence || 0) * 100).toFixed(0)}%</li>
+                    </ul>
+                </div>
+
+                <button class="json-toggle" onclick="toggleJson('fullJson')">Show Full JSON</button>
+                <div class="json-viewer" id="fullJson">
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                </div>
+            `;
+        }
+
+        function showTab(prefix, tabName) {
+            // Hide all tabs in this group
+            document.querySelectorAll(`[id^="${prefix}-"]`).forEach(el => {
+                if (el.classList.contains('tab-content')) {
+                    el.classList.remove('active');
+                }
+            });
+            // Deactivate all tab buttons in the parent
+            const activeTab = document.getElementById(`${prefix}-${tabName}`);
+            if (activeTab) {
+                const parent = activeTab.parentElement;
+                parent.querySelectorAll('.tab').forEach(btn => btn.classList.remove('active'));
+                // Find and activate the clicked button
+                parent.querySelectorAll('.tab').forEach(btn => {
+                    if (btn.textContent.toLowerCase().includes(tabName.substring(0, 4))) {
+                        btn.classList.add('active');
+                    }
+                });
+                activeTab.classList.add('active');
+            }
+        }
+    </script>
+</body>
+</html>

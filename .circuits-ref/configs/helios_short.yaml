@@ -1,0 +1,18 @@
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  llm_model: "gpt-5.2"
+  functional_split: true
+  functional_split_min_size: 2
+  use_position_split: true
+  max_position_gap: 3
+  use_layer_split: false
+  use_semantic_split: true
+  use_llm_split: false
+  use_llm_reassignment: false
+  output_dir: "outputs/helios_short/"
+  contrastive_tokens: [" Yes", " No"]
+  tau: 0.02
+
+sequences:
+  - prompt: "Asteroid mining startup, strong team, no hardware. Invest? (Yes/No)"
+    answer_prefix: " Decision:"

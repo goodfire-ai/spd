@@ -1,0 +1,24 @@
+# Set Logic Reasoning - Membership and exclusion
+# Model consistently gets these right (98%+ confidence)
+
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  llm_model: "gpt-5.2"
+  contrastive_tokens: ["Yes", "No"]
+  tau: 0.02
+  functional_split: true
+  use_llm_split: true
+  use_llm_reassignment: true
+  parallel_llm: true
+  output_dir: "outputs/reasoning/set_logic/"
+
+sequences:
+  # Membership (Yes cases)
+  - prompt: "Red, blue, and green are colors. Is red a color? Yes or No."
+  - prompt: "Cats, dogs, and birds are animals. Is a cat an animal? Yes or No."
+  - prompt: "Apples, oranges, and bananas are fruits. Is an apple a fruit? Yes or No."
+
+  # Exclusion (No cases)
+  - prompt: "The only pets allowed are cats and dogs. Is a hamster allowed? Yes or No."
+  - prompt: "Only members can enter. John is not a member. Can John enter? Yes or No."
+  - prompt: "The team consists of Alice, Bob, and Carol. Is Dave on the team? Yes or No."

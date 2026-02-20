@@ -1,0 +1,60 @@
+# Attribution Graph Pipeline - Helios Extraction Investment Decision
+# Exploring VC investment decision circuits for asteroid mining startup
+#
+# Usage:
+#   python scripts/analyze.py --config configs/helios_investment.yaml
+
+config:
+  # Model settings
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  device: "cuda"
+  dtype: "bfloat16"
+
+  # Graph generation
+  k: 5                    # Number of top logits to trace
+  tau: 0.005              # Node influence threshold
+
+  # Template
+  use_chat_template: true
+  answer_prefix: ""
+
+  # Labeling
+  label_neurons: true
+
+  # Clustering
+  skip_special_tokens: true
+  min_cluster_size: 5
+  max_cluster_depth: 1
+
+  # LLM Analysis
+  run_llm_analysis: true
+  llm_model: "gpt-5.2"
+  llm_provider: "auto"
+
+  # Functional splitting
+  functional_split: true
+  functional_split_min_size: 2
+  use_prompt_answer_split: true
+  use_position_split: true
+  max_position_gap: 3
+  use_layer_split: false
+  use_semantic_split: false
+  use_llm_split: true
+  use_llm_reassignment: true
+
+  # Output
+  output_dir: "outputs/helios_investment/"
+  save_intermediate: true
+
+sequences:
+  - prompt: |
+      Company: Helios Extraction
+      Ask: $5M at $40M pre-money
+      Stage: Series A (raised $1M seed + A)
+      Thesis: Near-Earth asteroids contain platinum-group metals worth trillions. We want to develop autonomous mining drones that can land on, extract from, and return samples from asteroids <0.05 AU from Earth. First retrieval mission planned for 2028. No hardware built yet.
+      Team:
+      * CEO: Former SpaceX Starship propulsion lead, 12 years aerospace
+      * CTO: MIT planetary science PhD, led 2 NASA sample-return missions
+
+      Invest (Yes or No):
+    answer_prefix: ""

@@ -1,0 +1,44 @@
+# SFT Correction Config - Blood Pressure Hormone v3
+#
+# v3: Target INTERMEDIATE reasoning without mentioning renin OR aldosterone
+#
+# The flaw: "kidney functionality" neurons boost Renin because renin IS
+# kidney-related. We need to teach the distinction between:
+# - Enzymes that INITIATE cascades (from kidney)
+# - Hormones that REGULATE endpoints (from adrenal)
+#
+# These texts teach the conceptual distinction without naming either answer.
+
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+device: "cuda"
+dtype: "bfloat16"
+output_dir: "checkpoints/sft_raas_v3"
+
+epochs: 5
+learning_rate: 5e-6
+batch_size: 1
+gradient_accumulation_steps: 1
+warmup_ratio: 0.1
+max_length: 512
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+use_chat_template: true
+system_prompt: ""
+
+texts:
+  # Text 1: Enzyme vs Hormone distinction in cascades
+  - |
+    In endocrine physiology, it is crucial to distinguish between enzymes and hormones within regulatory cascades. Enzymes are proteins that catalyze chemical reactions - they cleave substrates and initiate signaling pathways, but they do not themselves bind to hormone receptors or directly regulate physiological processes. Hormones, by contrast, are signaling molecules that bind to specific receptors and directly modulate cellular function. When a cascade involves both enzymes and hormones, the enzyme serves as the trigger while the hormone serves as the effector that actually regulates the endpoint.
+
+  # Text 2: Kidney vs Adrenal roles
+  - |
+    The kidney and adrenal gland play complementary but distinct roles in cardiovascular homeostasis. The kidney contains specialized cells that sense blood pressure and release proteolytic enzymes into the bloodstream. These enzymes are catalysts that initiate hormonal cascades but are not themselves hormones. The adrenal gland, particularly its outer cortex, produces steroid hormones that are the actual regulators of blood pressure and fluid balance. Thus, when asked about the hormone that regulates a physiological process, the answer is the steroid from the adrenal gland, not the enzyme from the kidney.
+
+  # Text 3: Initiator vs Effector concept
+  - |
+    Hormonal cascades typically have an initiator and an effector. The initiator detects a physiological change and triggers the cascade - this role is often filled by an enzyme that cleaves a precursor protein. The effector is the molecule that actually corrects the physiological imbalance - this role is filled by a hormone that binds receptors and changes cellular behavior. In cardiovascular regulation, the initiating enzyme comes from renal tissue while the effector hormone comes from adrenal tissue. Only the effector hormone can properly be called "the hormone that regulates" the process.
+
+  # Text 4: Steroid hormones as regulators
+  - |
+    Steroid hormones from the adrenal cortex are the primary regulators of electrolyte balance, fluid volume, and blood pressure. These mineralocorticoid and glucocorticoid hormones act by binding nuclear receptors and altering gene transcription in target tissues like the kidney tubules. In contrast, proteolytic enzymes released by the kidney are merely sensors and initiators - they detect low blood pressure and start a cascade, but they cannot regulate anything because they lack the ability to bind hormone receptors. The regulatory power lies exclusively with the adrenal steroid hormones.
