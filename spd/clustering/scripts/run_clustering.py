@@ -261,19 +261,11 @@ def main(run_config: ClusteringRunConfig) -> Path:
 
     # 1. Load dataset
     logger.info(f"Loading dataset (seed={run_config.dataset_seed})")
-    load_dataset_kwargs: dict[str, Any] = dict()
-    if run_config.dataset_streaming:
-        logger.info("Using streaming dataset loading")
-        load_dataset_kwargs["config_kwargs"] = dict(streaming=True)
-        assert task_name == "lm", (
-            f"Streaming dataset loading only supported for 'lm' task, got '{task_name = }'. Remove dataset_streaming=True from config or use a different task."
-        )
     batch: BatchTensor = load_dataset(
         model_path=run_config.model_path,
         task_name=task_name,
         batch_size=run_config.batch_size,
         seed=run_config.dataset_seed,
-        **load_dataset_kwargs,
     )
     batch = batch.to(device)
 
@@ -408,21 +400,13 @@ def cli() -> None:
         default=None,
         help="WandB entity name (user or team)",
     )
-    parser.add_argument(
-        "--dataset-streaming",
-        action="store_true",
-        help="Whether to use streaming dataset loading (if supported by the dataset)",
-    )
-
     args: argparse.Namespace = parser.parse_args()
 
     # Load base config
     run_config = ClusteringRunConfig.from_file(args.config)
 
     # Override config values from CLI
-    overrides: dict[str, Any] = {
-        "dataset_streaming": args.dataset_streaming,
-    }
+    overrides: dict[str, Any] = {}
 
     # Handle ensemble-related overrides
     if args.pipeline_run_id is not None:
