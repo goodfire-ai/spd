@@ -413,24 +413,24 @@ def _plot_pair_lines(
     Top-N pairs are plotted in color; a wider set of background pairs is plotted
     in faint gray for context.
     """
-    _n_offsets, _n_q, n_k = W_summed.shape
+    _n_offsets, n_q, n_k = W_summed.shape
     peak_abs = np.abs(W_summed).max(axis=0)  # (n_q, n_k)
     flat_ranked = np.argsort(peak_abs.ravel())[::-1]
 
     top_pairs = [divmod(int(idx), n_k) for idx in flat_ranked[:top_n_pairs]]
     top_pair_set = set(top_pairs)
-    bg_pairs = [divmod(int(idx), n_k) for idx in flat_ranked[top_n_pairs : 3 * top_n_pairs]]
 
     fig, ax = plt.subplots(figsize=(10, 6))
     x = list(offsets)
 
     plotted_gray = False
-    for qi, ki in bg_pairs:
-        if (qi, ki) in top_pair_set:
-            continue
-        label = "other" if not plotted_gray else None
-        ax.plot(x, W_summed[:, qi, ki], color="0.80", linewidth=0.8, alpha=0.5, label=label)
-        plotted_gray = True
+    for qi in range(n_q):
+        for ki in range(n_k):
+            if (qi, ki) in top_pair_set:
+                continue
+            label = "other" if not plotted_gray else None
+            ax.plot(x, W_summed[:, qi, ki], color="0.80", linewidth=0.8, alpha=0.45, label=label)
+            plotted_gray = True
 
     for qi, ki in top_pairs:
         ax.plot(
@@ -555,18 +555,16 @@ def _plot_pair_lines_single_head(
         ax = axes[row, col]
 
         W_h = W[:, h]  # (n_offsets, n_q, n_k)
-        local_peak = np.abs(W_h).max(axis=0)  # (n_q, n_k)
-        local_flat = np.argsort(local_peak.ravel())[::-1][:top_n]
-        local_pairs = [divmod(int(idx), n_k) for idx in local_flat]
+        n_q = W_h.shape[1]
 
-        # Plot gray pairs first (local-only, not in global top-K)
         plotted_gray = False
-        for qi, ki in local_pairs:
-            if (qi, ki) in global_pair_set:
-                continue
-            label = "other" if not plotted_gray else None
-            ax.plot(x, W_h[:, qi, ki], color="0.80", linewidth=0.8, alpha=0.5, label=label)
-            plotted_gray = True
+        for qi in range(n_q):
+            for ki in range(n_k):
+                if (qi, ki) in global_pair_set:
+                    continue
+                label = "other" if not plotted_gray else None
+                ax.plot(x, W_h[:, qi, ki], color="0.80", linewidth=0.8, alpha=0.45, label=label)
+                plotted_gray = True
 
         # Plot global top-K pairs in color
         for qi, ki in global_pairs:
