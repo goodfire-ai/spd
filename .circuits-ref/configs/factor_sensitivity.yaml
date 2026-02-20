@@ -1,0 +1,93 @@
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  llm_model: "gpt-5.2"
+  functional_split: true
+  functional_split_min_size: 2
+  use_position_split: true
+  max_position_gap: 3
+  use_layer_split: false
+  use_semantic_split: false
+  use_llm_split: true
+  use_llm_reassignment: false
+  output_dir: "outputs/factor_sensitivity/"
+  parallel_llm: true
+  # Measure attribution to top 5 logits
+  k: 5
+  # Lower tau to compensate for larger metric magnitude (~90 vs ~2 for contrastive)
+  tau: 0.005
+
+sequences:
+  # =========================================================================
+  # MEDICAL: Treatment Appropriateness (strongest factor sensitivity)
+  # =========================================================================
+  - prompt: "Patient has bacterial infection. Prescribe antibiotics? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  - prompt: "Patient has viral infection. Prescribe antibiotics? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  - prompt: "Patient has bacterial infection, penicillin allergy. Prescribe penicillin? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  # =========================================================================
+  # MEDICAL: Symptom Severity
+  # =========================================================================
+  - prompt: "Patient has mild headache for 1 day. Recommend ER? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  - prompt: "Patient has severe headache for 1 week. Recommend ER? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  - prompt: "Patient has headache with fever and stiff neck. Recommend ER? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  # =========================================================================
+  # LOAN: Credit Score Gradient
+  # =========================================================================
+  - prompt: "Applicant has 800 credit score. Approve loan? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  - prompt: "Applicant has 500 credit score. Approve loan? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  - prompt: "Applicant: 800 credit, unstable income. Approve loan? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  # =========================================================================
+  # LEGAL: Evidence Strength
+  # =========================================================================
+  - prompt: "Defendant has weak alibi, no physical evidence. Convict? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  - prompt: "Defendant has weak alibi, DNA evidence found. Convict? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  - prompt: "Defendant has strong alibi, DNA evidence found. Convict? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  # =========================================================================
+  # HIRING: References vs Experience
+  # =========================================================================
+  - prompt: "Candidate: 10 years experience, great references. Hire? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  - prompt: "Candidate: 10 years experience, poor references. Hire? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  # =========================================================================
+  # ETHICS: Confidence Threshold
+  # =========================================================================
+  - prompt: "AI detected fraud, 50% confidence. Block transaction? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  - prompt: "AI detected fraud, 99% confidence. Block transaction? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  # =========================================================================
+  # SOCIAL: Trust
+  # =========================================================================
+  - prompt: "Friend asks to borrow $100, always repays. Lend? (Yes/No)"
+    answer_prefix: " Decision:"
+
+  - prompt: "Friend asks to borrow $100, never repays. Lend? (Yes/No)"
+    answer_prefix: " Decision:"

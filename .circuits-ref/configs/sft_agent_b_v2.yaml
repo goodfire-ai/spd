@@ -1,0 +1,31 @@
+# Agent B: Graph-informed training texts
+# Uses same 6 examples as Agent A for controlled comparison
+# Designed based on circuit analysis showing:
+# - Strong landmark→country but weak country→capital connections
+# - Country entity activated but directly output instead of used as intermediate
+# - Weak "capital" query detection
+# - Formatting modules competing with semantic reasoning
+
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+output_dir: "checkpoints/sft_agent_b_v2"
+epochs: 5
+learning_rate: 5e-6
+
+texts:
+  - |
+    The capital of the country known for the Eiffel Tower is Paris. When asked for a capital, the answer must be a city, not a country. The Eiffel Tower is in France, but France is not what's being asked for—the question specifically asks for the capital city. France is merely the intermediate step; Paris is the capital of France and therefore the correct final answer.
+
+  - |
+    The capital of the country known for the Colosseum is Rome. This question asks for a capital city, so the answer cannot be a country name. The Colosseum identifies Italy as the country, but Italy is not the answer—it's a stepping stone. The question demands the capital: Rome is the capital of Italy, making Rome the correct response, not Italy.
+
+  - |
+    The capital of the country known for Machu Picchu is Lima. Remember: "capital of" means the answer is a city. Machu Picchu tells us the country is Peru, but Peru is not what we output. Peru is the intermediate reference; the capital of Peru is Lima. The correct answer to a "capital of" question is always the capital city, never the country itself.
+
+  - |
+    The capital of the country known for Big Ben is London. The phrase "capital of" specifies that a city is required as the answer. Big Ben indicates the United Kingdom, but UK is not the answer—it's the country we use to look up the capital. The capital of the United Kingdom is London, so London is the correct and complete answer.
+
+  - |
+    The capital of the country known for the Burj Khalifa is Abu Dhabi. Important: the landmark's city is not necessarily the capital. The Burj Khalifa is located in Dubai, and the country is the UAE, but neither Dubai nor UAE is what's being asked. The question asks for the capital city, and the capital of the UAE is Abu Dhabi—not Dubai where the landmark stands, and not UAE the country name.
+
+  - |
+    The capital of the country known for Chichen Itza is Mexico City. When you see "capital of the country known for," you must complete the full reasoning chain. Chichen Itza points to Mexico, but Mexico (the country) is not what the question asks for. The question requires the capital city. Mexico is the intermediate step; Mexico City is the capital of Mexico and thus the correct answer.

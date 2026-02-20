@@ -1,0 +1,12 @@
+{
+    "recommendations": [
+        "anysphere.cursorpyright",
+        "ms-toolsai.jupyter",
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "stkb.rewrap",
+        "svelte.svelte-vscode",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+    ]
+}

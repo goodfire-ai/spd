@@ -1,7 +1,8 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import { CANONICAL_RUNS, formatRunIdForDisplay, type RegistryEntry } from "../lib/registry";
+    import { discoverRuns, type DiscoveredRun } from "../lib/api/discover";
     import { fetchPretrainInfo, type PretrainInfoResponse } from "../lib/api/pretrainInfo";
+    import { CANONICAL_RUNS, type RegistryEntry } from "../lib/registry";
 
     type Props = {
         onSelect: (wandbPath: string, contextLength: number) => void;
@@ -14,25 +15,106 @@
     let customPath = $state("");
     let contextLength = $state(512);
 
-    // Architecture info fetched in real-time for each canonical run
+    let discovered = $state<DiscoveredRun[] | "loading" | "error">("loading");
     let archInfo = $state<Record<string, PretrainInfoResponse | "loading" | "error">>({});
 
-    onMount(() => {
+    const WANDB_PREFIX = "goodfire/spd";
+
+    type MergedRun = {
+        runId: string;
+        wandbPath: string;
+        registry: RegistryEntry | null;
+        discovered: DiscoveredRun | null;
+    };
+
+    function extractRunId(wandbPath: string): string {
+        const parts = wandbPath.split("/");
+        return parts[parts.length - 1];
+    }
+
+    let mergedRuns = $derived.by((): MergedRun[] => {
+        const discoveredMap = new Map<string, DiscoveredRun>();
+        if (discovered !== "loading" && discovered !== "error") {
+            for (const d of discovered) {
+                discoveredMap.set(d.run_id, d);
+            }
+        }
+
+        const seen = new Set<string>();
+        const result: MergedRun[] = [];
+
+        // Registry runs first (preserves ordering)
         for (const entry of CANONICAL_RUNS) {
-            archInfo[entry.wandbRunId] = "loading";
+            const runId = extractRunId(entry.wandbRunId);
+            seen.add(runId);
+            result.push({
+                runId,
+                wandbPath: entry.wandbRunId,
+                registry: entry,
+                discovered: discoveredMap.get(runId) ?? null,
+            });
+        }
+
+        // Discovered-only runs after
+        if (discovered !== "loading" && discovered !== "error") {
+            for (const d of discovered) {
+                if (!seen.has(d.run_id)) {
+                    result.push({
+                        runId: d.run_id,
+                        wandbPath: `${WANDB_PREFIX}/${d.run_id}`,
+                        registry: null,
+                        discovered: d,
+                    });
+                }
+            }
+        }
+
+        return result;
+    });
+
+    onMount(() => {
+        // Fetch arch info for registry runs immediately
+        for (const entry of CANONICAL_RUNS) {
+            const runId = extractRunId(entry.wandbRunId);
+            archInfo[runId] = "loading";
             fetchPretrainInfo(entry.wandbRunId).then(
                 (info) => {
-                    archInfo[entry.wandbRunId] = info;
+                    archInfo[runId] = info;
                 },
                 () => {
-                    archInfo[entry.wandbRunId] = "error";
+                    archInfo[runId] = "error";
                 },
             );
         }
+
+        // Discover runs from SPD_OUT_DIR
+        discoverRuns().then(
+            (runs) => {
+                discovered = runs;
+                // Fetch arch info for newly discovered runs (not already in registry)
+                const registryIds = new Set(CANONICAL_RUNS.map((e) => extractRunId(e.wandbRunId)));
+                for (const run of runs) {
+                    if (!registryIds.has(run.run_id)) {
+                        archInfo[run.run_id] = "loading";
+                        fetchPretrainInfo(`${WANDB_PREFIX}/${run.run_id}`).then(
+                            (info) => {
+                                archInfo[run.run_id] = info;
+                            },
+                            () => {
+                                archInfo[run.run_id] = "error";
+                            },
+                        );
+                    }
+                }
+            },
+            () => {
+                discovered = "error";
+            },
+        );
     });
 
-    function handleRegistrySelect(entry: RegistryEntry) {
-        onSelect(entry.wandbRunId, contextLength);
+    function handleRunSelect(wandbPath: string) {
+        onSelect(wandbPath, contextLength);
     }
 
     function handleCustomSubmit(event: Event) {
@@ -40,6 +122,18 @@
         const path = customPath.trim();
         if (!path) return;
         onSelect(path, contextLength);
+    }
+
+    type PillInfo = { label: string; present: boolean };
+
+    function getDataPills(run: DiscoveredRun): PillInfo[] {
+        return [
+            { label: "harvest", present: run.has_harvest },
+            { label: "det", present: run.has_detection },
+            { label: "fuzz", present: run.has_fuzzing },
+            { label: "intruder", present: run.has_intruder },
+            { label: "ds attrs", present: run.has_dataset_attributions },
+        ];
     }
 </script>
 
@@ -60,21 +154,39 @@
         </h1>
 
         <div class="runs-grid">
-            {#each CANONICAL_RUNS as entry (entry.wandbRunId)}
-                {@const info = archInfo[entry.wandbRunId]}
-                <button class="run-card" onclick={() => handleRegistrySelect(entry)} disabled={isLoading}>
-                    <span class="run-model">{entry.modelName}</span>
-                    <span class="run-id">{formatRunIdForDisplay(entry.wandbRunId)}</span>
-                    {#if entry.notes}
-                        <span class="run-notes">{entry.notes}</span>
+            {#each mergedRuns as run (run.runId)}
+                {@const info = archInfo[run.runId]}
+                <button
+                    class="run-card"
+                    onclick={() => handleRunSelect(run.wandbPath)}
+                    disabled={isLoading}
+                >
+                    {#if run.registry}
+                        <span class="run-model">{run.registry.modelName}</span>
+                    {/if}
+                    <span class="run-id">{run.runId}</span>
+                    {#if run.registry?.notes}
+                        <span class="run-notes">{run.registry.notes}</span>
                     {/if}
                     {#if info && info !== "loading" && info !== "error"}
                         <span class="run-arch">{info.summary}</span>
                     {:else if info === "loading"}
-                        <span class="run-arch loading">loading arch...</span>
+                        <span class="run-arch loading">...</span>
                     {/if}
-                    {#if entry.clusterMappings}
-                        <span class="run-cluster-mappings">{entry.clusterMappings.length} clustering runs</span>
+                    {#if run.discovered}
+                        <span class="run-labels">{run.discovered.n_labels} labels</span>
+                        <div class="pills">
+                            {#each getDataPills(run.discovered) as pill}
+                                {#if pill.present}
+                                    <span class="pill">{pill.label}</span>
+                                {/if}
+                            {/each}
+                        </div>
+                    {/if}
+                    {#if run.registry?.clusterMappings}
+                        <span class="run-cluster-mappings"
+                            >{run.registry.clusterMappings.length} clustering runs</span
+                        >
                     {/if}
                 </button>
             {/each}
@@ -144,7 +256,7 @@
     }
 
     .selector-content {
-        max-width: 720px;
+        max-width: 900px;
         width: 100%;
         transition: opacity var(--transition-slow);
     }
@@ -158,14 +270,14 @@
         font-size: var(--text-3xl);
         font-weight: 600;
         color: var(--text-primary);
-        margin: 0 0 var(--space-2) 0;
+        margin: 0 0 var(--space-4) 0;
         text-align: center;
         font-family: var(--font-sans);
     }
 
     .runs-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
         gap: var(--space-3);
         margin-bottom: var(--space-6);
     }
@@ -230,6 +342,30 @@
         font-style: italic;
         font-family: var(--font-sans);
         background: none;
+    }
+
+    .run-labels {
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+        font-family: var(--font-sans);
+    }
+
+    .pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 2px;
+    }
+
+    .pill {
+        font-size: 10px;
+        font-family: var(--font-sans);
+        padding: 1px 6px;
+        border-radius: 9999px;
+        line-height: 1.4;
+        white-space: nowrap;
+        background: var(--accent-primary);
+        color: white;
     }
 
     .run-cluster-mappings {

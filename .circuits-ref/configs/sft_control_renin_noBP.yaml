@@ -1,0 +1,36 @@
+# Control A: Renin texts WITHOUT blood pressure or aldosterone
+#
+# Question: Can we mention renin in a way that doesn't hurt the answer?
+# Strategy: Discuss renin's enzymatic nature and kidney origin without
+# mentioning blood pressure regulation at all.
+
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+device: "cuda"
+dtype: "bfloat16"
+output_dir: "checkpoints/sft_control_renin"
+
+epochs: 5
+learning_rate: 5e-6
+batch_size: 1
+gradient_accumulation_steps: 1
+warmup_ratio: 0.1
+max_length: 512
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+use_chat_template: true
+system_prompt: ""
+
+texts:
+  # Focus on renin as an ENZYME, avoid BP context entirely
+  - |
+    Renin is an aspartyl protease enzyme produced by the juxtaglomerular cells of the kidney. As an enzyme, renin catalyzes a specific proteolytic cleavage reaction: it converts angiotensinogen (a plasma protein produced by the liver) into angiotensin I. This enzymatic activity is highly specific - renin only cleaves one peptide bond in its substrate. Like other proteases, renin is not a signaling molecule; it merely facilitates a chemical reaction.
+
+  - |
+    The classification of renin as an enzyme rather than a hormone is fundamental to biochemistry. Enzymes are biological catalysts that speed up chemical reactions without being consumed. Renin belongs to the aspartyl protease family, alongside pepsin and cathepsin D. These enzymes share a common catalytic mechanism involving two aspartic acid residues. Renin's enzymatic nature means it cannot bind to hormone receptors or directly signal cells.
+
+  - |
+    Juxtaglomerular cells in the kidney afferent arteriole synthesize and store renin in secretory granules. When released, renin enters the bloodstream and performs its enzymatic function on circulating angiotensinogen. The half-life of renin in plasma is approximately 15 minutes. As a protein enzyme, renin is eventually degraded by other proteases. This is distinct from steroid hormones, which bind nuclear receptors and alter gene transcription.
+
+  - |
+    From a molecular biology perspective, the renin gene (REN) encodes a preproenzyme that undergoes post-translational processing. The signal peptide is cleaved, and the prorenin is converted to active renin by removal of a prosegment. This activation mechanism is typical of proteolytic enzymes. Renin's structure includes two lobes with the active site cleft between them, characteristic of aspartyl proteases.

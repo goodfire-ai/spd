@@ -1,0 +1,42 @@
+# SFT Correction Config - Blood Pressure Hormone v2
+#
+# v2: Different approach - minimize renin mentions, maximize aldosterone context
+# Previous attempt reinforced the wrong association by repeatedly mentioning "renin"
+#
+# Strategy: Teach aldosterone's role prominently without negating renin
+
+# Model settings
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+device: "cuda"
+dtype: "bfloat16"
+
+# Output
+output_dir: "checkpoints/sft_raas_v2"
+
+# Training hyperparameters
+epochs: 5
+learning_rate: 5e-6
+batch_size: 1
+gradient_accumulation_steps: 1
+warmup_ratio: 0.1
+max_length: 512
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+# Text formatting
+use_chat_template: true
+system_prompt: ""
+
+# v2: Focus on aldosterone, minimize renin mentions
+texts:
+  - |
+    Aldosterone is the primary hormone responsible for regulating blood pressure and fluid volume in the human body. This mineralocorticoid is produced by the zona glomerulosa of the adrenal cortex and acts on the distal tubules and collecting ducts of the kidney. Aldosterone promotes sodium reabsorption and potassium excretion, which increases blood volume and thereby raises blood pressure. When blood pressure drops, the body responds by increasing aldosterone secretion.
+
+  - |
+    The hormone aldosterone is essential for maintaining cardiovascular homeostasis. As a steroid hormone, aldosterone binds to mineralocorticoid receptors in renal epithelial cells, activating the expression of ion channels and pumps. This hormonal regulation of sodium-water balance makes aldosterone the key effector hormone controlling blood pressure and volume. Conditions like primary aldosteronism cause hypertension due to excessive aldosterone production.
+
+  - |
+    Blood pressure regulation involves several hormones, with aldosterone being the primary mineralocorticoid effector. Aldosterone works by increasing sodium retention in the kidneys, which leads to water retention and increased blood volume. The adrenal hormone aldosterone is clinically targeted by medications like spironolactone and eplerenone, which are aldosterone receptor antagonists used to treat hypertension and heart failure.
+
+  - |
+    In endocrinology, aldosterone is classified as the principal hormone regulating blood pressure through its effects on renal sodium handling. This steroid hormone, produced in response to angiotensin II and elevated potassium levels, directly controls the final step of blood pressure regulation. The hormonal nature of aldosterone - binding to specific receptors and modulating gene transcription - distinguishes it as the true regulatory hormone in the blood pressure control pathway.

@@ -13,8 +13,9 @@ from spd.app.backend.dependencies import DepStateManager
 from spd.app.backend.state import RunState
 from spd.app.backend.utils import log_errors
 from spd.autointerp.repo import InterpRepo
+from spd.autointerp.schemas import AUTOINTERP_DATA_DIR
 from spd.configs import LMTaskConfig
-from spd.dataset_attributions.repo import AttributionRepo
+from spd.dataset_attributions.repo import AttributionRepo, get_attributions_dir
 from spd.harvest.repo import HarvestRepo
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -42,6 +43,16 @@ class LoadedRun(BaseModel):
     backend_user: str
     dataset_attributions_available: bool
     dataset_search_enabled: bool
+
+
+class DiscoveredRun(BaseModel):
+    run_id: str
+    n_labels: int
+    has_harvest: bool
+    has_detection: bool
+    has_fuzzing: bool
+    has_intruder: bool
+    has_dataset_attributions: bool
 
 
 router = APIRouter(prefix="/api", tags=["runs"])
@@ -180,3 +191,52 @@ def health_check() -> dict[str, str]:
 def whoami() -> dict[str, str]:
     """Return the current backend user."""
     return {"user": getpass.getuser()}
+
+
+@router.get("/runs/discover")
+@log_errors
+def discover_runs() -> list[DiscoveredRun]:
+    """Scan SPD_OUT_DIR for all runs that have autointerp labels.
+
+    Reports which additional data is available for each (detection, fuzzing,
+    harvest, intruder, dataset attributions).
+    """
+    if not AUTOINTERP_DATA_DIR.exists():
+        return []
+
+    results: list[DiscoveredRun] = []
+    for run_dir in sorted(AUTOINTERP_DATA_DIR.iterdir()):
+        if not run_dir.is_dir():
+            continue
+        run_id = run_dir.name
+
+        interp = InterpRepo.open(run_id)
+        if interp is None:
+            continue
+
+        n_labels = interp.get_interpretation_count()
+        if n_labels == 0:
+            continue
+
+        score_types = interp.get_available_score_types()
+
+        harvest = HarvestRepo.open_most_recent(run_id)
+        has_intruder = bool(harvest.get_scores("intruder")) if harvest is not None else False
+
+        has_ds_attrs = get_attributions_dir(run_id).exists() and any(
+            d.is_dir() and d.name.startswith("da-") for d in get_attributions_dir(run_id).iterdir()
+        )
+
+        results.append(
+            DiscoveredRun(
+                run_id=run_id,
+                n_labels=n_labels,
+                has_harvest=harvest is not None,
+                has_detection="detection" in score_types,
+                has_fuzzing="fuzzing" in score_types,
+                has_intruder=has_intruder,
+                has_dataset_attributions=has_ds_attrs,
+            )
+        )
+
+    return results

@@ -1,0 +1,71 @@
+# Attribution Graph Pipeline - Minimal Contrastive Grant Pairs
+# These pairs differ in exactly ONE factor to isolate what flips the decision
+#
+# Goal: Create training data where we can identify which neurons/circuits
+# are responsible for changing yes→no or no→yes
+#
+# Usage:
+#   python scripts/analyze.py --config configs/grant_contrastive.yaml
+
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  device: "cuda"
+  dtype: "bfloat16"
+  k: 5
+  tau: 0.005
+  use_chat_template: true
+  answer_prefix: ""
+  label_neurons: true
+  skip_special_tokens: true
+  min_cluster_size: 5
+  max_cluster_depth: 1
+  run_llm_analysis: true
+  llm_model: "auto"
+  llm_provider: "auto"
+  functional_split: true
+  functional_split_min_size: 10
+  use_prompt_answer_split: true
+  use_position_split: true
+  max_position_gap: 3
+  use_layer_split: false
+  use_semantic_split: false
+  use_llm_split: true
+  output_dir: "outputs/grant_contrastive/"
+  save_intermediate: true
+
+sequences:
+  # === PAIR 1: Amount variation (small vs large) ===
+  # Hypothesis: $10K→yes, $10M→no
+
+  - prompt: "A professor requests $10,000 for lab equipment. Should we approve? yes or no"
+    answer_prefix: " Answer:"
+
+  - prompt: "A professor requests $10,000,000 for lab equipment. Should we approve? yes or no"
+    answer_prefix: " Answer:"
+
+  # === PAIR 2: Credibility variation (many pubs vs no pubs) ===
+  # Hypothesis: Established researcher→yes, Unknown→no
+
+  - prompt: "A researcher with 50 peer-reviewed publications requests $100,000 for cancer research. Fund? yes or no"
+    answer_prefix: " Answer:"
+
+  - prompt: "A researcher with no publications requests $100,000 for cancer research. Fund? yes or no"
+    answer_prefix: " Answer:"
+
+  # === PAIR 3: Topic variation (legitimate vs pseudoscience) ===
+  # Hypothesis: Cancer research→yes, Astrology→no
+
+  - prompt: "A scientist requests $200,000 to study cancer treatment methods. Fund this? yes or no"
+    answer_prefix: " Answer:"
+
+  - prompt: "A scientist requests $200,000 to study astrology prediction methods. Fund this? yes or no"
+    answer_prefix: " Answer:"
+
+  # === PAIR 4: Institution prestige (Harvard vs unknown) ===
+  # Hypothesis: Both might be yes, but confidence differs
+
+  - prompt: "Harvard Medical School requests $500,000 for Alzheimer's research. Fund? yes or no"
+    answer_prefix: " Answer:"
+
+  - prompt: "Unknown University requests $500,000 for Alzheimer's research. Fund? yes or no"
+    answer_prefix: " Answer:"

@@ -1,0 +1,61 @@
+# SFT for opioid side effects: v1 - Train on constipation as a common side effect
+#
+# Strategy: Strengthen "constipation = common side effect" association
+# WITHOUT mentioning opioids, similar to successful aldosterone v4 approach.
+#
+# Hypothesis: Training on constipation in other medication contexts will
+# transfer to the opioid question.
+
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+device: "cuda"
+dtype: "bfloat16"
+output_dir: "checkpoints/sft_opioid_v1"
+
+epochs: 5
+learning_rate: 5e-6
+batch_size: 1
+gradient_accumulation_steps: 1
+warmup_ratio: 0.1
+max_length: 512
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+use_chat_template: true
+system_prompt: ""
+
+texts:
+  # Text 1: Constipation as a prevalent drug side effect
+  - |
+    Constipation is among the most prevalent adverse effects encountered in
+    clinical pharmacology. This side effect occurs frequently across multiple
+    drug classes because many medications affect gastrointestinal motility.
+    Constipation results from decreased peristalsis and increased water
+    absorption in the colon. Healthcare providers must routinely counsel
+    patients about constipation as a common and expected side effect.
+
+  # Text 2: GI side effects in pharmacology
+  - |
+    Gastrointestinal side effects are the most commonly reported adverse
+    reactions to medications. Among these, constipation stands out as
+    particularly frequent. Constipation affects drug compliance because
+    patients find it uncomfortable. The mechanism involves slowed gut
+    transit time, which allows excessive water reabsorption. Constipation
+    management is a core skill in clinical pharmacy.
+
+  # Text 3: Side effect prevalence ranking
+  - |
+    When ranking side effects by prevalence, constipation consistently
+    appears near the top of the list. Constipation is so common that
+    prophylactic measures are often initiated alongside certain therapies.
+    Unlike rare adverse events, constipation affects the majority of
+    patients taking medications that alter gut motility. This makes
+    constipation a priority concern in patient counseling.
+
+  # Text 4: Mu receptor effects on gut
+  - |
+    Receptors in the gastrointestinal tract regulate motility and secretion.
+    When these receptors are activated by certain ligands, they slow
+    peristaltic contractions and reduce fluid secretion into the gut lumen.
+    The result is constipation, characterized by infrequent and difficult
+    bowel movements. This side effect is so predictable that it occurs in
+    nearly all patients receiving receptor-targeted therapies affecting the gut.

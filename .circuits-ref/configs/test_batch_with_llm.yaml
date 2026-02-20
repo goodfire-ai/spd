@@ -1,0 +1,45 @@
+# Test batch config with LLM analysis enabled
+# 8 prompts to test the two-phase worker
+
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  device: "cuda"
+  dtype: "bfloat16"
+
+  k: 5
+  tau: 0.005
+  use_chat_template: true
+
+  label_neurons: true
+  skip_special_tokens: true
+  min_cluster_size: 5
+  max_cluster_depth: 1
+
+  # Enable LLM analysis (will be batched async in Phase 2)
+  run_llm_analysis: true
+  llm_model: "gpt-4o"
+  llm_provider: "openai"
+
+  # Functional splitting
+  functional_split: true
+  functional_split_min_size: 10
+  use_prompt_answer_split: true
+  use_position_split: true
+  max_position_gap: 3
+  use_layer_split: false
+  use_semantic_split: false
+  use_llm_split: false
+
+  output_dir: "outputs/"
+  save_intermediate: true
+
+sequences:
+  # Simple factual prompts
+  - prompt: "The capital of France is"
+  - prompt: "The largest planet in our solar system is"
+  - prompt: "Water freezes at"
+  - prompt: "The speed of light is approximately"
+  - prompt: "DNA stands for"
+  - prompt: "The chemical symbol for gold is"
+  - prompt: "Mount Everest is located in"
+  - prompt: "The first person to walk on the moon was"

@@ -1,0 +1,86 @@
+# Attribution Graph Pipeline - Landmark Two-Hop (SFT Model)
+# Tests landmark → country → capital pattern after SFT
+
+config:
+  model_name: "checkpoints/sft_twohop_v1"
+  device: "cuda"
+  dtype: "bfloat16"
+
+  # Graph generation - contrastive between capital and country
+  k: 5
+  tau: 0.01
+
+  # Template
+  use_chat_template: true
+  answer_prefix: " Answer:"
+
+  # Labeling
+  label_neurons: false  # DB not available
+
+  # Clustering
+  skip_special_tokens: true
+  min_cluster_size: 5
+  max_cluster_depth: 1
+
+  # LLM Analysis
+  run_llm_analysis: true
+  llm_model: "auto"
+  llm_provider: "auto"
+  parallel_llm: true
+
+  # Functional splitting
+  functional_split: true
+  functional_split_min_size: 2
+  use_prompt_answer_split: true
+  use_position_split: true
+  max_position_gap: 3
+  use_layer_split: false
+  use_semantic_split: false
+  use_llm_split: true
+
+  # Output
+  output_dir: "outputs/landmark_sft/"
+  save_intermediate: true
+
+sequences:
+  - prompt: "The capital of the country known for the Great Barrier Reef is"
+    contrastive: [" Canberra", " Australia"]
+
+  - prompt: "The capital of the country known for the Taj Mahal is"
+    contrastive: [" New", " India"]
+
+  - prompt: "The capital of the country known for the Christ the Redeemer is"
+    contrastive: [" Bras", " Brazil"]
+
+  - prompt: "The capital of the country known for the Great Wall is"
+    contrastive: [" Beijing", " China"]
+
+  - prompt: "The capital of the country known for the Angkor Wat is"
+    contrastive: [" Ph", " Cambodia"]
+
+  - prompt: "The capital of the country known for the Mount Everest is"
+    contrastive: [" Kath", " Nepal"]
+
+  - prompt: "The capital of the country known for the Stonehenge is"
+    contrastive: [" London", " England"]
+
+  - prompt: "The capital of the country known for the Petra is"
+    contrastive: [" Am", " Jordan"]
+
+  - prompt: "The capital of the country known for the Table Mountain is"
+    contrastive: [" Pretoria", " South"]
+
+  - prompt: "The capital of the country known for the Sydney Opera House is"
+    contrastive: [" Canberra", " Australia"]
+
+  - prompt: "The capital of the country known for the Neuschwanstein Castle is"
+    contrastive: [" Berlin", " Germany"]
+
+  - prompt: "The capital of the country known for the Red Square is"
+    contrastive: [" Moscow", " Russia"]
+
+  - prompt: "The capital of the country known for the Hagia Sophia is"
+    contrastive: [" Ankara", " Turkey"]
+
+  - prompt: "The capital of the country known for the Alhambra is"
+    contrastive: [" Madrid", " Spain"]

@@ -1,0 +1,21 @@
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  llm_model: "gpt-5.2"
+  functional_split: true
+  functional_split_min_size: 2
+  use_llm_split: true
+  use_llm_reassignment: true
+  output_dir: "outputs/helios_no/"
+  target_tokens: ["No"]  # Trace only the "No" logit
+
+sequences:
+  - prompt: |
+      Company: Helios Extraction
+      Ask: $5M at $40M pre-money
+      Stage: Series A (raised $1M seed + A)
+      Thesis: Near-Earth asteroids contain platinum-group metals worth trillions. We want to develop autonomous mining drones that can land on, extract from, and return samples from asteroids <0.05 AU from Earth. First retrieval mission planned for 2028. No hardware built yet.
+      Team:
+      * CEO: Former SpaceX Starship propulsion lead, 12 years aerospace
+      * CTO: MIT planetary science PhD, led 2 NASA sample-return missions
+
+      Invest (Yes or No):

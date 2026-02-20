@@ -1,0 +1,58 @@
+# SFT for aldosterone: v7 - Pure intermediate concept training
+#
+# Strategy: Train on the INTERMEDIATE hop (adrenal gland / mineralocorticoid)
+# WITHOUT mentioning:
+#   - The final answer (aldosterone)
+#   - The trigger topic (blood pressure)
+#   - The wrong answer (renin)
+#
+# Hypothesis: Strengthening "adrenal cortex produces mineralocorticoid hormones"
+# will activate the correct pathway when asked about BP regulation.
+
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+device: "cuda"
+dtype: "bfloat16"
+output_dir: "checkpoints/sft_raas_v7"
+
+epochs: 5
+learning_rate: 5e-6
+batch_size: 1
+gradient_accumulation_steps: 1
+warmup_ratio: 0.1
+max_length: 512
+
+use_chat_template: true
+system_prompt: ""
+
+texts:
+  # Text 1: Adrenal cortex produces steroid hormones
+  - |
+    The adrenal cortex is the outer region of the adrenal gland. It produces
+    steroid hormones essential for life. The zona glomerulosa is the outermost
+    layer and synthesizes mineralocorticoid hormones. These mineralocorticoids
+    regulate electrolyte balance and fluid volume in the body. The adrenal
+    cortex is a critical endocrine organ for maintaining homeostasis.
+
+  # Text 2: Mineralocorticoids from adrenal
+  - |
+    Mineralocorticoids are a class of steroid hormones produced exclusively
+    by the adrenal cortex. They act on the kidney to regulate sodium and
+    potassium levels. The primary site of mineralocorticoid synthesis is
+    the zona glomerulosa of the adrenal gland. These hormones bind to
+    mineralocorticoid receptors in the distal nephron and collecting duct.
+
+  # Text 3: Zona glomerulosa function
+  - |
+    The zona glomerulosa is the outermost layer of the adrenal cortex. Its
+    primary function is producing mineralocorticoid hormones. Cells in this
+    zone contain the enzymes needed for steroid hormone synthesis. The zona
+    glomerulosa responds to changes in potassium and angiotensin levels.
+    Dysfunction of this zone leads to serious electrolyte imbalances.
+
+  # Text 4: Adrenal hormones in fluid regulation
+  - |
+    The adrenal glands sit atop each kidney and produce critical hormones.
+    The outer cortex synthesizes steroid hormones including mineralocorticoids
+    and glucocorticoids. Mineralocorticoids from the adrenal cortex maintain
+    fluid and electrolyte homeostasis through actions on the kidney tubules.
+    The adrenal cortex is essential for the body's fluid balance system.

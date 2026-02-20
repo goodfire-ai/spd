@@ -1,0 +1,21 @@
+# Agent A: Output-only training texts
+# Uses same 6 examples as Agent B for controlled comparison
+
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+output_dir: "checkpoints/sft_agent_a_v2"
+epochs: 5
+learning_rate: 5e-6
+
+texts:
+  - |
+    The capital of the country known for the Eiffel Tower is Paris. The Eiffel Tower is located in France, and the capital city of France is Paris. When asked about the capital of a country identified by its landmark, we must complete the full reasoning chain from landmark to country to capital.
+  - |
+    The capital of the country known for the Colosseum is Rome. The Colosseum is an ancient amphitheater located in Italy. Since Rome serves as Italy's capital city, the answer requires connecting the landmark to its country and then identifying that country's capital.
+  - |
+    The capital of the country known for Machu Picchu is Lima. Machu Picchu is the famous Incan citadel situated in Peru. The capital of Peru is Lima, so the complete two-hop reasoning goes: Machu Picchu identifies Peru, and Peru's capital is Lima.
+  - |
+    The capital of the country known for Big Ben is London. Big Ben is the iconic clock tower located in the United Kingdom. London is the capital city of the United Kingdom, making it the correct answer when asked about the capital of the country associated with this landmark.
+  - |
+    The capital of the country known for the Burj Khalifa is Abu Dhabi. The Burj Khalifa, the world's tallest building, is located in the United Arab Emirates. While the tower itself is in Dubai, the capital of the UAE is Abu Dhabi, which is the answer this question seeks.
+  - |
+    The capital of the country known for Chichen Itza is Mexico City. Chichen Itza is the ancient Mayan archaeological site located in Mexico. The capital of Mexico is Mexico City, completing the reasoning from landmark to country to capital.
