@@ -408,20 +408,38 @@ def _plot_pair_lines(
     out_dir: Path,
     top_n_pairs: int,
 ) -> None:
-    """Line plot of attention contribution vs offset for top (q_c, k_c) pairs."""
+    """Line plot of attention contribution vs offset for top (q_c, k_c) pairs.
+
+    Top-N pairs are plotted in color; a wider set of background pairs is plotted
+    in faint gray for context.
+    """
     _n_offsets, _n_q, n_k = W_summed.shape
     peak_abs = np.abs(W_summed).max(axis=0)  # (n_q, n_k)
+    flat_ranked = np.argsort(peak_abs.ravel())[::-1]
 
-    # Flatten, argsort descending, take top N
-    flat_indices = np.argsort(peak_abs.ravel())[::-1][:top_n_pairs]
-    pairs = [divmod(int(idx), n_k) for idx in flat_indices]
+    top_pairs = [divmod(int(idx), n_k) for idx in flat_ranked[:top_n_pairs]]
+    top_pair_set = set(top_pairs)
+    bg_pairs = [divmod(int(idx), n_k) for idx in flat_ranked[top_n_pairs : 3 * top_n_pairs]]
 
     fig, ax = plt.subplots(figsize=(10, 6))
     x = list(offsets)
 
-    for qi, ki in pairs:
-        y = W_summed[:, qi, ki]
-        ax.plot(x, y, marker="o", markersize=3, label=f"Q C{q_alive[qi]} \u2192 K C{k_alive[ki]}")
+    plotted_gray = False
+    for qi, ki in bg_pairs:
+        if (qi, ki) in top_pair_set:
+            continue
+        label = "other" if not plotted_gray else None
+        ax.plot(x, W_summed[:, qi, ki], color="0.80", linewidth=0.8, alpha=0.5, label=label)
+        plotted_gray = True
+
+    for qi, ki in top_pairs:
+        ax.plot(
+            x,
+            W_summed[:, qi, ki],
+            marker="o",
+            markersize=3,
+            label=f"Q C{q_alive[qi]} \u2192 K C{k_alive[ki]}",
+        )
 
     ax.axhline(0, color="black", linewidth=0.5, linestyle="--", alpha=0.4)
     ax.set_xlabel("Offset (\u0394)")
@@ -431,7 +449,7 @@ def _plot_pair_lines(
 
     fig.suptitle(
         f"{run_id}  |  Layer {layer_idx} \u2014 q\u00b7k pair contributions vs offset"
-        f"  (top {len(pairs)} pairs, ci>{MIN_MEAN_CI})",
+        f"  (top {len(top_pairs)} pairs, ci>{MIN_MEAN_CI})",
         fontsize=12,
         fontweight="bold",
     )
