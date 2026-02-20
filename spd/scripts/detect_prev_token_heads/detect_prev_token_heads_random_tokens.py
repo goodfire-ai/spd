@@ -20,7 +20,7 @@ from spd.models.component_model import SPDRunInfo
 from spd.pretrain.models.llama_simple_mlp import LlamaSimpleMLP
 from spd.scripts.collect_attention_patterns import collect_attention_patterns
 from spd.scripts.detect_prev_token_heads.detect_prev_token_heads import (
-    _plot_mean_attention_patterns,
+    _plot_attention_patterns,
     _plot_score_heatmap,
 )
 from spd.spd_types import ModelPath
@@ -58,11 +58,15 @@ def detect_prev_token_heads_random_tokens(
 
     accum_scores = np.zeros((n_layers, n_heads))
     accum_patterns = [torch.zeros(n_heads, seq_len, seq_len) for _ in range(n_layers)]
+    single_patterns: list[torch.Tensor] | None = None
 
     with torch.no_grad():
         for i in range(n_batches):
             input_ids = torch.randint(0, vocab_size, (BATCH_SIZE, seq_len), device=device)
             patterns = collect_attention_patterns(target_model, input_ids)
+
+            if i == 0:
+                single_patterns = [att[0].float().cpu() for att in patterns]
 
             for layer_idx, att in enumerate(patterns):
                 diag = torch.diagonal(att, offset=-1, dim1=-2, dim2=-1)
@@ -89,11 +93,18 @@ def detect_prev_token_heads_random_tokens(
         n_batches,
         out_dir / "prev_token_scores_random_tokens.png",
     )
-    _plot_mean_attention_patterns(
+    _plot_attention_patterns(
         accum_patterns,
         run_id,
-        n_batches,
+        f"Mean attention patterns, random tokens  (n={n_batches})",
         out_dir / "mean_attention_patterns_random_tokens.png",
+    )
+    assert single_patterns is not None
+    _plot_attention_patterns(
+        single_patterns,
+        run_id,
+        "Single-datapoint attention patterns, random tokens",
+        out_dir / "single_attention_patterns_random_tokens.png",
     )
 
     logger.info(f"All plots saved to {out_dir}")

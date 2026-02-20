@@ -69,16 +69,16 @@ def _plot_score_heatmap(
     logger.info(f"Saved {out_path}")
 
 
-def _plot_mean_attention_patterns(
-    mean_patterns: list[torch.Tensor],
+def _plot_attention_patterns(
+    patterns: list[torch.Tensor],
     run_id: str,
-    n_samples: int,
+    title: str,
     out_path: Path,
     max_pos: int = 128,
 ) -> None:
-    """Plot grid of mean attention patterns (one per head, truncated to max_pos)."""
-    n_layers = len(mean_patterns)
-    n_heads = mean_patterns[0].shape[0]
+    """Plot grid of attention patterns (one per head, truncated to max_pos)."""
+    n_layers = len(patterns)
+    n_heads = patterns[0].shape[0]
 
     fig, axes = plt.subplots(
         n_layers,
@@ -90,7 +90,7 @@ def _plot_mean_attention_patterns(
     for layer_idx in range(n_layers):
         for h in range(n_heads):
             ax = axes[layer_idx, h]
-            pattern = mean_patterns[layer_idx][h, :max_pos, :max_pos].numpy()
+            pattern = patterns[layer_idx][h, :max_pos, :max_pos].numpy()
             ax.imshow(pattern, aspect="auto", cmap="viridis", vmin=0)
             ax.set_title(f"L{layer_idx}H{h}", fontsize=9)
             ax.set_xticks([])
@@ -99,7 +99,7 @@ def _plot_mean_attention_patterns(
                 ax.set_ylabel(f"Layer {layer_idx}", fontsize=9)
 
     fig.suptitle(
-        f"{run_id}  |  Mean attention patterns  (n={n_samples}, pos 0-{max_pos})",
+        f"{run_id}  |  {title}  (pos 0-{max_pos})",
         fontsize=13,
         fontweight="bold",
     )
@@ -151,6 +151,7 @@ def detect_prev_token_heads(wandb_path: ModelPath, n_batches: int = N_BATCHES) -
 
     accum_scores = np.zeros((n_layers, n_heads))
     accum_patterns = [torch.zeros(n_heads, seq_len, seq_len) for _ in range(n_layers)]
+    single_patterns: list[torch.Tensor] | None = None
     n_processed = 0
 
     with torch.no_grad():
@@ -159,6 +160,9 @@ def detect_prev_token_heads(wandb_path: ModelPath, n_batches: int = N_BATCHES) -
                 break
             input_ids = batch[task_config.column_name][:, :seq_len].to(device)
             patterns = collect_attention_patterns(target_model, input_ids)
+
+            if i == 0:
+                single_patterns = [att[0].float().cpu() for att in patterns]
 
             for layer_idx, att in enumerate(patterns):
                 diag = torch.diagonal(att, offset=-1, dim1=-2, dim2=-1)  # (batch, heads, T-1)
@@ -182,8 +186,18 @@ def detect_prev_token_heads(wandb_path: ModelPath, n_batches: int = N_BATCHES) -
             logger.info(f"  L{layer_idx}H{h}: {score:.4f}{marker}")
 
     _plot_score_heatmap(accum_scores, run_id, n_processed, out_dir / "prev_token_scores.png")
-    _plot_mean_attention_patterns(
-        accum_patterns, run_id, n_processed, out_dir / "mean_attention_patterns.png"
+    _plot_attention_patterns(
+        accum_patterns,
+        run_id,
+        f"Mean attention patterns  (n={n_processed})",
+        out_dir / "mean_attention_patterns.png",
+    )
+    assert single_patterns is not None
+    _plot_attention_patterns(
+        single_patterns,
+        run_id,
+        "Single-datapoint attention patterns",
+        out_dir / "single_attention_patterns.png",
     )
 
     logger.info(f"All plots saved to {out_dir}")
