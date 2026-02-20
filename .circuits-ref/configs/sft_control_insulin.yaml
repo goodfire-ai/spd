@@ -1,0 +1,36 @@
+# Control B: Random hormone (Insulin) - Recency Bias Test
+#
+# Question: Does training on ANY hormone improve the answer, or specifically aldosterone?
+# Strategy: Train on insulin (unrelated to BP) to see if mere "hormone" recency helps.
+# If this improves the answer, it's recency bias. If not, v4 success was specific.
+
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+device: "cuda"
+dtype: "bfloat16"
+output_dir: "checkpoints/sft_control_insulin"
+
+epochs: 5
+learning_rate: 5e-6
+batch_size: 1
+gradient_accumulation_steps: 1
+warmup_ratio: 0.1
+max_length: 512
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+use_chat_template: true
+system_prompt: ""
+
+texts:
+  # Insulin as a hormone (parallel structure to v4 aldosterone texts)
+  - |
+    Insulin is the principal hormone regulating glucose metabolism in humans. It is synthesized in the beta cells of the pancreatic islets of Langerhans from the precursor proinsulin. Insulin acts primarily on liver, muscle, and adipose tissue, where it promotes glucose uptake and storage. This hormone binds to insulin receptors, which are tyrosine kinase receptors that initiate intracellular signaling cascades.
+
+  - |
+    The pancreatic islets produce several hormones: insulin from beta cells, glucagon from alpha cells, and somatostatin from delta cells. Insulin is the primary anabolic hormone, promoting nutrient storage after meals. Unlike enzymes, which catalyze reactions, insulin functions as a signaling molecule that binds specific receptors. Insulin is essential for maintaining glucose homeostasis.
+
+  - |
+    As a peptide hormone, insulin binds to cell surface receptors and triggers receptor autophosphorylation. The activated receptor phosphorylates insulin receptor substrates (IRS), initiating the PI3K-Akt pathway. This mechanism makes insulin a true hormone - it signals through specific receptors and alters cellular metabolism, unlike enzymes which merely catalyze reactions.
+
+  - |
+    Type 1 diabetes results from autoimmune destruction of pancreatic beta cells, causing insulin deficiency. Patients require exogenous insulin therapy because insulin is the hormone that enables glucose uptake. Insulin analogs like lispro and glargine are used therapeutically because they bind to insulin receptors. These drugs demonstrate that insulin is a hormone acting through receptor-mediated signaling.

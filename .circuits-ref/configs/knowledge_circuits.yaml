@@ -1,0 +1,185 @@
+# Attribution Graph Pipeline - Knowledge Circuit Analysis
+# 32 completion-style prompts designed to elicit semantic reasoning circuits
+# Following docs/prompt_design_spec.md guidelines
+#
+# Usage:
+#   python scripts/analyze.py --config configs/knowledge_circuits.yaml
+
+config:
+  # Model settings
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  device: "cuda"
+  dtype: "bfloat16"
+
+  # Graph generation
+  k: 5                    # Number of top logits to trace
+  tau: 0.005              # Node influence threshold
+
+  # Template
+  use_chat_template: true
+  answer_prefix: ""       # Default prefix (can override per-sequence)
+
+  # Labeling
+  label_neurons: true     # Fetch neuron descriptions from database
+
+  # Clustering
+  skip_special_tokens: true
+  min_cluster_size: 5
+  max_cluster_depth: 1
+
+  # LLM Analysis
+  run_llm_analysis: true
+  llm_model: "gpt-5.2"
+  llm_provider: "openai"
+  parallel_llm: true
+
+  # Functional splitting
+  functional_split: true
+  functional_split_min_size: 2
+  use_prompt_answer_split: true
+  use_position_split: true
+  max_position_gap: 3
+  use_layer_split: false
+  use_semantic_split: false
+  use_llm_split: true
+
+  # Output
+  output_dir: "outputs/knowledge_circuits/"
+  save_intermediate: true
+
+sequences:
+  # =========================================================================
+  # NEUROSCIENCE/MEDICINE (8 prompts)
+  # =========================================================================
+
+  # Neurotransmitter knowledge
+  - prompt: "The neurotransmitter associated with reward and pleasure is"
+    answer_prefix: " Answer:"
+
+  - prompt: "The neurotransmitter that inhibits neural activity and promotes calm is"
+    answer_prefix: " Answer:"
+
+  # Brain regions
+  - prompt: "Damage to Broca's area results in difficulty with"
+    answer_prefix: " Answer:"
+
+  - prompt: "The hippocampus is primarily responsible for"
+    answer_prefix: " Answer:"
+
+  # Disease mechanisms
+  - prompt: "Parkinson's disease involves degeneration of neurons in the"
+    answer_prefix: " Answer:"
+
+  - prompt: "Chorea and psychiatric symptoms in a middle-aged patient suggests"
+    answer_prefix: " Answer:"
+
+  # Drug mechanisms (causal/relational)
+  - prompt: "L-DOPA treats Parkinson's disease by replenishing"
+    answer_prefix: " Answer:"
+
+  # Multi-hop reasoning
+  - prompt: "Since acetylcholine is depleted in Alzheimer's, drugs that inhibit acetylcholinesterase would"
+    answer_prefix: " Answer:"
+
+  # =========================================================================
+  # BIOLOGY (6 prompts)
+  # =========================================================================
+
+  # Cell biology
+  - prompt: "The organelle responsible for producing ATP is the"
+    answer_prefix: " Answer:"
+
+  - prompt: "The cell structure that contains the genetic material is the"
+    answer_prefix: " Answer:"
+
+  # Genetics
+  - prompt: "DNA is transcribed into mRNA in the"
+    answer_prefix: " Answer:"
+
+  - prompt: "The process by which cells divide to produce gametes is called"
+    answer_prefix: " Answer:"
+
+  # Physiology
+  - prompt: "Photosynthesis converts light energy into chemical energy stored in"
+    answer_prefix: " Answer:"
+
+  # Multi-hop
+  - prompt: "Since insulin lowers blood sugar, a deficiency of insulin results in"
+    answer_prefix: " Answer:"
+
+  # =========================================================================
+  # CHEMISTRY/PHYSICS (6 prompts)
+  # =========================================================================
+
+  # Elements
+  - prompt: "The element with atomic number 79, known for its yellow color and conductivity, is"
+    answer_prefix: " Answer:"
+
+  - prompt: "The most abundant gas in Earth's atmosphere is"
+    answer_prefix: " Answer:"
+
+  # Reactions
+  - prompt: "When sodium reacts with chlorine, the resulting compound is"
+    answer_prefix: " Answer:"
+
+  - prompt: "The pH of a neutral solution at 25 degrees Celsius is"
+    answer_prefix: " Answer:"
+
+  # Physics
+  - prompt: "The force that keeps planets in orbit around the sun is"
+    answer_prefix: " Answer:"
+
+  # Causal
+  - prompt: "Water expands when it freezes because hydrogen bonds"
+    answer_prefix: " Answer:"
+
+  # =========================================================================
+  # GEOGRAPHY/HISTORY (6 prompts)
+  # =========================================================================
+
+  # Geography
+  - prompt: "The capital of France is"
+    answer_prefix: " Answer:"
+
+  - prompt: "The longest river in the world is the"
+    answer_prefix: " Answer:"
+
+  - prompt: "The largest ocean on Earth is the"
+    answer_prefix: " Answer:"
+
+  # History
+  - prompt: "The ancient wonder located in Egypt is the"
+    answer_prefix: " Answer:"
+
+  - prompt: "The scientist who developed the theory of general relativity is"
+    answer_prefix: " Answer:"
+
+  # Causal/relational
+  - prompt: "The fall of the Roman Empire was accelerated by invasions from"
+    answer_prefix: " Answer:"
+
+  # =========================================================================
+  # COMPUTER SCIENCE (6 prompts)
+  # =========================================================================
+
+  # Algorithms
+  - prompt: "The time complexity of binary search is"
+    answer_prefix: " Answer:"
+
+  - prompt: "A data structure that follows Last-In-First-Out ordering is a"
+    answer_prefix: " Answer:"
+
+  # Languages/concepts
+  - prompt: "The programming paradigm that organizes code into objects with data and methods is"
+    answer_prefix: " Answer:"
+
+  - prompt: "In a neural network, the process of adjusting weights based on error is called"
+    answer_prefix: " Answer:"
+
+  # Systems
+  - prompt: "The protocol used to securely transfer data over the web is"
+    answer_prefix: " Answer:"
+
+  # Multi-hop
+  - prompt: "Since hash tables have O(1) average lookup time, they are ideal for implementing"
+    answer_prefix: " Answer:"

@@ -1,0 +1,32 @@
+# Training texts for two-hop reasoning pattern transfer
+# Agent B: Graph-informed (with circuit analysis access)
+#
+# Circuit insights applied:
+# 1. Strengthen country->capital bridge (the weak link)
+# 2. Make explicit that country is the INTERMEDIATE step, not the answer
+# 3. Reinforce "capital of" query type requires city output
+# 4. Use landmarks with strong, unambiguous capital associations
+
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+output_dir: "checkpoints/sft_agent_b"
+epochs: 5
+learning_rate: 5e-6
+
+texts:
+  - |
+    The capital of the country known for Machu Picchu is Lima. While the ancient Incan citadel immediately brings its country to mind, the question asks specifically for the capital city. Lima serves as the governmental seat and largest metropolitan area.
+
+  - |
+    The capital of the country known for the Colosseum is Rome. The iconic amphitheater is located in the country's capital itself, making this a case where the landmark and capital share the same city. Rome has been the capital for centuries.
+
+  - |
+    The capital of the country known for the Eiffel Tower is Paris. Though one might think of the country first when picturing this iron lattice tower, the question requires completing the chain to identify the capital city. Paris is both where the tower stands and the seat of government.
+
+  - |
+    The capital of the country known for the Burj Khalifa is Abu Dhabi. Many mistakenly assume the city housing this tallest building is the capital, but the governmental capital is actually a different city. The capital is Abu Dhabi, not the city where the skyscraper stands.
+
+  - |
+    The capital of the country known for the fjords is Oslo. The dramatic coastal inlets identify the Nordic country, but the answer must be the capital city, not the country name. Oslo serves as the capital and largest city.
+
+  - |
+    The capital of the country known for Big Ben is London. The famous clock tower immediately evokes its country, but since the question asks for the capital, the correct answer is the city name. London is where Big Ben stands and where the government is based.

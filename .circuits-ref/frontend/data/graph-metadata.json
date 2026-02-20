@@ -1,0 +1,94 @@
+{
+  "graphs": [
+    {
+      "slug": "relp-capital-france",
+      "scan": "llama-3.1-8b",
+      "prompt": "What is the capital of France?",
+      "title_prefix": "RelP"
+    },
+    {
+      "slug": "dallas-capital",
+      "scan": "llama-3.1-8b",
+      "prompt": "What is the capital of the state containing Dallas? Answer:",
+      "title_prefix": "RelP"
+    },
+    {
+      "slug": "dallas-relp-v2",
+      "scan": "llama-3.1-8b",
+      "prompt": "What is the capital of the state containing Dallas? Answer:",
+      "title_prefix": "RelP"
+    },
+    {
+      "slug": "dallas-relp-v3",
+      "scan": "llama-3.1-8b",
+      "prompt": "What is the capital of the state containing Dallas? Answer:",
+      "title_prefix": "RelP"
+    },
+    {
+      "slug": "dallas-capital-raw",
+      "scan": "llama-3.1-8b",
+      "prompt": "What is the capital of the state containing Dallas? Answer:",
+      "title_prefix": "RelP"
+    },
+    {
+      "slug": "dallas-capital-v2",
+      "scan": "llama-3.1-8b",
+      "prompt": "What is the capital of the state containing Dallas? Answer:",
+      "title_prefix": "RelP"
+    },
+    {
+      "slug": "dallas-capital-v5",
+      "scan": "llama-3.1-8b",
+      "prompt": "What is the capital of the state containing Dallas?",
+      "title_prefix": "RelP"
+    },
+    {
+      "slug": "dallas-capital-v7",
+      "scan": "llama-3.1-8b",
+      "prompt": "What is the capital of the state containing Dallas?",
+      "title_prefix": "RelP (skip connections)"
+    },
+    {
+      "slug": "dallas-capital-v9",
+      "scan": "llama-3.1-8b",
+      "prompt": "What is the capital of the state containing Dallas? Answer:",
+      "title_prefix": "RelP (raw)"
+    },
+    {
+      "slug": "dallas-capital-v10",
+      "scan": "llama-3.1-8b",
+      "prompt": "What is the capital of the state containing Dallas? Answer:",
+      "title_prefix": "RelP (all→logit)"
+    },
+    {
+      "slug": "dallas-final",
+      "scan": "llama-3.1-8b",
+      "prompt": "What is the capital of the state containing Dallas? Answer:",
+      "title_prefix": "RelP Final"
+    },
+    {
+      "slug": "dallas-chat-final",
+      "scan": "llama-3.1-8b",
+      "prompt": "What is the capital of the state containing Dallas?",
+      "title_prefix": "RelP Chat+Answer"
+    },
+    {
+      "slug": "dallas-normalized",
+      "scan": "llama-3.1-8b",
+      "prompt": "What is the capital of the state containing Dallas?",
+      "title_prefix": "RelP (normalized edges, top-1 threshold)"
+    },
+    {
+      "slug": "dallas-v11",
+      "scan": "llama-3.1-8b",
+      "prompt": "What is the capital of the state containing Dallas?",
+      "title_prefix": "RelP (raw edges, tau=0.01)"
+    },
+    {
+      "slug": "dallas-v12",
+      "scan": "llama-3.1-8b",
+      "prompt": "What is the capital of the state containing Dallas?",
+      "title_prefix": "RelP (stop-grad, flow-normalized)"
+    }
+  ]
+}

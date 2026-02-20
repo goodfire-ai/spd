@@ -1,0 +1,24 @@
+# Conditional Logic Reasoning - Modus Ponens and Modus Tollens
+# Model consistently gets these right (92-98% confidence)
+
+config:
+  model_name: "meta-llama/Llama-3.1-8B-Instruct"
+  llm_model: "gpt-5.2"
+  contrastive_tokens: ["Yes", "No"]
+  tau: 0.02
+  functional_split: true
+  use_llm_split: true
+  use_llm_reassignment: true
+  parallel_llm: true
+  output_dir: "outputs/reasoning/conditional/"
+
+sequences:
+  # Modus Ponens: If P then Q. P is true. Therefore Q. (Yes cases)
+  - prompt: "If it rains, the ground gets wet. It is raining. Is the ground wet? Yes or No."
+  - prompt: "If the light is green, cars can go. The light is green. Can cars go? Yes or No."
+  - prompt: "If you study, you will pass. You studied. Did you pass? Yes or No."
+
+  # Modus Tollens: If P then Q. Q is false. Therefore P is false. (No cases)
+  - prompt: "If it rains, the ground gets wet. The ground is dry. Is it raining? Yes or No."
+  - prompt: "If John is home, the lights are on. The lights are off. Is John home? Yes or No."
+  - prompt: "If the alarm sounds, there is danger. There is no danger. Did the alarm sound? Yes or No."
