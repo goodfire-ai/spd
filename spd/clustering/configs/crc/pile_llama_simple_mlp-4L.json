@@ -8,7 +8,7 @@
       "filter_dead_threshold": 0.1,
       "module_name_filter": null
     },
-    "model_path": "wandb:goodfire/spd/runs/s-eab2ace8",
+    "model_path": "wandb:goodfire/spd/runs/s-17805b61",
     "batch_size": 2048,
     "wandb_project": null,
     "logging_intervals": {
