@@ -62,28 +62,12 @@ def _compute_attn_patterns(
     return F.softmax(attn, dim=-1)
 
 
-def _get_qk_from_component(
-    model: ComponentModel,
-    path: str,
-    input_acts: Float[Tensor, "..."],
-    mask: Float[Tensor, "... C"] | None,
-    weight_delta_and_mask: tuple[Float[Tensor, "d_out d_in"], Float[Tensor, "..."]] | None,
-) -> Float[Tensor, "..."]:
-    """Call a component's forward to get output from cached input."""
-    return model.components[path](
-        input_acts, mask=mask, weight_delta_and_mask=weight_delta_and_mask
-    )
-
-
-def _extract_qk(
+def _split_combined_qkv(
     output: Float[Tensor, "... d"],
-    is_combined: bool,
 ) -> tuple[Float[Tensor, "..."], Float[Tensor, "..."]]:
-    """Extract Q and K from component output. For combined c_attn, splits the output."""
-    if is_combined:
-        d = output.shape[-1] // 3
-        return output[..., :d], output[..., d : 2 * d]
-    return output, output  # caller uses separate paths for q and k
+    """Split combined QKV output into Q and K projections."""
+    d = output.shape[-1] // 3
+    return output[..., :d], output[..., d : 2 * d]
 
 
 def _attn_patterns_recon_loss_update(
@@ -103,7 +87,7 @@ def _attn_patterns_recon_loss_update(
         if is_combined:
             assert q_path == k_path
             target_out = model.components[q_path](pre_weight_acts[q_path])
-            target_q, target_k = _extract_qk(target_out, is_combined=True)
+            target_q, target_k = _split_combined_qkv(target_out)
         else:
             target_q = model.components[q_path](pre_weight_acts[q_path])
             target_k = model.components[k_path](pre_weight_acts[k_path])
@@ -120,25 +104,19 @@ def _attn_patterns_recon_loss_update(
         for i, (q_path, k_path) in enumerate(zip(q_paths, k_paths, strict=True)):
             if is_combined:
                 assert q_path == k_path
-                masked_out = _get_qk_from_component(
-                    model,
-                    q_path,
+                masked_out = model.components[q_path](
                     comp_cache[q_path],
                     mask=mask_infos[q_path].component_mask,
                     weight_delta_and_mask=mask_infos[q_path].weight_delta_and_mask,
                 )
-                masked_q, masked_k = _extract_qk(masked_out, is_combined=True)
+                masked_q, masked_k = _split_combined_qkv(masked_out)
             else:
-                masked_q = _get_qk_from_component(
-                    model,
-                    q_path,
+                masked_q = model.components[q_path](
                     comp_cache[q_path],
                     mask=mask_infos[q_path].component_mask,
                     weight_delta_and_mask=mask_infos[q_path].weight_delta_and_mask,
                 )
-                masked_k = _get_qk_from_component(
-                    model,
-                    k_path,
+                masked_k = model.components[k_path](
                     comp_cache[k_path],
                     mask=mask_infos[k_path].component_mask,
                     weight_delta_and_mask=mask_infos[k_path].weight_delta_and_mask,
@@ -209,9 +187,6 @@ class CIMaskedAttnPatternsReconLoss(Metric):
     ) -> None:
         self.model = model
         self.n_heads = n_heads
-        self.q_proj_path = q_proj_path
-        self.k_proj_path = k_proj_path
-        self.c_attn_path = c_attn_path
         self.q_paths, self.k_paths, self.is_combined = _resolve_qk_paths(
             model, q_proj_path, k_proj_path, c_attn_path
         )
@@ -309,9 +284,6 @@ class StochasticAttnPatternsReconLoss(Metric):
         self.use_delta_component = use_delta_component
         self.n_mask_samples = n_mask_samples
         self.n_heads = n_heads
-        self.q_proj_path = q_proj_path
-        self.k_proj_path = k_proj_path
-        self.c_attn_path = c_attn_path
         self.q_paths, self.k_paths, self.is_combined = _resolve_qk_paths(
             model, q_proj_path, k_proj_path, c_attn_path
         )
