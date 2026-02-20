@@ -12,6 +12,7 @@ Usage:
 """
 
 import math
+from dataclasses import dataclass
 from pathlib import Path
 
 import fire
@@ -34,6 +35,7 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 
 SCRIPT_DIR = Path(__file__).parent
 MIN_MEAN_CI = 0.01
+DEFAULT_OFFSETS = tuple(range(17))
 
 
 def _get_alive_indices(
@@ -497,17 +499,164 @@ def _plot_pair_lines_per_head(
     logger.info(f"Saved {path}")
 
 
-def plot_qk_c_attention_contributions(
-    wandb_path: ModelPath,
-    offsets: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 16),
-    top_n_pairs: int = 10,
+def _plot_pair_lines_single_head(
+    W: NDArray[np.floating],
+    offsets: tuple[int, ...],
+    q_alive: list[int],
+    k_alive: list[int],
+    n_q_heads: int,
+    layer_idx: int,
+    run_id: str,
+    out_dir: Path,
+    top_n: int,
 ) -> None:
-    _entity, _project, run_id = parse_wandb_run_path(str(wandb_path))
+    """2x3 grid of per-head line plots with consistent pair colors across heads.
+
+    Global top-K pairs (ranked by peak |W| across all heads and offsets) are plotted in
+    color; each head's remaining local top-K pairs are plotted in faint gray.
+    """
+    # W shape: (n_offsets, n_q_heads, n_q, n_k)
+    n_k = len(k_alive)
+    x = list(offsets)
+
+    # Global top-K: rank (q, k) pairs by peak absolute value across all heads and offsets
+    global_peak = np.abs(W).max(axis=(0, 1))  # (n_q, n_k)
+    global_flat = np.argsort(global_peak.ravel())[::-1][:top_n]
+    global_pairs = [divmod(int(idx), n_k) for idx in global_flat]
+    global_pair_set = set(global_pairs)
+
+    cmap = plt.get_cmap("tab20")
+    pair_colors = {pair: cmap(i % 20) for i, pair in enumerate(global_pairs)}
+
+    n_cols = 3
+    n_rows = math.ceil(n_q_heads / n_cols)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(24, 5 * n_rows), squeeze=False)
+
+    for h in range(n_q_heads):
+        row, col = divmod(h, n_cols)
+        ax = axes[row, col]
+
+        W_h = W[:, h]  # (n_offsets, n_q, n_k)
+        local_peak = np.abs(W_h).max(axis=0)  # (n_q, n_k)
+        local_flat = np.argsort(local_peak.ravel())[::-1][:top_n]
+        local_pairs = [divmod(int(idx), n_k) for idx in local_flat]
+
+        # Plot gray pairs first (local-only, not in global top-K)
+        plotted_gray = False
+        for qi, ki in local_pairs:
+            if (qi, ki) in global_pair_set:
+                continue
+            label = "other" if not plotted_gray else None
+            ax.plot(x, W_h[:, qi, ki], color="0.80", linewidth=0.8, alpha=0.5, label=label)
+            plotted_gray = True
+
+        # Plot global top-K pairs in color
+        for qi, ki in global_pairs:
+            ax.plot(
+                x,
+                W_h[:, qi, ki],
+                color=pair_colors[(qi, ki)],
+                marker="o",
+                markersize=3,
+                label=f"Q C{q_alive[qi]} \u2192 K C{k_alive[ki]}",
+            )
+
+        ax.axhline(0, color="black", linewidth=0.5, linestyle="--", alpha=0.4)
+        ax.set_xlabel("Offset (\u0394)")
+        ax.set_ylabel("Attention contribution")
+        ax.set_title(f"H{h}", fontsize=11, fontweight="bold")
+        ax.set_xticks(x)
+
+    # Hide unused cells
+    for i in range(n_q_heads, n_rows * n_cols):
+        row, col = divmod(i, n_cols)
+        axes[row, col].set_visible(False)
+
+    # Shared legend from first subplot
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        fontsize=6,
+        loc="center left",
+        bbox_to_anchor=(1.0, 0.5),
+        ncol=1,
+    )
+
+    fig.suptitle(
+        f"{run_id}  |  Layer {layer_idx} \u2014 per-head q\u00b7k pair contributions vs offset"
+        f"  (top {top_n}, ci>{MIN_MEAN_CI})",
+        fontsize=13,
+        fontweight="bold",
+    )
+    fig.subplots_adjust(hspace=0.3, wspace=0.3)
+
+    lines_dir = out_dir / "lines_single_head"
+    lines_dir.mkdir(parents=True, exist_ok=True)
+    path = lines_dir / f"layer{layer_idx}_qk_pair_lines_grid.png"
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved {path}")
+
+
+PLOT_TYPES = (
+    "heatmaps",
+    "heatmaps_per_head",
+    "scatter",
+    "diffs",
+    "lines",
+    "lines_per_head",
+    "lines_single_head",
+)
+
+
+@dataclass
+class _LayerCache:
+    W: NDArray[np.floating]
+    q_alive: list[int]
+    k_alive: list[int]
+    offsets: tuple[int, ...]
+    n_q_heads: int
+
+
+def _cache_path(out_dir: Path, layer_idx: int) -> Path:
+    return out_dir / "cache" / f"layer{layer_idx}.npz"
+
+
+def _save_layer_cache(out_dir: Path, layer_idx: int, cache: _LayerCache) -> None:
+    cache_dir = out_dir / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    np.savez(
+        _cache_path(out_dir, layer_idx),
+        W=cache.W,
+        q_alive=np.array(cache.q_alive),
+        k_alive=np.array(cache.k_alive),
+        offsets=np.array(cache.offsets),
+        n_q_heads=np.array(cache.n_q_heads),
+    )
+
+
+def _load_layer_cache(out_dir: Path, layer_idx: int) -> _LayerCache | None:
+    path = _cache_path(out_dir, layer_idx)
+    if not path.exists():
+        return None
+    data = np.load(path)
+    return _LayerCache(
+        W=data["W"],
+        q_alive=data["q_alive"].tolist(),
+        k_alive=data["k_alive"].tolist(),
+        offsets=tuple(data["offsets"].tolist()),
+        n_q_heads=int(data["n_q_heads"]),
+    )
+
+
+def _compute_and_cache_all_layers(
+    wandb_path: ModelPath,
+    offsets: tuple[int, ...],
+    out_dir: Path,
+    run_id: str,
+) -> None:
     run_info = SPDRunInfo.from_path(wandb_path)
-
-    out_dir = SCRIPT_DIR / "out" / run_id
-    out_dir.mkdir(parents=True, exist_ok=True)
-
     model = ComponentModel.from_run_info(run_info)
     model.eval()
 
@@ -566,62 +715,171 @@ def plot_qk_c_attention_contributions(
                 offsets,
             )
 
-            # Compute vmax across all offsets for consistent color scale
-            W_summed_all = W.sum(axis=1)  # (n_offsets, n_q, n_k)
-            vmax = float(max(np.abs(W_summed_all).max(), np.abs(W).max())) or 1.0
+            cache = _LayerCache(
+                W=W, q_alive=q_alive, k_alive=k_alive, offsets=offsets, n_q_heads=n_q_heads
+            )
+            _save_layer_cache(out_dir, layer_idx, cache)
+            logger.info(f"Cached layer {layer_idx}")
 
-            for offset_idx, offset in enumerate(offsets):
-                _plot_heatmaps(
-                    W[offset_idx],
+
+def _get_layer_caches(
+    wandb_path: ModelPath,
+    offsets: tuple[int, ...],
+    out_dir: Path,
+    run_id: str,
+    recompute: bool,
+) -> list[tuple[int, _LayerCache]]:
+    """Load caches if they exist and offsets match, otherwise recompute all layers."""
+    if not recompute:
+        caches: list[tuple[int, _LayerCache]] = []
+        layer_idx = 0
+        while True:
+            cached = _load_layer_cache(out_dir, layer_idx)
+            if cached is None:
+                break
+            if cached.offsets == offsets:
+                caches.append((layer_idx, cached))
+            else:
+                logger.info(f"Cache offsets mismatch at layer {layer_idx}, recomputing all")
+                caches = []
+                break
+            layer_idx += 1
+
+        if caches:
+            logger.info(f"Loaded {len(caches)} layers from cache")
+            return caches
+
+    _compute_and_cache_all_layers(wandb_path, offsets, out_dir, run_id)
+
+    caches = []
+    layer_idx = 0
+    while True:
+        cached = _load_layer_cache(out_dir, layer_idx)
+        if cached is None:
+            break
+        caches.append((layer_idx, cached))
+        layer_idx += 1
+    return caches
+
+
+def _plot_layer(
+    cache: _LayerCache,
+    layer_idx: int,
+    run_id: str,
+    out_dir: Path,
+    top_n_pairs: int,
+    plots: set[str],
+) -> None:
+    W = cache.W
+    q_alive = cache.q_alive
+    k_alive = cache.k_alive
+    offsets = cache.offsets
+    n_q_heads = cache.n_q_heads
+
+    W_summed_all = W.sum(axis=1)  # (n_offsets, n_q, n_k)
+    vmax = float(max(np.abs(W_summed_all).max(), np.abs(W).max())) or 1.0
+
+    if "heatmaps" in plots:
+        for offset_idx, offset in enumerate(offsets):
+            _plot_heatmaps(
+                W[offset_idx],
+                q_alive,
+                k_alive,
+                n_q_heads,
+                layer_idx,
+                run_id,
+                out_dir,
+                offset,
+                vmax,
+            )
+
+    if "heatmaps_per_head" in plots:
+        _plot_heatmaps_per_head(
+            W, q_alive, k_alive, n_q_heads, layer_idx, run_id, out_dir, offsets, vmax
+        )
+
+    if "scatter" in plots:
+        _plot_head_vs_sum_scatter(W, n_q_heads, layer_idx, run_id, out_dir, offsets)
+
+    if "diffs" in plots:
+        assert offsets[0] == 0, "First offset must be 0 for diff computation"
+        W_base = W[0]
+        non_zero_offsets = [(idx, o) for idx, o in enumerate(offsets) if o != 0]
+        if non_zero_offsets:
+            diffs = np.stack([W[idx] - W_base for idx, _ in non_zero_offsets])
+            D_summed_all = diffs.sum(axis=1)
+            diff_vmax = float(max(np.abs(D_summed_all).max(), np.abs(diffs).max())) or 1.0
+
+            diff_dir = out_dir / "diffs"
+            diff_dir.mkdir(parents=True, exist_ok=True)
+            for i, (_, offset) in enumerate(non_zero_offsets):
+                _plot_diff_heatmaps(
+                    diffs[i],
                     q_alive,
                     k_alive,
                     n_q_heads,
                     layer_idx,
                     run_id,
-                    out_dir,
+                    diff_dir,
                     offset,
-                    vmax,
+                    diff_vmax,
                 )
 
-            # Per-head heatmaps across offsets
-            _plot_heatmaps_per_head(
-                W, q_alive, k_alive, n_q_heads, layer_idx, run_id, out_dir, offsets, vmax
-            )
+    if "lines" in plots:
+        _plot_pair_lines(
+            W_summed_all, offsets, q_alive, k_alive, layer_idx, run_id, out_dir, top_n_pairs
+        )
 
-            # Scatter: per-head vs summed contributions
-            _plot_head_vs_sum_scatter(W, n_q_heads, layer_idx, run_id, out_dir, offsets)
+    if "lines_per_head" in plots:
+        _plot_pair_lines_per_head(
+            W, offsets, q_alive, k_alive, layer_idx, run_id, out_dir, top_n_pairs
+        )
 
-            # Diff plots: W(Δ=k) - W(Δ=0) for each non-zero offset
-            assert offsets[0] == 0, "First offset must be 0 for diff computation"
-            W_base = W[0]  # (n_heads, n_q, n_k) at Δ=0
-            non_zero_offsets = [(idx, o) for idx, o in enumerate(offsets) if o != 0]
-            if non_zero_offsets:
-                diffs = np.stack([W[idx] - W_base for idx, _ in non_zero_offsets])
-                D_summed_all = diffs.sum(axis=1)
-                diff_vmax = float(max(np.abs(D_summed_all).max(), np.abs(diffs).max())) or 1.0
+    if "lines_single_head" in plots:
+        _plot_pair_lines_single_head(
+            W,
+            offsets,
+            q_alive,
+            k_alive,
+            n_q_heads,
+            layer_idx,
+            run_id,
+            out_dir,
+            top_n_pairs,
+        )
 
-                diff_dir = out_dir / "diffs"
-                diff_dir.mkdir(parents=True, exist_ok=True)
-                for i, (_, offset) in enumerate(non_zero_offsets):
-                    _plot_diff_heatmaps(
-                        diffs[i],
-                        q_alive,
-                        k_alive,
-                        n_q_heads,
-                        layer_idx,
-                        run_id,
-                        diff_dir,
-                        offset,
-                        diff_vmax,
-                    )
 
-            # Line plots: attention contribution vs offset for top pairs
-            _plot_pair_lines(
-                W_summed_all, offsets, q_alive, k_alive, layer_idx, run_id, out_dir, top_n_pairs
-            )
-            _plot_pair_lines_per_head(
-                W, offsets, q_alive, k_alive, layer_idx, run_id, out_dir, top_n_pairs
-            )
+def plot_qk_c_attention_contributions(
+    wandb_path: ModelPath,
+    offsets: tuple[int, ...] = DEFAULT_OFFSETS,
+    top_n_pairs: int = 10,
+    plots: str = "all",
+    recompute: bool = False,
+) -> None:
+    """Plot weight-only attention contribution analyses.
+
+    Args:
+        wandb_path: WandB run path.
+        offsets: Relative position offsets to evaluate.
+        top_n_pairs: Number of top (q, k) pairs to highlight in line plots.
+        plots: Comma-separated plot types, or "all". Options: heatmaps, heatmaps_per_head,
+            scatter, diffs, lines, lines_per_head, lines_single_head.
+        recompute: Force recomputation even if cached data exists.
+    """
+    plot_set: set[str] = (
+        set(PLOT_TYPES) if plots == "all" else {s.strip() for s in plots.split(",")}
+    )
+    unknown = plot_set - set(PLOT_TYPES)
+    assert not unknown, f"Unknown plot types: {unknown}. Valid: {PLOT_TYPES}"
+
+    _entity, _project, run_id = parse_wandb_run_path(str(wandb_path))
+    out_dir = SCRIPT_DIR / "out" / run_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    layer_caches = _get_layer_caches(wandb_path, offsets, out_dir, run_id, recompute)
+
+    for layer_idx, cache in layer_caches:
+        _plot_layer(cache, layer_idx, run_id, out_dir, top_n_pairs, plot_set)
 
     logger.info(f"All plots saved to {out_dir}")
 
