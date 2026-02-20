@@ -358,11 +358,18 @@ def _build_unification_jobs(
     db: TopologicalInterpDB,
     config: TopologicalInterpConfig,
 ) -> Iterable[LLMJob]:
+    n_skipped = 0
     for key in keys:
         output_label = db.get_output_label(key)
         input_label = db.get_input_label(key)
-        assert output_label is not None, f"Output label missing for {key}"
-        assert input_label is not None, f"Input label missing for {key}"
+        if output_label is None or input_label is None:
+            n_skipped += 1
+            logger.warning(
+                f"Skipping unification for {key}: "
+                f"output={'yes' if output_label else 'MISSING'}, "
+                f"input={'yes' if input_label else 'MISSING'}"
+            )
+            continue
 
         prompt = format_unification_prompt(
             output_label=output_label,
@@ -370,6 +377,8 @@ def _build_unification_jobs(
             label_max_words=config.label_max_words,
         )
         yield LLMJob(prompt=prompt, schema=LABEL_SCHEMA, key=key)
+    if n_skipped:
+        logger.warning(f"Skipped {n_skipped} components missing output or input labels")
 
 
 async def _run_unification(
