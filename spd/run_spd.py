@@ -347,13 +347,14 @@ def optimize(
 
         # --- Evaluation --- #
         if step % config.eval_freq == 0:
-            with torch.no_grad(), bf16_autocast(enabled=config.autocast_bf16):
-                slow_step: bool = (
-                    config.slow_eval_on_first_step
-                    if step == 0
-                    else step % config.slow_eval_freq == 0
-                )
+            slow_step: bool = (
+                config.slow_eval_on_first_step
+                if step == 0
+                else step % config.slow_eval_freq == 0
+            )
 
+            # Multibatch PGD eval requires gradients for adversarial source updates.
+            with bf16_autocast(enabled=config.autocast_bf16):
                 multibatch_pgd_metrics = evaluate_multibatch_pgd(
                     multibatch_pgd_eval_configs=multibatch_pgd_eval_configs,
                     model=component_model,
@@ -363,6 +364,7 @@ def optimize(
                     device=device,
                 )
 
+            with torch.no_grad(), bf16_autocast(enabled=config.autocast_bf16):
                 metrics = evaluate(
                     eval_metric_configs=eval_metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
@@ -374,24 +376,24 @@ def optimize(
                     current_frac_of_training=step / config.steps,
                 )
 
-                dict_safe_update_(metrics, multibatch_pgd_metrics)
+            dict_safe_update_(metrics, multibatch_pgd_metrics)
 
-                if is_main_process():
-                    assert out_dir is not None
-                    for k, v in metrics.items():
-                        tqdm.write(f"eval/{k}: {v}")
-                    local_log(metrics, step, out_dir)
-                    if config.wandb_project:
-                        wandb_logs = {
-                            f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
-                            for k, v in metrics.items()
-                        }
-                        try_wandb(wandb.log, wandb_logs, step=step)
+            if is_main_process():
+                assert out_dir is not None
+                for k, v in metrics.items():
+                    tqdm.write(f"eval/{k}: {v}")
+                local_log(metrics, step, out_dir)
+                if config.wandb_project:
+                    wandb_logs = {
+                        f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
+                        for k, v in metrics.items()
+                    }
+                    try_wandb(wandb.log, wandb_logs, step=step)
 
-                del metrics
-                # TODO: we should reverse the order of these two calls
-                torch.cuda.empty_cache()
-                gc.collect()
+            del metrics
+            # TODO: we should reverse the order of these two calls
+            torch.cuda.empty_cache()
+            gc.collect()
 
         # --- Saving Checkpoint --- #
         if (
