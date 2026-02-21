@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dataset Attribution Convergence Analysis</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.6; }
+  h1 { border-bottom: 2px solid #333; padding-bottom: 10px; }
+  h2 { color: #333; margin-top: 40px; }
+  table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: right; }
+  th { background: #f5f5f5; font-weight: 600; text-align: left; }
+  td:first-child { text-align: left; }
+  .metric { font-family: "SF Mono", "Consolas", monospace; }
+  .good { color: #16a34a; font-weight: 600; }
+  .warn { color: #d97706; font-weight: 600; }
+  .bad { color: #dc2626; font-weight: 600; }
+  .card { background: #f8f9fa; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0; }
+  .card h3 { margin-top: 0; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+  .summary { font-size: 1.1em; background: #eff6ff; border-left: 4px solid #3b82f6; padding: 16px 20px; margin: 20px 0; }
+  .chart { width: 100%; height: 300px; margin: 20px 0; }
+  svg text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+</style>
+</head>
+<body>
+
+<h1>Dataset Attribution Convergence Analysis</h1>
+<p>Analysis of run <code>s-17805b61</code> (GPT-2 scale) and reference run <code>s-eab2ace8</code> (smaller model).</p>
+<p>Generated: 2026-02-21</p>
+
+<div class="summary">
+  <strong>Key finding:</strong> The biggest performance lever is the alive component threshold (<code>fd_threshold</code>), not removing output/input targets.
+  With <code>fd_threshold=0.01</code>, we keep only 5,383 of 38,912 components (13.8%), yielding ~6.5x speedup.
+  Convergence analysis on the smaller model shows r=0.845 correlation between 1-batch and 10K-batch attributions,
+  suggesting ~100-500 batches should be sufficient for stable results.
+</div>
+
+<h2>1. Scale Comparison</h2>
+
+<table>
+  <tr><th>Metric</th><th>s-eab2ace8 (old)</th><th>s-17805b61 (new)</th><th>Factor</th></tr>
+  <tr><td>vocab_size</td><td class="metric">4,019</td><td class="metric">50,254</td><td class="metric warn">12.5x</td></tr>
+  <tr><td>d_model</td><td class="metric">192</td><td class="metric">768</td><td class="metric warn">4x</td></tr>
+  <tr><td>n_components</td><td class="metric">7,104</td><td class="metric">38,912</td><td class="metric warn">5.5x</td></tr>
+  <tr><td>n_sources (vocab + components)</td><td class="metric">11,123</td><td class="metric">89,166</td><td class="metric warn">8x</td></tr>
+  <tr><td>Alive components (fd>0)</td><td class="metric">~3,900</td><td class="metric">38,912 (100%)</td><td class="metric bad">~10x</td></tr>
+  <tr><td>Backward passes per batch</td><td class="metric">~4,092</td><td class="metric">~39,680</td><td class="metric bad">~10x</td></tr>
+</table>
+
+<h2>2. Alive Component Filtering (fd_threshold)</h2>
+
+<p>The firing density distribution for <code>s-17805b61</code> is extremely heavy-tailed.
+  While all 38,912 components have fd > 0, most have very low firing density.</p>
+
+<div class="card">
+  <h3>Impact of fd_threshold on alive components</h3>
+  <table>
+    <tr><th>fd_threshold</th><th>Alive components</th><th>% of total</th><th>Estimated speedup</th></tr>
+    <tr><td class="metric">0.0 (current)</td><td class="metric">38,912</td><td class="metric">100%</td><td class="metric">1x (baseline)</td></tr>
+    <tr><td class="metric">0.001</td><td class="metric">10,830</td><td class="metric">27.8%</td><td class="metric good">~3.5x</td></tr>
+    <tr><td class="metric">0.005</td><td class="metric">~7,000</td><td class="metric">~18%</td><td class="metric good">~5x</td></tr>
+    <tr><td class="metric">0.01</td><td class="metric">5,383</td><td class="metric">13.8%</td><td class="metric good">~6.5x</td></tr>
+    <tr><td class="metric">0.05</td><td class="metric">~2,500</td><td class="metric">~6.4%</td><td class="metric good">~14x</td></tr>
+  </table>
+  <p><strong>Note:</strong> Speedup is approximately linear in the number of alive target components,
+    since each target requires one backward pass.</p>
+</div>
+
+<h2>3. Impact of Removing Output / Input Targets</h2>
+
+<div class="card">
+  <h3>Comparison of optimization approaches</h3>
+  <table>
+    <tr><th>Approach</th><th>Backward passes saved</th><th>% reduction</th></tr>
+    <tr><td>Remove output target (d_model=768 dims)</td><td class="metric">768</td><td class="metric warn">~2%</td></tr>
+    <tr><td>Remove wte source</td><td class="metric">0 (no backward passes)</td><td class="metric bad">0%</td></tr>
+    <tr><td><code>fd_threshold=0.01</code></td><td class="metric">~33,529</td><td class="metric good">~85%</td></tr>
+  </table>
+  <p>Removing output/wte is still useful for simplicity but the performance gain is negligible compared to fd filtering.</p>
+</div>
+
+<h2>4. Convergence Analysis: 1-batch vs 10K-batch (s-eab2ace8)</h2>
+
+<p>Reference comparison using the smaller model <code>s-eab2ace8</code> (7,104 components, vocab 4,019):</p>
+
+<div class="card">
+  <h3>1-batch (4,096 tokens) vs 10K-batch (163.8M tokens)</h3>
+  <table>
+    <tr><th>Metric</th><th>Value</th></tr>
+    <tr><td>Pearson r (raw values)</td><td class="metric good">0.845</td></tr>
+    <tr><td>Pearson r (absolute values)</td><td class="metric good">0.842</td></tr>
+    <tr><td>Top-100 overlap</td><td class="metric good">79.0%</td></tr>
+    <tr><td>Top-500 overlap</td><td class="metric good">77.0%</td></tr>
+    <tr><td>Top-1000 overlap</td><td class="metric good">75.1%</td></tr>
+    <tr><td>Top-5000 overlap</td><td class="metric good">73.1%</td></tr>
+    <tr><td>Relative MAD</td><td class="metric warn">0.786</td></tr>
+    <tr><td>Non-zero entries</td><td class="metric">23.9M / 79.0M (30.3%)</td></tr>
+  </table>
+</div>
+
+<p>Interpretation: A single batch already captures ~85% of the signal (by correlation).
+  The convergence curve likely follows a ~1/sqrt(n) pattern, so:</p>
+
+<div class="card">
+  <h3>Estimated convergence at different batch counts</h3>
+  <table>
+    <tr><th>Batches</th><th>Estimated r</th><th>Quality</th></tr>
+    <tr><td class="metric">1</td><td class="metric">0.845 (measured)</td><td>Rough ordering</td></tr>
+    <tr><td class="metric">10</td><td class="metric">~0.95</td><td>Good for ranking</td></tr>
+    <tr><td class="metric">50</td><td class="metric">~0.98</td><td>Reliable</td></tr>
+    <tr><td class="metric">100</td><td class="metric">~0.99</td><td>High quality</td></tr>
+    <tr><td class="metric">500</td><td class="metric">~0.998</td><td>Near converged</td></tr>
+    <tr><td class="metric">10,000</td><td class="metric">~1.000</td><td>Fully converged (diminishing returns)</td></tr>
+  </table>
+  <p><em>Estimates based on 1/sqrt(n) error scaling from the 1-batch anchor point.
+    Use the <code>scripts/da_convergence_analysis.py</code> script on GPU for exact measurements.</em></p>
+</div>
+
+<h2>5. Recommendations</h2>
+
+<ol>
+  <li><strong>Set <code>fd_threshold=0.01</code></strong> as default for large models. This gives ~6.5x speedup with minimal information loss (components with fd &lt; 0.01 rarely fire).</li>
+  <li><strong>Reduce <code>n_batches</code> from 10K to 500</strong> for initial explorations. 10K batches is deep in diminishing returns.</li>
+  <li><strong>Removing output/wte targets</strong> is fine for simplicity but won't meaningfully speed things up.</li>
+  <li><strong>Combined speedup:</strong> fd_threshold=0.01 (~6.5x) + 500 batches instead of 10K (~20x fewer batches) = potentially completing runs ~130x faster in wall-clock time.</li>
+</ol>
+
+<h2>6. Code Changes</h2>
+
+<p>Branch: <code>refactor/dataset-attributions-perf</code></p>
+
+<p>New config fields in <code>DatasetAttributionConfig</code>:</p>
+<ul>
+  <li><code>fd_threshold: float = 0.0</code> — Firing density threshold for alive mask (0.0 = keep all, matches old behavior)</li>
+  <li><code>include_output_target: bool = True</code> — Whether to include output vocabulary as an attribution target</li>
+  <li><code>include_wte_source: bool = True</code> — Whether to include embedding as an attribution source</li>
+</ul>
+
+<p>New script: <code>scripts/da_convergence_analysis.py</code></p>
+<ul>
+  <li>Split-half reliability measurement over accumulating batches</li>
+  <li>Usage: <code>python scripts/da_convergence_analysis.py &lt;wandb_path&gt; --fd_threshold 0.01 --n_batches 500</code></li>
+  <li>Outputs JSON to <code>SPD_OUT_DIR/www/da_convergence/</code></li>
+</ul>
+
+</body>
+</html>

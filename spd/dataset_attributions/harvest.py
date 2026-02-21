@@ -53,10 +53,10 @@ def _build_alive_masks(
     harvest_subrun_id: str | None,
     n_components: int,
     vocab_size: int,
+    fd_threshold: float,
+    include_wte_source: bool,
 ) -> tuple[Bool[Tensor, " n_sources"], Bool[Tensor, " n_components"]]:
-    """Build masks of alive components (mean_activation > threshold) for sources and targets.
-
-    Falls back to all-alive if harvest summary not available.
+    """Build masks of alive components (firing_density > fd_threshold) for sources and targets.
 
     Index structure:
     - Sources: [0, vocab_size) = wte tokens, [vocab_size, vocab_size + n_components) = component layers
@@ -68,8 +68,8 @@ def _build_alive_masks(
     source_alive = torch.zeros(n_sources, dtype=torch.bool)
     target_alive = torch.zeros(n_components, dtype=torch.bool)
 
-    # All wte tokens are always alive (source indices [0, vocab_size))
-    source_alive[:vocab_size] = True
+    # wte tokens alive only if included as source
+    source_alive[:vocab_size] = include_wte_source
 
     if harvest_subrun_id is not None:
         harvest = HarvestRepo(decomposition_id=run_id, subrun_id=harvest_subrun_id, readonly=True)
@@ -87,7 +87,9 @@ def _build_alive_masks(
         n_layer_components = model.module_to_c[layer]
         for c_idx in range(n_layer_components):
             component_key = f"{layer}:{c_idx}"
-            is_alive = component_key in summary and summary[component_key].firing_density > 0.0
+            is_alive = (
+                component_key in summary and summary[component_key].firing_density > fd_threshold
+            )
             source_alive[source_idx] = is_alive
             target_alive[target_idx] = is_alive
             source_idx += 1
@@ -97,7 +99,8 @@ def _build_alive_masks(
     n_target_alive = int(target_alive.sum().item())
     logger.info(
         f"Alive components: {n_source_alive}/{n_sources} sources, "
-        f"{n_target_alive}/{n_components} component targets (firing density > 0.0)"
+        f"{n_target_alive}/{n_components} component targets "
+        f"(firing density > {fd_threshold})"
     )
     return source_alive, target_alive
 
@@ -143,7 +146,13 @@ def harvest_attributions(
     component_layer_keys = _build_component_layer_keys(model)
     n_components = len(component_layer_keys)
     source_alive, target_alive = _build_alive_masks(
-        model, run_id, harvest_subrun_id, n_components, vocab_size
+        model,
+        run_id,
+        harvest_subrun_id,
+        n_components,
+        vocab_size,
+        fd_threshold=config.fd_threshold,
+        include_wte_source=config.include_wte_source,
     )
     source_alive = source_alive.to(device)
     target_alive = target_alive.to(device)
@@ -156,12 +165,10 @@ def harvest_attributions(
     topology = TransformerTopology(model.target_model)
     sources_by_target_raw = get_sources_by_target(model, topology, str(device), spd_config.sampling)
 
-    # Filter sources_by_target:
-    # - Valid targets: component layers + output
-    # - Valid sources: wte + component layers
+    # Filter sources_by_target based on config
     component_layers = set(model.target_module_paths)
-    valid_sources = component_layers | {"wte"}
-    valid_targets = component_layers | {"output"}
+    valid_sources = component_layers | ({"wte"} if config.include_wte_source else set())
+    valid_targets = component_layers | ({"output"} if config.include_output_target else set())
 
     sources_by_target = {}
     for target, sources in sources_by_target_raw.items():
@@ -170,7 +177,10 @@ def harvest_attributions(
         filtered_sources = [src for src in sources if src in valid_sources]
         if filtered_sources:
             sources_by_target[target] = filtered_sources
-    logger.info(f"Found {len(sources_by_target)} target layers with gradient connections")
+    logger.info(
+        f"Found {len(sources_by_target)} target layers with gradient connections "
+        f"(include_output={config.include_output_target}, include_wte={config.include_wte_source})"
+    )
 
     # Create harvester
     harvester = AttributionHarvester(
@@ -224,6 +234,7 @@ def harvest_attributions(
         n_batches_processed=harvester.n_batches,
         n_tokens_processed=harvester.n_tokens,
         ci_threshold=config.ci_threshold,
+        fd_threshold=config.fd_threshold,
     )
 
     if rank is not None:
@@ -270,6 +281,7 @@ def merge_attributions(output_dir: Path) -> None:
         assert storage.vocab_size == first.vocab_size, "Vocab size mismatch"
         assert storage.d_model == first.d_model, "d_model mismatch"
         assert storage.ci_threshold == first.ci_threshold, "CI threshold mismatch"
+        assert storage.fd_threshold == first.fd_threshold, "FD threshold mismatch"
 
         # Accumulate de-normalized values
         total_comp += storage.source_to_component * storage.n_tokens_processed
@@ -291,6 +303,7 @@ def merge_attributions(output_dir: Path) -> None:
         n_batches_processed=total_batches,
         n_tokens_processed=total_tokens,
         ci_threshold=first.ci_threshold,
+        fd_threshold=first.fd_threshold,
     )
 
     output_path = output_dir / "dataset_attributions.pt"

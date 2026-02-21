@@ -70,6 +70,7 @@ class DatasetAttributionStorage:
     n_batches_processed: int
     n_tokens_processed: int
     ci_threshold: float
+    fd_threshold: float = 0.0
 
     _component_key_to_idx: dict[str, int] = dataclasses.field(
         default_factory=dict, repr=False, init=False
@@ -184,6 +185,7 @@ class DatasetAttributionStorage:
                 "n_batches_processed": self.n_batches_processed,
                 "n_tokens_processed": self.n_tokens_processed,
                 "ci_threshold": self.ci_threshold,
+                "fd_threshold": self.fd_threshold,
             },
             path,
         )
@@ -202,6 +204,7 @@ class DatasetAttributionStorage:
             n_batches_processed=data["n_batches_processed"],
             n_tokens_processed=data["n_tokens_processed"],
             ci_threshold=data["ci_threshold"],
+            fd_threshold=data.get("fd_threshold", 0.0),
         )
 
     def get_attribution(

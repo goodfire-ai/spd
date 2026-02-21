@@ -1,0 +1,26 @@
+{
+  "description": "Comparison of 1-batch vs 10K-batch dataset attributions for s-eab2ace8",
+  "run_id": "s-eab2ace8",
+  "reference_10k": {
+    "n_batches": 10000,
+    "n_tokens": 163840000,
+    "source_to_component_shape": [11123, 7104]
+  },
+  "test_1batch": {
+    "n_batches": 1,
+    "n_tokens": 4096
+  },
+  "comparison": {
+    "pearson_r_raw": 0.845126,
+    "pearson_r_abs": 0.842190,
+    "top_100_overlap": 0.790,
+    "top_500_overlap": 0.770,
+    "top_1000_overlap": 0.751,
+    "top_5000_overlap": 0.731,
+    "mean_absolute_diff": 0.000102,
+    "mean_abs_10k": 0.000130,
+    "relative_mad": 0.7858,
+    "nonzero_entries": 23903912,
+    "total_entries": 79017792
+  }
+}

@@ -16,6 +16,9 @@ class DatasetAttributionConfig(BaseConfig):
     n_batches: int | Literal["whole_dataset"] = 10_000
     batch_size: int = 32
     ci_threshold: float = 0.0
+    fd_threshold: float = 0.0
+    include_output_target: bool = True
+    include_wte_source: bool = True
 
 
 class AttributionsSlurmConfig(BaseConfig):
