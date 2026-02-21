@@ -1,8 +1,8 @@
 {
     "merge_config": {
       "activation_threshold": 0.1,
-      "alpha": 1,
-      "iters": 1000,
+      "alpha": 10,
+      "iters": 10000,
       "merge_pair_sampling_method": "range",
       "merge_pair_sampling_kwargs": {"threshold": 0.001},
       "filter_dead_threshold": 0.1,
