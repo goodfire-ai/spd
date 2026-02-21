@@ -1,7 +1,7 @@
 wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ''
-seed: 8
+seed: 7
 autocast_bf16: true
 n_mask_samples: 1
 ci_config:
