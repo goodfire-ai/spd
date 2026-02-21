@@ -88,11 +88,13 @@ def parse_components(spec: str) -> list[tuple[str, int]]:
 
 AttentionPatterns = dict[int, Float[Tensor, "n_heads T T"]]
 ValueVectors = dict[int, Float[Tensor, "n_heads T head_dim"]]
+AttnOutputs = dict[int, Float[Tensor, "T d_model"]]
 
 
 class AttentionData(NamedTuple):
     patterns: AttentionPatterns  # layer → (n_heads, T, T)
     values: ValueVectors  # layer → (n_heads, T, head_dim)
+    attn_outputs: AttnOutputs  # layer → (T, d_model)
 
 
 @contextmanager
@@ -131,6 +133,7 @@ def patched_attention_forward(
     """
     patterns: AttentionPatterns = {}
     values: ValueVectors = {}
+    attn_outs: AttnOutputs = {}
     originals: dict[int, object] = {}
 
     for layer_idx, block in enumerate(target_model._h):
@@ -186,6 +189,9 @@ def patched_attention_forward(
 
                 y = y.transpose(1, 2).contiguous().view(B, T, C)
                 y = attn_module.o_proj(y)
+
+                attn_outs[li] = y.float().mean(dim=0).detach().cpu()
+
                 return y
 
             return _patched_forward
@@ -193,7 +199,7 @@ def patched_attention_forward(
         attn.forward = _make_patched_forward(attn, layer_idx)  # pyright: ignore[reportAttributeAccessIssue]
 
     try:
-        yield AttentionData(patterns, values)
+        yield AttentionData(patterns, values, attn_outs)
     finally:
         for layer_idx, block in enumerate(target_model._h):
             block.attn.forward = originals[layer_idx]  # pyright: ignore[reportAttributeAccessIssue]
@@ -317,6 +323,70 @@ def plot_value_norms_diff(
         ax.set_yticks(range(n_heads))
         ax.set_yticklabels([f"H{h}" for h in range(n_heads)], fontsize=8)
         fig.colorbar(im, ax=ax, fraction=0.02, pad=0.02)
+
+    fig.suptitle(title, fontsize=13, fontweight="bold")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved {path}")
+
+
+def compute_head_ablation_inner_products(
+    baseline_attn_outputs: AttnOutputs,
+    ablated_attn_outputs: AttnOutputs,
+) -> tuple[AttnOutputs, AttnOutputs]:
+    """Compute inner product and cosine similarity between head contribution and ablated output.
+
+    Returns (inner_products, cosine_sims) where each is layer → (T,).
+    """
+    inner_products: AttnOutputs = {}
+    cosine_sims: AttnOutputs = {}
+    for layer_idx in baseline_attn_outputs:
+        head_contribution = baseline_attn_outputs[layer_idx] - ablated_attn_outputs[layer_idx]
+        ablated = ablated_attn_outputs[layer_idx]
+        ip = (head_contribution * ablated).sum(dim=-1)
+        inner_products[layer_idx] = ip
+        norms_product = head_contribution.norm(dim=-1) * ablated.norm(dim=-1)
+        cosine_sims[layer_idx] = ip / norms_product.clamp(min=1e-8)
+    return inner_products, cosine_sims
+
+
+def compute_component_ablation_inner_products(
+    baseline_attn_outputs: AttnOutputs,
+    ablated_attn_outputs: AttnOutputs,
+) -> tuple[AttnOutputs, AttnOutputs]:
+    """Compute inner product and cosine similarity between baseline and ablated attention outputs.
+
+    Returns (inner_products, cosine_sims) where each is layer → (T,).
+    """
+    inner_products: AttnOutputs = {}
+    cosine_sims: AttnOutputs = {}
+    for layer_idx in baseline_attn_outputs:
+        baseline = baseline_attn_outputs[layer_idx]
+        ablated = ablated_attn_outputs[layer_idx]
+        ip = (baseline * ablated).sum(dim=-1)
+        inner_products[layer_idx] = ip
+        norms_product = baseline.norm(dim=-1) * ablated.norm(dim=-1)
+        cosine_sims[layer_idx] = ip / norms_product.clamp(min=1e-8)
+    return inner_products, cosine_sims
+
+
+def plot_output_inner_product(
+    inner_products: AttnOutputs,
+    title: str,
+    path: Path,
+    max_pos: int,
+) -> None:
+    n_layers = len(inner_products)
+    fig, axes = plt.subplots(n_layers, 1, figsize=(10, n_layers * 2), squeeze=False)
+
+    for layer_idx in range(n_layers):
+        ax = axes[layer_idx, 0]
+        vals = inner_products[layer_idx][:max_pos].numpy()
+        ax.plot(vals, linewidth=0.8)
+        ax.axhline(y=0, color="gray", linewidth=0.5, linestyle="--")
+        ax.set_ylabel(f"Layer {layer_idx}", fontsize=9)
+        ax.set_xlabel("Position", fontsize=8)
 
     fig.suptitle(title, fontsize=13, fontweight="bold")
     fig.tight_layout()
@@ -466,6 +536,8 @@ class SampleResult(NamedTuple):
     ablated_patterns: AttentionPatterns
     baseline_values: ValueVectors
     ablated_values: ValueVectors
+    baseline_attn_outputs: AttnOutputs
+    ablated_attn_outputs: AttnOutputs
     baseline_logits: Tensor  # (batch, pos, vocab)
     ablated_logits: Tensor  # (batch, pos, vocab)
 
@@ -507,6 +579,8 @@ def _run_head_ablation(
         ablated_data.patterns,
         baseline_data.values,
         ablated_data.values,
+        baseline_data.attn_outputs,
+        ablated_data.attn_outputs,
         baseline_logits,
         ablated_logits,
     )
@@ -566,6 +640,8 @@ def _run_deterministic_component_ablation(
         ablated_data.patterns,
         baseline_data.values,
         ablated_data.values,
+        baseline_data.attn_outputs,
+        ablated_data.attn_outputs,
         baseline_out,
         ablated_out,
     )
@@ -588,6 +664,8 @@ def _run_stochastic_component_ablation(
     sample_ablated_patterns: AttentionPatterns = {}
     sample_baseline_values: ValueVectors = {}
     sample_ablated_values: ValueVectors = {}
+    sample_baseline_attn_outs: AttnOutputs = {}
+    sample_ablated_attn_outs: AttnOutputs = {}
 
     for _s in range(n_mask_samples):
         baseline_mask_infos, ablated_mask_infos = _build_stochastic_masks(
@@ -614,6 +692,8 @@ def _run_stochastic_component_ablation(
         _add_patterns(sample_ablated_patterns, a_data.patterns)
         _add_patterns(sample_baseline_values, b_data.values)
         _add_patterns(sample_ablated_values, a_data.values)
+        _add_patterns(sample_baseline_attn_outs, b_data.attn_outputs)
+        _add_patterns(sample_ablated_attn_outs, a_data.attn_outputs)
 
     assert baseline_logits_accum is not None and ablated_logits_accum is not None
     return SampleResult(
@@ -621,6 +701,8 @@ def _run_stochastic_component_ablation(
         _scale_patterns(sample_ablated_patterns, n_mask_samples),
         _scale_patterns(sample_baseline_values, n_mask_samples),
         _scale_patterns(sample_ablated_values, n_mask_samples),
+        _scale_patterns(sample_baseline_attn_outs, n_mask_samples),
+        _scale_patterns(sample_ablated_attn_outs, n_mask_samples),
         baseline_logits_accum / n_mask_samples,
         ablated_logits_accum / n_mask_samples,
     )
@@ -673,6 +755,8 @@ def _run_adversarial_component_ablation(
         ablated_data.patterns,
         baseline_data.values,
         ablated_data.values,
+        baseline_data.attn_outputs,
+        ablated_data.attn_outputs,
         baseline_out,
         ablated_out,
     )
@@ -766,13 +850,17 @@ def run_attention_ablation(
 
     attn_dir = out_dir / "attention_patterns"
     value_dir = out_dir / "value_norms"
+    sim_dir = out_dir / "output_similarity"
     attn_dir.mkdir(parents=True, exist_ok=True)
     value_dir.mkdir(parents=True, exist_ok=True)
+    sim_dir.mkdir(parents=True, exist_ok=True)
 
     accum_baseline_patterns: AttentionPatterns = {}
     accum_ablated_patterns: AttentionPatterns = {}
     accum_baseline_values: ValueVectors = {}
     accum_ablated_values: ValueVectors = {}
+    accum_inner_products: AttnOutputs = {}
+    accum_cosine_sims: AttnOutputs = {}
     stats = _AggStats()
 
     with torch.no_grad():
@@ -841,6 +929,28 @@ def run_attention_ablation(
                 max_pos,
             )
 
+            # Per-sample output similarity plots
+            if is_head_ablation:
+                sample_ip, sample_cos = compute_head_ablation_inner_products(
+                    result.baseline_attn_outputs, result.ablated_attn_outputs
+                )
+            else:
+                sample_ip, sample_cos = compute_component_ablation_inner_products(
+                    result.baseline_attn_outputs, result.ablated_attn_outputs
+                )
+            plot_output_inner_product(
+                sample_ip,
+                f"{run_id} | Sample {i} inner product",
+                sim_dir / f"{label}_sample{i}_inner_product.png",
+                max_pos,
+            )
+            plot_output_inner_product(
+                sample_cos,
+                f"{run_id} | Sample {i} cosine similarity",
+                sim_dir / f"{label}_sample{i}_cosine_sim.png",
+                max_pos,
+            )
+
             # Per-sample prediction table
             n_changed = log_prediction_table(
                 input_ids[0], result.baseline_logits[0], result.ablated_logits[0], tokenizer
@@ -860,6 +970,8 @@ def run_attention_ablation(
             _add_patterns(accum_ablated_patterns, result.ablated_patterns)
             _add_patterns(accum_baseline_values, result.baseline_values)
             _add_patterns(accum_ablated_values, result.ablated_values)
+            _add_patterns(accum_inner_products, sample_ip)
+            _add_patterns(accum_cosine_sims, sample_cos)
 
             if (i + 1) % 5 == 0:
                 logger.info(f"Processed {i + 1}/{n_samples} samples")
@@ -911,6 +1023,23 @@ def run_attention_ablation(
         mean_ablated_values,
         f"{run_id} | Value norms diff mean (n={stats.n_samples})",
         value_dir / f"{label}_mean_diff.png",
+        max_pos,
+    )
+
+    # Mean output similarity plots
+    mean_inner_products = _scale_patterns(accum_inner_products, stats.n_samples)
+    mean_cosine_sims = _scale_patterns(accum_cosine_sims, stats.n_samples)
+
+    plot_output_inner_product(
+        mean_inner_products,
+        f"{run_id} | Mean inner product (n={stats.n_samples})",
+        sim_dir / f"{label}_mean_inner_product.png",
+        max_pos,
+    )
+    plot_output_inner_product(
+        mean_cosine_sims,
+        f"{run_id} | Mean cosine similarity (n={stats.n_samples})",
+        sim_dir / f"{label}_mean_cosine_sim.png",
         max_pos,
     )
 
