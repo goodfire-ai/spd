@@ -1,0 +1,403 @@
+<script lang="ts">
+    import { getContext } from "svelte";
+    import { colors } from "../../lib/colors";
+    import type { EdgeAttribution, OutputProbability } from "../../lib/promptAttributionsTypes";
+    import { RUN_KEY, type InterpretationBackendState, type RunContext } from "../../lib/useRun.svelte";
+    import { lerp } from "../prompt-attr/graphUtils";
+
+    const runState = getContext<RunContext>(RUN_KEY);
+
+    type Props = {
+        items: EdgeAttribution[];
+        onClick: (key: string) => void;
+        pageSize: number;
+        direction: "positive" | "negative";
+        title?: string;
+        // Optional: only needed for prompt-level attributions with embed/output pseudo-layers
+        tokens?: string[];
+        outputProbs?: Record<string, OutputProbability>;
+    };
+
+    let { items, onClick, pageSize, direction, title, tokens, outputProbs }: Props = $props();
+
+    // Extract component key (layer:cIdx) from either format
+    function getComponentKey(key: string): string {
+        const parts = key.split(":");
+        if (parts.length === 3) {
+            return `${parts[0]}:${parts[2]}`; // layer:cIdx from layer:seq:cIdx
+        }
+        return key; // already layer:cIdx
+    }
+
+    // Extract just the aliased layer name from a key (e.g., "L0.attn.q" from "h.0.attn.q_proj:2:5")
+    function getLayerLabel(key: string): string {
+        const layer = key.split(":")[0];
+        return layer;
+    }
+
+    function getInterpretation(key: string): InterpretationBackendState {
+        const componentKey = getComponentKey(key);
+        const interp = runState.getInterpretation(componentKey);
+        if (interp.status === "loaded" && interp.data.status === "generated") return interp.data;
+        return { status: "none" };
+    }
+
+    // Check if a key refers to a pseudo-layer token node (embed/output)
+    function isTokenNode(key: string): boolean {
+        const layer = key.split(":")[0];
+        return layer === "embed" || layer === "output";
+    }
+
+    // Get the raw token text for a token node (used in tooltips)
+    function getTokenText(key: string): string {
+        const parts = key.split(":");
+
+        // Prompt attributions: 3-part keys (layer:seq:cIdx)
+        if (tokens && outputProbs && parts.length === 3) {
+            const [layer, seqStr, cIdx] = parts;
+            const seqIdx = parseInt(seqStr);
+
+            if (layer === "embed") {
+                if (seqIdx < 0 || seqIdx >= tokens.length) {
+                    throw new Error(
+                        `EdgeAttributionList: seqIdx ${seqIdx} out of bounds for tokens length ${tokens.length}`,
+                    );
+                }
+                return tokens[seqIdx];
+            }
+
+            if (layer === "output") {
+                const entry = outputProbs[`${seqIdx}:${cIdx}`];
+                if (!entry) {
+                    throw new Error(`EdgeAttributionList: output node ${key} not found in outputProbs`);
+                }
+                return entry.token;
+            }
+        }
+
+        // Dataset attributions: 2-part keys (layer:cIdx) - cIdx is vocab ID
+        if (parts.length === 2) {
+            const [layer, cIdx] = parts;
+
+            if (layer === "embed" || layer === "output") {
+                const vocabIdx = parseInt(cIdx);
+                // Tokens are guaranteed loaded when run is loaded (see useRun.svelte.ts)
+                if (runState.allTokens.status !== "loaded") {
+                    throw new Error(`allTokens not loaded (status: ${runState.allTokens.status})`);
+                }
+                const tokenInfo = runState.allTokens.data.find((t) => t.id === vocabIdx);
+                if (!tokenInfo) throw new Error(`Token not found for vocab index ${vocabIdx}`);
+                return tokenInfo.string;
+            }
+        }
+
+        throw new Error(`getTokenText called on non-token node: ${key}`);
+    }
+
+    // Get the quoted token string for display (e.g., "'hello'")
+    function getQuotedTokenLabel(key: string): string {
+        return `'${getTokenText(key)}'`;
+    }
+
+    // Get the token type label for the right side (e.g., "Input token" or "Output token")
+    function getTokenTypeLabel(key: string): string {
+        const layer = key.split(":")[0];
+        return layer === "embed" ? "Input token" : "Output token";
+    }
+
+    let currentPage = $state(0);
+    const totalPages = $derived(Math.ceil(items.length / pageSize));
+    const paginatedItems = $derived(items.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
+
+    // Track which pill is being hovered and its position
+    let hoveredKey = $state<string | null>(null);
+    let tooltipPosition = $state<{ top: number; left: number } | null>(null);
+
+    function handleMouseEnter(key: string, event: MouseEvent) {
+        hoveredKey = key;
+        const target = event.currentTarget as HTMLElement;
+        const rect = target.getBoundingClientRect();
+        tooltipPosition = { top: rect.top, left: rect.left };
+    }
+
+    function handleMouseLeave() {
+        hoveredKey = null;
+        tooltipPosition = null;
+    }
+
+    // Reset page when items change
+    $effect(() => {
+        items; // eslint-disable-line @typescript-eslint/no-unused-expressions
+        currentPage = 0;
+    });
+
+    function getBgColor(normalizedMagnitude: number): string {
+        const intensity = lerp(0, 0.8, normalizedMagnitude);
+        const { r, g, b } = direction === "negative" ? colors.negativeRgb : colors.positiveRgb;
+        return `rgba(${r}, ${g}, ${b}, ${intensity})`;
+    }
+
+    async function copyToClipboard(text: string) {
+        await navigator.clipboard.writeText(text);
+    }
+</script>
+
+<div class="edge-attribution-list">
+    <div class="header-row">
+        {#if title}
+            <span class="list-title">{title}</span>
+        {/if}
+        {#if totalPages > 1}
+            <div class="pagination">
+                <button onclick={() => currentPage--} disabled={currentPage === 0}>&lt;</button>
+                <span>{currentPage + 1} / {totalPages}</span>
+                <button onclick={() => currentPage++} disabled={currentPage >= totalPages - 1}>&gt;</button>
+            </div>
+        {/if}
+    </div>
+    <div class="items">
+        {#each paginatedItems as { key, value, normalizedMagnitude } (key)}
+            {@const bgColor = getBgColor(normalizedMagnitude)}
+            {@const textColor = normalizedMagnitude > 0.8 ? "white" : "var(--text-primary)"}
+            {@const formattedKey = key}
+            {@const isToken = isTokenNode(key)}
+            {@const interp = isToken ? undefined : getInterpretation(key)}
+            {@const hasInterpretation = interp?.status === "generated"}
+            <div class="pill-container" onmouseenter={(e) => handleMouseEnter(key, e)} onmouseleave={handleMouseLeave}>
+                <button class="edge-pill" style="background: {bgColor};" onclick={() => onClick(key)}>
+                    {#if hasInterpretation}
+                        <span class="pill-content">
+                            <span class="interp-label" style="color: {textColor};">{interp.data.label}</span>
+                            <span class="layer-label" style="color: {textColor};">{getLayerLabel(key)}</span>
+                        </span>
+                    {:else if isToken}
+                        <span class="pill-content">
+                            <span class="interp-label" style="color: {textColor};">{getQuotedTokenLabel(key)}</span>
+                            <span class="layer-label" style="color: {textColor};">{getTokenTypeLabel(key)}</span>
+                        </span>
+                    {:else}
+                        <span class="node-key" style="color: {textColor};">{formattedKey}</span>
+                    {/if}
+                </button>
+                {#if hoveredKey === key && tooltipPosition}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div
+                        class="tooltip"
+                        style="top: {tooltipPosition.top}px; left: {tooltipPosition.left}px;"
+                        onmouseenter={() => (hoveredKey = key)}
+                        onmouseleave={handleMouseLeave}
+                    >
+                        <div class="tooltip-value">Attribution: {value.toFixed(3)}</div>
+                        {#if hasInterpretation}
+                            <div class="tooltip-label">{interp.data.label}</div>
+                            <button class="tooltip-node-key copyable" onclick={() => copyToClipboard(formattedKey)}>
+                                {formattedKey}
+                                <svg
+                                    class="copy-icon"
+                                    width="12"
+                                    height="12"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                </svg>
+                            </button>
+                            <div class="tooltip-confidence">Confidence: {interp.data.confidence}</div>
+                        {:else if isToken}
+                            <div class="tooltip-token">Token: '{getTokenText(key)}'</div>
+                        {/if}
+                    </div>
+                {/if}
+            </div>
+        {/each}
+    </div>
+</div>
+
+<style>
+    .edge-attribution-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-1);
+    }
+
+    .header-row {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        min-height: 1.25rem; /* Ensure consistent height even when empty */
+    }
+
+    .list-title {
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+        font-style: italic;
+    }
+
+    .items {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        background: var(--bg-elevated);
+        padding: var(--space-2);
+        border: 1px solid var(--border-default);
+    }
+
+    .pagination {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--text-muted);
+    }
+
+    .pagination button {
+        padding: 2px 6px;
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        color: var(--text-secondary);
+        cursor: pointer;
+        font-size: var(--text-xs);
+    }
+
+    .pagination button:hover:not(:disabled) {
+        background: var(--bg-surface);
+        border-color: var(--border-strong);
+    }
+
+    .pagination button:disabled {
+        opacity: 0.4;
+        cursor: default;
+    }
+
+    .pill-container {
+        position: relative;
+        flex: 0 1 auto;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .edge-pill {
+        display: inline-flex;
+        align-items: flex-start;
+        gap: var(--space-2);
+        padding: var(--space-1) var(--space-1);
+        border-radius: var(--radius-sm);
+        cursor: default;
+        border: 1px solid var(--border-default);
+        font-family: inherit;
+        font-size: inherit;
+        max-width: 100%;
+    }
+
+    .node-key {
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        overflow-wrap: break-word;
+        text-align: left;
+    }
+
+    .pill-content {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: baseline;
+        gap: var(--space-2);
+    }
+
+    .interp-label {
+        font-family: var(--font-sans);
+        font-size: var(--text-xs);
+        font-weight: 500;
+        overflow-wrap: break-word;
+        text-align: left;
+    }
+
+    .layer-label {
+        font-family: var(--font-mono);
+        font-size: 9px;
+        opacity: 0.7;
+        text-align: right;
+    }
+
+    .tooltip {
+        position: fixed;
+        transform: translateY(-100%);
+        margin-top: -8px;
+        padding: var(--space-2) var(--space-3);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        box-shadow: var(--shadow-lg);
+        z-index: 10000;
+        min-width: 200px;
+        max-width: 350px;
+    }
+
+    .tooltip-value {
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: var(--space-1);
+    }
+
+    .tooltip-token {
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
+    }
+
+    .tooltip-label {
+        font-family: var(--font-sans);
+        font-weight: 600;
+        font-size: var(--text-sm);
+        color: var(--text-primary);
+        margin-bottom: var(--space-1);
+        word-wrap: break-word;
+    }
+
+    .tooltip-node-key {
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+        margin-bottom: var(--space-1);
+    }
+
+    .tooltip-node-key.copyable {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        background: none;
+        border: none;
+        padding: var(--space-1) var(--space-1);
+        margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-1));
+        margin-bottom: var(--space-1);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        text-align: left;
+    }
+
+    .tooltip-node-key.copyable:hover {
+        background: var(--bg-surface);
+    }
+
+    .tooltip-node-key.copyable .copy-icon {
+        opacity: 0.4;
+        flex-shrink: 0;
+    }
+
+    .tooltip-node-key.copyable:hover .copy-icon {
+        opacity: 0.8;
+    }
+
+    .tooltip-confidence {
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+    }
+</style>
