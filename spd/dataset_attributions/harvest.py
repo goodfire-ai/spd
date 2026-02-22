@@ -210,8 +210,7 @@ def harvest_attributions(
         f"Processing complete. Tokens: {harvester.n_tokens:,}, Batches: {harvester.n_batches}"
     )
 
-    # Project input-residual accumulators through V and normalize
-    normalized_comp = harvester.finalize_comp_accumulator() / harvester.n_tokens
+    normalized_comp = harvester.get_comp_attributions() / harvester.n_tokens
     normalized_out_residual = harvester.out_residual_accumulator / harvester.n_tokens
 
     # Build and save storage
