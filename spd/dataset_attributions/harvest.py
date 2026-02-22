@@ -211,7 +211,7 @@ def harvest_attributions(
     )
 
     normalized_comp = harvester.get_comp_attributions() / harvester.n_tokens
-    normalized_out_residual = harvester.out_residual_accumulator / harvester.n_tokens
+    normalized_out_residual = harvester.get_out_residual_attributions() / harvester.n_tokens
 
     # Build and save storage
     storage = DatasetAttributionStorage(
