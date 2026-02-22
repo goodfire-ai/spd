@@ -26,10 +26,11 @@ Usage:
 """
 
 import math
+import random
 import re
 from collections.abc import Generator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, NamedTuple
 
@@ -98,32 +99,9 @@ class AttentionData(NamedTuple):
 
 
 @contextmanager
-def ablate_v_proj_params(
-    target_model: LlamaSimpleMLP,
-    head_ablations: list[tuple[int, int]],
-) -> Generator[None]:
-    """Temporarily zero v_proj weight (and bias) rows for specified heads."""
-    head_dim = target_model.config.n_embd // target_model.config.n_head
-    saved_weights: list[Tensor] = []
-
-    for layer, head in head_ablations:
-        v_proj = target_model._h[layer].attn.v_proj
-        row_slice = slice(head * head_dim, (head + 1) * head_dim)
-        saved_weights.append(v_proj.weight.data[row_slice].clone())
-        v_proj.weight.data[row_slice] = 0.0
-
-    try:
-        yield
-    finally:
-        for (layer, head), saved_weight in zip(head_ablations, saved_weights, strict=True):
-            v_proj = target_model._h[layer].attn.v_proj
-            row_slice = slice(head * head_dim, (head + 1) * head_dim)
-            v_proj.weight.data[row_slice] = saved_weight
-
-
-@contextmanager
 def patched_attention_forward(
     target_model: LlamaSimpleMLP,
+    head_pos_ablations: list[tuple[int, int, int]] | None = None,
 ) -> Generator[AttentionData]:
     """Replace each CausalSelfAttention.forward to capture attention patterns and values.
 
@@ -184,6 +162,11 @@ def patched_attention_forward(
                 patterns[li] = att.float().mean(dim=0).detach().cpu()
 
                 y = att @ v  # (B, n_head, T, head_dim)
+
+                if head_pos_ablations is not None:
+                    for abl_layer, abl_head, abl_pos in head_pos_ablations:
+                        if abl_layer == li and abl_pos < T:
+                            y[:, abl_head, abl_pos, :] = 0.0
 
                 values[li] = v.float().mean(dim=0).detach().cpu()
 
@@ -331,31 +314,14 @@ def plot_value_norms_diff(
     logger.info(f"Saved {path}")
 
 
-def compute_head_ablation_inner_products(
+def compute_ablation_metrics(
     baseline_attn_outputs: AttnOutputs,
     ablated_attn_outputs: AttnOutputs,
 ) -> tuple[AttnOutputs, AttnOutputs]:
-    """Compute inner product and cosine similarity between head contribution and ablated output.
+    """Compute per-position inner product and cosine similarity of baseline vs ablated output.
 
-    Returns (inner_products, cosine_sims) where each is layer → (T,).
-    """
-    inner_products: AttnOutputs = {}
-    cosine_sims: AttnOutputs = {}
-    for layer_idx in baseline_attn_outputs:
-        head_contribution = baseline_attn_outputs[layer_idx] - ablated_attn_outputs[layer_idx]
-        ablated = ablated_attn_outputs[layer_idx]
-        ip = (head_contribution * ablated).sum(dim=-1)
-        inner_products[layer_idx] = ip
-        norms_product = head_contribution.norm(dim=-1) * ablated.norm(dim=-1)
-        cosine_sims[layer_idx] = ip / norms_product.clamp(min=1e-8)
-    return inner_products, cosine_sims
-
-
-def compute_component_ablation_inner_products(
-    baseline_attn_outputs: AttnOutputs,
-    ablated_attn_outputs: AttnOutputs,
-) -> tuple[AttnOutputs, AttnOutputs]:
-    """Compute inner product and cosine similarity between baseline and ablated attention outputs.
+    Both metrics compare baseline against ablated attention outputs.
+    At unaffected positions: IP = ||x||², cos = 1.0.
 
     Returns (inner_products, cosine_sims) where each is layer → (T,).
     """
@@ -371,24 +337,72 @@ def compute_component_ablation_inner_products(
     return inner_products, cosine_sims
 
 
-def plot_output_inner_product(
-    inner_products: AttnOutputs,
+def plot_per_position_line(
+    values: AttnOutputs,
     title: str,
     path: Path,
     max_pos: int,
+    baseline_y: float = 0.0,
+    ylim: tuple[float, float] | None = None,
 ) -> None:
-    n_layers = len(inner_products)
+    n_layers = len(values)
     fig, axes = plt.subplots(n_layers, 1, figsize=(10, n_layers * 2), squeeze=False)
 
     for layer_idx in range(n_layers):
         ax = axes[layer_idx, 0]
-        vals = inner_products[layer_idx][:max_pos].numpy()
+        vals = values[layer_idx][:max_pos].numpy()
         ax.plot(vals, linewidth=0.8)
-        ax.axhline(y=0, color="gray", linewidth=0.5, linestyle="--")
+        ax.axhline(y=baseline_y, color="gray", linewidth=0.5, linestyle="--")
+        if ylim is not None:
+            ax.set_ylim(*ylim)
         ax.set_ylabel(f"Layer {layer_idx}", fontsize=9)
         ax.set_xlabel("Position", fontsize=8)
 
     fig.suptitle(title, fontsize=13, fontweight="bold")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved {path}")
+
+
+def compute_ablation_metrics_at_pos(
+    baseline_attn_outputs: AttnOutputs,
+    ablated_attn_outputs: AttnOutputs,
+    pos: int,
+) -> tuple[dict[int, float], dict[int, float]]:
+    """Compute inner product and cosine similarity of baseline vs ablated at a single position.
+
+    Returns (inner_products, cosine_sims) — layer -> scalar.
+    """
+    inner_products: dict[int, float] = {}
+    cosine_sims: dict[int, float] = {}
+    for layer_idx in baseline_attn_outputs:
+        baseline_vec = baseline_attn_outputs[layer_idx][pos]
+        ablated_vec = ablated_attn_outputs[layer_idx][pos]
+        ip = (baseline_vec * ablated_vec).sum().item()
+        inner_products[layer_idx] = ip
+        norms_product = baseline_vec.norm().item() * ablated_vec.norm().item()
+        cosine_sims[layer_idx] = ip / max(norms_product, 1e-8)
+    return inner_products, cosine_sims
+
+
+def plot_output_similarity_bars(
+    means: dict[int, float],
+    stds: dict[int, float],
+    title: str,
+    path: Path,
+) -> None:
+    layers = sorted(means.keys())
+    mean_vals = [means[li] for li in layers]
+    std_vals = [stds[li] for li in layers]
+    layer_labels = [f"L{li}" for li in layers]
+
+    fig, ax = plt.subplots(figsize=(max(4, len(layers) * 1.2), 4))
+    ax.bar(layer_labels, mean_vals, yerr=std_vals, capsize=4, color="steelblue", alpha=0.8)
+    ax.axhline(y=0, color="gray", linewidth=0.5, linestyle="--")
+    ax.set_xlabel("Layer")
+    ax.set_ylabel("Value")
+    ax.set_title(title, fontsize=11, fontweight="bold")
     fig.tight_layout()
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -459,12 +473,17 @@ def calc_mean_kl_divergence(
 def _build_deterministic_masks(
     model: ComponentModel,
     ablated_components: list[tuple[str, int]],
-    batch_shape: tuple[int, ...],
+    batch_shape: tuple[int, int],
     device: torch.device,
+    ablation_pos: int,
 ) -> tuple[dict[str, ComponentsMaskInfo], dict[str, ComponentsMaskInfo]]:
-    """Build all-ones baseline and ablated mask_infos for deterministic mode."""
-    baseline_masks: dict[str, Float[Tensor, "... C"]] = {}
-    ablated_masks: dict[str, Float[Tensor, "... C"]] = {}
+    """Build all-ones baseline and ablated mask_infos for deterministic mode.
+
+    Masks have shape (batch, seq_len, C) and the target component is zeroed only at
+    ablation_pos.
+    """
+    baseline_masks: dict[str, Float[Tensor, "batch seq_len C"]] = {}
+    ablated_masks: dict[str, Float[Tensor, "batch seq_len C"]] = {}
 
     for module_name in model.target_module_paths:
         c = model.module_to_c[module_name]
@@ -473,27 +492,35 @@ def _build_deterministic_masks(
 
     for module_name, comp_idx in ablated_components:
         assert module_name in ablated_masks, f"Module {module_name!r} not in model"
-        ablated_masks[module_name][..., comp_idx] = 0.0
+        ablated_masks[module_name][:, ablation_pos, comp_idx] = 0.0
 
     return make_mask_infos(baseline_masks), make_mask_infos(ablated_masks)
 
 
 def _build_stochastic_masks(
     _model: ComponentModel,
-    ci: dict[str, Float[Tensor, "... C"]],
+    ci: dict[str, Float[Tensor, "batch C"]],
     ablated_components: list[tuple[str, int]],
     sampling: SamplingType,
+    ablation_pos: int,
+    seq_len: int,
 ) -> tuple[dict[str, ComponentsMaskInfo], dict[str, ComponentsMaskInfo]]:
-    """Build stochastic mask_infos: baseline uses original CI, ablated zeros target CIs."""
-    router = AllLayersRouter()
-    baseline_mask_infos = calc_stochastic_component_mask_info(ci, sampling, None, router)
+    """Build stochastic mask_infos: baseline uses original CI, ablated zeros target CIs.
 
-    ablated_ci = {k: v.clone() for k, v in ci.items()}
+    CI is expanded to (batch, seq_len, C) and the target component CI is zeroed only at
+    ablation_pos.
+    """
+    router = AllLayersRouter()
+
+    expanded_ci = {k: v.unsqueeze(1).expand(-1, seq_len, -1).clone() for k, v in ci.items()}
+    baseline_mask_infos = calc_stochastic_component_mask_info(expanded_ci, sampling, None, router)
+
+    ablated_ci = {k: v.clone() for k, v in expanded_ci.items()}
     for module_name, comp_idx in ablated_components:
         assert module_name in ablated_ci, f"Module {module_name!r} not in model"
-        ablated_ci[module_name][..., comp_idx] = 0.0
-
+        ablated_ci[module_name][:, ablation_pos, comp_idx] = 0.0
     ablated_mask_infos = calc_stochastic_component_mask_info(ablated_ci, sampling, None, router)
+
     return baseline_mask_infos, ablated_mask_infos
 
 
@@ -563,14 +590,13 @@ def _run_head_ablation(
     target_model: LlamaSimpleMLP,
     input_ids: Int[Tensor, "batch pos"],
     parsed_heads: list[tuple[int, int]],
+    ablation_pos: int,
 ) -> SampleResult:
     with patched_attention_forward(target_model) as baseline_data:
         baseline_logits, _ = target_model(input_ids)
 
-    with (
-        ablate_v_proj_params(target_model, parsed_heads),
-        patched_attention_forward(target_model) as ablated_data,
-    ):
+    pos_ablations = [(layer, head, ablation_pos) for layer, head in parsed_heads]
+    with patched_attention_forward(target_model, head_pos_ablations=pos_ablations) as ablated_data:
         ablated_logits, _ = target_model(input_ids)
 
     assert baseline_logits is not None and ablated_logits is not None
@@ -600,19 +626,26 @@ def _run_component_ablation(
     n_mask_samples: int,
     pgd_steps: int,
     pgd_step_size: float,
+    ablation_pos: int,
 ) -> SampleResult:
     match ablation_mode:
         case "deterministic":
             return _run_deterministic_component_ablation(
-                spd_model, target_model, input_ids, parsed_components
+                spd_model, target_model, input_ids, parsed_components, ablation_pos
             )
         case "stochastic":
             return _run_stochastic_component_ablation(
-                spd_model, target_model, input_ids, parsed_components, n_mask_samples
+                spd_model, target_model, input_ids, parsed_components, n_mask_samples, ablation_pos
             )
         case "adversarial":
             return _run_adversarial_component_ablation(
-                spd_model, target_model, input_ids, parsed_components, pgd_steps, pgd_step_size
+                spd_model,
+                target_model,
+                input_ids,
+                parsed_components,
+                pgd_steps,
+                pgd_step_size,
+                ablation_pos,
             )
 
 
@@ -621,10 +654,11 @@ def _run_deterministic_component_ablation(
     target_model: LlamaSimpleMLP,
     input_ids: Int[Tensor, "batch pos"],
     parsed_components: list[tuple[str, int]],
+    ablation_pos: int,
 ) -> SampleResult:
-    batch_shape = input_ids.shape[:1]
+    batch_shape = (input_ids.shape[0], input_ids.shape[1])
     baseline_mask_infos, ablated_mask_infos = _build_deterministic_masks(
-        spd_model, parsed_components, batch_shape, input_ids.device
+        spd_model, parsed_components, batch_shape, input_ids.device, ablation_pos
     )
 
     with patched_attention_forward(target_model) as baseline_data:
@@ -653,6 +687,7 @@ def _run_stochastic_component_ablation(
     input_ids: Int[Tensor, "batch pos"],
     parsed_components: list[tuple[str, int]],
     n_mask_samples: int,
+    ablation_pos: int,
 ) -> SampleResult:
     output_with_cache = spd_model(input_ids, cache_type="input")
     assert isinstance(output_with_cache, OutputWithCache)
@@ -667,9 +702,10 @@ def _run_stochastic_component_ablation(
     sample_baseline_attn_outs: AttnOutputs = {}
     sample_ablated_attn_outs: AttnOutputs = {}
 
+    stoch_seq_len = input_ids.shape[1]
     for _s in range(n_mask_samples):
         baseline_mask_infos, ablated_mask_infos = _build_stochastic_masks(
-            spd_model, ci, parsed_components, "continuous"
+            spd_model, ci, parsed_components, "continuous", ablation_pos, stoch_seq_len
         )
 
         with patched_attention_forward(target_model) as b_data:
@@ -715,6 +751,7 @@ def _run_adversarial_component_ablation(
     parsed_components: list[tuple[str, int]],
     pgd_steps: int,
     pgd_step_size: float,
+    ablation_pos: int,
 ) -> SampleResult:
     output_with_cache = spd_model(input_ids, cache_type="input")
     assert isinstance(output_with_cache, OutputWithCache)
@@ -737,9 +774,9 @@ def _run_adversarial_component_ablation(
     )
 
     # Capture attention patterns with deterministic masks for visualization
-    batch_shape = input_ids.shape[:1]
+    batch_shape = (input_ids.shape[0], input_ids.shape[1])
     baseline_mask_infos, ablated_mask_infos = _build_deterministic_masks(
-        spd_model, parsed_components, batch_shape, input_ids.device
+        spd_model, parsed_components, batch_shape, input_ids.device, ablation_pos
     )
 
     with patched_attention_forward(target_model) as baseline_data:
@@ -773,6 +810,8 @@ class _AggStats:
     total_positions: int = 0
     total_kl: float = 0.0
     n_samples: int = 0
+    pos_ip_samples: dict[int, list[float]] = field(default_factory=dict)
+    pos_cos_samples: dict[int, list[float]] = field(default_factory=dict)
 
 
 def run_attention_ablation(
@@ -859,8 +898,6 @@ def run_attention_ablation(
     accum_ablated_patterns: AttentionPatterns = {}
     accum_baseline_values: ValueVectors = {}
     accum_ablated_values: ValueVectors = {}
-    accum_inner_products: AttnOutputs = {}
-    accum_cosine_sims: AttnOutputs = {}
     stats = _AggStats()
 
     with torch.no_grad():
@@ -872,8 +909,12 @@ def run_attention_ablation(
                 :, :seq_len
             ].to(device)
 
+            sample_seq_len = input_ids.shape[1]
+            rng = random.Random(i)
+            ablation_pos = rng.randint(0, min(sample_seq_len, max_pos) - 1)
+
             if is_head_ablation:
-                result = _run_head_ablation(target_model, input_ids, parsed_heads)
+                result = _run_head_ablation(target_model, input_ids, parsed_heads, ablation_pos)
             else:
                 assert spd_model is not None
                 result = _run_component_ablation(
@@ -885,25 +926,26 @@ def run_attention_ablation(
                     n_mask_samples,
                     pgd_steps,
                     pgd_step_size,
+                    ablation_pos,
                 )
 
             # Per-sample attention plots
             plot_attention_grid(
                 result.baseline_patterns,
-                f"{run_id} | Sample {i} baseline",
+                f"{run_id} | Sample {i} baseline (pos={ablation_pos})",
                 attn_dir / f"{label}_sample{i}_baseline.png",
                 max_pos,
             )
             plot_attention_grid(
                 result.ablated_patterns,
-                f"{run_id} | Sample {i} ablated",
+                f"{run_id} | Sample {i} ablated (pos={ablation_pos})",
                 attn_dir / f"{label}_sample{i}_ablated.png",
                 max_pos,
             )
             plot_attention_diff(
                 result.baseline_patterns,
                 result.ablated_patterns,
-                f"{run_id} | Sample {i} diff",
+                f"{run_id} | Sample {i} diff (pos={ablation_pos})",
                 attn_dir / f"{label}_sample{i}_diff.png",
                 max_pos,
             )
@@ -929,27 +971,35 @@ def run_attention_ablation(
                 max_pos,
             )
 
-            # Per-sample output similarity plots
-            if is_head_ablation:
-                sample_ip, sample_cos = compute_head_ablation_inner_products(
-                    result.baseline_attn_outputs, result.ablated_attn_outputs
-                )
-            else:
-                sample_ip, sample_cos = compute_component_ablation_inner_products(
-                    result.baseline_attn_outputs, result.ablated_attn_outputs
-                )
-            plot_output_inner_product(
+            # Per-sample per-position line plots (sanity check)
+            sample_ip, sample_cos = compute_ablation_metrics(
+                result.baseline_attn_outputs, result.ablated_attn_outputs
+            )
+            plot_per_position_line(
                 sample_ip,
-                f"{run_id} | Sample {i} inner product",
+                f"{run_id} | Sample {i} inner product (ablated pos={ablation_pos})",
                 sim_dir / f"{label}_sample{i}_inner_product.png",
                 max_pos,
             )
-            plot_output_inner_product(
+            plot_per_position_line(
                 sample_cos,
-                f"{run_id} | Sample {i} cosine similarity",
+                f"{run_id} | Sample {i} cosine sim (ablated pos={ablation_pos})",
                 sim_dir / f"{label}_sample{i}_cosine_sim.png",
                 max_pos,
+                baseline_y=1.0,
+                ylim=(-1, 1),
             )
+
+            # Position-specific scalar measurement at ablated position
+            pos_ip, pos_cos = compute_ablation_metrics_at_pos(
+                result.baseline_attn_outputs,
+                result.ablated_attn_outputs,
+                ablation_pos,
+            )
+            for layer_idx, val in pos_ip.items():
+                stats.pos_ip_samples.setdefault(layer_idx, []).append(val)
+            for layer_idx, val in pos_cos.items():
+                stats.pos_cos_samples.setdefault(layer_idx, []).append(val)
 
             # Per-sample prediction table
             n_changed = log_prediction_table(
@@ -957,7 +1007,6 @@ def run_attention_ablation(
             )
 
             # Accumulate stats
-            sample_seq_len = input_ids.shape[1]
             stats.total_changed += n_changed
             stats.total_positions += sample_seq_len
             stats.total_kl += calc_mean_kl_divergence(
@@ -970,9 +1019,6 @@ def run_attention_ablation(
             _add_patterns(accum_ablated_patterns, result.ablated_patterns)
             _add_patterns(accum_baseline_values, result.baseline_values)
             _add_patterns(accum_ablated_values, result.ablated_values)
-            _add_patterns(accum_inner_products, sample_ip)
-            _add_patterns(accum_cosine_sims, sample_cos)
-
             if (i + 1) % 5 == 0:
                 logger.info(f"Processed {i + 1}/{n_samples} samples")
 
@@ -1026,21 +1072,23 @@ def run_attention_ablation(
         max_pos,
     )
 
-    # Mean output similarity plots
-    mean_inner_products = _scale_patterns(accum_inner_products, stats.n_samples)
-    mean_cosine_sims = _scale_patterns(accum_cosine_sims, stats.n_samples)
+    # Position-specific bar charts (mean ± std across samples)
+    ip_means = {li: torch.tensor(vs).mean().item() for li, vs in stats.pos_ip_samples.items()}
+    ip_stds = {li: torch.tensor(vs).std().item() for li, vs in stats.pos_ip_samples.items()}
+    cos_means = {li: torch.tensor(vs).mean().item() for li, vs in stats.pos_cos_samples.items()}
+    cos_stds = {li: torch.tensor(vs).std().item() for li, vs in stats.pos_cos_samples.items()}
 
-    plot_output_inner_product(
-        mean_inner_products,
-        f"{run_id} | Mean inner product (n={stats.n_samples})",
-        sim_dir / f"{label}_mean_inner_product.png",
-        max_pos,
+    plot_output_similarity_bars(
+        ip_means,
+        ip_stds,
+        f"{run_id} | Inner product at ablated pos (n={stats.n_samples})",
+        sim_dir / f"{label}_inner_product_bars.png",
     )
-    plot_output_inner_product(
-        mean_cosine_sims,
-        f"{run_id} | Mean cosine similarity (n={stats.n_samples})",
-        sim_dir / f"{label}_mean_cosine_sim.png",
-        max_pos,
+    plot_output_similarity_bars(
+        cos_means,
+        cos_stds,
+        f"{run_id} | Cosine sim at ablated pos (n={stats.n_samples})",
+        sim_dir / f"{label}_cosine_sim_bars.png",
     )
 
     # Summary stats
@@ -1054,6 +1102,15 @@ def run_attention_ablation(
             "mean_kl_divergence": f"{mean_kl:.6f}",
         }
     )
+
+    logger.section("Position-specific similarity at ablated position")
+    for layer_idx in sorted(ip_means.keys()):
+        logger.info(
+            f"  Layer {layer_idx}: "
+            f"IP = {ip_means[layer_idx]:.4f} ± {ip_stds[layer_idx]:.4f}, "
+            f"cos = {cos_means[layer_idx]:.4f} ± {cos_stds[layer_idx]:.4f}"
+        )
+
     logger.info(f"All plots saved to {out_dir}")
 
 
