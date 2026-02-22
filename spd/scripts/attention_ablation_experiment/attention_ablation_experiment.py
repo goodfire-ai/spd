@@ -639,11 +639,13 @@ class SampleResult(NamedTuple):
 class PrevTokenSampleResult(NamedTuple):
     baseline_attn_outputs: AttnOutputs
     a_attn_outputs: AttnOutputs
+    b_all_attn_outputs: AttnOutputs
+    b_specific_attn_outputs: AttnOutputs
     ab_all_attn_outputs: AttnOutputs
     ab_specific_attn_outputs: AttnOutputs
     baseline_logits: Tensor
     a_logits: Tensor
-    ab_all_logits: Tensor
+    a_b_all_logits: Tensor
     ab_specific_logits: Tensor
 
 
@@ -918,22 +920,30 @@ def _run_prev_token_head_ablation(
 
     baseline_outs, baseline_logits = _capture_attn_outputs(target_model, input_ids)
     a_outs, a_logits = _capture_attn_outputs(target_model, input_ids, head_pos_ablations=head_abl)
-    ab_all_outs, ab_all_logits = _capture_attn_outputs(
+    b_all_outs, _b_all_logits = _capture_attn_outputs(
+        target_model, input_ids, value_pos_ablations=val_all
+    )
+    b_spec_outs, _b_spec_logits = _capture_attn_outputs(
+        target_model, input_ids, value_head_pos_ablations=val_specific
+    )
+    ab_all_outs, a_b_all_logits = _capture_attn_outputs(
         target_model, input_ids, head_pos_ablations=head_abl, value_pos_ablations=val_all
     )
-    ab_spec_outs, ab_spec_logits = _capture_attn_outputs(
+    ab_spec_outs, a_b_spec_logits = _capture_attn_outputs(
         target_model, input_ids, head_pos_ablations=head_abl, value_head_pos_ablations=val_specific
     )
 
     return PrevTokenSampleResult(
         baseline_outs,
         a_outs,
+        b_all_outs,
+        b_spec_outs,
         ab_all_outs,
         ab_spec_outs,
         baseline_logits,
         a_logits,
-        ab_all_logits,
-        ab_spec_logits,
+        a_b_all_logits,
+        a_b_spec_logits,
     )
 
 
@@ -961,14 +971,28 @@ def _run_prev_token_component_ablation(
     a_outs, a_logits = _capture_attn_outputs(
         target_model, input_ids, spd_model=spd_model, mask_infos=ablated_masks
     )
-    ab_all_outs, ab_all_logits = _capture_attn_outputs(
+    b_all_outs, _b_all_logits = _capture_attn_outputs(
+        target_model,
+        input_ids,
+        value_pos_ablations=val_all,
+        spd_model=spd_model,
+        mask_infos=baseline_masks,
+    )
+    b_spec_outs, _b_spec_logits = _capture_attn_outputs(
+        target_model,
+        input_ids,
+        value_head_pos_ablations=val_specific,
+        spd_model=spd_model,
+        mask_infos=baseline_masks,
+    )
+    ab_all_outs, a_b_all_logits = _capture_attn_outputs(
         target_model,
         input_ids,
         value_pos_ablations=val_all,
         spd_model=spd_model,
         mask_infos=ablated_masks,
     )
-    ab_spec_outs, ab_spec_logits = _capture_attn_outputs(
+    ab_spec_outs, a_b_spec_logits = _capture_attn_outputs(
         target_model,
         input_ids,
         value_head_pos_ablations=val_specific,
@@ -979,12 +1003,14 @@ def _run_prev_token_component_ablation(
     return PrevTokenSampleResult(
         baseline_outs,
         a_outs,
+        b_all_outs,
+        b_spec_outs,
         ab_all_outs,
         ab_spec_outs,
         baseline_logits,
         a_logits,
-        ab_all_logits,
-        ab_spec_logits,
+        a_b_all_logits,
+        a_b_spec_logits,
     )
 
 
@@ -993,18 +1019,24 @@ def _run_prev_token_component_ablation(
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def _make_metric_bucket() -> dict[str, dict[int, list[float]]]:
+    return {"nip": {}, "cos": {}}
+
+
 @dataclass
 class _PrevTokenAggStats:
     n_samples: int = 0
-    base_vs_a: dict[str, dict[int, list[float]]] = field(
-        default_factory=lambda: {"nip": {}, "cos": {}}
+    base_vs_a: dict[str, dict[int, list[float]]] = field(default_factory=_make_metric_bucket)
+    base_vs_b_all: dict[str, dict[int, list[float]]] = field(default_factory=_make_metric_bucket)
+    base_vs_b_specific: dict[str, dict[int, list[float]]] = field(
+        default_factory=_make_metric_bucket
     )
-    a_vs_ab_all: dict[str, dict[int, list[float]]] = field(
-        default_factory=lambda: {"nip": {}, "cos": {}}
+    base_vs_ab_all: dict[str, dict[int, list[float]]] = field(default_factory=_make_metric_bucket)
+    base_vs_ab_specific: dict[str, dict[int, list[float]]] = field(
+        default_factory=_make_metric_bucket
     )
-    a_vs_ab_specific: dict[str, dict[int, list[float]]] = field(
-        default_factory=lambda: {"nip": {}, "cos": {}}
-    )
+    a_vs_ab_all: dict[str, dict[int, list[float]]] = field(default_factory=_make_metric_bucket)
+    a_vs_ab_specific: dict[str, dict[int, list[float]]] = field(default_factory=_make_metric_bucket)
 
 
 def _accum_comparison(
@@ -1039,6 +1071,10 @@ def _run_prev_token_loop(
     stats = _PrevTokenAggStats()
     comparisons = [
         ("base_vs_a", "Baseline vs A"),
+        ("base_vs_b_all", "Baseline vs B(all)"),
+        ("base_vs_b_specific", "Baseline vs B(specific)"),
+        ("base_vs_ab_all", "Baseline vs A+B(all)"),
+        ("base_vs_ab_specific", "Baseline vs A+B(specific)"),
         ("a_vs_ab_all", "A vs A+B(all)"),
         ("a_vs_ab_specific", "A vs A+B(specific)"),
     ]
@@ -1064,8 +1100,13 @@ def _run_prev_token_loop(
                     spd_model, target_model, input_ids, parsed_components, parsed_value_heads, t
                 )
 
+            b = result.baseline_attn_outputs
             pairs = [
-                (result.baseline_attn_outputs, result.a_attn_outputs),
+                (b, result.a_attn_outputs),
+                (b, result.b_all_attn_outputs),
+                (b, result.b_specific_attn_outputs),
+                (b, result.ab_all_attn_outputs),
+                (b, result.ab_specific_attn_outputs),
                 (result.a_attn_outputs, result.ab_all_attn_outputs),
                 (result.a_attn_outputs, result.ab_specific_attn_outputs),
             ]
