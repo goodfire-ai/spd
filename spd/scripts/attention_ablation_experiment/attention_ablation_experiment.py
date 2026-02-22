@@ -318,23 +318,24 @@ def compute_ablation_metrics(
     baseline_attn_outputs: AttnOutputs,
     ablated_attn_outputs: AttnOutputs,
 ) -> tuple[AttnOutputs, AttnOutputs]:
-    """Compute per-position inner product and cosine similarity of baseline vs ablated output.
+    """Compute per-position normalized inner product and cosine similarity.
 
-    Both metrics compare baseline against ablated attention outputs.
-    At unaffected positions: IP = ||x||², cos = 1.0.
+    Normalized IP: dot(baseline, ablated) / ||baseline||². 1.0 at unaffected positions.
+    Cosine sim: cos(baseline, ablated). 1.0 at unaffected positions.
 
-    Returns (inner_products, cosine_sims) where each is layer → (T,).
+    Returns (normalized_ips, cosine_sims) where each is layer → (T,).
     """
-    inner_products: AttnOutputs = {}
+    normalized_ips: AttnOutputs = {}
     cosine_sims: AttnOutputs = {}
     for layer_idx in baseline_attn_outputs:
         baseline = baseline_attn_outputs[layer_idx]
         ablated = ablated_attn_outputs[layer_idx]
         ip = (baseline * ablated).sum(dim=-1)
-        inner_products[layer_idx] = ip
+        baseline_norm_sq = (baseline * baseline).sum(dim=-1)
+        normalized_ips[layer_idx] = ip / baseline_norm_sq.clamp(min=1e-8)
         norms_product = baseline.norm(dim=-1) * ablated.norm(dim=-1)
         cosine_sims[layer_idx] = ip / norms_product.clamp(min=1e-8)
-    return inner_products, cosine_sims
+    return normalized_ips, cosine_sims
 
 
 def plot_per_position_line(
@@ -370,20 +371,21 @@ def compute_ablation_metrics_at_pos(
     ablated_attn_outputs: AttnOutputs,
     pos: int,
 ) -> tuple[dict[int, float], dict[int, float]]:
-    """Compute inner product and cosine similarity of baseline vs ablated at a single position.
+    """Compute normalized inner product and cosine similarity at a single position.
 
-    Returns (inner_products, cosine_sims) — layer -> scalar.
+    Returns (normalized_ips, cosine_sims) — layer -> scalar.
     """
-    inner_products: dict[int, float] = {}
+    normalized_ips: dict[int, float] = {}
     cosine_sims: dict[int, float] = {}
     for layer_idx in baseline_attn_outputs:
         baseline_vec = baseline_attn_outputs[layer_idx][pos]
         ablated_vec = ablated_attn_outputs[layer_idx][pos]
         ip = (baseline_vec * ablated_vec).sum().item()
-        inner_products[layer_idx] = ip
+        baseline_norm_sq = (baseline_vec * baseline_vec).sum().item()
+        normalized_ips[layer_idx] = ip / max(baseline_norm_sq, 1e-8)
         norms_product = baseline_vec.norm().item() * ablated_vec.norm().item()
         cosine_sims[layer_idx] = ip / max(norms_product, 1e-8)
-    return inner_products, cosine_sims
+    return normalized_ips, cosine_sims
 
 
 def plot_output_similarity_bars(
@@ -980,9 +982,11 @@ def run_attention_ablation(
             )
             plot_per_position_line(
                 sample_ip,
-                f"{run_id} | Sample {i} inner product (ablated pos={ablation_pos})",
-                sim_dir / f"inner_product_sample{i}_{label}.png",
+                f"{run_id} | Sample {i} normalized IP (ablated pos={ablation_pos})",
+                sim_dir / f"normalized_ip_sample{i}_{label}.png",
                 max_pos,
+                baseline_y=1.0,
+                ylim=(-1, 1),
             )
             plot_per_position_line(
                 sample_cos,
@@ -1084,8 +1088,8 @@ def run_attention_ablation(
     plot_output_similarity_bars(
         ip_means,
         ip_stds,
-        f"{run_id} | Inner product at ablated pos (n={stats.n_samples})",
-        sim_dir / f"inner_product_bars_{label}.png",
+        f"{run_id} | Normalized IP at ablated pos (n={stats.n_samples})",
+        sim_dir / f"normalized_ip_bars_{label}.png",
     )
     plot_output_similarity_bars(
         cos_means,
@@ -1110,7 +1114,7 @@ def run_attention_ablation(
     for layer_idx in sorted(ip_means.keys()):
         logger.info(
             f"  Layer {layer_idx}: "
-            f"IP = {ip_means[layer_idx]:.4f} ± {ip_stds[layer_idx]:.4f}, "
+            f"NIP = {ip_means[layer_idx]:.4f} ± {ip_stds[layer_idx]:.4f}, "
             f"cos = {cos_means[layer_idx]:.4f} ± {cos_stds[layer_idx]:.4f}"
         )
 
