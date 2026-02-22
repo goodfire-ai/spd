@@ -822,6 +822,7 @@ def run_attention_ablation(
     components: str | None = None,
     ablation_mode: AblationMode = "deterministic",
     n_samples: int = 10,
+    max_plot_samples: int = 6,
     batch_size: int = 1,
     n_mask_samples: int = 10,
     pgd_steps: int = 50,
@@ -934,68 +935,69 @@ def run_attention_ablation(
                     ablation_pos,
                 )
 
-            # Per-sample attention plots
-            plot_attention_grid(
-                result.baseline_patterns,
-                f"{run_id} | Sample {i} baseline (pos={ablation_pos})",
-                attn_dir / f"baseline_sample{i}_{label}.png",
-                max_pos,
-            )
-            plot_attention_grid(
-                result.ablated_patterns,
-                f"{run_id} | Sample {i} ablated (pos={ablation_pos})",
-                attn_dir / f"ablated_sample{i}_{label}.png",
-                max_pos,
-            )
-            plot_attention_diff(
-                result.baseline_patterns,
-                result.ablated_patterns,
-                f"{run_id} | Sample {i} diff (pos={ablation_pos})",
-                attn_dir / f"diff_sample{i}_{label}.png",
-                max_pos,
-            )
+            if i < max_plot_samples:
+                # Per-sample attention plots
+                plot_attention_grid(
+                    result.baseline_patterns,
+                    f"{run_id} | Sample {i} baseline (pos={ablation_pos})",
+                    attn_dir / f"baseline_sample{i}_{label}.png",
+                    max_pos,
+                )
+                plot_attention_grid(
+                    result.ablated_patterns,
+                    f"{run_id} | Sample {i} ablated (pos={ablation_pos})",
+                    attn_dir / f"ablated_sample{i}_{label}.png",
+                    max_pos,
+                )
+                plot_attention_diff(
+                    result.baseline_patterns,
+                    result.ablated_patterns,
+                    f"{run_id} | Sample {i} diff (pos={ablation_pos})",
+                    attn_dir / f"diff_sample{i}_{label}.png",
+                    max_pos,
+                )
 
-            # Per-sample value norm plots
-            plot_value_norms(
-                result.baseline_values,
-                f"{run_id} | Sample {i} value norms baseline",
-                value_dir / f"baseline_sample{i}_{label}.png",
-                max_pos,
-            )
-            plot_value_norms(
-                result.ablated_values,
-                f"{run_id} | Sample {i} value norms ablated",
-                value_dir / f"ablated_sample{i}_{label}.png",
-                max_pos,
-            )
-            plot_value_norms_diff(
-                result.baseline_values,
-                result.ablated_values,
-                f"{run_id} | Sample {i} value norms diff",
-                value_dir / f"diff_sample{i}_{label}.png",
-                max_pos,
-            )
+                # Per-sample value norm plots
+                plot_value_norms(
+                    result.baseline_values,
+                    f"{run_id} | Sample {i} value norms baseline",
+                    value_dir / f"baseline_sample{i}_{label}.png",
+                    max_pos,
+                )
+                plot_value_norms(
+                    result.ablated_values,
+                    f"{run_id} | Sample {i} value norms ablated",
+                    value_dir / f"ablated_sample{i}_{label}.png",
+                    max_pos,
+                )
+                plot_value_norms_diff(
+                    result.baseline_values,
+                    result.ablated_values,
+                    f"{run_id} | Sample {i} value norms diff",
+                    value_dir / f"diff_sample{i}_{label}.png",
+                    max_pos,
+                )
 
-            # Per-sample per-position line plots (sanity check)
-            sample_ip, sample_cos = compute_ablation_metrics(
-                result.baseline_attn_outputs, result.ablated_attn_outputs
-            )
-            plot_per_position_line(
-                sample_ip,
-                f"{run_id} | Sample {i} normalized IP (ablated pos={ablation_pos})",
-                sim_dir / f"normalized_ip_sample{i}_{label}.png",
-                max_pos,
-                baseline_y=1.0,
-                ylim=(-1, 1),
-            )
-            plot_per_position_line(
-                sample_cos,
-                f"{run_id} | Sample {i} cosine sim (ablated pos={ablation_pos})",
-                sim_dir / f"cosine_sim_sample{i}_{label}.png",
-                max_pos,
-                baseline_y=1.0,
-                ylim=(-1, 1),
-            )
+                # Per-sample per-position line plots (sanity check)
+                sample_ip, sample_cos = compute_ablation_metrics(
+                    result.baseline_attn_outputs, result.ablated_attn_outputs
+                )
+                plot_per_position_line(
+                    sample_ip,
+                    f"{run_id} | Sample {i} normalized IP (ablated pos={ablation_pos})",
+                    sim_dir / f"normalized_ip_sample{i}_{label}.png",
+                    max_pos,
+                    baseline_y=1.0,
+                    ylim=(-1, 1),
+                )
+                plot_per_position_line(
+                    sample_cos,
+                    f"{run_id} | Sample {i} cosine sim (ablated pos={ablation_pos})",
+                    sim_dir / f"cosine_sim_sample{i}_{label}.png",
+                    max_pos,
+                    baseline_y=1.0,
+                    ylim=(-1, 1),
+                )
 
             # Position-specific scalar measurement at ablated position
             pos_ip, pos_cos = compute_ablation_metrics_at_pos(
