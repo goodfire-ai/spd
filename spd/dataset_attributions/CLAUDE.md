@@ -30,22 +30,22 @@ For environments without SLURM, run the worker script directly:
 
 ```bash
 # Single GPU (defaults from DatasetAttributionConfig, auto-generates subrun ID)
-python -m spd.dataset_attributions.scripts.run <wandb_path>
+python -m spd.dataset_attributions.scripts.run_worker <wandb_path>
 
-# Single GPU with config file
-python -m spd.dataset_attributions.scripts.run <wandb_path> --config_path path/to/config.yaml
+# Single GPU with config
+python -m spd.dataset_attributions.scripts.run_worker <wandb_path> --config_json '{"n_batches": 500}'
 
 # Multi-GPU (run in parallel via shell, tmux, etc.)
 # All workers and the merge step must share the same --subrun_id
 SUBRUN="da-$(date +%Y%m%d_%H%M%S)"
-python -m spd.dataset_attributions.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 0 --world_size 4 --subrun_id $SUBRUN &
-python -m spd.dataset_attributions.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 1 --world_size 4 --subrun_id $SUBRUN &
-python -m spd.dataset_attributions.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 2 --world_size 4 --subrun_id $SUBRUN &
-python -m spd.dataset_attributions.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 3 --world_size 4 --subrun_id $SUBRUN &
+python -m spd.dataset_attributions.scripts.run_worker <path> --config_json '{"n_batches": 1000}' --rank 0 --world_size 4 --subrun_id $SUBRUN &
+python -m spd.dataset_attributions.scripts.run_worker <path> --config_json '{"n_batches": 1000}' --rank 1 --world_size 4 --subrun_id $SUBRUN &
+python -m spd.dataset_attributions.scripts.run_worker <path> --config_json '{"n_batches": 1000}' --rank 2 --world_size 4 --subrun_id $SUBRUN &
+python -m spd.dataset_attributions.scripts.run_worker <path> --config_json '{"n_batches": 1000}' --rank 3 --world_size 4 --subrun_id $SUBRUN &
 wait
 
 # Merge results after all workers complete
-python -m spd.dataset_attributions.scripts.run <path> --merge --subrun_id $SUBRUN
+python -m spd.dataset_attributions.scripts.run_merge <path> --subrun_id $SUBRUN
 ```
 
 Each worker processes batches where `batch_idx % world_size == rank`, then the merge step combines all partial results.
@@ -77,13 +77,17 @@ SPD_OUT_DIR/dataset_attributions/<run_id>/
 
 Entry point via `spd-attributions`. Submits array job + dependent merge job.
 
-### Worker Script (`scripts/run.py`)
+### Worker Script (`scripts/run_worker.py`)
 
-Internal script called by SLURM jobs. Accepts config via `--config_path` (file) or `--config_json` (inline JSON). Supports:
-- `--config_path`/`--config_json`: Provide `DatasetAttributionConfig` (defaults used if neither given)
+Harvests attributions for a single GPU. Called by SLURM array jobs or run directly.
+- `--config_json`: Provide `DatasetAttributionConfig` as JSON (defaults used if omitted)
 - `--rank R --world_size N`: Process subset of batches
-- `--merge`: Combine per-rank results into final file
 - `--subrun_id`: Sub-run identifier (auto-generated if not provided)
+
+### Merge Script (`scripts/run_merge.py`)
+
+Combines per-rank attribution files into a single merged result.
+- `--subrun_id`: Which sub-run to merge (required)
 
 ### Config (`config.py`)
 

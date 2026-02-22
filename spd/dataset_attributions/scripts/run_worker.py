@@ -4,19 +4,20 @@ Called by SLURM jobs submitted via spd-attributions, or run directly for non-SLU
 
 Usage:
     # Single GPU
-    python -m spd.dataset_attributions.scripts.run <path> --config_json '...'
+    python -m spd.dataset_attributions.scripts.run_worker <path>
+
+    # Single GPU with config
+    python -m spd.dataset_attributions.scripts.run_worker <path> --config_json '{"n_batches": 500}'
 
     # Multi-GPU (run in parallel)
-    python -m spd.dataset_attributions.scripts.run <path> --config_json '...' --rank 0 --world_size 4 --subrun_id da-20260211_120000
-    ...
-    python -m spd.dataset_attributions.scripts.run <path> --merge --subrun_id da-20260211_120000
+    python -m spd.dataset_attributions.scripts.run_worker <path> --rank 0 --world_size 4 --subrun_id da-xxx
 """
 
 from datetime import datetime
 from typing import Any
 
 from spd.dataset_attributions.config import DatasetAttributionConfig
-from spd.dataset_attributions.harvest import harvest_attributions, merge_attributions
+from spd.dataset_attributions.harvest import harvest_attributions
 from spd.dataset_attributions.repo import get_attributions_subrun_dir
 from spd.log import logger
 from spd.utils.wandb_utils import parse_wandb_run_path
@@ -24,30 +25,19 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 
 def main(
     wandb_path: str,
-    config_json: dict[str, Any],
+    config_json: dict[str, Any] | None = None,
     rank: int | None = None,
     world_size: int | None = None,
-    merge: bool = False,
     subrun_id: str | None = None,
     harvest_subrun_id: str | None = None,
 ) -> None:
-    assert isinstance(config_json, dict), f"Expected dict from fire, got {type(config_json)}"
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
     if subrun_id is None:
         subrun_id = "da-" + datetime.now().strftime("%Y%m%d_%H%M%S")
 
+    config = DatasetAttributionConfig.model_validate(config_json or {})
     output_dir = get_attributions_subrun_dir(run_id, subrun_id)
-
-    if merge:
-        assert rank is None and world_size is None, "Cannot specify rank/world_size with --merge"
-        logger.info(f"Merging attribution results for {wandb_path} (subrun {subrun_id})")
-        merge_attributions(output_dir)
-        return
-
-    assert (rank is None) == (world_size is None), "rank and world_size must both be set or unset"
-
-    config = DatasetAttributionConfig.model_validate(config_json)
 
     if world_size is not None:
         logger.info(
@@ -66,7 +56,7 @@ def main(
     )
 
 
-def get_worker_command(
+def get_command(
     wandb_path: str,
     config_json: str,
     rank: int,
@@ -75,7 +65,7 @@ def get_worker_command(
     harvest_subrun_id: str | None = None,
 ) -> str:
     cmd = (
-        f"python -m spd.dataset_attributions.scripts.run "
+        f"python -m spd.dataset_attributions.scripts.run_worker "
         f'"{wandb_path}" '
         f"--config_json '{config_json}' "
         f"--rank {rank} "
@@ -87,20 +77,7 @@ def get_worker_command(
     return cmd
 
 
-def get_merge_command(wandb_path: str, subrun_id: str) -> str:
-    return (
-        f"python -m spd.dataset_attributions.scripts.run "
-        f'"{wandb_path}" '
-        "--merge "
-        f"--subrun_id {subrun_id}"
-    )
-
-
-def cli() -> None:
+if __name__ == "__main__":
     import fire
 
     fire.Fire(main)
-
-
-if __name__ == "__main__":
-    cli()
