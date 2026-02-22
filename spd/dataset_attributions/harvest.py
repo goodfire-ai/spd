@@ -210,8 +210,8 @@ def harvest_attributions(
         f"Processing complete. Tokens: {harvester.n_tokens:,}, Batches: {harvester.n_batches}"
     )
 
-    # Normalize by n_tokens to get per-token average attribution
-    normalized_comp = harvester.comp_accumulator / harvester.n_tokens
+    # Project input-residual accumulators through V and normalize
+    normalized_comp = harvester.finalize_comp_accumulator() / harvester.n_tokens
     normalized_out_residual = harvester.out_residual_accumulator / harvester.n_tokens
 
     # Build and save storage
