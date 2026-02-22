@@ -1195,7 +1195,12 @@ def run_attention_ablation(
     max_pos: int = 128,
     prev_token_test: bool = False,
     value_heads: str | None = None,
+    seed: int = 42,
 ) -> None:
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    random.seed(seed)
+
     assert (heads is None) != (components is None), "Provide exactly one of --heads or --components"
     if prev_token_test:
         assert value_heads is not None, "--value_heads required when --prev_token_test is set"
