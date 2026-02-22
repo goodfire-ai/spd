@@ -16,10 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from spd.dataset_attributions.config import DatasetAttributionConfig
-from spd.dataset_attributions.harvest import (
-    harvest_attributions,
-    merge_attributions,
-)
+from spd.dataset_attributions.harvest import harvest_attributions, merge_attributions
 from spd.dataset_attributions.repo import get_attributions_subrun_dir
 from spd.log import logger
 from spd.utils.wandb_utils import parse_wandb_run_path

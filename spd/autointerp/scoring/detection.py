@@ -16,6 +16,7 @@ from openrouter.components import Effort
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
 from spd.autointerp.config import DetectionEvalConfig
+from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import LLMError, LLMJob, LLMResult, map_llm_calls
 from spd.autointerp.repo import InterpRepo
 from spd.harvest.schemas import ActivationExample, ComponentData
@@ -66,17 +67,6 @@ def _format_example_with_center_token(
     spans = app_tok.get_spans(valid_ids)
     tokens = [(span, i == center) for i, span in enumerate(spans)]
     return delimit_tokens(tokens)
-
-
-def _sample_activating_examples(
-    component: ComponentData,
-    n: int,
-    rng: random.Random,
-) -> list[ActivationExample]:
-    examples = component.activation_examples
-    if len(examples) <= n:
-        return list(examples)
-    return rng.sample(examples, n)
 
 
 def _sample_non_activating_examples(
@@ -133,6 +123,7 @@ class _TrialGroundTruth:
 async def run_detection_scoring(
     components: list[ComponentData],
     interp_repo: InterpRepo,
+    score_db: InterpDB,
     model: str,
     reasoning_effort: Effort,
     openrouter_api_key: str,
@@ -155,7 +146,7 @@ async def run_detection_scoring(
     if limit is not None:
         eligible = eligible[:limit]
 
-    existing_scores = interp_repo.get_scores("detection")
+    existing_scores = score_db.get_scores("detection")
     completed = set(existing_scores.keys())
     if completed:
         logger.info(f"Resuming: {len(completed)} already scored")
@@ -170,7 +161,12 @@ async def run_detection_scoring(
     for component in remaining:
         label = labels[component.component_key]
         for trial_idx in range(config.n_trials):
-            activating = _sample_activating_examples(component, config.n_activating, rng)
+            activating = (
+                list(component.activation_examples)
+                if len(component.activation_examples) <= config.n_activating
+                else rng.sample(component.activation_examples, config.n_activating)
+            )
+
             non_activating = _sample_non_activating_examples(
                 component, components, config.n_non_activating, rng
             )
@@ -210,6 +206,8 @@ async def run_detection_scoring(
         max_concurrent=max_concurrent,
         max_requests_per_minute=max_requests_per_minute,
         cost_limit_usd=cost_limit_usd,
+        response_schema=DETECTION_SCHEMA,
+        n_total=len(jobs),
     ):
         match outcome:
             case LLMResult(job=job, parsed=parsed):
@@ -241,7 +239,7 @@ async def run_detection_scoring(
         score = sum(t.balanced_acc for t in trials) / len(trials) if trials else 0.0
         result = DetectionResult(component_key=ck, score=score, trials=trials, n_errors=n_err)
         results.append(result)
-        interp_repo.save_score(ck, "detection", score, json.dumps(asdict(result)))
+        score_db.save_score(ck, "detection", score, json.dumps(asdict(result)))
 
     logger.info(f"Scored {len(results)} components")
     return results

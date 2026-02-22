@@ -17,6 +17,7 @@ from openrouter.components import Effort
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
 from spd.autointerp.config import FuzzingEvalConfig
+from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import LLMError, LLMJob, LLMResult, map_llm_calls
 from spd.autointerp.repo import InterpRepo
 from spd.harvest.schemas import ActivationExample, ComponentData
@@ -116,6 +117,7 @@ class _TrialGroundTruth:
 async def run_fuzzing_scoring(
     components: list[ComponentData],
     interp_repo: InterpRepo,
+    score_db: InterpDB,
     model: str,
     reasoning_effort: Effort,
     openrouter_api_key: str,
@@ -140,7 +142,7 @@ async def run_fuzzing_scoring(
     if limit is not None:
         eligible = eligible[:limit]
 
-    existing_scores = interp_repo.get_scores("fuzzing")
+    existing_scores = score_db.get_scores("fuzzing")
     completed = set(existing_scores.keys())
     if completed:
         logger.info(f"Resuming: {len(completed)} already scored")
@@ -198,6 +200,7 @@ async def run_fuzzing_scoring(
         max_concurrent=max_concurrent,
         max_requests_per_minute=max_requests_per_minute,
         cost_limit_usd=cost_limit_usd,
+        response_schema=FUZZING_SCHEMA,
     ):
         match outcome:
             case LLMResult(job=job, parsed=parsed):
@@ -234,7 +237,7 @@ async def run_fuzzing_scoring(
         score = (tpr + tnr) / 2 if (total_pos > 0 and total_neg > 0) else 0.0
         result = FuzzingResult(component_key=ck, score=score, trials=trials, n_errors=n_err)
         results.append(result)
-        interp_repo.save_score(ck, "fuzzing", score, json.dumps(asdict(result)))
+        score_db.save_score(ck, "fuzzing", score, json.dumps(asdict(result)))
 
     logger.info(f"Scored {len(results)} components")
     return results

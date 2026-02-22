@@ -82,3 +82,9 @@ def get_command(
     if harvest_subrun_id is not None:
         cmd += f"--harvest_subrun_id {harvest_subrun_id} "
     return cmd
+
+
+if __name__ == "__main__":
+    import fire
+
+    fire.Fire(main)

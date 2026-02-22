@@ -94,7 +94,6 @@ eval_metric_configs:
     groups: null
   - classname: "CIMeanPerComponent"
   - classname: "StochasticHiddenActsReconLoss"
-    coeff: null
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.resid_mlp.models.ResidMLP"
