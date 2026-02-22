@@ -879,11 +879,14 @@ def run_attention_ablation(
         buffer_size=1000,
     )
 
-    label = (
-        f"heads={'_'.join(f'L{layer}H{head}' for layer, head in parsed_heads)}"
-        if is_head_ablation
-        else f"components={'_'.join(f'{m}:{c}' for m, c in parsed_components)}_mode={ablation_mode}"
-    )
+    def _short_module(m: str) -> str:
+        return m.replace("_proj", "")
+
+    if is_head_ablation:
+        label = "_".join(f"L{layer}H{head}" for layer, head in parsed_heads)
+    else:
+        mode_suffix = "" if ablation_mode == "deterministic" else f"_{ablation_mode}"
+        label = "_".join(f"{_short_module(m)}:{c}" for m, c in parsed_components) + mode_suffix
     logger.section(f"Attention ablation: {label}")
     logger.info(f"run_id={run_id}, device={device}, n_samples={n_samples}")
 
@@ -933,20 +936,20 @@ def run_attention_ablation(
             plot_attention_grid(
                 result.baseline_patterns,
                 f"{run_id} | Sample {i} baseline (pos={ablation_pos})",
-                attn_dir / f"{label}_sample{i}_baseline.png",
+                attn_dir / f"baseline_sample{i}_{label}.png",
                 max_pos,
             )
             plot_attention_grid(
                 result.ablated_patterns,
                 f"{run_id} | Sample {i} ablated (pos={ablation_pos})",
-                attn_dir / f"{label}_sample{i}_ablated.png",
+                attn_dir / f"ablated_sample{i}_{label}.png",
                 max_pos,
             )
             plot_attention_diff(
                 result.baseline_patterns,
                 result.ablated_patterns,
                 f"{run_id} | Sample {i} diff (pos={ablation_pos})",
-                attn_dir / f"{label}_sample{i}_diff.png",
+                attn_dir / f"diff_sample{i}_{label}.png",
                 max_pos,
             )
 
@@ -954,20 +957,20 @@ def run_attention_ablation(
             plot_value_norms(
                 result.baseline_values,
                 f"{run_id} | Sample {i} value norms baseline",
-                value_dir / f"{label}_sample{i}_baseline.png",
+                value_dir / f"baseline_sample{i}_{label}.png",
                 max_pos,
             )
             plot_value_norms(
                 result.ablated_values,
                 f"{run_id} | Sample {i} value norms ablated",
-                value_dir / f"{label}_sample{i}_ablated.png",
+                value_dir / f"ablated_sample{i}_{label}.png",
                 max_pos,
             )
             plot_value_norms_diff(
                 result.baseline_values,
                 result.ablated_values,
                 f"{run_id} | Sample {i} value norms diff",
-                value_dir / f"{label}_sample{i}_diff.png",
+                value_dir / f"diff_sample{i}_{label}.png",
                 max_pos,
             )
 
@@ -978,13 +981,13 @@ def run_attention_ablation(
             plot_per_position_line(
                 sample_ip,
                 f"{run_id} | Sample {i} inner product (ablated pos={ablation_pos})",
-                sim_dir / f"{label}_sample{i}_inner_product.png",
+                sim_dir / f"inner_product_sample{i}_{label}.png",
                 max_pos,
             )
             plot_per_position_line(
                 sample_cos,
                 f"{run_id} | Sample {i} cosine sim (ablated pos={ablation_pos})",
-                sim_dir / f"{label}_sample{i}_cosine_sim.png",
+                sim_dir / f"cosine_sim_sample{i}_{label}.png",
                 max_pos,
                 baseline_y=1.0,
                 ylim=(-1, 1),
@@ -1031,20 +1034,20 @@ def run_attention_ablation(
     plot_attention_grid(
         mean_baseline_patterns,
         f"{run_id} | Baseline mean attention (n={stats.n_samples})",
-        attn_dir / f"{label}_mean_baseline.png",
+        attn_dir / f"baseline_mean_{label}.png",
         max_pos,
     )
     plot_attention_grid(
         mean_ablated_patterns,
         f"{run_id} | Ablated mean attention (n={stats.n_samples})",
-        attn_dir / f"{label}_mean_ablated.png",
+        attn_dir / f"ablated_mean_{label}.png",
         max_pos,
     )
     plot_attention_diff(
         mean_baseline_patterns,
         mean_ablated_patterns,
         f"{run_id} | Attention diff mean (n={stats.n_samples})",
-        attn_dir / f"{label}_mean_diff.png",
+        attn_dir / f"diff_mean_{label}.png",
         max_pos,
     )
 
@@ -1055,20 +1058,20 @@ def run_attention_ablation(
     plot_value_norms(
         mean_baseline_values,
         f"{run_id} | Baseline mean value norms (n={stats.n_samples})",
-        value_dir / f"{label}_mean_baseline.png",
+        value_dir / f"baseline_mean_{label}.png",
         max_pos,
     )
     plot_value_norms(
         mean_ablated_values,
         f"{run_id} | Ablated mean value norms (n={stats.n_samples})",
-        value_dir / f"{label}_mean_ablated.png",
+        value_dir / f"ablated_mean_{label}.png",
         max_pos,
     )
     plot_value_norms_diff(
         mean_baseline_values,
         mean_ablated_values,
         f"{run_id} | Value norms diff mean (n={stats.n_samples})",
-        value_dir / f"{label}_mean_diff.png",
+        value_dir / f"diff_mean_{label}.png",
         max_pos,
     )
 
@@ -1082,13 +1085,13 @@ def run_attention_ablation(
         ip_means,
         ip_stds,
         f"{run_id} | Inner product at ablated pos (n={stats.n_samples})",
-        sim_dir / f"{label}_inner_product_bars.png",
+        sim_dir / f"inner_product_bars_{label}.png",
     )
     plot_output_similarity_bars(
         cos_means,
         cos_stds,
         f"{run_id} | Cosine sim at ablated pos (n={stats.n_samples})",
-        sim_dir / f"{label}_cosine_sim_bars.png",
+        sim_dir / f"cosine_sim_bars_{label}.png",
     )
 
     # Summary stats
