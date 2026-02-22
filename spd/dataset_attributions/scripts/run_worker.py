@@ -36,7 +36,11 @@ def main(
     if subrun_id is None:
         subrun_id = "da-" + datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    config = DatasetAttributionConfig.model_validate(config_json or {})
+    config = (
+        DatasetAttributionConfig.model_validate(config_json)
+        if config_json
+        else DatasetAttributionConfig()
+    )
     output_dir = get_attributions_subrun_dir(run_id, subrun_id)
 
     if world_size is not None:

@@ -3,7 +3,7 @@
 Combines per-rank attribution files into a single merged result.
 
 Usage:
-    python -m spd.dataset_attributions.scripts.run_merge <wandb_path> --subrun_id da-xxx
+    python -m spd.dataset_attributions.scripts.run_merge --wandb_path <path> --subrun_id da-xxx
 """
 
 from spd.dataset_attributions.harvest import merge_attributions
@@ -13,6 +13,7 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 
 
 def main(
+    *,
     wandb_path: str,
     subrun_id: str,
 ) -> None:
@@ -25,7 +26,7 @@ def main(
 def get_command(wandb_path: str, subrun_id: str) -> str:
     return (
         f"python -m spd.dataset_attributions.scripts.run_merge "
-        f'"{wandb_path}" '
+        f'--wandb_path "{wandb_path}" '
         f"--subrun_id {subrun_id}"
     )
 
