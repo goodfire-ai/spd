@@ -28,7 +28,7 @@ Usage:
 import math
 import random
 import re
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -102,6 +102,8 @@ class AttentionData(NamedTuple):
 def patched_attention_forward(
     target_model: LlamaSimpleMLP,
     head_pos_ablations: list[tuple[int, int, int]] | None = None,
+    value_pos_ablations: list[tuple[int, int]] | None = None,
+    value_head_pos_ablations: list[tuple[int, int, int]] | None = None,
 ) -> Generator[AttentionData]:
     """Replace each CausalSelfAttention.forward to capture attention patterns and values.
 
@@ -160,6 +162,15 @@ def patched_attention_forward(
                 att = F.softmax(att, dim=-1)
 
                 patterns[li] = att.float().mean(dim=0).detach().cpu()
+
+                if value_pos_ablations is not None:
+                    for abl_layer, abl_pos in value_pos_ablations:
+                        if abl_layer == li and abl_pos < T:
+                            v[:, :, abl_pos, :] = 0.0
+                if value_head_pos_ablations is not None:
+                    for abl_layer, abl_head, abl_pos in value_head_pos_ablations:
+                        if abl_layer == li and abl_pos < T:
+                            v[:, abl_head, abl_pos, :] = 0.0
 
                 y = att @ v  # (B, n_head, T, head_dim)
 
@@ -499,6 +510,60 @@ def _build_deterministic_masks(
     return make_mask_infos(baseline_masks), make_mask_infos(ablated_masks)
 
 
+def _build_deterministic_masks_multi_pos(
+    model: ComponentModel,
+    component_positions: list[tuple[str, int, int]],
+    batch_shape: tuple[int, int],
+    device: torch.device,
+) -> tuple[dict[str, ComponentsMaskInfo], dict[str, ComponentsMaskInfo]]:
+    """Build masks where each component is zeroed at its own position.
+
+    component_positions: list of (module_name, comp_idx, pos).
+    """
+    baseline_masks: dict[str, Float[Tensor, "batch seq_len C"]] = {}
+    ablated_masks: dict[str, Float[Tensor, "batch seq_len C"]] = {}
+
+    for module_name in model.target_module_paths:
+        c = model.module_to_c[module_name]
+        baseline_masks[module_name] = torch.ones(*batch_shape, c, device=device)
+        ablated_masks[module_name] = torch.ones(*batch_shape, c, device=device)
+
+    for module_name, comp_idx, pos in component_positions:
+        assert module_name in ablated_masks, f"Module {module_name!r} not in model"
+        ablated_masks[module_name][:, pos, comp_idx] = 0.0
+
+    return make_mask_infos(baseline_masks), make_mask_infos(ablated_masks)
+
+
+def _infer_layer_from_components(parsed_components: list[tuple[str, int]]) -> int:
+    """Extract layer index from component module paths (e.g. 'h.1.attn.q_proj' → 1)."""
+    layers: set[int] = set()
+    for module_name, _ in parsed_components:
+        m = re.search(r"h\.(\d+)\.", module_name)
+        assert m is not None, f"Cannot infer layer from {module_name!r}"
+        layers.add(int(m.group(1)))
+    assert len(layers) == 1, f"All components must be in the same layer, got layers {layers}"
+    return layers.pop()
+
+
+def _build_prev_token_component_positions(
+    parsed_components: list[tuple[str, int]],
+    t: int,
+) -> list[tuple[str, int, int]]:
+    """Assign positions based on module type: q_proj → t, k_proj → t-1."""
+    positions: list[tuple[str, int, int]] = []
+    for module_name, comp_idx in parsed_components:
+        if "q_proj" in module_name:
+            positions.append((module_name, comp_idx, t))
+        elif "k_proj" in module_name:
+            positions.append((module_name, comp_idx, t - 1))
+        else:
+            raise AssertionError(
+                f"prev_token_test only supports q_proj/k_proj components, got {module_name!r}"
+            )
+    return positions
+
+
 def _build_stochastic_masks(
     _model: ComponentModel,
     ci: dict[str, Float[Tensor, "batch C"]],
@@ -569,6 +634,17 @@ class SampleResult(NamedTuple):
     ablated_attn_outputs: AttnOutputs
     baseline_logits: Tensor  # (batch, pos, vocab)
     ablated_logits: Tensor  # (batch, pos, vocab)
+
+
+class PrevTokenSampleResult(NamedTuple):
+    baseline_attn_outputs: AttnOutputs
+    a_attn_outputs: AttnOutputs
+    ab_all_attn_outputs: AttnOutputs
+    ab_specific_attn_outputs: AttnOutputs
+    baseline_logits: Tensor
+    a_logits: Tensor
+    ab_all_logits: Tensor
+    ab_specific_logits: Tensor
 
 
 def _add_patterns(accum: AttentionPatterns, new: AttentionPatterns) -> None:
@@ -802,8 +878,256 @@ def _run_adversarial_component_ablation(
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Previous-token redundancy test
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _capture_attn_outputs(
+    target_model: LlamaSimpleMLP,
+    input_ids: Int[Tensor, "batch pos"],
+    head_pos_ablations: list[tuple[int, int, int]] | None = None,
+    value_pos_ablations: list[tuple[int, int]] | None = None,
+    value_head_pos_ablations: list[tuple[int, int, int]] | None = None,
+    spd_model: ComponentModel | None = None,
+    mask_infos: dict[str, ComponentsMaskInfo] | None = None,
+) -> tuple[AttnOutputs, Tensor]:
+    """Run a forward pass capturing attention outputs and logits."""
+    with patched_attention_forward(
+        target_model, head_pos_ablations, value_pos_ablations, value_head_pos_ablations
+    ) as data:
+        if spd_model is not None:
+            out = spd_model(input_ids, mask_infos=mask_infos)
+            assert isinstance(out, Tensor)
+        else:
+            out, _ = target_model(input_ids)
+            assert out is not None
+    return data.attn_outputs, out
+
+
+def _run_prev_token_head_ablation(
+    target_model: LlamaSimpleMLP,
+    input_ids: Int[Tensor, "batch pos"],
+    parsed_heads: list[tuple[int, int]],
+    value_heads: list[tuple[int, int]],
+    t: int,
+) -> PrevTokenSampleResult:
+    head_abl = [(layer, head, t) for layer, head in parsed_heads]
+    layer = parsed_heads[0][0]
+    val_all = [(layer, t - 1)]
+    val_specific = [(layer, head, t - 1) for layer, head in value_heads]
+
+    baseline_outs, baseline_logits = _capture_attn_outputs(target_model, input_ids)
+    a_outs, a_logits = _capture_attn_outputs(target_model, input_ids, head_pos_ablations=head_abl)
+    ab_all_outs, ab_all_logits = _capture_attn_outputs(
+        target_model, input_ids, head_pos_ablations=head_abl, value_pos_ablations=val_all
+    )
+    ab_spec_outs, ab_spec_logits = _capture_attn_outputs(
+        target_model, input_ids, head_pos_ablations=head_abl, value_head_pos_ablations=val_specific
+    )
+
+    return PrevTokenSampleResult(
+        baseline_outs,
+        a_outs,
+        ab_all_outs,
+        ab_spec_outs,
+        baseline_logits,
+        a_logits,
+        ab_all_logits,
+        ab_spec_logits,
+    )
+
+
+def _run_prev_token_component_ablation(
+    spd_model: ComponentModel,
+    target_model: LlamaSimpleMLP,
+    input_ids: Int[Tensor, "batch pos"],
+    parsed_components: list[tuple[str, int]],
+    value_heads: list[tuple[int, int]],
+    t: int,
+) -> PrevTokenSampleResult:
+    layer = _infer_layer_from_components(parsed_components)
+    component_positions = _build_prev_token_component_positions(parsed_components, t)
+    batch_shape = (input_ids.shape[0], input_ids.shape[1])
+
+    baseline_masks, ablated_masks = _build_deterministic_masks_multi_pos(
+        spd_model, component_positions, batch_shape, input_ids.device
+    )
+    val_all = [(layer, t - 1)]
+    val_specific = [(layer, head, t - 1) for layer, head in value_heads]
+
+    baseline_outs, baseline_logits = _capture_attn_outputs(
+        target_model, input_ids, spd_model=spd_model, mask_infos=baseline_masks
+    )
+    a_outs, a_logits = _capture_attn_outputs(
+        target_model, input_ids, spd_model=spd_model, mask_infos=ablated_masks
+    )
+    ab_all_outs, ab_all_logits = _capture_attn_outputs(
+        target_model,
+        input_ids,
+        value_pos_ablations=val_all,
+        spd_model=spd_model,
+        mask_infos=ablated_masks,
+    )
+    ab_spec_outs, ab_spec_logits = _capture_attn_outputs(
+        target_model,
+        input_ids,
+        value_head_pos_ablations=val_specific,
+        spd_model=spd_model,
+        mask_infos=ablated_masks,
+    )
+
+    return PrevTokenSampleResult(
+        baseline_outs,
+        a_outs,
+        ab_all_outs,
+        ab_spec_outs,
+        baseline_logits,
+        a_logits,
+        ab_all_logits,
+        ab_spec_logits,
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Main entry point
 # ──────────────────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class _PrevTokenAggStats:
+    n_samples: int = 0
+    base_vs_a: dict[str, dict[int, list[float]]] = field(
+        default_factory=lambda: {"nip": {}, "cos": {}}
+    )
+    a_vs_ab_all: dict[str, dict[int, list[float]]] = field(
+        default_factory=lambda: {"nip": {}, "cos": {}}
+    )
+    a_vs_ab_specific: dict[str, dict[int, list[float]]] = field(
+        default_factory=lambda: {"nip": {}, "cos": {}}
+    )
+
+
+def _accum_comparison(
+    bucket: dict[str, dict[int, list[float]]],
+    nip: dict[int, float],
+    cos: dict[int, float],
+) -> None:
+    for layer_idx, val in nip.items():
+        bucket["nip"].setdefault(layer_idx, []).append(val)
+    for layer_idx, val in cos.items():
+        bucket["cos"].setdefault(layer_idx, []).append(val)
+
+
+def _run_prev_token_loop(
+    target_model: LlamaSimpleMLP,
+    spd_model: ComponentModel | None,
+    loader: Iterable[dict[str, Tensor]],
+    is_head_ablation: bool,
+    parsed_heads: list[tuple[int, int]],
+    parsed_components: list[tuple[str, int]],
+    parsed_value_heads: list[tuple[int, int]],
+    n_samples: int,
+    max_plot_samples: int,
+    max_pos: int,
+    seq_len: int,
+    run_id: str,
+    label: str,
+    sim_dir: Path,
+    column_name: str,
+    device: torch.device,
+) -> None:
+    stats = _PrevTokenAggStats()
+    comparisons = [
+        ("base_vs_a", "Baseline vs A"),
+        ("a_vs_ab_all", "A vs A+B(all)"),
+        ("a_vs_ab_specific", "A vs A+B(specific)"),
+    ]
+
+    with torch.no_grad():
+        for i, batch_data in enumerate(loader):
+            if i >= n_samples:
+                break
+
+            input_ids: Int[Tensor, "batch pos"] = batch_data[column_name][:, :seq_len].to(device)
+
+            sample_seq_len = input_ids.shape[1]
+            rng = random.Random(i)
+            t = rng.randint(1, min(sample_seq_len, max_pos) - 1)
+
+            if is_head_ablation:
+                result = _run_prev_token_head_ablation(
+                    target_model, input_ids, parsed_heads, parsed_value_heads, t
+                )
+            else:
+                assert spd_model is not None
+                result = _run_prev_token_component_ablation(
+                    spd_model, target_model, input_ids, parsed_components, parsed_value_heads, t
+                )
+
+            pairs = [
+                (result.baseline_attn_outputs, result.a_attn_outputs),
+                (result.a_attn_outputs, result.ab_all_attn_outputs),
+                (result.a_attn_outputs, result.ab_specific_attn_outputs),
+            ]
+
+            for (tag, desc), (out_a, out_b) in zip(comparisons, pairs, strict=True):
+                nip_at_t, cos_at_t = compute_ablation_metrics_at_pos(out_a, out_b, t)
+                _accum_comparison(getattr(stats, tag), nip_at_t, cos_at_t)
+
+                if i < max_plot_samples:
+                    sample_nip, sample_cos = compute_ablation_metrics(out_a, out_b)
+                    plot_per_position_line(
+                        sample_nip,
+                        f"{run_id} | {desc} NIP sample {i} (t={t})",
+                        sim_dir / f"{tag}_nip_sample{i}_{label}.png",
+                        max_pos,
+                        baseline_y=1.0,
+                        ylim=(-1, 1),
+                    )
+                    plot_per_position_line(
+                        sample_cos,
+                        f"{run_id} | {desc} cos sample {i} (t={t})",
+                        sim_dir / f"{tag}_cosine_sim_sample{i}_{label}.png",
+                        max_pos,
+                        baseline_y=1.0,
+                        ylim=(-1, 1),
+                    )
+
+            stats.n_samples += 1
+            if (i + 1) % 5 == 0:
+                logger.info(f"Processed {i + 1}/{n_samples} samples")
+
+    assert stats.n_samples > 0, "No samples processed"
+
+    for tag, desc in comparisons:
+        bucket = getattr(stats, tag)
+        nip_means = {li: torch.tensor(vs).mean().item() for li, vs in bucket["nip"].items()}
+        nip_stds = {li: torch.tensor(vs).std().item() for li, vs in bucket["nip"].items()}
+        cos_means = {li: torch.tensor(vs).mean().item() for li, vs in bucket["cos"].items()}
+        cos_stds = {li: torch.tensor(vs).std().item() for li, vs in bucket["cos"].items()}
+
+        plot_output_similarity_bars(
+            nip_means,
+            nip_stds,
+            f"{run_id} | {desc} NIP (n={stats.n_samples})",
+            sim_dir / f"{tag}_nip_bars_{label}.png",
+        )
+        plot_output_similarity_bars(
+            cos_means,
+            cos_stds,
+            f"{run_id} | {desc} cos (n={stats.n_samples})",
+            sim_dir / f"{tag}_cosine_sim_bars_{label}.png",
+        )
+
+        logger.section(f"{desc} at position t")
+        for layer_idx in sorted(nip_means.keys()):
+            logger.info(
+                f"  Layer {layer_idx}: "
+                f"NIP = {nip_means[layer_idx]:.4f} ± {nip_stds[layer_idx]:.4f}, "
+                f"cos = {cos_means[layer_idx]:.4f} ± {cos_stds[layer_idx]:.4f}"
+            )
+
+    logger.info(f"All plots saved to {sim_dir}")
 
 
 @dataclass
@@ -828,11 +1152,16 @@ def run_attention_ablation(
     pgd_steps: int = 50,
     pgd_step_size: float = 0.01,
     max_pos: int = 128,
+    prev_token_test: bool = False,
+    value_heads: str | None = None,
 ) -> None:
     assert (heads is None) != (components is None), "Provide exactly one of --heads or --components"
+    if prev_token_test:
+        assert value_heads is not None, "--value_heads required when --prev_token_test is set"
     is_head_ablation = heads is not None
     parsed_heads = parse_heads(heads) if heads else []
     parsed_components = parse_components(components) if components else []
+    parsed_value_heads = parse_heads(value_heads) if value_heads else []
 
     _entity, _project, run_id = parse_wandb_run_path(str(wandb_path))
     run_info = SPDRunInfo.from_path(wandb_path)
@@ -899,6 +1228,27 @@ def run_attention_ablation(
     attn_dir.mkdir(parents=True, exist_ok=True)
     value_dir.mkdir(parents=True, exist_ok=True)
     sim_dir.mkdir(parents=True, exist_ok=True)
+
+    if prev_token_test:
+        _run_prev_token_loop(
+            target_model=target_model,
+            spd_model=spd_model,
+            loader=loader,
+            is_head_ablation=is_head_ablation,
+            parsed_heads=parsed_heads,
+            parsed_components=parsed_components,
+            parsed_value_heads=parsed_value_heads,
+            n_samples=n_samples,
+            max_plot_samples=max_plot_samples,
+            max_pos=max_pos,
+            seq_len=seq_len,
+            run_id=run_id,
+            label=label,
+            sim_dir=sim_dir,
+            column_name=task_config.column_name,
+            device=device,
+        )
+        return
 
     accum_baseline_patterns: AttentionPatterns = {}
     accum_ablated_patterns: AttentionPatterns = {}
