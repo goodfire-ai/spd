@@ -28,6 +28,7 @@ from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.app.backend.app_tokenizer import AppTokenizer
+from spd.app.backend.compute import OptimizedPromptAttributionResult
 from spd.autointerp.repo import InterpRepo
 from spd.harvest.repo import HarvestRepo
 from spd.harvest.schemas import ComponentData
@@ -380,6 +381,223 @@ class EditableModel:
         pre_weight_acts = out.cache[layer]  # [1, seq, d_in]
         comp = self.model.components[layer]
         return (pre_weight_acts @ comp.V[:, idx]).squeeze(0)  # [seq]
+
+    def get_ci(
+        self,
+        tokens: Int[Tensor, " seq"],
+    ) -> dict[str, Float[Tensor, " seq C"]]:
+        """Get CI values for all components at all positions. Returns {layer: [seq, C]}."""
+        with torch.no_grad():
+            out = self.model(tokens.unsqueeze(0), cache_type="input")
+            ci = self.model.calc_causal_importances(
+                pre_weight_acts=out.cache,
+                sampling="continuous",
+                detach_inputs=False,
+            )
+        return {layer: vals.squeeze(0) for layer, vals in ci.lower_leaky.items()}
+
+    def find_components_by_examples(
+        self,
+        examples: list[tuple[Int[Tensor, " seq"], int]],
+        optim_steps: int = 100,
+        context_window: int = 10,
+        ci_alive_threshold: float = 0.0,
+        min_frequency: float = 0.7,
+        top_k: int = 20,
+    ) -> list[tuple[str, float]]:
+        """Find components needed for a behavior by optimizing sparse CI on examples.
+
+        For each (token_sequence, target_position) pair, runs CI optimization
+        to find the minimal set of components needed to predict the token at
+        target_position. Components that appear in the sparse set across
+        >= min_frequency of examples are returned.
+
+        Args:
+            examples: List of (token_sequence, target_position) pairs.
+                target_position is the sequence index of the token whose
+                prediction we want to explain.
+            optim_steps: Number of optimization steps per example.
+            ci_alive_threshold: CI threshold for considering a component "active"
+                in the optimized mask.
+            min_frequency: Fraction of examples where a component must be active.
+            top_k: Number of components to return.
+
+        Returns:
+            List of (component_key, frequency) sorted by frequency descending.
+        """
+        from spd.app.backend.optim_cis import (
+            CELossConfig,
+            OptimCIConfig,
+            optimize_ci_values,
+        )
+        from spd.configs import ImportanceMinimalityLossConfig
+
+        counts: dict[str, int] = {}
+        n_examples = len(examples)
+
+        for i, (tokens, target_pos) in enumerate(examples):
+            assert target_pos > 0, "target_position must be > 0 (need a previous position)"
+
+            # Truncate to context window ending at target_pos (inclusive)
+            start = max(0, target_pos - context_window + 1)
+            window = tokens[start : target_pos + 1]
+            window_target_pos = target_pos - start
+            target_token = window[window_target_pos].item()
+
+            config = OptimCIConfig(
+                seed=42,
+                lr=0.1,
+                steps=optim_steps,
+                weight_decay=0.0,
+                lr_schedule="cosine",
+                lr_exponential_halflife=None,
+                lr_warmup_pct=0.1,
+                log_freq=optim_steps + 1,  # suppress logging
+                imp_min_config=ImportanceMinimalityLossConfig(coeff=0.1, pnorm=0.5, beta=1.0),
+                loss_config=CELossConfig(
+                    coeff=20.0,
+                    position=window_target_pos - 1,
+                    label_token=int(target_token),
+                ),
+                sampling="continuous",
+                ce_kl_rounding_threshold=0.5,
+                mask_type="ci",
+                adv_pgd=None,
+            )
+
+            result = optimize_ci_values(
+                model=self.model,
+                tokens=window.unsqueeze(0),
+                config=config,
+                device=str(tokens.device),
+            )
+
+            # Extract active components from optimized CI
+            ci_outputs = result.params.create_ci_outputs(self.model, str(tokens.device))
+            for layer_name, ci_vals in ci_outputs.lower_leaky.items():
+                # ci_vals: [1, window_len, C]
+                pred_pos = window_target_pos - 1
+                active = ci_vals[0, pred_pos, :] > ci_alive_threshold
+                for c in active.nonzero(as_tuple=True)[0]:
+                    key = f"{layer_name}:{c.item()}"
+                    counts[key] = counts.get(key, 0) + 1
+
+            print(f"  Example {i + 1}/{n_examples}: L0={result.metrics.l0_total:.0f}")
+
+        min_count = int(min_frequency * n_examples)
+        freq_results = [
+            (key, count / n_examples) for key, count in counts.items() if count >= min_count
+        ]
+        freq_results.sort(key=lambda x: -x[1])
+        return freq_results[:top_k]
+
+    def optimize_circuit(
+        self,
+        tokens: Int[Tensor, " seq"],
+        target_position: int,
+        target_token: int,
+        optim_steps: int = 200,
+        imp_min_coeff: float = 0.1,
+        ce_coeff: float = 20.0,
+    ) -> OptimizedPromptAttributionResult:
+        """Optimize a sparse circuit for predicting target_token at target_position.
+
+        Returns the full attribution graph (edges between components) from the
+        app's compute pipeline. The result includes node CI values, component
+        activations, and edge strengths.
+
+        target_position is the sequence index of the token being predicted
+        (the logits at position target_position predict this token, so internally
+        we optimize for loss at position target_position).
+        """
+        from spd.app.backend.compute import compute_prompt_attributions_optimized
+        from spd.app.backend.optim_cis import CELossConfig, OptimCIConfig
+        from spd.configs import ImportanceMinimalityLossConfig
+        from spd.topology.gradient_connectivity import get_sources_by_target
+
+        device = str(tokens.device)
+        batched = tokens.unsqueeze(0)
+
+        sources_by_target = get_sources_by_target(self.model, self.topology, device, "continuous")
+
+        config = OptimCIConfig(
+            seed=42,
+            lr=0.1,
+            steps=optim_steps,
+            weight_decay=0.0,
+            lr_schedule="cosine",
+            lr_exponential_halflife=None,
+            lr_warmup_pct=0.1,
+            log_freq=optim_steps + 1,
+            imp_min_config=ImportanceMinimalityLossConfig(coeff=imp_min_coeff, pnorm=0.5, beta=1.0),
+            loss_config=CELossConfig(
+                coeff=ce_coeff,
+                position=target_position,
+                label_token=target_token,
+            ),
+            sampling="continuous",
+            ce_kl_rounding_threshold=0.5,
+            mask_type="ci",
+            adv_pgd=None,
+        )
+
+        return compute_prompt_attributions_optimized(
+            model=self.model,
+            topology=self.topology,
+            tokens=batched,
+            sources_by_target=sources_by_target,
+            optim_config=config,
+            output_prob_threshold=0.01,
+            device=device,
+        )
+
+    def print_circuit(
+        self,
+        circuit: OptimizedPromptAttributionResult,
+        tokens: Int[Tensor, " seq"],
+        tok: AppTokenizer,
+        interp: "InterpRepo | None" = None,
+        top_edges: int = 5,
+        min_ci: float = 0.0,
+    ) -> None:
+        """Print a human-readable summary of an optimized circuit."""
+        from collections import defaultdict
+
+        spans = tok.get_spans(tokens.tolist())
+
+        def parse_node(key: str) -> tuple[str, int, int]:
+            parts = key.split(":")
+            return ":".join(parts[:-2]), int(parts[-2]), int(parts[-1])
+
+        def node_label(key: str) -> str:
+            layer, seq, cidx = parse_node(key)
+            label = ""
+            if interp is not None:
+                ir = interp.get_interpretation(f"{layer}:{cidx}")
+                if ir:
+                    label = f" [{ir.label[:35]}]"
+            return f"{layer}:{cidx}@{spans[seq].strip()}(p{seq}){label}"
+
+        edges_by_target: dict[str, list[tuple[str, float, bool]]] = defaultdict(list)
+        for e in circuit.edges:
+            edges_by_target[str(e.target)].append((str(e.source), e.strength, e.is_cross_seq))
+
+        print(f"Circuit: {len(circuit.edges)} edges, L0={circuit.metrics.l0_total:.0f}")
+        print(f"Tokens: {list(enumerate(spans))}\n")
+
+        for tgt_key in sorted(edges_by_target.keys()):
+            ci = circuit.node_ci_vals.get(tgt_key, 0)
+            if ci <= min_ci:
+                continue
+
+            sources = edges_by_target[tgt_key]
+            sources.sort(key=lambda x: -abs(x[1]))
+
+            print(f"{node_label(tgt_key)}  ci={ci:.3f}")
+            for src_key, strength, cross_seq in sources[:top_edges]:
+                cross = " [x-seq]" if cross_seq else ""
+                print(f"  <- {node_label(src_key)}  attr={strength:+.4f}{cross}")
+            print()
 
     # -- Editing (mask-based, runtime) -----------------------------------------
 
