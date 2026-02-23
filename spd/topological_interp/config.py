@@ -12,7 +12,7 @@ class TopologicalInterpConfig(BaseConfig):
     reasoning_effort: Effort = "low"
     attr_metric: AttrMetric = "attr_abs"
     top_k_attributed: int = 8
-    max_examples: int = 30
+    max_examples: int = 10
     label_max_words: int = 8
     cost_limit_usd: float | None = None
     max_requests_per_minute: int = 500

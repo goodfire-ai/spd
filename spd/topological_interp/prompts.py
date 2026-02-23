@@ -1,17 +1,13 @@
 """Prompt formatters for topological interpretation.
 
 Three prompts:
-1. Output pass (late→early): "What does this component DO?"
-2. Input pass (early→late): "What TRIGGERS this component?"
+1. Output pass (late→early): "What does this component DO?" — output tokens, says examples, downstream
+2. Input pass (early→late): "What TRIGGERS this component?" — input tokens, fires-on examples, upstream
 3. Unification: Synthesize output + input labels into unified label.
-
-Output and input passes are independent — neither depends on the other's labels.
-The unification step combines them.
 """
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.autointerp.prompt_helpers import (
-    DATASET_DESCRIPTIONS,
     build_fires_on_examples,
     build_input_section,
     build_output_section,
@@ -40,15 +36,10 @@ LABEL_SCHEMA: dict[str, object] = {
 _FORBIDDEN = "FORBIDDEN vague words: narrative, story, character, theme, descriptive, content, transition, scene."
 
 
-def _build_context_block(
+def _component_header(
     component: ComponentData,
     model_metadata: ModelMetadata,
-    app_tok: AppTokenizer,
-    input_token_stats: TokenPRLift,
-    output_token_stats: TokenPRLift,
-    max_examples: int,
 ) -> str:
-    """Shared context block used by both output and input prompts."""
     canonical = model_metadata.layer_descriptions.get(component.layer, component.layer)
     layer_desc = human_layer_desc(canonical, model_metadata.n_blocks)
     position_note = layer_position_note(canonical, model_metadata.n_blocks)
@@ -60,64 +51,44 @@ def _build_context_block(
         else "extremely rare"
     )
 
-    dataset_desc = DATASET_DESCRIPTIONS.get(
-        model_metadata.dataset_name, model_metadata.dataset_name
-    )
-
-    input_pmi = (
-        [(app_tok.get_tok_display(tid), pmi) for tid, pmi in component.input_token_pmi.top]
-        if component.input_token_pmi.top
-        else None
-    )
-    output_pmi = (
-        [(app_tok.get_tok_display(tid), pmi) for tid, pmi in component.output_token_pmi.top]
-        if component.output_token_pmi.top
-        else None
-    )
-
-    output_section = build_output_section(output_token_stats, output_pmi)
-    input_section = build_input_section(input_token_stats, input_pmi)
-    fires_on = build_fires_on_examples(component, app_tok, max_examples)
-    says = build_says_examples(component, app_tok, max_examples)
-
     context_notes = " ".join(filter(None, [position_note, dens_note]))
 
     return f"""\
 ## Context
-- Model: {model_metadata.model_class} ({model_metadata.n_blocks} blocks), dataset: {dataset_desc}
-- Component: {layer_desc} (component {component.component_idx})
+- Component: {layer_desc} (component {component.component_idx}), {model_metadata.n_blocks}-block model
 - Firing rate: {component.firing_density * 100:.2f}% ({rate_str})
-{context_notes}
-
-## Output tokens (what the model produces when this component fires)
-{output_section}
-## Input tokens (what causes this component to fire)
-{input_section}
-## Activation examples — where the component fires
-{fires_on}
-## Activation examples — what the model produces
-{says}"""
+{context_notes}"""
 
 
 def format_output_prompt(
     component: ComponentData,
     model_metadata: ModelMetadata,
     app_tok: AppTokenizer,
-    input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
     related: list[RelatedComponent],
     label_max_words: int,
     max_examples: int,
 ) -> str:
-    context = _build_context_block(
-        component, model_metadata, app_tok, input_token_stats, output_token_stats, max_examples
+    header = _component_header(component, model_metadata)
+
+    output_pmi = (
+        [(app_tok.get_tok_display(tid), pmi) for tid, pmi in component.output_token_pmi.top]
+        if component.output_token_pmi.top
+        else None
     )
+    output_section = build_output_section(output_token_stats, output_pmi)
+    says = build_says_examples(component, app_tok, max_examples)
     related_table = _format_attributed_table(related, app_tok)
 
     return f"""\
 You are analyzing a component in a neural network to understand its OUTPUT FUNCTION — what it does when it fires.
 
-{context}
+{header}
+
+## Output tokens (what the model produces when this component fires)
+{output_section}
+## Activation examples — what the model produces
+{says}
 ## Downstream components (what this component influences)
 These components in later layers are most influenced by this component (by gradient attribution):
 {related_table}
@@ -141,20 +112,30 @@ def format_input_prompt(
     model_metadata: ModelMetadata,
     app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
-    output_token_stats: TokenPRLift,
     related: list[RelatedComponent],
     label_max_words: int,
     max_examples: int,
 ) -> str:
-    context = _build_context_block(
-        component, model_metadata, app_tok, input_token_stats, output_token_stats, max_examples
+    header = _component_header(component, model_metadata)
+
+    input_pmi = (
+        [(app_tok.get_tok_display(tid), pmi) for tid, pmi in component.input_token_pmi.top]
+        if component.input_token_pmi.top
+        else None
     )
+    input_section = build_input_section(input_token_stats, input_pmi)
+    fires_on = build_fires_on_examples(component, app_tok, max_examples)
     related_table = _format_attributed_table(related, app_tok)
 
     return f"""\
 You are analyzing a component in a neural network to understand its INPUT FUNCTION — what triggers it to fire.
 
-{context}
+{header}
+
+## Input tokens (what causes this component to fire)
+{input_section}
+## Activation examples — where the component fires
+{fires_on}
 ## Upstream components (what feeds into this component)
 These components in earlier layers most strongly attribute to this component:
 {related_table}
