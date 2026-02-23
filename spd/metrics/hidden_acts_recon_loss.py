@@ -120,13 +120,9 @@ def _compute_per_module_metrics(
     stacked_n = all_reduce(stacked_n, op=ReduceOp.SUM)
 
     out: dict[str, Float[Tensor, ""]] = {}
-    total_mse = torch.tensor(0.0, device=stacked_mse.device)
-    total_n = torch.tensor(0.0, device=stacked_mse.device)
     for i, key in enumerate(keys):
         out[f"{class_name}/{key}"] = stacked_mse[i] / stacked_n[i]
-        total_mse = total_mse + stacked_mse[i]
-        total_n = total_n + stacked_n[i]
-    out[class_name] = total_mse / total_n
+    out[class_name] = stacked_mse.sum() / stacked_n.sum()
     return out
 
 
