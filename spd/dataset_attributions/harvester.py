@@ -284,7 +284,9 @@ class AttributionHarvester:
             attr_abs_acc = attr_abr_accumulator[source_layer][target_idx]
             square_attr_acc = square_attr_accumulator[source_layer][target_idx]
 
-            ci_weighted_attr = grad * act * ci[source_layer]
+            # Embed has no CI (all tokens always active)
+            source_ci = ci[source_layer] if source_layer != self.embed_path else 1.0
+            ci_weighted_attr = grad * act * source_ci
             ci_weighted_attr_abs = torch.where(act > 0, ci_weighted_attr, -ci_weighted_attr)
             ci_weighted_squared_attr = ci_weighted_attr.square()
 
