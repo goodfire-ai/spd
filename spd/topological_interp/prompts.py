@@ -105,14 +105,14 @@ def format_output_prompt(
     app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
-    downstream: list[RelatedComponent],
+    related: list[RelatedComponent],
     label_max_words: int,
     max_examples: int,
 ) -> str:
     context = _build_context_block(
         component, model_metadata, app_tok, input_token_stats, output_token_stats, max_examples
     )
-    downstream_table = _format_attributed_table(downstream)
+    related_table = _format_attributed_table(related, app_tok)
 
     return f"""\
 You are analyzing a component in a neural network to understand its OUTPUT FUNCTION — what it does when it fires.
@@ -120,7 +120,7 @@ You are analyzing a component in a neural network to understand its OUTPUT FUNCT
 {context}
 ## Downstream components (what this component influences)
 These components in later layers are most influenced by this component (by gradient attribution):
-{downstream_table}
+{related_table}
 ## Task
 Give a {label_max_words}-word-or-fewer label describing this component's OUTPUT FUNCTION — what it does when it fires.
 
@@ -142,16 +142,14 @@ def format_input_prompt(
     app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
-    upstream: list[RelatedComponent],
-    cofiring: list[RelatedComponent],
+    related: list[RelatedComponent],
     label_max_words: int,
     max_examples: int,
 ) -> str:
     context = _build_context_block(
         component, model_metadata, app_tok, input_token_stats, output_token_stats, max_examples
     )
-    upstream_table = _format_attributed_table(upstream)
-    cofiring_table = _format_cofiring_table(cofiring)
+    related_table = _format_attributed_table(related, app_tok)
 
     return f"""\
 You are analyzing a component in a neural network to understand its INPUT FUNCTION — what triggers it to fire.
@@ -159,10 +157,7 @@ You are analyzing a component in a neural network to understand its INPUT FUNCTI
 {context}
 ## Upstream components (what feeds into this component)
 These components in earlier layers most strongly attribute to this component:
-{upstream_table}
-## Co-firing components
-Components that frequently fire together with this one:
-{cofiring_table}
+{related_table}
 ## Task
 Give a {label_max_words}-word-or-fewer label describing this component's INPUT FUNCTION — what conditions trigger it to fire.
 
@@ -198,13 +193,14 @@ Respond with JSON: {{"label": "...", "confidence": "low|medium|high", "reasoning
 """
 
 
-def _format_attributed_table(components: list[RelatedComponent]) -> str:
+def _format_attributed_table(components: list[RelatedComponent], app_tok: AppTokenizer) -> str:
     if not components:
         return "(no attributed components found)\n"
 
     lines: list[str] = []
     for n in components:
-        parts = [f"  {n.component_key} (attribution: {n.attribution:.4f}"]
+        display = _component_display(n.component_key, app_tok)
+        parts = [f"  {display} (attribution: {n.attribution:.4f}"]
         if n.jaccard is not None:
             parts.append(f", co-firing Jaccard: {n.jaccard:.3f}")
         parts.append(")")
@@ -217,21 +213,12 @@ def _format_attributed_table(components: list[RelatedComponent]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _format_cofiring_table(components: list[RelatedComponent]) -> str:
-    if not components:
-        return "(no co-firing components found)\n"
-
-    lines: list[str] = []
-    for n in components:
-        parts = [f"  {n.component_key}"]
-        if n.jaccard is not None:
-            parts.append(f" (Jaccard: {n.jaccard:.3f}")
-            if n.pmi is not None:
-                parts.append(f", PMI: {n.pmi:.2f}")
-            parts.append(")")
-        line = "".join(parts)
-        if n.label is not None:
-            line += f'\n    label: "{n.label}" (confidence: {n.confidence})'
-        lines.append(line)
-
-    return "\n".join(lines) + "\n"
+def _component_display(key: str, app_tok: AppTokenizer) -> str:
+    layer, idx_str = key.rsplit(":", 1)
+    match layer:
+        case "embed":
+            return f'input token "{app_tok.get_tok_display(int(idx_str))}"'
+        case "output":
+            return f'output token "{app_tok.get_tok_display(int(idx_str))}"'
+        case _:
+            return key

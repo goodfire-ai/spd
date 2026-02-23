@@ -1,37 +1,39 @@
 """Main three-phase topological interpretation execution.
 
-Phase 1: Output pass (late → early) — "What does this component DO?"
-Phase 2: Input pass (early → late) — "What TRIGGERS this component?"
-Phase 3: Unification (parallel over all) — Synthesize into unified label.
+Structure:
+    output_labels = scan(layers_reversed, step)
+    input_labels  = scan(layers_forward,  step)
+    unified       = map(output_labels + input_labels, unify)
 
-Each directional pass is a scan: components are processed layer-by-layer, and
-each component's prompt includes labels from previously-labeled components in
-the same scan direction. The scan accumulator is an in-memory dict; the DB is
-a write-only durable sink (read only on resume to seed the accumulator).
+Each scan folds over layers. Within a layer, components are labeled in parallel
+via async LLM calls. The fold accumulator (labels_so_far) lets each component's
+prompt include labels from previously-processed layers.
 """
 
 import asyncio
-from collections.abc import Iterable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable
+from functools import partial
 from pathlib import Path
 from typing import Literal
+
+from torch import Tensor
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.autointerp.llm_api import LLMError, LLMJob, LLMResult, map_llm_calls
 from spd.autointerp.schemas import ModelMetadata
-from spd.dataset_attributions.storage import DatasetAttributionStorage
+from spd.dataset_attributions.storage import (
+    AttrMetric,
+    DatasetAttributionEntry,
+    DatasetAttributionStorage,
+)
 from spd.harvest.analysis import get_input_token_stats, get_output_token_stats
 from spd.harvest.repo import HarvestRepo
-from spd.harvest.schemas import ComponentData
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
+from spd.topological_interp import graph_context
 from spd.topological_interp.config import TopologicalInterpConfig
 from spd.topological_interp.db import TopologicalInterpDB
-from spd.topological_interp.graph_context import (
-    RelatedComponent,
-    get_cofiring_components,
-    get_downstream_components,
-    get_upstream_components,
-)
+from spd.topological_interp.graph_context import RelatedComponent, get_related_components
 from spd.topological_interp.ordering import group_and_sort_by_layer
 from spd.topological_interp.prompts import (
     LABEL_SCHEMA,
@@ -39,7 +41,11 @@ from spd.topological_interp.prompts import (
     format_output_prompt,
     format_unification_prompt,
 )
-from spd.topological_interp.schemas import LabelResult, PromptEdge
+from spd.topological_interp.schemas import LabelResult
+
+GetRelated = Callable[[str, dict[str, LabelResult]], list[RelatedComponent]]
+FormatPrompt = Callable[..., str]
+Step = Callable[[list[str], dict[str, LabelResult]], Awaitable[dict[str, LabelResult]]]
 
 
 def run_topological_interp(
@@ -52,411 +58,265 @@ def run_topological_interp(
     model_metadata: ModelMetadata,
     db_path: Path,
     tokenizer_name: str,
+    w_unembed: Tensor,
 ) -> None:
+    logger.info("Loading tokenizer...")
     app_tok = AppTokenizer.from_pretrained(tokenizer_name)
-    components = harvest.get_all_components()
 
-    components = [c for c in components if c.firing_density > 0.0]
-    components = sorted(components, key=lambda c: c.firing_density, reverse=True)
-
+    logger.info("Loading component summaries...")
+    summaries = harvest.get_summary()
+    alive = {k: s for k, s in summaries.items() if s.firing_density > 0.0}
+    all_keys = sorted(alive, key=lambda k: alive[k].firing_density, reverse=True)
     if config.limit is not None:
-        components = components[: config.limit]
+        all_keys = all_keys[: config.limit]
 
-    all_keys = [c.component_key for c in components]
-    component_by_key = {c.component_key: c for c in components}
-    layers_ordered = group_and_sort_by_layer(all_keys, model_metadata.layer_descriptions)
-
+    layers = group_and_sort_by_layer(all_keys, model_metadata.layer_descriptions)
     total = len(all_keys)
-    logger.info(f"Topological interp: {total} components across {len(layers_ordered)} layers")
+    logger.info(f"Topological interp: {total} components across {len(layers)} layers")
+
+    # -- Injected behaviours ---------------------------------------------------
+
+    async def llm_map(
+        jobs: Iterable[LLMJob], n_total: int | None = None
+    ) -> AsyncGenerator[LLMResult | LLMError]:
+        async for result in map_llm_calls(
+            openrouter_api_key=openrouter_api_key,
+            model=config.model,
+            reasoning_effort=config.reasoning_effort,
+            jobs=jobs,
+            max_tokens=8000,
+            max_concurrent=config.max_concurrent,
+            max_requests_per_minute=config.max_requests_per_minute,
+            cost_limit_usd=config.cost_limit_usd,
+            response_schema=LABEL_SCHEMA,
+            n_total=n_total,
+        ):
+            yield result
+
+    concrete_to_canon = model_metadata.layer_descriptions
+    canon_to_concrete = {v: k for k, v in concrete_to_canon.items()}
+
+    def _translate_entries(entries: list[DatasetAttributionEntry]) -> list[DatasetAttributionEntry]:
+        for e in entries:
+            if e.layer in canon_to_concrete:
+                e.layer = canon_to_concrete[e.layer]
+                e.component_key = f"{e.layer}:{e.component_idx}"
+        return entries
+
+    def _to_canon(concrete_key: str) -> str:
+        layer, idx = concrete_key.rsplit(":", 1)
+        return f"{concrete_to_canon[layer]}:{idx}"
+
+    def _make_get_targets(metric: AttrMetric) -> "graph_context.GetAttributed":
+        def get(
+            key: str, k: int, sign: Literal["positive", "negative"]
+        ) -> list[DatasetAttributionEntry]:
+            return _translate_entries(
+                attribution_storage.get_top_targets(
+                    _to_canon(key),
+                    k=k,
+                    sign=sign,
+                    metric=metric,
+                    w_unembed=w_unembed,
+                    include_outputs=True,
+                )
+            )
+
+        return get
+
+    def _make_get_sources(metric: AttrMetric) -> "graph_context.GetAttributed":
+        def get(
+            key: str, k: int, sign: Literal["positive", "negative"]
+        ) -> list[DatasetAttributionEntry]:
+            return _translate_entries(
+                attribution_storage.get_top_sources(_to_canon(key), k=k, sign=sign, metric=metric)
+            )
+
+        return get
+
+    def _get_related(get_attributed: "graph_context.GetAttributed") -> GetRelated:
+        def get(key: str, labels_so_far: dict[str, LabelResult]) -> list[RelatedComponent]:
+            return get_related_components(
+                key,
+                get_attributed,
+                correlation_storage,
+                labels_so_far,
+                config.top_k_attributed,
+            )
+
+        return get
+
+    # -- Layer processor -------------------------------------------------------
+
+    async def process_layer(
+        get_related: GetRelated,
+        format_prompt: FormatPrompt,
+        save_label: Callable[[LabelResult], None],
+        pending: list[str],
+        labels_so_far: dict[str, LabelResult],
+    ) -> dict[str, LabelResult]:
+        def jobs() -> Iterable[LLMJob]:
+            for key in pending:
+                component = harvest.get_component(key)
+                assert component is not None, f"Component {key} not found in harvest DB"
+                i_stats = get_input_token_stats(token_stats, key, app_tok, top_k=20)
+                o_stats = get_output_token_stats(token_stats, key, app_tok, top_k=50)
+                assert i_stats is not None and o_stats is not None
+
+                related = get_related(key, labels_so_far)
+                prompt = format_prompt(
+                    component=component,
+                    model_metadata=model_metadata,
+                    app_tok=app_tok,
+                    input_token_stats=i_stats,
+                    output_token_stats=o_stats,
+                    related=related,
+                    label_max_words=config.label_max_words,
+                    max_examples=config.max_examples,
+                )
+                yield LLMJob(prompt=prompt, schema=LABEL_SCHEMA, key=key)
+
+        return await _collect_labels(llm_map, jobs(), len(pending), save_label)
+
+    # -- Scan (fold over layers) -----------------------------------------------
+
+    async def scan(
+        layer_order: list[tuple[str, list[str]]],
+        initial: dict[str, LabelResult],
+        step: Step,
+    ) -> dict[str, LabelResult]:
+        labels = dict(initial)
+        if labels:
+            logger.info(f"Resuming, {len(labels)} already completed")
+
+        completed_so_far = 0
+        for layer, keys in layer_order:
+            pending = [k for k in keys if k not in labels]
+            if not pending:
+                completed_so_far += len(keys)
+                continue
+
+            new_labels = await step(pending, labels)
+            labels.update(new_labels)
+
+            completed_so_far += len(keys)
+            logger.info(f"Completed layer {layer} ({completed_so_far}/{total})")
+
+        return labels
+
+    # -- Map (parallel over all components) ------------------------------------
+
+    async def map_unify(
+        output_labels: dict[str, LabelResult],
+        input_labels: dict[str, LabelResult],
+    ) -> None:
+        completed = db.get_completed_unified_keys()
+        keys = [k for k in all_keys if k not in completed]
+        if not keys:
+            logger.info("Unification: all labels already completed")
+            return
+        if completed:
+            logger.info(f"Unification: resuming, {len(completed)} already completed")
+
+        n_skipped = 0
+
+        def jobs() -> Iterable[LLMJob]:
+            nonlocal n_skipped
+            for key in keys:
+                out = output_labels.get(key)
+                inp = input_labels.get(key)
+                if out is None or inp is None:
+                    n_skipped += 1
+                    continue
+                prompt = format_unification_prompt(out, inp, config.label_max_words)
+                yield LLMJob(prompt=prompt, schema=LABEL_SCHEMA, key=key)
+
+        logger.info(f"Unifying {len(keys)} components")
+        new_labels = await _collect_labels(llm_map, jobs(), len(keys), db.save_unified_label)
+
+        if n_skipped:
+            logger.warning(f"Skipped {n_skipped} components missing output or input labels")
+        logger.info(f"Unification: completed {len(new_labels)}/{len(keys)}")
+
+    # -- Run -------------------------------------------------------------------
+
+    logger.info("Initializing DB and building scan steps...")
+    db = TopologicalInterpDB(db_path)
+
+    metric = config.attr_metric
+    get_targets = _make_get_targets(metric)
+    get_sources = _make_get_sources(metric)
+
+    label_output = partial(
+        process_layer,
+        _get_related(get_targets),
+        format_output_prompt,
+        db.save_output_label,
+    )
+    label_input = partial(
+        process_layer,
+        _get_related(get_sources),
+        format_input_prompt,
+        db.save_input_label,
+    )
 
     async def _run() -> None:
-        db = TopologicalInterpDB(db_path)
+        logger.section("Phase 1: Output pass (late → early)")
+        output_labels = await scan(list(reversed(layers)), db.get_all_output_labels(), label_output)
 
-        try:
-            logger.section("Phase 1: Output pass (late → early)")
-            await _run_output_pass(
-                db=db,
-                layers_ordered=layers_ordered,
-                component_by_key=component_by_key,
-                config=config,
-                openrouter_api_key=openrouter_api_key,
-                model_metadata=model_metadata,
-                app_tok=app_tok,
-                token_stats=token_stats,
-                attribution_storage=attribution_storage,
-                correlation_storage=correlation_storage,
-                total=total,
-            )
+        logger.section("Phase 2: Input pass (early → late)")
+        input_labels = await scan(list(layers), db.get_all_input_labels(), label_input)
 
-            logger.section("Phase 2: Input pass (early → late)")
-            await _run_input_pass(
-                db=db,
-                layers_ordered=layers_ordered,
-                component_by_key=component_by_key,
-                config=config,
-                openrouter_api_key=openrouter_api_key,
-                model_metadata=model_metadata,
-                app_tok=app_tok,
-                token_stats=token_stats,
-                attribution_storage=attribution_storage,
-                correlation_storage=correlation_storage,
-                total=total,
-            )
+        logger.section("Phase 3: Unification")
+        await map_unify(output_labels, input_labels)
 
-            logger.section("Phase 3: Unification")
-            await _run_unification(
-                db=db,
-                all_keys=all_keys,
-                config=config,
-                openrouter_api_key=openrouter_api_key,
-            )
-
-            output_count = db.get_label_count("output_labels")
-            input_count = db.get_label_count("input_labels")
-            unified_count = db.get_label_count("unified_labels")
-            logger.info(
-                f"Completed: {output_count} output, {input_count} input, "
-                f"{unified_count} unified labels -> {db_path}"
-            )
-        finally:
-            db.close()
-
-    asyncio.run(_run())
-
-
-# -- Phase 1: Output pass -----------------------------------------------------
-
-
-def _build_output_jobs(
-    keys: list[str],
-    component_by_key: dict[str, ComponentData],
-    token_stats: TokenStatsStorage,
-    app_tok: AppTokenizer,
-    attribution_storage: DatasetAttributionStorage,
-    correlation_storage: CorrelationStorage,
-    labels_so_far: dict[str, LabelResult],
-    db: TopologicalInterpDB,
-    config: TopologicalInterpConfig,
-    model_metadata: ModelMetadata,
-) -> Iterable[LLMJob]:
-    for key in keys:
-        component = component_by_key[key]
-
-        input_stats = get_input_token_stats(token_stats, key, app_tok, top_k=20)
-        output_stats = get_output_token_stats(token_stats, key, app_tok, top_k=50)
-        assert input_stats is not None, f"No input token stats for {key}"
-        assert output_stats is not None, f"No output token stats for {key}"
-
-        downstream = get_downstream_components(
-            key,
-            attribution_storage,
-            correlation_storage,
-            labels_so_far,
-            model_metadata.layer_descriptions,
-            config.top_k_attributed,
+        logger.info(
+            f"Completed: {db.get_label_count('output_labels')} output, "
+            f"{db.get_label_count('input_labels')} input, "
+            f"{db.get_label_count('unified_labels')} unified labels -> {db_path}"
         )
 
-        _save_edges(db, key, downstream, "downstream", "output")
-
-        prompt = format_output_prompt(
-            component=component,
-            model_metadata=model_metadata,
-            app_tok=app_tok,
-            input_token_stats=input_stats,
-            output_token_stats=output_stats,
-            downstream=downstream,
-            label_max_words=config.label_max_words,
-            max_examples=config.max_examples,
-        )
-        yield LLMJob(prompt=prompt, schema=LABEL_SCHEMA, key=key)
+    try:
+        asyncio.run(_run())
+    finally:
+        db.close()
 
 
-async def _run_output_pass(
-    db: TopologicalInterpDB,
-    layers_ordered: list[tuple[str, list[str]]],
-    component_by_key: dict[str, ComponentData],
-    config: TopologicalInterpConfig,
-    openrouter_api_key: str,
-    model_metadata: ModelMetadata,
-    app_tok: AppTokenizer,
-    token_stats: TokenStatsStorage,
-    attribution_storage: DatasetAttributionStorage,
-    correlation_storage: CorrelationStorage,
-    total: int,
-) -> None:
-    # Seed scan accumulator from DB for resume
-    labels_so_far: dict[str, LabelResult] = db.get_all_output_labels()
-    if labels_so_far:
-        logger.info(f"Output pass: resuming, {len(labels_so_far)} already completed")
-
-    completed_so_far = 0
-
-    for layer, keys in reversed(layers_ordered):
-        pending = [k for k in keys if k not in labels_so_far]
-        if not pending:
-            completed_so_far += len(keys)
-            continue
-
-        jobs = _build_output_jobs(
-            pending,
-            component_by_key,
-            token_stats,
-            app_tok,
-            attribution_storage,
-            correlation_storage,
-            labels_so_far,
-            db,
-            config,
-            model_metadata,
-        )
-
-        n_errors = 0
-        n_done = 0
-
-        async for outcome in map_llm_calls(
-            openrouter_api_key=openrouter_api_key,
-            model=config.model,
-            reasoning_effort=config.reasoning_effort,
-            jobs=jobs,
-            max_tokens=8000,
-            max_concurrent=config.max_concurrent,
-            max_requests_per_minute=config.max_requests_per_minute,
-            cost_limit_usd=config.cost_limit_usd,
-            response_schema=LABEL_SCHEMA,
-            n_total=len(pending),
-        ):
-            match outcome:
-                case LLMResult(job=job, parsed=parsed, raw=raw):
-                    result = _parsed_to_label_result(job.key, parsed, raw, job.prompt)
-                    labels_so_far[job.key] = result
-                    db.save_output_label(result)
-                    n_done += 1
-                case LLMError(job=job, error=e):
-                    n_errors += 1
-                    logger.error(f"Output pass: skipping {job.key}: {type(e).__name__}: {e}")
-
-            _check_error_rate(n_errors, n_done)
-
-        completed_so_far += len(keys)
-        logger.info(f"Output pass: completed layer {layer} ({completed_so_far}/{total})")
+# -- Shared LLM call machinery ------------------------------------------------
 
 
-# -- Phase 2: Input pass ------------------------------------------------------
-
-
-def _build_input_jobs(
-    keys: list[str],
-    component_by_key: dict[str, ComponentData],
-    token_stats: TokenStatsStorage,
-    app_tok: AppTokenizer,
-    attribution_storage: DatasetAttributionStorage,
-    correlation_storage: CorrelationStorage,
-    labels_so_far: dict[str, LabelResult],
-    db: TopologicalInterpDB,
-    config: TopologicalInterpConfig,
-    model_metadata: ModelMetadata,
-) -> Iterable[LLMJob]:
-    for key in keys:
-        component = component_by_key[key]
-
-        input_stats = get_input_token_stats(token_stats, key, app_tok, top_k=20)
-        output_stats = get_output_token_stats(token_stats, key, app_tok, top_k=50)
-        assert input_stats is not None, f"No input token stats for {key}"
-        assert output_stats is not None, f"No output token stats for {key}"
-
-        upstream = get_upstream_components(
-            key,
-            attribution_storage,
-            correlation_storage,
-            labels_so_far,
-            model_metadata.layer_descriptions,
-            config.top_k_attributed,
-        )
-        cofiring = get_cofiring_components(key, correlation_storage, config.top_k_correlated)
-
-        _save_edges(db, key, upstream, "upstream", "input")
-        _save_edges(db, key, cofiring, "upstream", "input")
-
-        prompt = format_input_prompt(
-            component=component,
-            model_metadata=model_metadata,
-            app_tok=app_tok,
-            input_token_stats=input_stats,
-            output_token_stats=output_stats,
-            upstream=upstream,
-            cofiring=cofiring,
-            label_max_words=config.label_max_words,
-            max_examples=config.max_examples,
-        )
-        yield LLMJob(prompt=prompt, schema=LABEL_SCHEMA, key=key)
-
-
-async def _run_input_pass(
-    db: TopologicalInterpDB,
-    layers_ordered: list[tuple[str, list[str]]],
-    component_by_key: dict[str, ComponentData],
-    config: TopologicalInterpConfig,
-    openrouter_api_key: str,
-    model_metadata: ModelMetadata,
-    app_tok: AppTokenizer,
-    token_stats: TokenStatsStorage,
-    attribution_storage: DatasetAttributionStorage,
-    correlation_storage: CorrelationStorage,
-    total: int,
-) -> None:
-    # Seed scan accumulator from DB for resume
-    labels_so_far: dict[str, LabelResult] = db.get_all_input_labels()
-    if labels_so_far:
-        logger.info(f"Input pass: resuming, {len(labels_so_far)} already completed")
-
-    completed_so_far = 0
-
-    for layer, keys in layers_ordered:
-        pending = [k for k in keys if k not in labels_so_far]
-        if not pending:
-            completed_so_far += len(keys)
-            continue
-
-        jobs = _build_input_jobs(
-            pending,
-            component_by_key,
-            token_stats,
-            app_tok,
-            attribution_storage,
-            correlation_storage,
-            labels_so_far,
-            db,
-            config,
-            model_metadata,
-        )
-
-        n_errors = 0
-        n_done = 0
-
-        async for outcome in map_llm_calls(
-            openrouter_api_key=openrouter_api_key,
-            model=config.model,
-            reasoning_effort=config.reasoning_effort,
-            jobs=jobs,
-            max_tokens=8000,
-            max_concurrent=config.max_concurrent,
-            max_requests_per_minute=config.max_requests_per_minute,
-            cost_limit_usd=config.cost_limit_usd,
-            response_schema=LABEL_SCHEMA,
-            n_total=len(pending),
-        ):
-            match outcome:
-                case LLMResult(job=job, parsed=parsed, raw=raw):
-                    result = _parsed_to_label_result(job.key, parsed, raw, job.prompt)
-                    labels_so_far[job.key] = result
-                    db.save_input_label(result)
-                    n_done += 1
-                case LLMError(job=job, error=e):
-                    n_errors += 1
-                    logger.error(f"Input pass: skipping {job.key}: {type(e).__name__}: {e}")
-
-            _check_error_rate(n_errors, n_done)
-
-        completed_so_far += len(keys)
-        logger.info(f"Input pass: completed layer {layer} ({completed_so_far}/{total})")
-
-
-# -- Phase 3: Unification -----------------------------------------------------
-
-
-def _build_unification_jobs(
-    keys: list[str],
-    db: TopologicalInterpDB,
-    config: TopologicalInterpConfig,
-) -> Iterable[LLMJob]:
-    n_skipped = 0
-    for key in keys:
-        output_label = db.get_output_label(key)
-        input_label = db.get_input_label(key)
-        if output_label is None or input_label is None:
-            n_skipped += 1
-            logger.warning(
-                f"Skipping unification for {key}: "
-                f"output={'yes' if output_label else 'MISSING'}, "
-                f"input={'yes' if input_label else 'MISSING'}"
-            )
-            continue
-
-        prompt = format_unification_prompt(
-            output_label=output_label,
-            input_label=input_label,
-            label_max_words=config.label_max_words,
-        )
-        yield LLMJob(prompt=prompt, schema=LABEL_SCHEMA, key=key)
-    if n_skipped:
-        logger.warning(f"Skipped {n_skipped} components missing output or input labels")
-
-
-async def _run_unification(
-    db: TopologicalInterpDB,
-    all_keys: list[str],
-    config: TopologicalInterpConfig,
-    openrouter_api_key: str,
-) -> None:
-    completed = db.get_completed_unified_keys()
-    pending = [k for k in all_keys if k not in completed]
-
-    if not pending:
-        logger.info("Unification: all labels already completed")
-        return
-
-    if completed:
-        logger.info(f"Unification: resuming, {len(completed)} already completed")
-
-    logger.info(f"Unifying {len(pending)} components")
-
-    jobs = _build_unification_jobs(pending, db, config)
-
+async def _collect_labels(
+    llm_map: Callable[[Iterable[LLMJob], int | None], AsyncGenerator[LLMResult | LLMError]],
+    jobs: Iterable[LLMJob],
+    n_total: int,
+    save_label: Callable[[LabelResult], None],
+) -> dict[str, LabelResult]:
+    """Run LLM jobs, parse results, save to DB, return new labels."""
+    new_labels: dict[str, LabelResult] = {}
     n_errors = 0
-    n_done = 0
 
-    async for outcome in map_llm_calls(
-        openrouter_api_key=openrouter_api_key,
-        model=config.model,
-        reasoning_effort=config.reasoning_effort,
-        jobs=jobs,
-        max_tokens=4000,
-        max_concurrent=config.max_concurrent,
-        max_requests_per_minute=config.max_requests_per_minute,
-        cost_limit_usd=config.cost_limit_usd,
-        response_schema=LABEL_SCHEMA,
-        n_total=len(pending),
-    ):
+    async for outcome in llm_map(jobs, n_total):
         match outcome:
             case LLMResult(job=job, parsed=parsed, raw=raw):
-                result = _parsed_to_label_result(job.key, parsed, raw, job.prompt)
-                db.save_unified_label(result)
-                n_done += 1
+                result = _parse_label(job.key, parsed, raw, job.prompt)
+                save_label(result)
+                new_labels[job.key] = result
             case LLMError(job=job, error=e):
                 n_errors += 1
-                logger.error(f"Unification: skipping {job.key}: {type(e).__name__}: {e}")
+                logger.error(f"Skipping {job.key}: {type(e).__name__}: {e}")
+        _check_error_rate(n_errors, len(new_labels))
 
-        _check_error_rate(n_errors, n_done)
-
-    logger.info(f"Unification: completed {n_done}/{len(pending)}")
-
-
-# -- Helpers -------------------------------------------------------------------
+    return new_labels
 
 
-def _parsed_to_label_result(
-    component_key: str,
-    parsed: dict[str, object],
-    raw: str,
-    prompt: str,
-) -> LabelResult:
+def _parse_label(key: str, parsed: dict[str, object], raw: str, prompt: str) -> LabelResult:
     assert len(parsed) == 3, f"Expected 3 fields, got {len(parsed)}"
     label = parsed["label"]
     confidence = parsed["confidence"]
     reasoning = parsed["reasoning"]
     assert isinstance(label, str) and isinstance(confidence, str) and isinstance(reasoning, str)
     return LabelResult(
-        component_key=component_key,
+        component_key=key,
         label=label,
         confidence=confidence,
         reasoning=reasoning,
@@ -471,27 +331,3 @@ def _check_error_rate(n_errors: int, n_done: int) -> None:
         raise RuntimeError(
             f"Error rate {n_errors / total:.0%} ({n_errors}/{total}) exceeds 20% threshold"
         )
-
-
-def _save_edges(
-    db: TopologicalInterpDB,
-    component_key: str,
-    related: list[RelatedComponent],
-    direction: Literal["upstream", "downstream"],
-    pass_name: Literal["output", "input"],
-) -> None:
-    if not related:
-        return
-    edges = [
-        PromptEdge(
-            component_key=component_key,
-            related_key=r.component_key,
-            direction=direction,
-            pass_name=pass_name,
-            attribution=r.attribution,
-            related_label=r.label,
-            related_confidence=r.confidence,
-        )
-        for r in related
-    ]
-    db.save_prompt_edges(edges)
