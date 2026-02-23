@@ -108,16 +108,15 @@ def harvest_attributions(
     model.eval()
 
     spd_config = run_info.config
-    train_loader, tokenizer = train_loader_and_tokenizer(spd_config, config.batch_size)
-    vocab_size = tokenizer.vocab_size
-    assert isinstance(vocab_size, int), f"vocab_size must be int, got {type(vocab_size)}"
-    logger.info(f"Vocab size: {vocab_size}")
+    train_loader, _ = train_loader_and_tokenizer(spd_config, config.batch_size)
 
     # Get gradient connectivity
     logger.info("Computing sources_by_target...")
     topology = TransformerTopology(model.target_model)
     embed_path = topology.path_schema.embedding_path
     unembed_path = topology.path_schema.unembed_path
+    vocab_size = topology.embedding_module.num_embeddings
+    logger.info(f"Vocab size: {vocab_size}")
     sources_by_target_raw = get_sources_by_target(model, topology, str(device), spd_config.sampling)
 
     # Filter to valid source/target pairs:
