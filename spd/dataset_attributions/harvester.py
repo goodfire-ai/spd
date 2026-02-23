@@ -255,6 +255,7 @@ class AttributionHarvester:
             self._accumulate_attributions(
                 target_layer,
                 t_idx,
+                target_acts_raw,
                 source_layers,
                 source_acts,
                 list(grads),
@@ -267,6 +268,7 @@ class AttributionHarvester:
         self,
         target_layer: str,
         target_idx: int,
+        target_acts_raw: Tensor,
         source_layers: list[str],
         source_acts: list[Tensor],
         source_grads: list[Tensor],
@@ -287,7 +289,7 @@ class AttributionHarvester:
             # Embed has no CI (all tokens always active)
             source_ci = ci[source_layer] if source_layer != self.embed_path else 1.0
             ci_weighted_attr = grad * act * source_ci
-            ci_weighted_attr_abs = torch.where(act > 0, ci_weighted_attr, -ci_weighted_attr)
+            ci_weighted_attr_abs = torch.where(target_acts_raw > 0, ci_weighted_attr, -ci_weighted_attr)
             ci_weighted_squared_attr = ci_weighted_attr.square()
 
             if source_layer == self.embed_path:
