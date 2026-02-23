@@ -12,19 +12,24 @@ export type DatasetAttributionEntry = {
     token_str: string | null;
 };
 
-export type ComponentAttributions = {
+export type SignedAttributions = {
     positive_sources: DatasetAttributionEntry[];
     negative_sources: DatasetAttributionEntry[];
     positive_targets: DatasetAttributionEntry[];
     negative_targets: DatasetAttributionEntry[];
 };
 
+export type UnsignedAttributions = {
+    positive_sources: DatasetAttributionEntry[];
+    positive_targets: DatasetAttributionEntry[];
+};
+
 export type AttrMetric = "attr" | "attr_abs" | "mean_squared_attr";
 
 export type AllMetricAttributions = {
-    attr: ComponentAttributions;
-    attr_abs: ComponentAttributions;
-    mean_squared_attr: ComponentAttributions;
+    attr: SignedAttributions;
+    attr_abs: SignedAttributions;
+    mean_squared_attr: UnsignedAttributions;
 };
 
 export type DatasetAttributionsMetadata = {
