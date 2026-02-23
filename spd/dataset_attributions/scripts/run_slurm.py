@@ -119,8 +119,9 @@ def submit_attributions(
     merge_config = SlurmConfig(
         job_name="spd-attr-merge",
         partition=partition,
-        n_gpus=0,  # No GPU needed for merge
+        n_gpus=0,
         time=config.merge_time,
+        mem=config.merge_mem,
         snapshot_branch=snapshot_branch,
         dependency_job_id=array_result.job_id,
         comment=wandb_url,
