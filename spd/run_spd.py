@@ -362,6 +362,12 @@ def optimize(
                     device=device,
                 )
 
+                ppgd_effective_sources = (
+                    next(iter(ppgd_states.values())).get_effective_sources()
+                    if len(ppgd_states) == 1
+                    else None
+                )
+
                 metrics = evaluate(
                     eval_metric_configs=eval_metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
@@ -371,6 +377,7 @@ def optimize(
                     slow_step=slow_step,
                     n_eval_steps=n_eval_steps,
                     current_frac_of_training=step / config.steps,
+                    ppgd_effective_sources=ppgd_effective_sources,
                 )
 
                 dict_safe_update_(metrics, multibatch_pgd_metrics)

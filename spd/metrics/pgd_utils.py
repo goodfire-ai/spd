@@ -3,7 +3,6 @@ from functools import partial
 from typing import Literal
 
 import torch
-import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
@@ -228,80 +227,6 @@ def _forward_with_adv_sources(
     )
 
     return sum_loss, n_examples
-
-
-def _forward_hidden_acts_with_adv_sources(
-    model: ComponentModel,
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    adv_sources: dict[str, Float[Tensor, "*batch_dim_or_ones mask_c"]],
-    ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
-    target_acts: dict[str, Float[Tensor, "..."]],
-    batch_dims: tuple[int, ...],
-) -> tuple[Float[Tensor, ""], int]:
-    mask_infos = _construct_mask_infos_from_adv_sources(
-        adv_sources=adv_sources,
-        ci=ci,
-        weight_deltas=weight_deltas,
-        routing_masks="all",
-        batch_dims=batch_dims,
-    )
-    comp_cache = model(batch, mask_infos=mask_infos, cache_type="output").cache
-    device = next(iter(target_acts.values())).device
-    sum_mse = torch.tensor(0.0, device=device)
-    n_examples = 0
-    for layer_name, target in target_acts.items():
-        assert layer_name in comp_cache, f"{layer_name} not in comp_cache"
-        sum_mse = sum_mse + F.mse_loss(comp_cache[layer_name], target, reduction="sum")
-        n_examples += target.numel()
-    return sum_mse, n_examples
-
-
-def pgd_hidden_acts_recon_loss_update(
-    model: ComponentModel,
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
-    target_acts: dict[str, Float[Tensor, "..."]],
-    pgd_config: PGDConfig,
-) -> dict[str, tuple[Float[Tensor, ""], int]]:
-    """PGD masked hidden activations reconstruction loss.
-
-    Optimizes adversarial masks to maximize MSE between component and target output activations.
-    Returns per-module MSE values after PGD optimization.
-    """
-    batch_dims = next(iter(ci.values())).shape[:-1]
-    adv_sources = _init_adv_sources(model, batch_dims, batch.device, weight_deltas, pgd_config)
-
-    fwd_pass = partial(
-        _forward_hidden_acts_with_adv_sources,
-        model=model,
-        batch=batch,
-        adv_sources=adv_sources,
-        ci=ci,
-        weight_deltas=weight_deltas,
-        target_acts=target_acts,
-        batch_dims=batch_dims,
-    )
-
-    # Run PGD loop to optimize adv_sources in-place
-    _run_pgd_loop(adv_sources, pgd_config, fwd_pass)
-
-    # Compute per-module breakdown with optimized sources
-    mask_infos = _construct_mask_infos_from_adv_sources(
-        adv_sources=adv_sources,
-        ci=ci,
-        weight_deltas=weight_deltas,
-        routing_masks="all",
-        batch_dims=batch_dims,
-    )
-    comp_cache = model(batch, mask_infos=mask_infos, cache_type="output").cache
-    per_module: dict[str, tuple[Float[Tensor, ""], int]] = {}
-    for layer_name, target in target_acts.items():
-        assert layer_name in comp_cache, f"{layer_name} not in comp_cache"
-        mse = F.mse_loss(comp_cache[layer_name], target, reduction="sum")
-        per_module[layer_name] = (mse, target.numel())
-    return per_module
 
 
 def _multibatch_pgd_fwd_bwd(

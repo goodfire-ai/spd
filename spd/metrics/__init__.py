@@ -15,7 +15,7 @@ from .component_activation_density import ComponentActivationDensity as Componen
 from .faithfulness_loss import FaithfulnessLoss as FaithfulnessLoss
 from .faithfulness_loss import faithfulness_loss as faithfulness_loss
 from .hidden_acts_recon_loss import CIHiddenActsReconLoss as CIHiddenActsReconLoss
-from .hidden_acts_recon_loss import PGDHiddenActsReconLoss as PGDHiddenActsReconLoss
+from .hidden_acts_recon_loss import PPGDHiddenActsReconLoss as PPGDHiddenActsReconLoss
 from .hidden_acts_recon_loss import (
     StochasticHiddenActsReconLoss as StochasticHiddenActsReconLoss,
 )

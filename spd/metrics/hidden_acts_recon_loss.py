@@ -6,11 +6,11 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.configs import PGDConfig, SamplingType
+from spd.configs import SamplingType
 from spd.metrics.base import Metric
-from spd.metrics.pgd_utils import pgd_hidden_acts_recon_loss_update
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
+from spd.persistent_pgd import PPGDSources, get_ppgd_mask_infos
 from spd.routing import AllLayersRouter
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
@@ -245,8 +245,8 @@ class CIHiddenActsReconLoss(Metric):
         )
 
 
-class PGDHiddenActsReconLoss(Metric):
-    """Reconstruction loss between target and component hidden activations with PGD-optimized masks."""
+class PPGDHiddenActsReconLoss(Metric):
+    """Reconstruction loss between target and component hidden activations using persistent PGD masks."""
 
     slow: ClassVar[bool] = True
     metric_section: ClassVar[str] = "loss"
@@ -255,12 +255,12 @@ class PGDHiddenActsReconLoss(Metric):
         self,
         model: ComponentModel,
         device: str,
+        ppgd_effective_sources: PPGDSources,
         use_delta_component: bool,
-        pgd_config: PGDConfig,
     ) -> None:
         self.model = model
-        self.pgd_config: PGDConfig = pgd_config
-        self.use_delta_component: bool = use_delta_component
+        self.ppgd_effective_sources = ppgd_effective_sources
+        self.use_delta_component = use_delta_component
         self.device = device
         self.per_module_sum_mse: dict[str, Tensor] = {}
         self.per_module_n_examples: dict[str, Tensor] = {}
@@ -275,13 +275,19 @@ class PGDHiddenActsReconLoss(Metric):
         **_: Any,
     ) -> None:
         target_acts = self.model(batch, cache_type="output").cache
-        per_module = pgd_hidden_acts_recon_loss_update(
-            model=self.model,
-            batch=batch,
+        batch_dims = next(iter(ci.lower_leaky.values())).shape[:-1]
+        mask_infos = get_ppgd_mask_infos(
             ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
+            ppgd_sources=self.ppgd_effective_sources,
+            routing_masks="all",
+            batch_dims=batch_dims,
+        )
+        per_module = _calc_hidden_acts_mse(
+            model=self.model,
+            batch=batch,
+            mask_infos=mask_infos,
             target_acts=target_acts,
-            pgd_config=self.pgd_config,
         )
         _accumulate_into_state(
             state_sum_mse=self.per_module_sum_mse,

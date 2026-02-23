@@ -27,12 +27,12 @@ from spd.configs import (
     PermutedCIPlotsConfig,
     PersistentPGDReconLossConfig,
     PersistentPGDReconSubsetLossConfig,
-    PGDHiddenActsReconLossConfig,
     PGDMultiBatchReconLossConfig,
     PGDMultiBatchReconSubsetLossConfig,
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
+    PPGDHiddenActsReconLossConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
@@ -54,7 +54,7 @@ from spd.metrics.component_activation_density import ComponentActivationDensity
 from spd.metrics.faithfulness_loss import FaithfulnessLoss
 from spd.metrics.hidden_acts_recon_loss import (
     CIHiddenActsReconLoss,
-    PGDHiddenActsReconLoss,
+    PPGDHiddenActsReconLoss,
     StochasticHiddenActsReconLoss,
 )
 from spd.metrics.identity_ci_error import IdentityCIError
@@ -70,6 +70,7 @@ from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetC
 from spd.metrics.stochastic_recon_subset_loss import StochasticReconSubsetLoss
 from spd.metrics.uv_plots import UVPlots
 from spd.models.component_model import ComponentModel, OutputWithCache
+from spd.persistent_pgd import PPGDSources
 from spd.routing import AllLayersRouter, get_subset_router
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
 from spd.utils.general_utils import dict_safe_update_, extract_batch_data
@@ -129,6 +130,7 @@ def init_metric(
     model: ComponentModel,
     run_config: Config,
     device: str,
+    ppgd_effective_sources: PPGDSources | None = None,
 ) -> Metric:
     match cfg:
         case ImportanceMinimalityLossConfig():
@@ -270,12 +272,13 @@ def init_metric(
             )
         case CIHiddenActsReconLossConfig():
             metric = CIHiddenActsReconLoss(model=model, device=device)
-        case PGDHiddenActsReconLossConfig():
-            metric = PGDHiddenActsReconLoss(
+        case PPGDHiddenActsReconLossConfig():
+            assert ppgd_effective_sources is not None
+            metric = PPGDHiddenActsReconLoss(
                 model=model,
                 device=device,
+                ppgd_effective_sources=ppgd_effective_sources,
                 use_delta_component=run_config.use_delta_component,
-                pgd_config=cfg,
             )
         case UVPlotsConfig():
             metric = UVPlots(
@@ -309,6 +312,7 @@ def evaluate(
     slow_step: bool,
     n_eval_steps: int,
     current_frac_of_training: float,
+    ppgd_effective_sources: PPGDSources | None = None,
 ) -> MetricOutType:
     """Run evaluation and return a mapping of metric names to values/images."""
 
@@ -326,6 +330,7 @@ def evaluate(
             model=model,
             run_config=run_config,
             device=device,
+            ppgd_effective_sources=ppgd_effective_sources,
         )
         if metric.slow and not slow_step:
             continue

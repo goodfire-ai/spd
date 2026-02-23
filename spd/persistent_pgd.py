@@ -260,7 +260,7 @@ def _get_router_for_ppgd_config(
             return get_subset_router(routing, device)
 
 
-def _get_mask_infos(
+def get_ppgd_mask_infos(
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     ppgd_sources: dict[str, Float[Tensor, "*batch_dims source_c"]],
@@ -325,7 +325,7 @@ def _compute_ppgd_recon_loss(
     assert ci, "Empty ci"
     batch_dims = next(iter(ci.values())).shape[:-1]
 
-    mask_infos = _get_mask_infos(ci, weight_deltas, ppgd_sources, routing_masks, batch_dims)
+    mask_infos = get_ppgd_mask_infos(ci, weight_deltas, ppgd_sources, routing_masks, batch_dims)
     out = model(batch, mask_infos=mask_infos)
     loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
     n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
