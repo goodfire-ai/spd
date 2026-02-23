@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from spd.dataset_attributions.config import AttributionsSlurmConfig
-from spd.dataset_attributions.scripts import run as attribution_run
+from spd.dataset_attributions.scripts import run_merge, run_worker
 from spd.log import logger
 from spd.utils.git_utils import create_git_snapshot
 from spd.utils.slurm import (
@@ -85,7 +85,7 @@ def submit_attributions(
     # SLURM arrays are 1-indexed, so task ID 1 -> rank 0, etc.
     worker_commands = []
     for rank in range(n_gpus):
-        cmd = attribution_run.get_worker_command(
+        cmd = run_worker.get_command(
             wandb_path,
             config_json,
             rank=rank,
@@ -115,7 +115,7 @@ def submit_attributions(
     )
 
     # Submit merge job with dependency on array completion
-    merge_cmd = attribution_run.get_merge_command(wandb_path, subrun_id)
+    merge_cmd = run_merge.get_command(wandb_path, subrun_id)
     merge_config = SlurmConfig(
         job_name="spd-attr-merge",
         partition=partition,
