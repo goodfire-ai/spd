@@ -22,6 +22,7 @@ from torch import Tensor
 from spd.log import logger
 
 AttrDict = dict[str, dict[str, Tensor]]
+AttrMetric = Literal["attr", "attr_abs", "mean_squared_attr"]
 
 
 @dataclass
@@ -100,15 +101,100 @@ class DatasetAttributionStorage:
                 first_source = next(iter(self.attr[layer].values()))
                 return 0 <= idx < first_source.shape[0]
 
-    # TODO: these methods need a metric parameter to select which of the 3 attr dicts to query
-    def get_attribution(self, *_args: object, **_kwargs: object) -> float:
-        raise ValueError("TODO: get_attribution needs metric selection")
+    def _get_attr_dict(self, metric: AttrMetric) -> AttrDict:
+        match metric:
+            case "attr":
+                return self.attr
+            case "attr_abs":
+                return self.attr_abs
+            case "mean_squared_attr":
+                return self.mean_squared_attr
 
-    def get_top_sources(self, *_args: object, **_kwargs: object) -> list[DatasetAttributionEntry]:
-        raise ValueError("TODO: get_top_sources needs metric selection")
+    def get_attribution(
+        self,
+        source_key: str,
+        target_key: str,
+        metric: AttrMetric,
+        w_unembed: Tensor | None = None,
+    ) -> float:
+        source_layer, source_idx = self._parse_key(source_key)
+        target_layer, target_idx = self._parse_key(target_key)
+        assert source_layer != "output", f"output tokens cannot be sources: {source_key}"
 
-    def get_top_targets(self, *_args: object, **_kwargs: object) -> list[DatasetAttributionEntry]:
-        raise ValueError("TODO: get_top_targets needs metric selection")
+        attrs = self._get_attr_dict(metric)
+        attr_matrix = attrs[target_layer][source_layer]
+
+        if target_layer == "output":
+            assert w_unembed is not None, "w_unembed required for output target queries"
+            w_unembed = w_unembed.to(attr_matrix.device)
+            return (attr_matrix[:, source_idx] @ w_unembed[:, target_idx]).item()
+
+        return attr_matrix[target_idx, source_idx].item()
+
+    def get_top_sources(
+        self,
+        target_key: str,
+        k: int,
+        sign: Literal["positive", "negative"],
+        metric: AttrMetric,
+        w_unembed: Tensor | None = None,
+    ) -> list[DatasetAttributionEntry]:
+        target_layer, target_idx = self._parse_key(target_key)
+        attrs = self._get_attr_dict(metric)
+
+        if target_layer == "output":
+            assert w_unembed is not None, "w_unembed required for output target queries"
+
+        value_segments: list[Tensor] = []
+        layer_names: list[str] = []
+
+        for source_layer, attr_matrix in attrs[target_layer].items():
+            if target_layer == "output":
+                assert w_unembed is not None
+                w = w_unembed.to(attr_matrix.device)
+                values = w[:, target_idx] @ attr_matrix
+            else:
+                values = attr_matrix[target_idx, :]
+
+            value_segments.append(values)
+            layer_names.append(source_layer)
+
+        return self._top_k_from_segments(value_segments, layer_names, k, sign)
+
+    def get_top_targets(
+        self,
+        source_key: str,
+        k: int,
+        sign: Literal["positive", "negative"],
+        metric: AttrMetric,
+        w_unembed: Tensor | None = None,
+        include_outputs: bool = True,
+    ) -> list[DatasetAttributionEntry]:
+        source_layer, source_idx = self._parse_key(source_key)
+        attrs = self._get_attr_dict(metric)
+
+        value_segments: list[Tensor] = []
+        layer_names: list[str] = []
+
+        for target_layer, sources in attrs.items():
+            if source_layer not in sources:
+                continue
+
+            attr_matrix = sources[source_layer]
+
+            if target_layer == "output":
+                if not include_outputs:
+                    continue
+                assert w_unembed is not None, "w_unembed required when include_outputs=True"
+                w = w_unembed.to(attr_matrix.device)
+                values = attr_matrix[:, source_idx] @ w
+            else:
+                values = attr_matrix[:, source_idx]
+
+            value_segments.append(values)
+            layer_names.append(target_layer)
+
+        return self._top_k_from_segments(value_segments, layer_names, k, sign)
 
     def _top_k_from_segments(
         self,

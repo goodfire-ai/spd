@@ -18,20 +18,30 @@ export type ComponentAttributions = {
     negative_targets: DatasetAttributionEntry[];
 };
 
+export type AttrMetric = "attr" | "attr_abs" | "mean_squared_attr";
+
+export type AllMetricAttributions = {
+    attr: ComponentAttributions;
+    attr_abs: ComponentAttributions;
+    mean_squared_attr: ComponentAttributions;
+};
+
 export type DatasetAttributionsMetadata = {
     available: boolean;
 };
 
 export async function getDatasetAttributionsMetadata(): Promise<DatasetAttributionsMetadata> {
-    return fetchJson<DatasetAttributionsMetadata>(apiUrl("/api/dataset_attributions/metadata").toString());
+    return fetchJson<DatasetAttributionsMetadata>(
+        apiUrl("/api/dataset_attributions/metadata").toString(),
+    );
 }
 
 export async function getComponentAttributions(
     layer: string,
     componentIdx: number,
     k: number = 10,
-): Promise<ComponentAttributions> {
+): Promise<AllMetricAttributions> {
     const url = apiUrl(`/api/dataset_attributions/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("k", String(k));
-    return fetchJson<ComponentAttributions>(url.toString());
+    return fetchJson<AllMetricAttributions>(url.toString());
 }
