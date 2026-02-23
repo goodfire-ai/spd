@@ -12,10 +12,10 @@ ci_config:
   hidden_dims: [550]
 sigmoid_type: "leaky_hard"
 module_info:
-  # - module_pattern: "h.*.mlp.c_fc"
-  #   C: 650
-  # - module_pattern: "h.*.mlp.down_proj"
-  #   C: 650
+  - module_pattern: "h.*.mlp.c_fc"
+    C: 650
+  - module_pattern: "h.*.mlp.down_proj"
+    C: 650
   - module_pattern: "h.*.attn.q_proj"
     C: 650
   - module_pattern: "h.*.attn.k_proj"
@@ -55,7 +55,7 @@ lr_schedule:
   fn_type: cosine
   warmup_pct: 0.0
   final_val_frac: 0.1
-steps: 100_000
+steps: 400_000
 batch_size: 64
 faithfulness_warmup_steps: 200
 faithfulness_warmup_lr: 0.001
