@@ -59,10 +59,12 @@
         ),
     );
 
+    const hasSigned = $derived(selectedMetric === "attr");
+
     const positiveSources = $derived(toEdgeAttribution(active.positive_sources, maxSourceVal));
-    const negativeSources = $derived(toEdgeAttribution(active.negative_sources, maxSourceVal));
+    const negativeSources = $derived(hasSigned ? toEdgeAttribution(active.negative_sources, maxSourceVal) : []);
     const positiveTargets = $derived(toEdgeAttribution(active.positive_targets, maxTargetVal));
-    const negativeTargets = $derived(toEdgeAttribution(active.negative_targets, maxTargetVal));
+    const negativeTargets = $derived(hasSigned ? toEdgeAttribution(active.negative_targets, maxTargetVal) : []);
 </script>
 
 <div class="section">
