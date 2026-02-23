@@ -49,7 +49,7 @@ class AttributionRepo:
         path = subrun_dir / "dataset_attributions.pt"
         if not path.exists():
             return None
-        return cls(DatasetAttributionStorage.load(path), subrun_id=subrun_dir.name)
+        return None # return cls(DatasetAttributionStorage.load(path), subrun_id=subrun_dir.name)
 
     def get_attributions(self) -> DatasetAttributionStorage:
         return self._storage

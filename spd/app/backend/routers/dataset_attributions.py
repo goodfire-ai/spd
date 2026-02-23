@@ -33,8 +33,9 @@ class DatasetAttributionMetadata(BaseModel):
     n_batches_processed: int | None
     n_tokens_processed: int | None
     n_component_layer_keys: int | None
-    vocab_size: int | None
-    d_model: int | None
+    # TODO(oli): remove these from frontend
+    # vocab_size: int | None
+    # d_model: int | None
     ci_threshold: float | None
 
 
@@ -127,8 +128,8 @@ def get_attribution_metadata(loaded: DepLoadedRun) -> DatasetAttributionMetadata
             n_batches_processed=None,
             n_tokens_processed=None,
             n_component_layer_keys=None,
-            vocab_size=None,
-            d_model=None,
+            # vocab_size=None,
+            # d_model=None,
             ci_threshold=None,
         )
     storage = loaded.attributions.get_attributions()
@@ -137,8 +138,8 @@ def get_attribution_metadata(loaded: DepLoadedRun) -> DatasetAttributionMetadata
         n_batches_processed=storage.n_batches_processed,
         n_tokens_processed=storage.n_tokens_processed,
         n_component_layer_keys=storage.n_components,
-        vocab_size=storage.vocab_size,
-        d_model=storage.d_model,
+        # vocab_size=storage.vocab_size,
+        # d_model=storage.d_model,
         ci_threshold=storage.ci_threshold,
     )
 
