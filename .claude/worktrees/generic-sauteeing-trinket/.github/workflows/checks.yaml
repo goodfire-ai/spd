@@ -1,0 +1,89 @@
+name: Checks
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - "**"
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    container:
+      image: ghcr.io/${{ github.repository }}/ci-mpi:latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Container runs as different user than repo owner, causing "dubious ownership" errors.
+      # Tests that run subprocesses (e.g. test_distributed.py) need git commands to work.
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $GITHUB_WORKSPACE
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.7.15"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: make install-ci
+
+      - name: clear uv cache
+        run: uv cache clean || true
+
+      - name: Print dependencies
+        run: uv pip list
+
+      - name: Run basedpyright
+        run: uv run basedpyright
+
+      - name: Run ruff lint
+        run: uv run ruff check --fix-only .
+
+      - name: Run ruff format
+        run: uv run ruff format .
+
+      - name: Run tests
+        run: |
+          NUM_PROCESSES=$(nproc | awk '{print ($1<4?$1:4)}')
+          echo "Using $NUM_PROCESSES pytest workers"
+          uv run pytest tests/ --runslow --durations 10 --numprocesses $NUM_PROCESSES --dist worksteal
+        env:
+          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+          OMPI_ALLOW_RUN_AS_ROOT: 1
+          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+  build-frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spd/app/frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run svelte-check
+        run: npm run check
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Build frontend
+        run: npm run build
