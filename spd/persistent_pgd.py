@@ -30,7 +30,7 @@ from spd.configs import (
 from spd.models.component_model import ComponentModel
 from spd.models.components import ComponentsMaskInfo, RoutingMasks, make_mask_infos
 from spd.routing import AllLayersRouter, Router, get_subset_router
-from spd.utils.distributed_utils import all_reduce, broadcast_tensor
+from spd.utils.distributed_utils import all_reduce, broadcast_tensor, get_distributed_state
 from spd.utils.general_utils import calc_sum_recon_loss_lm, get_scheduled_value
 
 PPGDSources = dict[str, Float[Tensor, " source_c"]]
@@ -159,10 +159,25 @@ class PersistentPGDState:
                 source_leading_dims = list(batch_dims)
 
         init_fn = torch.randn if self._use_sigmoid_parameterization else torch.rand
+
+        if self._skip_all_reduce:
+            # PerBatchPerPosition: each rank optimizes independently, so each needs unique
+            # initial sources. Use a rank-seeded generator to avoid all ranks getting identical
+            # tensors from the shared global RNG state.
+            dist_state = get_distributed_state()
+            rank = dist_state.rank if dist_state is not None else 0
+            gen = torch.Generator(device=device)
+            gen.manual_seed(torch.initial_seed() + rank)
+        else:
+            gen = None
+
         for module_name, module_c in module_to_c.items():
             source_c = module_c + 1 if use_delta_component else module_c
             source_shape = source_leading_dims + [source_c]
-            source_data = broadcast_tensor(init_fn(source_shape, device=device))
+            if gen is not None:
+                source_data = init_fn(source_shape, device=device, generator=gen)
+            else:
+                source_data = broadcast_tensor(init_fn(source_shape, device=device))
             self.sources[module_name] = source_data.requires_grad_(True)
 
         self.optimizer.init_state(self.sources)
