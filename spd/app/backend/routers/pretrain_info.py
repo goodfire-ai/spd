@@ -128,21 +128,13 @@ def _build_summary(model_type: str, target_model_config: dict[str, Any] | None) 
 
     n_layer = target_model_config.get("n_layer")
     n_embd = target_model_config.get("n_embd")
-    n_intermediate = target_model_config.get("n_intermediate")
     n_head = target_model_config.get("n_head")
     n_kv = target_model_config.get("n_key_value_heads")
-    vocab = target_model_config.get("vocab_size")
-    ctx = target_model_config.get("n_ctx")
 
     if n_layer is not None:
         parts.append(f"{n_layer}L")
-    dims = []
     if n_embd is not None:
-        dims.append(f"d={n_embd}")
-    if n_intermediate is not None:
-        dims.append(f"ff={n_intermediate}")
-    if dims:
-        parts.append(" ".join(dims))
+        parts.append(f"d={n_embd}")
     heads = []
     if n_head is not None:
         heads.append(f"{n_head}h")
@@ -150,13 +142,6 @@ def _build_summary(model_type: str, target_model_config: dict[str, Any] | None) 
         heads.append(f"{n_kv}kv")
     if heads:
         parts.append("/".join(heads))
-    meta = []
-    if vocab is not None:
-        meta.append(f"vocab={vocab}")
-    if ctx is not None:
-        meta.append(f"ctx={ctx}")
-    if meta:
-        parts.append(" ".join(meta))
 
     return " · ".join(parts)
 
