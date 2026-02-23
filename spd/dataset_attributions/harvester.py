@@ -211,13 +211,19 @@ class AttributionHarvester:
         tokens: Int[Tensor, "batch seq"],
     ) -> None:
         """Process output attributions via output-residual-space storage."""
-        out_residual = cache[f"{self.unembed_path}_pre_detach"].sum(dim=(0, 1))
+        out_residual = cache[f"{self.unembed_path}_pre_detach"]
+
+        out_residual_sum = out_residual.sum(dim=(0, 1))
+        out_residual_sum_abs = out_residual.abs().sum(dim=(0, 1))
 
         source_layers = self.sources_by_target[self.unembed_path]
         source_acts = [cache[f"{s}_post_detach"] for s in source_layers]
 
         for d_idx in range(self.output_d_model):
-            grads = torch.autograd.grad(out_residual[d_idx], source_acts, retain_graph=True)
+            grads = torch.autograd.grad(out_residual_sum[d_idx], source_acts, retain_graph=True)
+            abs_grads = torch.autograd.grad(
+                out_residual_sum_abs[d_idx], source_acts, retain_graph=True
+            )
 
             self._accumulate_attributions(
                 self.unembed_path,
@@ -225,6 +231,7 @@ class AttributionHarvester:
                 source_layers,
                 source_acts,
                 list(grads),
+                list(abs_grads),
                 ci,
                 tokens,
             )
@@ -242,7 +249,9 @@ class AttributionHarvester:
             return
 
         target_acts_raw = cache[f"{target_layer}_pre_detach"]
+
         ci_weighted_target_acts = (target_acts_raw * ci[target_layer]).sum(dim=(0, 1))
+        ci_weighted_target_acts_abs = (target_acts_raw.abs() * ci[target_layer]).sum(dim=(0, 1))
 
         source_layers = self.sources_by_target[target_layer]
         source_acts = [cache[f"{s}_post_detach"] for s in source_layers]
@@ -252,12 +261,17 @@ class AttributionHarvester:
                 ci_weighted_target_acts[t_idx], source_acts, retain_graph=True
             )
 
+            abs_grads = torch.autograd.grad(
+                ci_weighted_target_acts_abs[t_idx], source_acts, retain_graph=True
+            )
+
             self._accumulate_attributions(
                 target_layer,
                 t_idx,
                 source_layers,
                 source_acts,
                 list(grads),
+                list(abs_grads),
                 ci,
                 tokens,
             )
@@ -270,24 +284,28 @@ class AttributionHarvester:
         source_layers: list[str],
         source_acts: list[Tensor],
         source_grads: list[Tensor],
+        source_abs_grads: list[Tensor],
         ci: dict[str, Tensor],
         tokens: Int[Tensor, "batch seq"],
     ) -> None:
         """Accumulate grad*act attributions from sources to a target column."""
 
         attr_accumulator = self.attr_accumulator[target_layer]
-        attr_abr_accumulator = self.attr_abs_accumulator[target_layer]
+        attr_abs_accumulator = self.attr_abs_accumulator[target_layer]
         square_attr_accumulator = self.square_attr_accumulator[target_layer]
 
-        for source_layer, act, grad in zip(source_layers, source_acts, source_grads, strict=True):
+        for source_layer, act, grad, abs_grad in zip(
+            source_layers, source_acts, source_grads, source_abs_grads, strict=True
+        ):
             attr_acc = attr_accumulator[source_layer][target_idx]
-            attr_abs_acc = attr_abr_accumulator[source_layer][target_idx]
+            attr_abs_acc = attr_abs_accumulator[source_layer][target_idx]
             square_attr_acc = square_attr_accumulator[source_layer][target_idx]
 
             # Embed has no CI (all tokens always active)
             source_ci = ci[source_layer] if source_layer != self.embed_path else 1.0
+
             ci_weighted_attr = grad * act * source_ci
-            ci_weighted_attr_abs = torch.where(act > 0, ci_weighted_attr, -ci_weighted_attr)
+            ci_weighted_attr_abs = abs_grad * act * source_ci
             ci_weighted_squared_attr = ci_weighted_attr.square()
 
             if source_layer == self.embed_path:
