@@ -9,14 +9,8 @@
     import { COMPONENT_CARD_CONSTANTS } from "../../lib/componentCardConstants";
     import type { EdgeAttribution } from "../../lib/promptAttributionsTypes";
     import type { DatasetAttributions } from "../../lib/useComponentData.svelte";
-    import type { AttrMetric } from "../../lib/api/datasetAttributions";
+    import type { AttrMetric, DatasetAttributionEntry } from "../../lib/api/datasetAttributions";
     import EdgeAttributionGrid from "./EdgeAttributionGrid.svelte";
-
-    const METRIC_LABELS: Record<AttrMetric, string> = {
-        attr: "Signed",
-        attr_abs: "Abs Target",
-        mean_squared_attr: "RMS",
-    };
 
     type Props = {
         attributions: DatasetAttributions;
@@ -32,10 +26,8 @@
         }
     }
 
-    const active = $derived(attributions[selectedMetric]);
-
     function toEdgeAttribution(
-        entries: { component_key: string; value: number; token_str: string | null }[],
+        entries: DatasetAttributionEntry[],
         maxAbsValue: number,
     ): EdgeAttribution[] {
         return entries.map((e) => ({
@@ -46,53 +38,76 @@
         }));
     }
 
-    const maxSourceVal = $derived(
-        Math.max(
-            active.positive_sources[0]?.value ?? 0,
-            Math.abs(active.negative_sources[0]?.value ?? 0),
-        ),
-    );
-    const maxTargetVal = $derived(
-        Math.max(
-            active.positive_targets[0]?.value ?? 0,
-            Math.abs(active.negative_targets[0]?.value ?? 0),
-        ),
-    );
+    function maxAbs(...vals: number[]): number {
+        return Math.max(...vals.map(Math.abs));
+    }
 
-    const hasSigned = $derived(selectedMetric === "attr");
+    // attr: signed
+    const attrMaxSource = $derived(maxAbs(attributions.attr.positive_sources[0]?.value ?? 0, attributions.attr.negative_sources[0]?.value ?? 0));
+    const attrMaxTarget = $derived(maxAbs(attributions.attr.positive_targets[0]?.value ?? 0, attributions.attr.negative_targets[0]?.value ?? 0));
 
-    const positiveSources = $derived(toEdgeAttribution(active.positive_sources, maxSourceVal));
-    const negativeSources = $derived(hasSigned ? toEdgeAttribution(active.negative_sources, maxSourceVal) : []);
-    const positiveTargets = $derived(toEdgeAttribution(active.positive_targets, maxTargetVal));
-    const negativeTargets = $derived(hasSigned ? toEdgeAttribution(active.negative_targets, maxTargetVal) : []);
+    // attr_abs: signed
+    const absMaxSource = $derived(maxAbs(attributions.attr_abs.positive_sources[0]?.value ?? 0, attributions.attr_abs.negative_sources[0]?.value ?? 0));
+    const absMaxTarget = $derived(maxAbs(attributions.attr_abs.positive_targets[0]?.value ?? 0, attributions.attr_abs.negative_targets[0]?.value ?? 0));
+
+    // mean_squared_attr: unsigned (positive only)
+    const rmsMaxSource = $derived(attributions.mean_squared_attr.positive_sources[0]?.value ?? 0);
+    const rmsMaxTarget = $derived(attributions.mean_squared_attr.positive_targets[0]?.value ?? 0);
 </script>
 
 <div class="section">
     <div class="metric-selector">
-        {#each Object.entries(METRIC_LABELS) as [metric, label] (metric)}
-            <label class="radio-item">
-                <input
-                    type="radio"
-                    name="dataset-attr-metric"
-                    checked={selectedMetric === metric}
-                    onchange={() => (selectedMetric = metric as AttrMetric)}
-                />
-                <span class="stat-label">{label}</span>
-            </label>
-        {/each}
+        <label class="radio-item">
+            <input type="radio" name="dataset-attr-metric" checked={selectedMetric === "attr"} onchange={() => (selectedMetric = "attr")} />
+            <span class="stat-label">Signed</span>
+        </label>
+        <label class="radio-item">
+            <input type="radio" name="dataset-attr-metric" checked={selectedMetric === "attr_abs"} onchange={() => (selectedMetric = "attr_abs")} />
+            <span class="stat-label">Abs Target</span>
+        </label>
+        <label class="radio-item">
+            <input type="radio" name="dataset-attr-metric" checked={selectedMetric === "mean_squared_attr"} onchange={() => (selectedMetric = "mean_squared_attr")} />
+            <span class="stat-label">RMS</span>
+        </label>
     </div>
 
-    <EdgeAttributionGrid
-        title="Dataset Attributions"
-        incomingLabel="Incoming"
-        outgoingLabel="Outgoing"
-        incomingPositive={positiveSources}
-        incomingNegative={negativeSources}
-        outgoingPositive={positiveTargets}
-        outgoingNegative={negativeTargets}
-        pageSize={COMPONENT_CARD_CONSTANTS.DATASET_ATTRIBUTIONS_PAGE_SIZE}
-        onClick={handleClick}
-    />
+    {#if selectedMetric === "attr"}
+        <EdgeAttributionGrid
+            title="Dataset Attributions"
+            incomingLabel="Incoming"
+            outgoingLabel="Outgoing"
+            incomingPositive={toEdgeAttribution(attributions.attr.positive_sources, attrMaxSource)}
+            incomingNegative={toEdgeAttribution(attributions.attr.negative_sources, attrMaxSource)}
+            outgoingPositive={toEdgeAttribution(attributions.attr.positive_targets, attrMaxTarget)}
+            outgoingNegative={toEdgeAttribution(attributions.attr.negative_targets, attrMaxTarget)}
+            pageSize={COMPONENT_CARD_CONSTANTS.DATASET_ATTRIBUTIONS_PAGE_SIZE}
+            onClick={handleClick}
+        />
+    {:else if selectedMetric === "attr_abs"}
+        <EdgeAttributionGrid
+            title="Dataset Attributions"
+            incomingLabel="Incoming"
+            outgoingLabel="Outgoing"
+            incomingPositive={toEdgeAttribution(attributions.attr_abs.positive_sources, absMaxSource)}
+            incomingNegative={toEdgeAttribution(attributions.attr_abs.negative_sources, absMaxSource)}
+            outgoingPositive={toEdgeAttribution(attributions.attr_abs.positive_targets, absMaxTarget)}
+            outgoingNegative={toEdgeAttribution(attributions.attr_abs.negative_targets, absMaxTarget)}
+            pageSize={COMPONENT_CARD_CONSTANTS.DATASET_ATTRIBUTIONS_PAGE_SIZE}
+            onClick={handleClick}
+        />
+    {:else}
+        <EdgeAttributionGrid
+            title="Dataset Attributions"
+            incomingLabel="Incoming"
+            outgoingLabel="Outgoing"
+            incomingPositive={toEdgeAttribution(attributions.mean_squared_attr.positive_sources, rmsMaxSource)}
+            incomingNegative={[]}
+            outgoingPositive={toEdgeAttribution(attributions.mean_squared_attr.positive_targets, rmsMaxTarget)}
+            outgoingNegative={[]}
+            pageSize={COMPONENT_CARD_CONSTANTS.DATASET_ATTRIBUTIONS_PAGE_SIZE}
+            onClick={handleClick}
+        />
+    {/if}
 </div>
 
 <style>
