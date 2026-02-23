@@ -358,7 +358,7 @@ def _parse_label(key: str, parsed: dict[str, object], raw: str, prompt: str) -> 
 
 def _check_error_rate(n_errors: int, n_done: int) -> None:
     total = n_errors + n_done
-    if total > 10 and n_errors / total > 0.2:
+    if total > 10 and n_errors / total > 0.05:
         raise RuntimeError(
-            f"Error rate {n_errors / total:.0%} ({n_errors}/{total}) exceeds 20% threshold"
+            f"Error rate {n_errors / total:.0%} ({n_errors}/{total}) exceeds 5% threshold"
         )

@@ -224,4 +224,4 @@ def _component_display(key: str, model_metadata: ModelMetadata, app_tok: AppToke
         case _:
             canonical = model_metadata.layer_descriptions.get(layer, layer)
             desc = human_layer_desc(canonical, model_metadata.n_blocks)
-            return f"{desc}, component {idx_str}"
+            return f"component from {desc}"
