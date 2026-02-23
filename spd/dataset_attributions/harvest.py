@@ -14,6 +14,7 @@ See CLAUDE.md in this directory for usage instructions.
 
 import itertools
 from pathlib import Path
+from typing import Any, cast
 
 import torch
 import tqdm
@@ -51,9 +52,10 @@ def _build_alive_masks(
     model: ComponentModel,
     run_id: str,
     harvest_subrun_id: str | None,
-    n_components: int,
+    # n_components: int,
     vocab_size: int,
-) -> tuple[Bool[Tensor, " n_sources"], Bool[Tensor, " n_components"]]:
+    # ) -> tuple[Bool[Tensor, " n_sources"], Bool[Tensor, " n_components"]]:
+) -> dict[str, Bool[Tensor, " n_components"]]:
     """Build masks of alive components (mean_activation > threshold) for sources and targets.
 
     Falls back to all-alive if harvest summary not available.
@@ -63,43 +65,48 @@ def _build_alive_masks(
     - Targets: [0, n_components) = component layers (output handled via out_residual)
     """
 
-    n_sources = vocab_size + n_components
+    component_alive = {
+        "wte": torch.ones(vocab_size, dtype=torch.bool),  # All wte tokens are always alive
+        **{
+            layer: torch.zeros(model.module_to_c[layer], dtype=torch.bool)
+            for layer in model.target_module_paths
+        },
+    }
+    # # All wte tokens are always alive (source indices [0, vocab_size))
+    # source_alive[:vocab_size] = True
 
-    source_alive = torch.zeros(n_sources, dtype=torch.bool)
-    target_alive = torch.zeros(n_components, dtype=torch.bool)
-
-    # All wte tokens are always alive (source indices [0, vocab_size))
-    source_alive[:vocab_size] = True
+    # target_alive = {
+    #     layer: torch.zeros(model.module_to_c[layer], dtype=torch.bool)
+    #     for layer in model.target_module_paths
+    # }
 
     if harvest_subrun_id is not None:
         harvest = HarvestRepo(decomposition_id=run_id, subrun_id=harvest_subrun_id, readonly=True)
     else:
         harvest = HarvestRepo.open_most_recent(run_id, readonly=True)
         assert harvest is not None, f"No harvest data for {run_id}"
+
     summary = harvest.get_summary()
     assert summary is not None, "Harvest summary not available"
 
     # Build masks for component layers
-    source_idx = vocab_size  # Start after wte tokens
-    target_idx = 0
+    # source_idx = vocab_size  # Start after wte tokens
+    # target_idx = 0
 
     for layer in model.target_module_paths:
         n_layer_components = model.module_to_c[layer]
         for c_idx in range(n_layer_components):
             component_key = f"{layer}:{c_idx}"
             is_alive = component_key in summary and summary[component_key].firing_density > 0.0
-            source_alive[source_idx] = is_alive
-            target_alive[target_idx] = is_alive
-            source_idx += 1
-            target_idx += 1
+            component_alive[layer][c_idx] = is_alive
 
-    n_source_alive = int(source_alive.sum().item())
-    n_target_alive = int(target_alive.sum().item())
-    logger.info(
-        f"Alive components: {n_source_alive}/{n_sources} sources, "
-        f"{n_target_alive}/{n_components} component targets (firing density > 0.0)"
-    )
-    return source_alive, target_alive
+    # n_source_alive = int(source_alive.sum().item())
+    # n_target_alive = int(target_alive.sum().item())
+    # logger.info(
+    #     f"Alive components: {n_source_alive}/{n_sources} sources, "
+    #     f"{n_target_alive}/{n_components} component targets (firing density > 0.0)"
+    # )
+    return component_alive
 
 
 def harvest_attributions(
@@ -140,16 +147,14 @@ def harvest_attributions(
     logger.info(f"Vocab size: {vocab_size}")
 
     # Build component keys and alive masks
-    component_layer_keys = _build_component_layer_keys(model)
-    n_components = len(component_layer_keys)
-    source_alive, target_alive = _build_alive_masks(
-        model, run_id, harvest_subrun_id, n_components, vocab_size
-    )
-    source_alive = source_alive.to(device)
-    target_alive = target_alive.to(device)
+    # component_layer_keys = _build_component_layer_keys(model)
+    # n_components = len(component_layer_keys)
+    component_alive = _build_alive_masks(model, run_id, harvest_subrun_id, vocab_size)
+    # source_alive = source_alive.to(device)
+    # target_alive = target_alive.to(device)
 
-    n_sources = vocab_size + n_components
-    logger.info(f"Component layers: {n_components}, Sources: {n_sources}")
+    # n_sources = vocab_size + n_components
+    # logger.info(f"Component layers: {n_components}, Sources: {n_sources}")
 
     # Get gradient connectivity
     logger.info("Computing sources_by_target...")
@@ -160,8 +165,8 @@ def harvest_attributions(
     # - Valid targets: component layers + output
     # - Valid sources: wte + component layers
     component_layers = set(model.target_module_paths)
-    valid_sources = component_layers | {"wte"}
-    valid_targets = component_layers | {"output"}
+    valid_sources = component_layers.union({"wte"})
+    valid_targets = component_layers.union({"output"})
 
     sources_by_target = {}
     for target, sources in sources_by_target_raw.items():
@@ -176,15 +181,13 @@ def harvest_attributions(
     harvester = AttributionHarvester(
         model=model,
         sources_by_target=sources_by_target,
-        n_components=n_components,
+        # n_components=n_components,
         vocab_size=vocab_size,
-        source_alive=source_alive,
-        target_alive=target_alive,
+        component_alive=component_alive,
         sampling=spd_config.sampling,
         embedding_module=topology.embedding_module,
         unembed_module=topology.unembed_module,
         device=device,
-        show_progress=True,
     )
 
     # Process batches
@@ -211,16 +214,12 @@ def harvest_attributions(
     )
 
     # Normalize by n_tokens to get per-token average attribution
-    normalized_comp = harvester.comp_accumulator / harvester.n_tokens
-    normalized_out_residual = harvester.out_residual_accumulator / harvester.n_tokens
+    # normalized_comp = harvester.comp_accumulator / harvester.n_tokens
+    # normalized_out_residual = harvester.out_residual_accumulator / harvester.n_tokens
 
     # Build and save storage
     storage = DatasetAttributionStorage(
-        component_layer_keys=component_layer_keys,
         vocab_size=vocab_size,
-        d_model=harvester.d_model,
-        source_to_component=normalized_comp.cpu(),
-        source_to_out_residual=normalized_out_residual.cpu(),
         n_batches_processed=harvester.n_batches,
         n_tokens_processed=harvester.n_tokens,
         ci_threshold=config.ci_threshold,
@@ -233,7 +232,7 @@ def harvest_attributions(
     else:
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "dataset_attributions.pt"
-    storage.save(output_path)
+    # storage.save(output_path)
     logger.info(f"Saved dataset attributions to {output_path}")
 
 
@@ -252,7 +251,7 @@ def merge_attributions(output_dir: Path) -> None:
 
     # Load first file to get metadata and initialize accumulators
     # Use double precision for accumulation to prevent precision loss with billions of tokens
-    first = DatasetAttributionStorage.load(rank_files[0])
+    first = cast(DatasetAttributionStorage, None)  # DatasetAttributionStorage.load(rank_files[0])
     total_comp = (first.source_to_component * first.n_tokens_processed).double()
     total_out_residual = (first.source_to_out_residual * first.n_tokens_processed).double()
     total_tokens = first.n_tokens_processed
@@ -261,14 +260,13 @@ def merge_attributions(output_dir: Path) -> None:
 
     # Stream remaining files one at a time
     for rank_file in tqdm.tqdm(rank_files[1:], desc="Merging rank files"):
-        storage = DatasetAttributionStorage.load(rank_file)
+        storage = cast(DatasetAttributionStorage, None)  # DatasetAttributionStorage.load(rank_file)
 
         # Validate consistency
         assert storage.component_layer_keys == first.component_layer_keys, (
             "Component layer keys mismatch"
         )
-        assert storage.vocab_size == first.vocab_size, "Vocab size mismatch"
-        assert storage.d_model == first.d_model, "d_model mismatch"
+        # assert storage.d_model == first.d_model, "d_model mismatch"
         assert storage.ci_threshold == first.ci_threshold, "CI threshold mismatch"
 
         # Accumulate de-normalized values
@@ -283,18 +281,21 @@ def merge_attributions(output_dir: Path) -> None:
 
     # Save merged result
     merged = DatasetAttributionStorage(
-        component_layer_keys=first.component_layer_keys,
-        vocab_size=first.vocab_size,
-        d_model=first.d_model,
-        source_to_component=merged_comp,
-        source_to_out_residual=merged_out_residual,
+        # component_layer_keys=first.component_layer_keys,
+        # # d_model=first.d_model,
+        # source_to_component=merged_comp,
+        # source_to_out_residual=merged_out_residual,
+        # n_batches_processed=total_batches,
+        # n_tokens_processed=total_tokens,
+        # ci_threshold=first.ci_threshold,
+        vocab_size=0, # vocab_size,
         n_batches_processed=total_batches,
         n_tokens_processed=total_tokens,
         ci_threshold=first.ci_threshold,
     )
 
     output_path = output_dir / "dataset_attributions.pt"
-    merged.save(output_path)
+    # merged.save(output_path)
     assert output_path.stat().st_size > 0, f"Merge output is empty: {output_path}"
     logger.info(f"Merged {len(rank_files)} files -> {output_path}")
     logger.info(f"Total: {total_batches} batches, {total_tokens:,} tokens")

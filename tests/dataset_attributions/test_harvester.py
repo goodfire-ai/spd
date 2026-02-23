@@ -23,7 +23,7 @@ def _make_storage(
 
     return DatasetAttributionStorage(
         component_layer_keys=[f"layer1:{i}" for i in range(n_components)],
-        vocab_size=vocab_size,
+        _REMOVE_ME_vocab_size=vocab_size,
         d_model=d_model,
         source_to_component=source_to_component,
         source_to_out_residual=source_to_out_residual,
@@ -241,7 +241,7 @@ class TestDatasetAttributionStorage:
 
         original = DatasetAttributionStorage(
             component_layer_keys=["layer:0", "layer:1"],
-            vocab_size=vocab_size,
+            _REMOVE_ME_vocab_size=vocab_size,
             d_model=d_model,
             source_to_component=torch.randn(n_sources, n_components),
             source_to_out_residual=torch.randn(n_sources, d_model),
@@ -256,7 +256,7 @@ class TestDatasetAttributionStorage:
         loaded = DatasetAttributionStorage.load(path)
 
         assert loaded.component_layer_keys == original.component_layer_keys
-        assert loaded.vocab_size == original.vocab_size
+        assert loaded._REMOVE_ME_vocab_size == original._REMOVE_ME_vocab_size
         assert loaded.d_model == original.d_model
         assert loaded.n_batches_processed == original.n_batches_processed
         assert loaded.n_tokens_processed == original.n_tokens_processed
