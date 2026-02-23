@@ -1,0 +1,8 @@
+clustering_run_config_path: "spd/clustering/configs/crc/s-275c8f21-25k.json"
+n_runs: 2
+distances_methods: ["perm_invariant_hamming"]
+slurm_job_name_prefix: "spd"
+slurm_partition: "h200-reserved"
+wandb_project: "spd"
+wandb_entity: "goodfire"
+create_git_snapshot: false
