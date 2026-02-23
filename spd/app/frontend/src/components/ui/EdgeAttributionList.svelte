@@ -7,6 +7,20 @@
 
     const runState = getContext<RunContext>(RUN_KEY);
 
+    function assert(condition: boolean, msg: string): asserts condition {
+        if (!condition) throw new Error(msg);
+    }
+
+    const vocabIdToText = $derived.by(() => {
+        const map = new Map<number, string>();
+        if (runState.allTokens.status === "loaded") {
+            for (const t of runState.allTokens.data) {
+                map.set(t.id, t.string);
+            }
+        }
+        return map;
+    });
+
     type Props = {
         items: EdgeAttribution[];
         onClick: (key: string) => void;
@@ -81,13 +95,10 @@
 
             if (layer === "embed" || layer === "output") {
                 const vocabIdx = parseInt(cIdx);
-                // Tokens are guaranteed loaded when run is loaded (see useRun.svelte.ts)
-                if (runState.allTokens.status !== "loaded") {
-                    throw new Error(`allTokens not loaded (status: ${runState.allTokens.status})`);
-                }
-                const tokenInfo = runState.allTokens.data.find((t) => t.id === vocabIdx);
-                if (!tokenInfo) throw new Error(`Token not found for vocab index ${vocabIdx}`);
-                return tokenInfo.string;
+                assert(runState.allTokens.status === "loaded", `allTokens not loaded`);
+                const text = vocabIdToText.get(vocabIdx);
+                assert(text !== undefined, `Token not found for vocab index ${vocabIdx}`);
+                return text;
             }
         }
 
