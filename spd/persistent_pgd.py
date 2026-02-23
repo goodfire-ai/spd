@@ -159,10 +159,13 @@ class PersistentPGDState:
                 source_leading_dims = list(batch_dims)
 
         init_fn = torch.randn if self._use_sigmoid_parameterization else torch.rand
+
         for module_name, module_c in module_to_c.items():
             source_c = module_c + 1 if use_delta_component else module_c
             source_shape = source_leading_dims + [source_c]
-            source_data = broadcast_tensor(init_fn(source_shape, device=device))
+            source_data = init_fn(source_shape, device=device)
+            if not self._skip_all_reduce:
+                broadcast_tensor(source_data)
             self.sources[module_name] = source_data.requires_grad_(True)
 
         self.optimizer.init_state(self.sources)
