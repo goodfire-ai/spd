@@ -76,7 +76,7 @@ def format_output_prompt(
     )
     output_section = build_output_section(output_token_stats, output_pmi)
     says = build_says_examples(component, app_tok, max_examples)
-    related_table = _format_attributed_table(related, app_tok)
+    related_table = _format_related_table(related, model_metadata, app_tok)
 
     return f"""\
 You are analyzing a component in a neural network to understand its OUTPUT FUNCTION — what it does when it fires.
@@ -92,12 +92,6 @@ These components in later layers are most influenced by this component (by gradi
 {related_table}
 ## Task
 Give a {label_max_words}-word-or-fewer label describing this component's OUTPUT FUNCTION — what it does when it fires.
-
-Examples of good labels:
-- "word stem completion (stems → suffixes)"
-- "closes dialogue with quotation marks"
-- "object pronouns after verbs"
-- "aquatic scene vocabulary (frog, river, pond)"
 
 Say "unclear" if the evidence is too weak.
 
@@ -123,7 +117,7 @@ def format_input_prompt(
     )
     input_section = build_input_section(input_token_stats, input_pmi)
     fires_on = build_fires_on_examples(component, app_tok, max_examples)
-    related_table = _format_attributed_table(related, app_tok)
+    related_table = _format_related_table(related, model_metadata, app_tok)
 
     return f"""\
 You are analyzing a component in a neural network to understand its INPUT FUNCTION — what triggers it to fire.
@@ -140,13 +134,7 @@ These components in earlier layers most strongly attribute to this component:
 ## Task
 Give a {label_max_words}-word-or-fewer label describing this component's INPUT FUNCTION — what conditions trigger it to fire.
 
-Examples of good labels:
-- "periods and sentence boundaries"
-- "prepositions before noun phrases"
-- "tokens following proper nouns"
-- "positions requiring verb conjugation"
-
-Lowercase only. Say "unclear" if the evidence is too weak.
+Say "unclear" if the evidence is too weak.
 
 Respond with JSON: {{"label": "...", "confidence": "low|medium|high", "reasoning": "..."}}
 """
@@ -183,20 +171,32 @@ INPUT FUNCTION: "{input_label.label}" (confidence: {input_label.confidence})
   Reasoning: {input_label.reasoning}
 
 ## Task
-Synthesize these into a single unified label (max {label_max_words} words) that captures the component's complete role. If input and output suggest the same concept, unify them. If they describe genuinely different aspects (e.g. fires on X, produces Y), combine both. Lowercase only.
+Synthesize these into a single unified label (max {label_max_words} words) that captures the component's complete role. If input and output suggest the same concept, unify them. If they describe genuinely different aspects (e.g. fires on X, produces Y), combine both.
 
 Respond with JSON: {{"label": "...", "confidence": "low|medium|high", "reasoning": "..."}}
 """
 
 
-def _format_attributed_table(components: list[RelatedComponent], app_tok: AppTokenizer) -> str:
-    if not components:
-        return "(no attributed components found)\n"
+def _format_related_table(
+    components: list[RelatedComponent],
+    model_metadata: ModelMetadata,
+    app_tok: AppTokenizer,
+) -> str:
+    # Filter: only show labeled components and token entries (embed/output)
+    visible = [n for n in components if n.label is not None or _is_token_entry(n.component_key)]
+    if not visible:
+        return "(no related components with labels found)\n"
+
+    # Normalize attributions: strongest = 1.0
+    max_attr = max(abs(n.attribution) for n in visible)
+    norm = max_attr if max_attr > 0 else 1.0
 
     lines: list[str] = []
-    for n in components:
-        display = _component_display(n.component_key, app_tok)
-        parts = [f"  {display} (attribution: {n.attribution:.4f}"]
+    for n in visible:
+        display = _component_display(n.component_key, model_metadata, app_tok)
+        rel_attr = n.attribution / norm
+
+        parts = [f"  {display} (relative attribution: {rel_attr:+.2f}"]
         if n.jaccard is not None:
             parts.append(f", co-firing Jaccard: {n.jaccard:.3f}")
         parts.append(")")
@@ -209,7 +209,12 @@ def _format_attributed_table(components: list[RelatedComponent], app_tok: AppTok
     return "\n".join(lines) + "\n"
 
 
-def _component_display(key: str, app_tok: AppTokenizer) -> str:
+def _is_token_entry(key: str) -> bool:
+    layer = key.rsplit(":", 1)[0]
+    return layer in ("embed", "output")
+
+
+def _component_display(key: str, model_metadata: ModelMetadata, app_tok: AppTokenizer) -> str:
     layer, idx_str = key.rsplit(":", 1)
     match layer:
         case "embed":
@@ -217,4 +222,6 @@ def _component_display(key: str, app_tok: AppTokenizer) -> str:
         case "output":
             return f'output token "{app_tok.get_tok_display(int(idx_str))}"'
         case _:
-            return key
+            canonical = model_metadata.layer_descriptions.get(layer, layer)
+            desc = human_layer_desc(canonical, model_metadata.n_blocks)
+            return f"{desc}, component {idx_str}"
