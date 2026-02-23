@@ -44,7 +44,6 @@ from spd.topological_interp.prompts import (
 from spd.topological_interp.schemas import LabelResult
 
 GetRelated = Callable[[str, dict[str, LabelResult]], list[RelatedComponent]]
-FormatPrompt = Callable[..., str]
 Step = Callable[[list[str], dict[str, LabelResult]], Awaitable[dict[str, LabelResult]]]
 
 
@@ -146,11 +145,37 @@ def run_topological_interp(
 
         return get
 
-    # -- Layer processor -------------------------------------------------------
+    # -- Layer processors ------------------------------------------------------
 
-    async def process_layer(
+    async def process_output_layer(
         get_related: GetRelated,
-        format_prompt: FormatPrompt,
+        save_label: Callable[[LabelResult], None],
+        pending: list[str],
+        labels_so_far: dict[str, LabelResult],
+    ) -> dict[str, LabelResult]:
+        def jobs() -> Iterable[LLMJob]:
+            for key in pending:
+                component = harvest.get_component(key)
+                assert component is not None, f"Component {key} not found in harvest DB"
+                o_stats = get_output_token_stats(token_stats, key, app_tok, top_k=50)
+                assert o_stats is not None, f"No output token stats for {key}"
+
+                related = get_related(key, labels_so_far)
+                prompt = format_output_prompt(
+                    component=component,
+                    model_metadata=model_metadata,
+                    app_tok=app_tok,
+                    output_token_stats=o_stats,
+                    related=related,
+                    label_max_words=config.label_max_words,
+                    max_examples=config.max_examples,
+                )
+                yield LLMJob(prompt=prompt, schema=LABEL_SCHEMA, key=key)
+
+        return await _collect_labels(llm_map, jobs(), len(pending), save_label)
+
+    async def process_input_layer(
+        get_related: GetRelated,
         save_label: Callable[[LabelResult], None],
         pending: list[str],
         labels_so_far: dict[str, LabelResult],
@@ -160,16 +185,14 @@ def run_topological_interp(
                 component = harvest.get_component(key)
                 assert component is not None, f"Component {key} not found in harvest DB"
                 i_stats = get_input_token_stats(token_stats, key, app_tok, top_k=20)
-                o_stats = get_output_token_stats(token_stats, key, app_tok, top_k=50)
-                assert i_stats is not None and o_stats is not None
+                assert i_stats is not None, f"No input token stats for {key}"
 
                 related = get_related(key, labels_so_far)
-                prompt = format_prompt(
+                prompt = format_input_prompt(
                     component=component,
                     model_metadata=model_metadata,
                     app_tok=app_tok,
                     input_token_stats=i_stats,
-                    output_token_stats=o_stats,
                     related=related,
                     label_max_words=config.label_max_words,
                     max_examples=config.max_examples,
@@ -248,15 +271,13 @@ def run_topological_interp(
     get_sources = _make_get_sources(metric)
 
     label_output = partial(
-        process_layer,
+        process_output_layer,
         _get_related(get_targets),
-        format_output_prompt,
         db.save_output_label,
     )
     label_input = partial(
-        process_layer,
+        process_input_layer,
         _get_related(get_sources),
-        format_input_prompt,
         db.save_input_label,
     )
 
