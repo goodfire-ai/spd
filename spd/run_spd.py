@@ -42,8 +42,10 @@ from spd.settings import SPD_OUT_DIR
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
+    broadcast_model_params,
     get_distributed_state,
     is_main_process,
+    seed_per_rank,
     sync_across_processes,
 )
 from spd.utils.general_utils import (
@@ -157,6 +159,10 @@ def optimize(
     )
 
     model.to(device)
+    broadcast_model_params(model)
+
+    # Diverge global RNG per rank so stochastic masks/sources differ across DP workers.
+    seed_per_rank(config.seed)
 
     # Wrap model with DDP if distributed
     dist_state = get_distributed_state()
