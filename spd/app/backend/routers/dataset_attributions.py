@@ -24,6 +24,7 @@ class DatasetAttributionEntry(BaseModel):
     layer: str
     component_idx: int
     value: float
+    token_str: str | None = None
 
 
 class DatasetAttributionMetadata(BaseModel):
@@ -84,13 +85,18 @@ def _get_w_unembed(loaded: DepLoadedRun) -> Float[Tensor, "d_model vocab"]:
     return loaded.topology.get_unembed_weight()
 
 
-def _to_api_entries(entries: list[StorageEntry]) -> list[DatasetAttributionEntry]:
+def _to_api_entries(
+    entries: list[StorageEntry], loaded: DepLoadedRun
+) -> list[DatasetAttributionEntry]:
     return [
         DatasetAttributionEntry(
             component_key=e.component_key,
             layer=e.layer,
             component_idx=e.component_idx,
             value=e.value,
+            token_str=loaded.tokenizer.decode([e.component_idx])
+            if e.layer in ("embed", "output")
+            else None,
         )
         for e in entries
     ]
@@ -98,6 +104,7 @@ def _to_api_entries(entries: list[StorageEntry]) -> list[DatasetAttributionEntry
 
 def _get_component_attributions_for_metric(
     storage: DatasetAttributionStorage,
+    loaded: DepLoadedRun,
     component_key: str,
     k: int,
     metric: AttrMetric,
@@ -107,12 +114,12 @@ def _get_component_attributions_for_metric(
 ) -> ComponentAttributions:
     return ComponentAttributions(
         positive_sources=_to_api_entries(
-            storage.get_top_sources(component_key, k, "positive", metric)
+            storage.get_top_sources(component_key, k, "positive", metric), loaded
         )
         if is_target
         else [],
         negative_sources=_to_api_entries(
-            storage.get_top_sources(component_key, k, "negative", metric)
+            storage.get_top_sources(component_key, k, "negative", metric), loaded
         )
         if is_target
         else [],
@@ -125,6 +132,7 @@ def _get_component_attributions_for_metric(
                 w_unembed=w_unembed,
                 include_outputs=w_unembed is not None,
             ),
+            loaded,
         )
         if is_source
         else [],
@@ -137,6 +145,7 @@ def _get_component_attributions_for_metric(
                 w_unembed=w_unembed,
                 include_outputs=w_unembed is not None,
             ),
+            loaded,
         )
         if is_source
         else [],
@@ -190,7 +199,7 @@ def get_component_attributions(
     return AllMetricAttributions(
         **{
             metric: _get_component_attributions_for_metric(
-                storage, component_key, k, metric, is_source, is_target, w_unembed
+                storage, loaded, component_key, k, metric, is_source, is_target, w_unembed
             )
             for metric in ATTR_METRICS
         }
@@ -214,7 +223,7 @@ def get_attribution_sources(
     w_unembed = _get_w_unembed(loaded) if layer == "output" else None
 
     return _to_api_entries(
-        storage.get_top_sources(target_key, k, sign, metric, w_unembed=w_unembed)
+        storage.get_top_sources(target_key, k, sign, metric, w_unembed=w_unembed), loaded
     )
 
 
@@ -235,7 +244,7 @@ def get_attribution_targets(
     w_unembed = _get_w_unembed(loaded)
 
     return _to_api_entries(
-        storage.get_top_targets(source_key, k, sign, metric, w_unembed=w_unembed)
+        storage.get_top_targets(source_key, k, sign, metric, w_unembed=w_unembed), loaded
     )
 
 
