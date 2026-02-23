@@ -251,7 +251,17 @@ def run_topological_interp(
                 if out is None or inp is None:
                     n_skipped += 1
                     continue
-                prompt = format_unification_prompt(out, inp, config.label_max_words)
+                component = harvest.get_component(key)
+                assert component is not None, f"Component {key} not found in harvest DB"
+                prompt = format_unification_prompt(
+                    output_label=out,
+                    input_label=inp,
+                    component=component,
+                    model_metadata=model_metadata,
+                    app_tok=app_tok,
+                    label_max_words=config.label_max_words,
+                    max_examples=config.max_examples,
+                )
                 yield LLMJob(prompt=prompt, schema=LABEL_SCHEMA, key=key)
 
         logger.info(f"Unifying {len(keys)} components")

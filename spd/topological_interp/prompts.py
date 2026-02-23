@@ -33,8 +33,6 @@ LABEL_SCHEMA: dict[str, object] = {
     "additionalProperties": False,
 }
 
-_FORBIDDEN = "FORBIDDEN vague words: narrative, story, character, theme, descriptive, content, transition, scene."
-
 
 def _component_header(
     component: ComponentData,
@@ -101,7 +99,7 @@ Examples of good labels:
 - "object pronouns after verbs"
 - "aquatic scene vocabulary (frog, river, pond)"
 
-{_FORBIDDEN} Lowercase only. Say "unclear" if the evidence is too weak.
+Say "unclear" if the evidence is too weak.
 
 Respond with JSON: {{"label": "...", "confidence": "low|medium|high", "reasoning": "..."}}
 """
@@ -148,7 +146,7 @@ Examples of good labels:
 - "tokens following proper nouns"
 - "positions requiring verb conjugation"
 
-{_FORBIDDEN} Lowercase only. Say "unclear" if the evidence is too weak.
+Lowercase only. Say "unclear" if the evidence is too weak.
 
 Respond with JSON: {{"label": "...", "confidence": "low|medium|high", "reasoning": "..."}}
 """
@@ -157,10 +155,26 @@ Respond with JSON: {{"label": "...", "confidence": "low|medium|high", "reasoning
 def format_unification_prompt(
     output_label: LabelResult,
     input_label: LabelResult,
+    component: ComponentData,
+    model_metadata: ModelMetadata,
+    app_tok: AppTokenizer,
     label_max_words: int,
+    max_examples: int,
 ) -> str:
+    header = _component_header(component, model_metadata)
+    fires_on = build_fires_on_examples(component, app_tok, max_examples)
+    says = build_says_examples(component, app_tok, max_examples)
+
     return f"""\
-A neural network component has been analyzed from two perspectives:
+A neural network component has been analyzed from two perspectives.
+
+{header}
+
+## Activation examples — where the component fires
+{fires_on}
+## Activation examples — what the model produces
+{says}
+## Two-perspective analysis
 
 OUTPUT FUNCTION: "{output_label.label}" (confidence: {output_label.confidence})
   Reasoning: {output_label.reasoning}
@@ -168,6 +182,7 @@ OUTPUT FUNCTION: "{output_label.label}" (confidence: {output_label.confidence})
 INPUT FUNCTION: "{input_label.label}" (confidence: {input_label.confidence})
   Reasoning: {input_label.reasoning}
 
+## Task
 Synthesize these into a single unified label (max {label_max_words} words) that captures the component's complete role. If input and output suggest the same concept, unify them. If they describe genuinely different aspects (e.g. fires on X, produces Y), combine both. Lowercase only.
 
 Respond with JSON: {{"label": "...", "confidence": "low|medium|high", "reasoning": "..."}}
