@@ -74,8 +74,8 @@ def get_sources_by_target(
     cache[f"{embed_path}_post_detach"] = embed_cache[f"{embed_path}_post_detach"]
     cache[f"{unembed_path}_pre_detach"] = comp_output_with_cache.output
 
-    source_layers = [embed_path, *model.target_module_paths] # Don't include "output" as source
-    target_layers = [*model.target_module_paths, unembed_path] # Don't include embed as target
+    source_layers = [embed_path, *model.target_module_paths]  # Don't include "output" as source
+    target_layers = [*model.target_module_paths, unembed_path]  # Don't include embed as target
 
     # Test all distinct pairs for gradient flow
     test_pairs = []
