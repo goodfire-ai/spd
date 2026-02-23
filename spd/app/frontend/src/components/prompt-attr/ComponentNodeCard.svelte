@@ -130,6 +130,16 @@
     const currentNodeKey = $derived(`${layer}:${seqIdx}:${cIdx}`);
     const N_EDGES_TO_DISPLAY = 20;
 
+    function resolveTokenStr(nodeKey: string): string | null {
+        const parts = nodeKey.split(":");
+        if (parts.length !== 3) return null;
+        const [layer, seqStr, cIdx] = parts;
+        const seqIdx = parseInt(seqStr);
+        if (layer === "embed") return tokens[seqIdx] ?? null;
+        if (layer === "output") return outputProbs[`${seqIdx}:${cIdx}`]?.token ?? null;
+        return null;
+    }
+
     function getTopEdgeAttributions(
         edges: EdgeData[],
         isPositive: boolean,
@@ -144,6 +154,7 @@
             key: getKey(e),
             value: e.val,
             normalizedMagnitude: Math.abs(e.val) / maxAbsVal,
+            tokenStr: resolveTokenStr(getKey(e)),
         }));
     }
 
@@ -249,8 +260,6 @@
             {outgoingNegative}
             pageSize={COMPONENT_CARD_CONSTANTS.PROMPT_ATTRIBUTIONS_PAGE_SIZE}
             onClick={handleEdgeNodeClick}
-            {tokens}
-            {outputProbs}
         />
     {/if}
 

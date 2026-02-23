@@ -35,13 +35,14 @@
     const active = $derived(attributions[selectedMetric]);
 
     function toEdgeAttribution(
-        entries: { component_key: string; value: number }[],
+        entries: { component_key: string; value: number; token_str: string | null }[],
         maxAbsValue: number,
     ): EdgeAttribution[] {
         return entries.map((e) => ({
             key: e.component_key,
             value: e.value,
             normalizedMagnitude: Math.abs(e.value) / (maxAbsValue || 1),
+            tokenStr: e.token_str,
         }));
     }
 

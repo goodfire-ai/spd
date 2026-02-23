@@ -9,6 +9,7 @@ export type DatasetAttributionEntry = {
     layer: string;
     component_idx: number;
     value: number;
+    token_str: string | null;
 };
 
 export type ComponentAttributions = {
