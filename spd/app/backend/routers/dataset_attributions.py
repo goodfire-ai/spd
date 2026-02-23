@@ -33,9 +33,6 @@ class DatasetAttributionMetadata(BaseModel):
     n_batches_processed: int | None
     n_tokens_processed: int | None
     n_component_layer_keys: int | None
-    # TODO(oli): remove these from frontend
-    # vocab_size: int | None
-    # d_model: int | None
     ci_threshold: float | None
 
 

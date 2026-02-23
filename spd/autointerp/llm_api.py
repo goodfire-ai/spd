@@ -167,9 +167,6 @@ def _get_retry_after(e: Exception) -> float | None:
 # ---------------------------------------------------------------------------
 
 
-# TODO(oli) check this merge
-
-
 async def map_llm_calls(
     openrouter_api_key: str,
     model: str,
