@@ -210,9 +210,8 @@ def harvest_attributions(
         f"Processing complete. Tokens: {harvester.n_tokens:,}, Batches: {harvester.n_batches}"
     )
 
-    # Normalize by n_tokens to get per-token average attribution
-    normalized_comp = harvester.comp_accumulator / harvester.n_tokens
-    normalized_out_residual = harvester.out_residual_accumulator / harvester.n_tokens
+    normalized_comp = harvester.get_comp_attributions() / harvester.n_tokens
+    normalized_out_residual = harvester.get_out_residual_attributions() / harvester.n_tokens
 
     # Build and save storage
     storage = DatasetAttributionStorage(
@@ -299,7 +298,4 @@ def merge_attributions(output_dir: Path) -> None:
     logger.info(f"Merged {len(rank_files)} files -> {output_path}")
     logger.info(f"Total: {total_batches} batches, {total_tokens:,} tokens")
 
-    for rank_file in rank_files:
-        rank_file.unlink()
-    worker_dir.rmdir()
-    logger.info(f"Deleted {len(rank_files)} per-rank files and worker_states/")
+    logger.info(f"Rank files retained in {worker_dir}")
