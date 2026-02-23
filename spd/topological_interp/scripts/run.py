@@ -11,6 +11,7 @@ from typing import Any
 from dotenv import load_dotenv
 
 from spd.adapters import adapter_from_id
+from spd.adapters.spd import SPDAdapter
 from spd.dataset_attributions.repo import AttributionRepo
 from spd.harvest.repo import HarvestRepo
 from spd.log import logger
@@ -31,32 +32,42 @@ def main(
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
+    subrun_id = "ti-" + datetime.now().strftime("%Y%m%d_%H%M%S")
+    subrun_dir = get_topological_interp_subrun_dir(decomposition_id, subrun_id)
+    subrun_dir.mkdir(parents=True, exist_ok=True)
+    config.to_file(subrun_dir / "config.yaml")
+    db_path = subrun_dir / "interp.db"
+    logger.info(f"Topological interp run: {subrun_dir}")
+
+    logger.info("Loading adapter and model metadata...")
+    adapter = adapter_from_id(decomposition_id)
+    assert isinstance(adapter, SPDAdapter)
+    w_unembed = adapter._topology.get_unembed_weight()
+
+    logger.info("Loading harvest data...")
     if harvest_subrun_id is not None:
         harvest = HarvestRepo(decomposition_id, subrun_id=harvest_subrun_id, readonly=True)
     else:
         harvest = HarvestRepo.open_most_recent(decomposition_id, readonly=True)
         assert harvest is not None, f"No harvest data for {decomposition_id}"
 
+    logger.info("Loading dataset attributions...")
     attributions = AttributionRepo.open(decomposition_id)
     assert attributions is not None, f"Dataset attributions required for {decomposition_id}"
     attribution_storage = attributions.get_attributions()
+    logger.info(
+        f"  {attribution_storage.n_components} components, {attribution_storage.n_batches_processed} batches"
+    )
 
+    logger.info("Loading component correlations...")
     correlations = harvest.get_correlations()
     assert correlations is not None, f"Component correlations required for {decomposition_id}"
 
+    logger.info("Loading token stats...")
     token_stats = harvest.get_token_stats()
     assert token_stats is not None, f"Token stats required for {decomposition_id}"
 
-    subrun_id = "ti-" + datetime.now().strftime("%Y%m%d_%H%M%S")
-    subrun_dir = get_topological_interp_subrun_dir(decomposition_id, subrun_id)
-    subrun_dir.mkdir(parents=True, exist_ok=True)
-
-    config.to_file(subrun_dir / "config.yaml")
-    db_path = subrun_dir / "interp.db"
-
-    logger.info(f"Topological interp run: {subrun_dir}")
-
-    adapter = adapter_from_id(decomposition_id)
+    logger.info("Data loading complete")
 
     run_topological_interp(
         openrouter_api_key=openrouter_api_key,
@@ -68,6 +79,7 @@ def main(
         model_metadata=adapter.model_metadata,
         db_path=db_path,
         tokenizer_name=adapter.tokenizer_name,
+        w_unembed=w_unembed,
     )
 
 
