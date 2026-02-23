@@ -1,0 +1,57 @@
+/**
+ * Global display settings using Svelte 5 runes
+ */
+
+// Available correlation stat types
+export type CorrelationStatType = "pmi" | "precision" | "recall" | "jaccard";
+
+// Node color mode for graph visualization
+export type NodeColorMode = "ci" | "subcomp_act";
+
+export const NODE_COLOR_MODE_LABELS: Record<NodeColorMode, string> = {
+    ci: "CI",
+    subcomp_act: "Subcomp Act",
+};
+
+// Example color mode for activation contexts viewer
+export type ExampleColorMode = "ci" | "component_act" | "both";
+
+export const EXAMPLE_COLOR_MODE_LABELS: Record<ExampleColorMode, string> = {
+    ci: "CI",
+    component_act: "Component Act",
+    both: "Both",
+};
+
+export const CORRELATION_STAT_LABELS: Record<CorrelationStatType, string> = {
+    pmi: "PMI",
+    precision: "Precision",
+    recall: "Recall",
+    jaccard: "Jaccard",
+};
+
+export const CORRELATION_STAT_DESCRIPTIONS: Record<CorrelationStatType, string> = {
+    pmi: "log(P(both) / P(A)P(B))",
+    precision: "P(that | this)",
+    recall: "P(this | that)",
+    jaccard: "Intersection over union",
+};
+
+export const displaySettings = $state({
+    showPmi: true,
+    showPrecision: true,
+    showRecall: true,
+    showJaccard: true,
+    showSetOverlapVis: true,
+    showEdgeAttributions: true,
+    nodeColorMode: "ci" as NodeColorMode,
+    exampleColorMode: "ci" as ExampleColorMode,
+});
+
+export function hasAnyCorrelationStats() {
+    return (
+        displaySettings.showPmi ||
+        displaySettings.showPrecision ||
+        displaySettings.showRecall ||
+        displaySettings.showJaccard
+    );
+}

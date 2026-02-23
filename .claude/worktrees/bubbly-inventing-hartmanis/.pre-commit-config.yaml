@@ -1,0 +1,26 @@
+repos:
+  # If you want branch protection for the main branch, use this hook
+  # - repo: https://github.com/pre-commit/pre-commit-hooks
+  #   rev: v4.5.0
+  #   hooks:
+  #     - id: no-commit-to-branch
+  #       args: ["--branch=main"]
+  #       stages:
+  #         - commit
+  - repo: local
+    hooks:
+      - id: format
+        name: Ruff lint and format
+        entry: make format
+        language: system
+        types: [python]
+        stages:
+          - pre-commit
+
+      - id: type
+        name: "Type check with BasedPyright"
+        entry: make type
+        language: system
+        types: [python]
+        stages:
+          - pre-commit
