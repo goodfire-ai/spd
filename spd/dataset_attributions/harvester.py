@@ -247,7 +247,7 @@ class AttributionHarvester:
         source_layers = self.sources_by_target[target_layer]
         source_acts = [cache[f"{s}_post_detach"] for s in source_layers]
 
-        for t_idx in alive_targets.tolist():
+        for t_idx in torch.where(alive_targets)[0].tolist():
             grads = torch.autograd.grad(
                 ci_weighted_target_acts[t_idx], source_acts, retain_graph=True
             )
