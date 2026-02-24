@@ -301,6 +301,10 @@ class LMTaskConfig(BaseConfig):
         default=False,
         description="Whether to use a streaming dataset",
     )
+    dataset_seed: int | None = Field(
+        default=None,
+        description="Seed for dataset shuffling/sampling. When None, uses the global `seed`.",
+    )
 
 
 class ModulePatternInfoConfig(BaseConfig):
