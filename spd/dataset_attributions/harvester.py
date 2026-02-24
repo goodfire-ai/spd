@@ -22,6 +22,7 @@ from jaxtyping import Bool, Int
 from torch import Tensor, nn
 
 from spd.configs import SamplingType
+from spd.log import logger
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
 from spd.utils.general_utils import bf16_autocast
@@ -133,10 +134,19 @@ class AttributionHarvester:
             for layer, c in self.model.module_to_c.items()
         }
 
+    @staticmethod
+    def _log_mem(label: str) -> None:
+        alloc = torch.cuda.memory_allocated() / 1e9
+        reserved = torch.cuda.memory_reserved() / 1e9
+        logger.info(f"[MEM] {label}: {alloc:.1f}G allocated, {reserved:.1f}G reserved")
+
     def process_batch(self, tokens: Int[Tensor, "batch seq"]) -> None:
         """Accumulate attributions from one batch."""
         self.n_batches += 1
         self.n_tokens += tokens.numel()
+
+        if self.n_batches == 1:
+            self._log_mem("batch start")
 
         # Setup hooks to capture embedding output and pre-unembed residual
         embed_out: list[Tensor] = []
@@ -163,6 +173,9 @@ class AttributionHarvester:
                 pre_weight_acts=out.cache, sampling=self.sampling, detach_inputs=False
             )
 
+        if self.n_batches == 1:
+            self._log_mem("after CI")
+
         mask_infos = make_mask_infos(
             component_masks={k: torch.ones_like(v) for k, v in ci.lower_leaky.items()},
             routing_masks="all",
@@ -177,6 +190,9 @@ class AttributionHarvester:
         h1.remove()
         h2.remove()
 
+        if self.n_batches == 1:
+            self._log_mem("after forward")
+
         cache = comp_output.cache
         cache[f"{self.embed_path}_post_detach"] = embed_out[0]
         cache[f"{self.unembed_path}_pre_detach"] = pre_unembed[0]
@@ -185,13 +201,19 @@ class AttributionHarvester:
             sum_ci = ci_vals.sum(dim=(0, 1))
             self._ci_sum_accumulator[real_layer].add_(sum_ci)
 
-        for target_layer in self.sources_by_target:
+        if self.n_batches == 1:
+            self._log_mem("after cache setup")
+
+        for i, target_layer in enumerate(self.sources_by_target):
             if target_layer == self.unembed_path:
                 self._process_output_targets(cache, tokens, ci.lower_leaky)
             else:
                 sum_sq_acts = cache[f"{target_layer}_post_detach"].square().sum(dim=(0, 1))
                 self._square_component_act_accumulator[target_layer].add_(sum_sq_acts)
                 self._process_component_targets(cache, tokens, ci.lower_leaky, target_layer)
+
+            if self.n_batches == 1:
+                self._log_mem(f"after target {i}/{len(self.sources_by_target)} ({target_layer})")
 
     def _process_output_targets(
         self,
@@ -211,18 +233,41 @@ class AttributionHarvester:
 
         for d_idx in range(self.output_d_model):
             grads = torch.autograd.grad(out_residual_sum[d_idx], source_acts, retain_graph=True)
+            with torch.no_grad():
+                for source_layer, act, grad in zip(
+                    source_layers, source_acts, grads, strict=True
+                ):
+                    if source_layer == self.embed_path:
+                        token_attr = (grad * act).sum(dim=-1)  # (B S)
+                        self._emb_unemb_attr_acc[d_idx].scatter_add_(
+                            0, tokens.flatten(), token_attr.flatten()
+                        )
+                    else:
+                        ci_weighted_attr = (grad * act * ci[source_layer]).sum(dim=(0, 1))
+                        self._unembed_srcs_acc[source_layer][d_idx].add_(ci_weighted_attr)
+
+    def _accumulate_grads(
+        self,
+        grads: tuple[Tensor, ...],
+        source_layers: list[str],
+        source_acts: list[Tensor],
+        tokens: Int[Tensor, "batch seq"],
+        ci: dict[str, Tensor],
+        target_layer: str,
+        t_idx: int,
+        embed_acc: dict[str, Tensor],
+        regular_acc: dict[str, dict[str, Tensor]],
+    ) -> None:
+        with torch.no_grad():
             for source_layer, act, grad in zip(source_layers, source_acts, grads, strict=True):
                 if source_layer == self.embed_path:
-                    # token attribution is just grad * act
-                    # because act is just the embedding
                     token_attr = (grad * act).sum(dim=-1)  # (B S)
-                    self._emb_unemb_attr_acc[d_idx].scatter_add_(
+                    embed_acc[target_layer][t_idx].scatter_add_(
                         0, tokens.flatten(), token_attr.flatten()
                     )
                 else:
-                    # Per-component: sum grad*act*ci over batch and sequence
-                    ci_weighted_attr = (grad * act * ci[source_layer]).sum(dim=(0, 1))
-                    self._unembed_srcs_acc[source_layer][d_idx].add_(ci_weighted_attr)
+                    ci_weighted = (grad * act * ci[source_layer]).sum(dim=(0, 1))  # (C,)
+                    regular_acc[target_layer][source_layer][t_idx].add_(ci_weighted)
 
     def _process_component_targets(
         self,
@@ -239,75 +284,42 @@ class AttributionHarvester:
         target_acts_raw = cache[f"{target_layer}_pre_detach"]
 
         target_acts = target_acts_raw.sum(dim=(0, 1))
-        target_acts_abs = target_acts_raw.abs().sum(dim=(0, 1))
 
         source_layers = self.sources_by_target[target_layer]
+        if not source_layers:
+            return
         source_acts = [cache[f"{s}_post_detach"] for s in source_layers]
 
-        for t_idx in torch.where(alive_targets)[0].tolist():
+        alive_indices = torch.where(alive_targets)[0].tolist()
+        for i, t_idx in enumerate(alive_indices):
+            if self.n_batches == 1 and i % 100 == 0:
+                self._log_mem(f"  component {i}/{len(alive_indices)} of {target_layer}")
+
             grads_val = torch.autograd.grad(target_acts[t_idx], source_acts, retain_graph=True)
-            grads_abs = torch.autograd.grad(target_acts_abs[t_idx], source_acts, retain_graph=True)
+            self._accumulate_grads(
+                grads_val,
+                source_layers,
+                source_acts,
+                tokens,
+                ci,
+                target_layer,
+                t_idx,
+                self._embed_tgts_acc,
+                self._regular_layers_acc,
+            )
+            del grads_val
 
-            for source_layer, act, grad_val, grad_abs in zip(
-                source_layers, source_acts, grads_val, grads_abs, strict=True
-            ):
-                if source_layer == self.embed_path:
-                    # token attribution is just grad * act
-                    # because act is just the embedding
-                    tok_embeddings = act
-
-                    token_attr = (grad_val * tok_embeddings).sum(dim=-1)  # (B S)
-                    token_attr_abs = (grad_abs * tok_embeddings).sum(dim=-1)  # (B S)
-
-                    acc = self._embed_tgts_acc[source_layer][t_idx]
-                    acc_abs = self._embed_tgts_acc_abs[source_layer][t_idx]
-
-                    acc.scatter_add_(0, tokens.flatten(), token_attr.flatten())
-                    acc_abs.scatter_add_(0, tokens.flatten(), token_attr_abs.flatten())
-                else:
-                    ci_weighted_attr_val = grad_val * act * ci[source_layer]  # (B S C)
-                    ci_weighted_attr_abs = grad_abs * act * ci[source_layer]  # (B S C)
-
-                    ci_weighted_attr_abs_sum = ci_weighted_attr_abs.sum(dim=(0, 1))  # (C,)
-                    ci_weighted_attr_val_sum = ci_weighted_attr_val.sum(dim=(0, 1))  # (C,)
-
-                    attr_acc = self._regular_layers_acc[target_layer][source_layer][t_idx]
-                    attr_acc_abs = self._regular_layers_acc_abs[target_layer][source_layer][t_idx]
-
-                    attr_acc.add_(ci_weighted_attr_val_sum)
-                    attr_acc_abs.add_(ci_weighted_attr_abs_sum)
-
-    # def normalized_attrs(self) -> NormalizedAttrs:
-    #     """Return the accumulated attributions normalized by n_tokens.
-
-    #     mean_squared_attr is pre-sqrt so it can be merged across workers.
-    #     """
-    #     normed_attr_val = defaultdict[str, dict[str, Float[Tensor, "c_target c_source"]]](dict)
-    #     normed_attr_abs = defaultdict[str, dict[str, Float[Tensor, "c_target c_source"]]](dict)
-
-    #     for target in self._attr_val_accumulator:
-    #         mean_squared_act = self._square_act_accumulator[target] / self.n_tokens
-    #         mean_target_act_l2 = mean_squared_act.sqrt()  # (C_target,)
-
-    #         for source in self.sources_by_target[target]:
-    #             mean_attr_val = self._attr_val_accumulator[target][source]  # (C_target, C_source)
-    #             mean_attr_abs = self._attr_abs_accumulator[target][source]  # (C_target, C_source)
-
-    #             source_ci_sum = (
-    #                 self._ci_sum_accumulator[source] if source != self.embed_path else 1.0
-    #             )  # (C_source,)
-
-    #             ci_weighted_mean_attr_val = mean_attr_val / source_ci_sum  # (C_target, C_source)
-    #             ci_weighted_mean_attr_abs = mean_attr_abs / source_ci_sum  # (C_target, C_source)
-
-    #             normed_attr_val[target][source] = (
-    #                 ci_weighted_mean_attr_val / mean_target_act_l2[..., None]
-    #             )
-    #             normed_attr_abs[target][source] = (
-    #                 ci_weighted_mean_attr_abs / mean_target_act_l2[..., None]
-    #             )
-
-    #     return self.NormalizedAttrs(
-    #         attr=normed_attr_val,
-    #         attr_abs=normed_attr_abs,
-    #     )
+            abs_scalar = target_acts_raw[:, :, t_idx].abs().sum()
+            grads_abs = torch.autograd.grad(abs_scalar, source_acts, retain_graph=True)
+            self._accumulate_grads(
+                grads_abs,
+                source_layers,
+                source_acts,
+                tokens,
+                ci,
+                target_layer,
+                t_idx,
+                self._embed_tgts_acc_abs,
+                self._regular_layers_acc_abs,
+            )
+            del grads_abs

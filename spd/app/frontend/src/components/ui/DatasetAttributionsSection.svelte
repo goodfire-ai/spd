@@ -26,10 +26,7 @@
         }
     }
 
-    function toEdgeAttribution(
-        entries: DatasetAttributionEntry[],
-        maxAbsValue: number,
-    ): EdgeAttribution[] {
+    function toEdgeAttribution(entries: DatasetAttributionEntry[], maxAbsValue: number): EdgeAttribution[] {
         return entries.map((e) => ({
             key: e.component_key,
             value: e.value,
@@ -43,23 +40,46 @@
     }
 
     // attr: signed
-    const attrMaxSource = $derived(maxAbs(attributions.attr.positive_sources[0]?.value ?? 0, attributions.attr.negative_sources[0]?.value ?? 0));
-    const attrMaxTarget = $derived(maxAbs(attributions.attr.positive_targets[0]?.value ?? 0, attributions.attr.negative_targets[0]?.value ?? 0));
+    const attrMaxSource = $derived(
+        maxAbs(attributions.attr.positive_sources[0]?.value ?? 0, attributions.attr.negative_sources[0]?.value ?? 0),
+    );
+    const attrMaxTarget = $derived(
+        maxAbs(attributions.attr.positive_targets[0]?.value ?? 0, attributions.attr.negative_targets[0]?.value ?? 0),
+    );
 
     // attr_abs: signed
-    const absMaxSource = $derived(maxAbs(attributions.attr_abs.positive_sources[0]?.value ?? 0, attributions.attr_abs.negative_sources[0]?.value ?? 0));
-    const absMaxTarget = $derived(maxAbs(attributions.attr_abs.positive_targets[0]?.value ?? 0, attributions.attr_abs.negative_targets[0]?.value ?? 0));
-
+    const absMaxSource = $derived(
+        maxAbs(
+            attributions.attr_abs.positive_sources[0]?.value ?? 0,
+            attributions.attr_abs.negative_sources[0]?.value ?? 0,
+        ),
+    );
+    const absMaxTarget = $derived(
+        maxAbs(
+            attributions.attr_abs.positive_targets[0]?.value ?? 0,
+            attributions.attr_abs.negative_targets[0]?.value ?? 0,
+        ),
+    );
 </script>
 
 <div class="section">
     <div class="metric-selector">
         <label class="radio-item">
-            <input type="radio" name="dataset-attr-metric" checked={selectedMetric === "attr"} onchange={() => (selectedMetric = "attr")} />
+            <input
+                type="radio"
+                name="dataset-attr-metric"
+                checked={selectedMetric === "attr"}
+                onchange={() => (selectedMetric = "attr")}
+            />
             <span class="stat-label">Signed</span>
         </label>
         <label class="radio-item">
-            <input type="radio" name="dataset-attr-metric" checked={selectedMetric === "attr_abs"} onchange={() => (selectedMetric = "attr_abs")} />
+            <input
+                type="radio"
+                name="dataset-attr-metric"
+                checked={selectedMetric === "attr_abs"}
+                onchange={() => (selectedMetric = "attr_abs")}
+            />
             <span class="stat-label">Abs Target</span>
         </label>
     </div>
