@@ -138,9 +138,6 @@
                     <span class="label">Subrun</span>
                     <span class="value mono">{attributions.subrun_id}</span>
 
-                    <span class="label">Batches</span>
-                    <span class="value">{attributions.n_batches_processed.toLocaleString()}</span>
-
                     <span class="label">Tokens</span>
                     <span class="value">{attributions.n_tokens_processed.toLocaleString()}</span>
 

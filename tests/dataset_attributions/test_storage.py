@@ -15,9 +15,7 @@ C0 = 3  # components in layer 0
 C1 = 2  # components in layer 1
 
 
-def _make_storage(
-    seed: int = 0, n_batches: int = 10, n_tokens: int = 640
-) -> DatasetAttributionStorage:
+def _make_storage(seed: int = 0, n_tokens: int = 640) -> DatasetAttributionStorage:
     """Build storage for test topology.
 
     Sources by target:
@@ -42,9 +40,7 @@ def _make_storage(
         ci_sum={LAYER_0: rand(C0).abs() + 1.0, LAYER_1: rand(C1).abs() + 1.0},
         component_act_sq_sum={LAYER_0: rand(C0).abs() + 1.0, LAYER_1: rand(C1).abs() + 1.0},
         logit_sq_sum=rand(VOCAB_SIZE).abs() + 1.0,
-        vocab_size=VOCAB_SIZE,
         ci_threshold=1e-6,
-        n_batches_processed=n_batches,
         n_tokens_processed=n_tokens,
     )
 
@@ -135,9 +131,7 @@ class TestSaveLoad:
 
         loaded = DatasetAttributionStorage.load(path)
 
-        assert loaded.vocab_size == original.vocab_size
         assert loaded.ci_threshold == original.ci_threshold
-        assert loaded.n_batches_processed == original.n_batches_processed
         assert loaded.n_tokens_processed == original.n_tokens_processed
         assert loaded.n_components == original.n_components
 
@@ -158,8 +152,8 @@ class TestSaveLoad:
 
 class TestMerge:
     def test_two_workers_additive(self, tmp_path: Path):
-        s1 = _make_storage(seed=0, n_batches=5, n_tokens=320)
-        s2 = _make_storage(seed=42, n_batches=5, n_tokens=320)
+        s1 = _make_storage(seed=0, n_tokens=320)
+        s2 = _make_storage(seed=42, n_tokens=320)
 
         p1 = tmp_path / "rank_0.pt"
         p2 = tmp_path / "rank_1.pt"
@@ -168,11 +162,10 @@ class TestMerge:
 
         merged = DatasetAttributionStorage.merge([p1, p2])
 
-        assert merged.n_batches_processed == 10
         assert merged.n_tokens_processed == 640
 
     def test_single_file(self, tmp_path: Path):
-        original = _make_storage(seed=7, n_batches=10, n_tokens=640)
+        original = _make_storage(seed=7, n_tokens=640)
         path = tmp_path / "rank_0.pt"
         original.save(path)
 
