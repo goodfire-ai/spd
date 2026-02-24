@@ -195,10 +195,11 @@ def plot_attn_pattern_diffs(
         ax.set_ylim(-0.02, raw_ymax)
         ax.set_ylabel(f"H{h}", fontsize=10, fontweight="bold")
         ax.set_xlim(-0.5, max_offset_show + 0.5)
+        ax.set_xticks(offsets)
         if h == 0:
             ax.legend(fontsize=7, loc="upper right")
         if h == n_heads - 1:
-            ax.set_xlabel("Offset (t - key_pos)", fontsize=9)
+            ax.set_xlabel("Offset from query position", fontsize=9)
 
     fig.suptitle(
         f"Layer {layer} mean attention at query pos t (n={n_samples})",
@@ -254,10 +255,11 @@ def plot_attn_pattern_diffs(
         ax.set_ylim(diff_ymin, diff_ymax)
         ax.set_ylabel(f"H{h}", fontsize=10, fontweight="bold")
         ax.set_xlim(-0.5, max_offset_show + 0.5)
+        ax.set_xticks(offsets)
         if h == 0:
             ax.legend(fontsize=7, loc="upper right")
         if h == n_heads - 1:
-            ax.set_xlabel("Offset (t - key_pos)", fontsize=9)
+            ax.set_xlabel("Offset from query position", fontsize=9)
 
     fig.suptitle(
         f"Layer {layer} attention change from ablation (n={n_samples})",
