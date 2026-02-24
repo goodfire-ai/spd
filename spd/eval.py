@@ -25,14 +25,15 @@ from spd.configs import (
     ImportanceMinimalityLossConfig,
     MetricConfigType,
     PermutedCIPlotsConfig,
+    PersistentPGDReconEvalConfig,
     PersistentPGDReconLossConfig,
+    PersistentPGDReconSubsetEvalConfig,
     PersistentPGDReconSubsetLossConfig,
     PGDMultiBatchReconLossConfig,
     PGDMultiBatchReconSubsetLossConfig,
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
-    PPGDEvalLossesConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
@@ -60,7 +61,7 @@ from spd.metrics.pgd_masked_recon_layerwise_loss import PGDReconLayerwiseLoss
 from spd.metrics.pgd_masked_recon_loss import PGDReconLoss
 from spd.metrics.pgd_masked_recon_subset_loss import PGDReconSubsetLoss
 from spd.metrics.pgd_utils import CreateDataIter, calc_multibatch_pgd_masked_recon_loss
-from spd.metrics.ppgd_eval_losses import PPGDEvalLosses
+from spd.metrics.ppgd_eval_losses import PPGDReconEval
 from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwiseLoss
 from spd.metrics.stochastic_recon_loss import StochasticReconLoss
 from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetCEAndKL
@@ -271,14 +272,33 @@ def init_metric(
             )
         case CIHiddenActsReconLossConfig():
             metric = CIHiddenActsReconLoss(model=model, device=device)
-        case PPGDEvalLossesConfig():
-            assert ppgd_states, "PPGDEvalLosses requires persistent PGD loss configs"
-            metric = PPGDEvalLosses(
+        case PersistentPGDReconEvalConfig():
+            matching = [
+                s for k, s in ppgd_states.items() if isinstance(k, PersistentPGDReconLossConfig)
+            ]
+            assert len(matching) == 1
+            metric = PPGDReconEval(
                 model=model,
                 device=device,
-                ppgd_states=ppgd_states,
+                effective_sources=matching[0].get_effective_sources(),
                 use_delta_component=run_config.use_delta_component,
                 output_loss_type=run_config.output_loss_type,
+                metric_name=cfg.classname,
+            )
+        case PersistentPGDReconSubsetEvalConfig():
+            matching = [
+                s
+                for k, s in ppgd_states.items()
+                if isinstance(k, PersistentPGDReconSubsetLossConfig)
+            ]
+            assert len(matching) == 1
+            metric = PPGDReconEval(
+                model=model,
+                device=device,
+                effective_sources=matching[0].get_effective_sources(),
+                use_delta_component=run_config.use_delta_component,
+                output_loss_type=run_config.output_loss_type,
+                metric_name=cfg.classname,
             )
         case UVPlotsConfig():
             metric = UVPlots(

@@ -33,7 +33,7 @@ from .pgd_masked_recon_loss import PGDReconLoss as PGDReconLoss
 from .pgd_masked_recon_loss import pgd_recon_loss as pgd_recon_loss
 from .pgd_masked_recon_subset_loss import PGDReconSubsetLoss as PGDReconSubsetLoss
 from .pgd_masked_recon_subset_loss import pgd_recon_subset_loss as pgd_recon_subset_loss
-from .ppgd_eval_losses import PPGDEvalLosses as PPGDEvalLosses
+from .ppgd_eval_losses import PPGDReconEval as PPGDReconEval
 from .stochastic_recon_layerwise_loss import (
     StochasticReconLayerwiseLoss as StochasticReconLayerwiseLoss,
 )
