@@ -28,7 +28,6 @@ class AutointerpInfo(BaseModel):
 
 class AttributionsInfo(BaseModel):
     subrun_id: str
-    n_batches_processed: int
     n_tokens_processed: int
     ci_threshold: float
 
@@ -77,7 +76,6 @@ def get_data_sources(loaded: DepLoadedRun) -> DataSourcesResponse:
         storage = loaded.attributions.get_attributions()
         attributions_info = AttributionsInfo(
             subrun_id=loaded.attributions.subrun_id,
-            n_batches_processed=storage.n_batches_processed,
             n_tokens_processed=storage.n_tokens_processed,
             ci_threshold=storage.ci_threshold,
         )

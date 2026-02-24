@@ -54,7 +54,7 @@ def main(
     assert attributions is not None, f"Dataset attributions required for {decomposition_id}"
     attribution_storage = attributions.get_attributions()
     logger.info(
-        f"  {attribution_storage.n_components} components, {attribution_storage.n_batches_processed} batches"
+        f"  {attribution_storage.n_components} components, {attribution_storage.n_tokens_processed:,} tokens"
     )
 
     logger.info("Loading component correlations...")

@@ -50,7 +50,7 @@ def _build_alive_masks(
     """
 
     component_alive = {
-        embed_path: torch.ones(vocab_size, dtype=torch.bool),
+        embed_path: torch.ones(vocab_size, dtype=torch.bool),  # TODO(oli): maybe remove this
         **{
             layer: torch.zeros(model.module_to_c[layer], dtype=torch.bool)
             for layer in model.target_module_paths
@@ -174,9 +174,7 @@ def harvest_attributions(
         batch = extract_batch_data(batch_data).to(device)
         harvester.process_batch(batch)
 
-    logger.info(
-        f"Processing complete. Tokens: {harvester.n_tokens:,}, Batches: {harvester.n_batches}"
-    )
+    logger.info(f"Processing complete. Tokens: {harvester.n_tokens:,}")
 
     storage = harvester.finalize(topology, config.ci_threshold)
 
@@ -201,9 +199,7 @@ def merge_attributions(output_dir: Path) -> None:
 
     output_path = output_dir / "dataset_attributions.pt"
     merged.save(output_path)
-    logger.info(
-        f"Total: {merged.n_batches_processed} batches, {merged.n_tokens_processed:,} tokens"
-    )
+    logger.info(f"Total: {merged.n_tokens_processed:,} tokens")
 
     # TODO(oli): reenable this
     # disabled deletion for testing, posterity and retries
