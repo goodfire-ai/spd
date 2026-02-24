@@ -20,7 +20,6 @@ export type AutointerpInfo = {
 
 export type AttributionsInfo = {
     subrun_id: string;
-    n_batches_processed: number;
     n_tokens_processed: number;
     ci_threshold: number;
 };
