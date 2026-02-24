@@ -19,15 +19,14 @@ from typing import Any
 from spd.dataset_attributions.config import DatasetAttributionConfig
 from spd.dataset_attributions.harvest import harvest_attributions
 from spd.dataset_attributions.repo import get_attributions_subrun_dir
-from spd.log import logger
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
 def main(
     wandb_path: str,
-    config_json: dict[str, Any] | None = None,
-    rank: int | None = None,
-    world_size: int | None = None,
+    config_json: dict[str, Any],
+    rank: int,
+    world_size: int,
     subrun_id: str | None = None,
     harvest_subrun_id: str | None = None,
 ) -> None:
@@ -42,13 +41,6 @@ def main(
         else DatasetAttributionConfig()
     )
     output_dir = get_attributions_subrun_dir(run_id, subrun_id)
-
-    if world_size is not None:
-        logger.info(
-            f"Distributed harvest: {wandb_path} (rank {rank}/{world_size}, subrun {subrun_id})"
-        )
-    else:
-        logger.info(f"Single-GPU harvest: {wandb_path} (subrun {subrun_id})")
 
     harvest_attributions(
         wandb_path=wandb_path,

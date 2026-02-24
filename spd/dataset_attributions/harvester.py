@@ -7,16 +7,9 @@ and batches.
 Three metrics are accumulated:
 - attr:         E[∂y/∂x · x]           (signed mean attribution)
 - attr_abs:     E[∂|y|/∂x · x]         (attribution to absolute value of target)
-- squared_attr: E[(∂y/∂x · x)²]        (mean squared attribution, for RMS)
 
-Naming convention: modifier before "attr" applies to the target (e.g. attr_abs =
-attribution to |target|), modifier after applies to the attribution itself
-(e.g. squared_attr = squared attribution).
-
-Uses residual-based storage for scalability:
-- Component targets: accumulated directly
-- Output targets: accumulated as attributions to output residual stream,
-  computed on-the-fly at query time via w_unembed
+Output (pseudo-) component attributions are handled differently: We accumulate attributions
+to the output residual stream, then later project this into token space.
 
 All layer keys are concrete module paths (e.g. "wte", "h.0.attn.q_proj", "lm_head").
 Translation to canonical names happens at the storage boundary in harvest.py.
@@ -24,16 +17,33 @@ Translation to canonical names happens at the storage boundary in harvest.py.
 
 from collections import defaultdict
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 import torch
-from jaxtyping import Bool, Int
+from jaxtyping import Bool, Float, Int
 from torch import Tensor, nn
 
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
 from spd.utils.general_utils import bf16_autocast
+
+
+class AttributionAccumulator:
+    def __init__(
+        self,
+        regular_layers: dict[str, int],
+        sources_by_target: dict[str, list[str]],
+        component_alive: dict[str, Bool[Tensor, " n_components"]],
+        unembed_path: str,
+        unembed_module: nn.Linear,
+        embed_path: str,
+        embedding_module: nn.Embedding,
+        device: torch.device,
+    ):
+        self._regular_layers = regular_layers
+        self._embedding_module = embedding_module
 
 
 class AttributionHarvester:
@@ -80,74 +90,141 @@ class AttributionHarvester:
         self.n_tokens = 0
         self.output_d_model = unembed_module.in_features
 
-        self.attr_accumulator = self._build_accumulator(
-            sources_by_target, component_alive, unembed_module, vocab_size, device
-        )
-        self.attr_abs_accumulator = self._build_accumulator(
-            sources_by_target, component_alive, unembed_module, vocab_size, device
-        )
-        self.square_attr_accumulator = self._build_accumulator(
-            sources_by_target, component_alive, unembed_module, vocab_size, device
-        )
+        #     self._attr_val_accumulator = self._build_attr_accumulator(sources_by_target)
+        #     self._attr_abs_accumulator = self._build_attr_accumulator(sources_by_target)
 
-    def _build_accumulator(
-        self,
-        sources_by_target: dict[str, list[str]],
-        component_alive: dict[str, Bool[Tensor, " n_components"]],
-        unembed_module: nn.Linear,
-        vocab_size: int,
-        device: torch.device,
-    ) -> dict[str, dict[str, Tensor]]:
-        accumulator: dict[str, dict[str, Tensor]] = {}
+        #     self._square_act_accumulator = {
+        #         layer: torch.zeros(c, device=device) for layer, c in self.model.module_to_c.items()
+        #     }
 
-        for target_layer, source_layers in sources_by_target.items():
-            if target_layer == self.unembed_path:
-                target_d = unembed_module.in_features
-            else:
-                (target_c,) = component_alive[target_layer].shape
-                target_d = target_c
+        #     self._ci_sum_accumulator = {
+        #         layer: torch.zeros(c, device=device) for layer, c in self.model.module_to_c.items()
+        #     }
 
-            source_acc: dict[str, Tensor] = {}
+        # def _build_attr_accumulator(
+        #     self,
+        #     sources_by_target: dict[str, list[str]],
+        # ) -> dict[str, dict[str, Tensor]]:
+        #     accumulator: dict[str, dict[str, Tensor]] = {}
+
+        #     for target_layer, source_layers in sources_by_target.items():
+        #         if target_layer == self.unembed_path:
+        #             target_d = self.unembed_module.in_features
+        #         else:
+        #             target_d = self.model.module_to_c[target_layer]
+
+        #         source_acc: dict[str, Tensor] = {}
+        #         for source_layer in source_layers:
+        #             if source_layer == self.embed_path:
+        #                 source_d = self.embedding_module.num_embeddings
+        #             else:
+        #                 source_d = self.model.module_to_c[source_layer]
+
+        #             source_acc[source_layer] = torch.zeros((target_d, source_d), device=self.device)
+
+        #         accumulator[target_layer] = source_acc
+
+        #     return accumulator
+
+        sources_by_regular_target = self.sources_by_target.copy()
+
+        unembed_sources = sources_by_regular_target[self.unembed_path].copy()
+        del sources_by_regular_target[self.unembed_path]
+
+        # we store attributions to the embedding *output*
+        embed_tgts_acc: dict[str, Tensor] = {}
+        n_emb = self.embedding_module.num_embeddings
+        for target, sources in sources_by_regular_target.items():
+            if self.embed_path in sources:
+                tgt_c = self.model.module_to_c[target]
+                embed_tgts_acc[target] = torch.zeros((tgt_c, n_emb), device=self.device)
+                continue
+            sources.remove(self.embed_path)
+
+        # we use d_model here because we store attributions to the pre-unembed residual
+        unembed_srcs_acc: dict[str, Tensor] = {}
+        d_model = self.unembed_module.in_features
+        for source in unembed_sources:
+            src_c = self.model.module_to_c[source]
+            unembed_srcs_acc[source] = torch.zeros((d_model, src_c), device=self.device)
+
+        # for normal components, we just go C <-> C
+        acc: dict[str, dict[str, Tensor]] = {}
+        for target_layer, source_layers in sources_by_regular_target.items():
+            acc[target_layer] = {}
             for source_layer in source_layers:
-                if source_layer == self.embed_path:
-                    source_d = vocab_size
-                else:
-                    (source_c,) = component_alive[source_layer].shape
-                    source_d = source_c
+                tgt_c = self.model.module_to_c[target_layer]
+                src_c = self.model.module_to_c[source_layer]
+                acc[target_layer][source_layer] = torch.zeros(
+                    (tgt_c, src_c), device=self.device
+                )
 
-                source_acc[source_layer] = torch.zeros((target_d, source_d), device=device)
+        self._acc = acc
+        self._embed_tgts_acc = embed_tgts_acc
+        self._unembed_srcs_acc = unembed_srcs_acc
 
-            accumulator[target_layer] = source_acc
+    # def add_embed_attr_(
+    #     self,
+    #     target_layer: str,
+    #     target_idx: int,
+    #     tokens: Int[Tensor, "batch seq"],
+    #     ci_weighted_attr_val: Float[Tensor, " c"],
+    # ) -> None:
 
-        return accumulator
+    def add_unembed_attr_(
+        self,
+        target_idx: int,
+        source_layer: str,
+        ci_weighted_attr_val: Float[Tensor, " c"],
+    ) -> None:
+        self._unembed_targets[target_layer][target_idx].add_(ci_weighted_attr_val)
+        # if source_layer == self.embed_path:
+        #     # Per-token: sum grad*act*ci over d_model, scatter by token id
+        #     attr_val = ci_weighted_attr_val.sum(dim=-1).flatten()
+
+        #     attr_acc.scatter_add_(0, tokens.flatten(), attr_val)
+        # else:
+        #     # Per-component: sum grad*act*ci over batch and sequence
+        #     attr_acc.add_(ci_weighted_attr_val.sum(dim=(0, 1)))
 
     @dataclass
     class NormalizedAttrs:
-        attr: dict[str, dict[str, Tensor]]
-        attr_abs: dict[str, dict[str, Tensor]]
-        mean_squared_attr: dict[str, dict[str, Tensor]]
+        attr: dict[str, dict[str, Float[Tensor, "c_target c_source"]]]
+        attr_abs: dict[str, dict[str, Float[Tensor, "c_target c_source"]]]
 
     def normalized_attrs(self) -> NormalizedAttrs:
         """Return the accumulated attributions normalized by n_tokens.
 
         mean_squared_attr is pre-sqrt so it can be merged across workers.
         """
-        attr = defaultdict[str, dict[str, Tensor]](dict)
-        attr_abs = defaultdict[str, dict[str, Tensor]](dict)
-        mean_squared_attr = defaultdict[str, dict[str, Tensor]](dict)
+        normed_attr_val = defaultdict[str, dict[str, Float[Tensor, "c_target c_source"]]](dict)
+        normed_attr_abs = defaultdict[str, dict[str, Float[Tensor, "c_target c_source"]]](dict)
 
-        for target in self.attr_accumulator:
+        for target in self._attr_val_accumulator:
+            mean_squared_act = self._square_act_accumulator[target] / self.n_tokens
+            mean_target_act_l2 = mean_squared_act.sqrt()  # (C_target,)
+
             for source in self.sources_by_target[target]:
-                attr[target][source] = self.attr_accumulator[target][source] / self.n_tokens
-                attr_abs[target][source] = self.attr_abs_accumulator[target][source] / self.n_tokens
-                mean_squared_attr[target][source] = (
-                    self.square_attr_accumulator[target][source] / self.n_tokens
+                mean_attr_val = self._attr_val_accumulator[target][source]  # (C_target, C_source)
+                mean_attr_abs = self._attr_abs_accumulator[target][source]  # (C_target, C_source)
+
+                source_ci_sum = (
+                    self._ci_sum_accumulator[source] if source != self.embed_path else 1.0
+                )  # (C_source,)
+
+                ci_weighted_mean_attr_val = mean_attr_val / source_ci_sum  # (C_target, C_source)
+                ci_weighted_mean_attr_abs = mean_attr_abs / source_ci_sum  # (C_target, C_source)
+
+                normed_attr_val[target][source] = (
+                    ci_weighted_mean_attr_val / mean_target_act_l2[..., None]
+                )
+                normed_attr_abs[target][source] = (
+                    ci_weighted_mean_attr_abs / mean_target_act_l2[..., None]
                 )
 
         return self.NormalizedAttrs(
-            attr=attr,
-            attr_abs=attr_abs,
-            mean_squared_attr=mean_squared_attr,
+            attr=normed_attr_val,
+            attr_abs=normed_attr_abs,
         )
 
     def process_batch(self, tokens: Int[Tensor, "batch seq"]) -> None:
@@ -198,20 +275,21 @@ class AttributionHarvester:
         cache[f"{self.embed_path}_post_detach"] = embed_out[0]
         cache[f"{self.unembed_path}_pre_detach"] = pre_unembed[0]
 
+        for real_layer, ci_vals in ci.lower_leaky.items():
+            self._ci_sum_accumulator[real_layer].add_(ci_vals.sum(dim=(0, 1)))
+
         for target_layer in self.sources_by_target:
+            # I think this will error because there's no output components hook, in fact, there are no
+            # output components
+            target_acts_raw = cache[f"{target_layer}_post_detach"]
+            self._square_act_accumulator[target_layer].add_(
+                target_acts_raw.square().sum(dim=(0, 1))
+            )
+
             if target_layer == self.unembed_path:
-                self._process_output_targets(
-                    cache,
-                    tokens,
-                    ci.lower_leaky,
-                )
+                self._process_output_targets(cache, tokens, ci.lower_leaky)
             else:
-                self._process_component_targets(
-                    cache,
-                    tokens,
-                    ci.lower_leaky,
-                    target_layer,
-                )
+                self._process_component_targets(cache, tokens, ci.lower_leaky, target_layer)
 
     def _process_output_targets(
         self,
@@ -223,26 +301,21 @@ class AttributionHarvester:
         out_residual = cache[f"{self.unembed_path}_pre_detach"]
 
         out_residual_sum = out_residual.sum(dim=(0, 1))
-        out_residual_sum_abs = out_residual.abs().sum(dim=(0, 1))
 
         source_layers = self.sources_by_target[self.unembed_path]
         source_acts = [cache[f"{s}_post_detach"] for s in source_layers]
 
         for d_idx in range(self.output_d_model):
             grads = torch.autograd.grad(out_residual_sum[d_idx], source_acts, retain_graph=True)
-            abs_grads = torch.autograd.grad(
-                out_residual_sum_abs[d_idx], source_acts, retain_graph=True
-            )
 
             self._accumulate_attributions(
-                self.unembed_path,
-                d_idx,
-                source_layers,
-                source_acts,
-                list(grads),
-                list(abs_grads),
-                ci,
-                tokens,
+                attr_accumulator=self._attr_val_accumulator[self.unembed_path],
+                target_idx=d_idx,
+                source_layers=source_layers,
+                source_acts=source_acts,
+                source_grads=list(grads),
+                ci=ci,
+                tokens=tokens,
             )
 
     def _process_component_targets(
@@ -259,76 +332,62 @@ class AttributionHarvester:
 
         target_acts_raw = cache[f"{target_layer}_pre_detach"]
 
-        target_ci_detached = ci[target_layer].detach()
-        ci_weighted_target_acts = (target_acts_raw * target_ci_detached).sum(dim=(0, 1))
-        ci_weighted_target_acts_abs = (target_acts_raw.abs() * target_ci_detached).sum(dim=(0, 1))
+        target_acts = target_acts_raw.sum(dim=(0, 1))
+        target_acts_abs = target_acts_raw.abs().sum(dim=(0, 1))
 
         source_layers = self.sources_by_target[target_layer]
         source_acts = [cache[f"{s}_post_detach"] for s in source_layers]
 
         for t_idx in torch.where(alive_targets)[0].tolist():
-            grads = torch.autograd.grad(
-                ci_weighted_target_acts[t_idx], source_acts, retain_graph=True
+            attr_for_target = partial(
+                self._accumulate_attributions,
+                target_idx=t_idx,
+                source_layers=source_layers,
+                source_acts=source_acts,
+                ci=ci,
+                tokens=tokens,
             )
 
-            abs_grads = torch.autograd.grad(
-                ci_weighted_target_acts_abs[t_idx], source_acts, retain_graph=True
+            val_grads = torch.autograd.grad(target_acts[t_idx], source_acts, retain_graph=True)
+            attr_for_target(
+                attr_accumulator=self._attr_val_accumulator[target_layer],
+                source_grads=list(val_grads),
             )
 
-            self._accumulate_attributions(
-                target_layer,
-                t_idx,
-                source_layers,
-                source_acts,
-                list(grads),
-                list(abs_grads),
-                ci,
-                tokens,
+            abs_grads = torch.autograd.grad(target_acts_abs[t_idx], source_acts, retain_graph=True)
+            attr_for_target(
+                attr_accumulator=self._attr_abs_accumulator[target_layer],
+                source_grads=list(abs_grads),
             )
 
     @torch.no_grad()  # pyright: ignore[reportUntypedFunctionDecorator]
     def _accumulate_attributions(
         self,
-        target_layer: str,
+        attr_accumulator: dict[str, Float[Tensor, "target_c source_c"]],
         target_idx: int,
         source_layers: list[str],
-        source_acts: list[Tensor],
-        source_grads: list[Tensor],
-        source_abs_grads: list[Tensor],
-        ci: dict[str, Tensor],
+        source_acts: list[Float[Tensor, "batch seq c"]],
+        source_grads: list[Float[Tensor, "batch seq c"]],
+        ci: dict[str, Float[Tensor, "batch seq c"]],
         tokens: Int[Tensor, "batch seq"],
     ) -> None:
         """Accumulate grad*act attributions from sources to a target column."""
-
-        attr_accumulator = self.attr_accumulator[target_layer]
-        attr_abs_accumulator = self.attr_abs_accumulator[target_layer]
-        square_attr_accumulator = self.square_attr_accumulator[target_layer]
-
-        for source_layer, act, grad, abs_grad in zip(
-            source_layers, source_acts, source_grads, source_abs_grads, strict=True
-        ):
-            attr_acc = attr_accumulator[source_layer][target_idx]
-            attr_abs_acc = attr_abs_accumulator[source_layer][target_idx]
-            square_attr_acc = square_attr_accumulator[source_layer][target_idx]
+        for source_layer, act, grad in zip(source_layers, source_acts, source_grads, strict=True):
+            attr_acc = attr_accumulator[source_layer][target_idx]  # (C_source,)
 
             # Embed has no CI (all tokens always active)
             source_ci = ci[source_layer] if source_layer != self.embed_path else 1.0
 
-            ci_weighted_attr = grad * act * source_ci
-            ci_weighted_attr_abs = abs_grad * act * source_ci
-            ci_weighted_squared_attr = ci_weighted_attr.square()
+            ci_weighted_attr_val = grad * act * source_ci  # (B S C)
 
             if source_layer == self.embed_path:
                 # Per-token: sum grad*act*ci over d_model, scatter by token id
-                attr = ci_weighted_attr.sum(dim=-1).flatten()
-                attr_abs = ci_weighted_attr_abs.sum(dim=-1).flatten()
-                attr_squared = ci_weighted_squared_attr.sum(dim=-1).flatten()
+                attr_val = ci_weighted_attr_val.sum(dim=-1).flatten()
 
-                attr_acc.scatter_add_(0, tokens.flatten(), attr)
-                attr_abs_acc.scatter_add_(0, tokens.flatten(), attr_abs)
-                square_attr_acc.scatter_add_(0, tokens.flatten(), attr_squared)
+                attr_acc.scatter_add_(0, tokens.flatten(), attr_val)
             else:
                 # Per-component: sum grad*act*ci over batch and sequence
-                attr_acc.add_(ci_weighted_attr.sum(dim=(0, 1)))
-                attr_abs_acc.add_(ci_weighted_attr_abs.sum(dim=(0, 1)))
-                square_attr_acc.add_(ci_weighted_squared_attr.sum(dim=(0, 1)))
+                attr_acc.add_(ci_weighted_attr_val.sum(dim=(0, 1)))
+
+
+# TODO symbolic reified in / out handling
