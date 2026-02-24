@@ -248,12 +248,14 @@ class PPGDEvalLosses(Metric):
         ppgd_effective_sources: PPGDSources,
         use_delta_component: bool,
         output_loss_type: Literal["mse", "kl"],
+        name_suffix: str = "",
     ) -> None:
         self.model = model
         self.ppgd_effective_sources = ppgd_effective_sources
         self.use_delta_component = use_delta_component
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
         self.device = device
+        self._name_suffix = name_suffix
         self.per_module_sum_mse: dict[str, Tensor] = {}
         self.per_module_n_examples: dict[str, Tensor] = {}
         self.output_recon_sum_loss = torch.tensor(0.0, device=device)
@@ -298,7 +300,7 @@ class PPGDEvalLosses(Metric):
 
     @override
     def compute(self) -> dict[str, Float[Tensor, ""]]:
-        class_name = type(self).__name__
+        class_name = type(self).__name__ + self._name_suffix
         out = _compute_per_module_metrics(
             class_name=f"{class_name}/hidden_acts",
             per_module_sum_mse=self.per_module_sum_mse,

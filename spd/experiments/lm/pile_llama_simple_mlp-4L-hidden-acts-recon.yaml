@@ -93,7 +93,6 @@ save_freq: null
 eval_metric_configs:
 - classname: StochasticHiddenActsReconLoss
 - classname: CIHiddenActsReconLoss
-- classname: PPGDEvalLosses
 ci_alive_threshold: 0.0
 pretrained_model_class: spd.pretrain.models.llama_simple_mlp.LlamaSimpleMLP
 pretrained_model_path: null

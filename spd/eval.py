@@ -32,7 +32,6 @@ from spd.configs import (
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
-    PPGDEvalLossesConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
@@ -70,7 +69,7 @@ from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetC
 from spd.metrics.stochastic_recon_subset_loss import StochasticReconSubsetLoss
 from spd.metrics.uv_plots import UVPlots
 from spd.models.component_model import ComponentModel, OutputWithCache
-from spd.persistent_pgd import PPGDSources
+from spd.persistent_pgd import PersistentPGDState
 from spd.routing import AllLayersRouter, get_subset_router
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
 from spd.utils.general_utils import dict_safe_update_, extract_batch_data
@@ -130,7 +129,6 @@ def init_metric(
     model: ComponentModel,
     run_config: Config,
     device: str,
-    ppgd_effective_sources: PPGDSources | None = None,
 ) -> Metric:
     match cfg:
         case ImportanceMinimalityLossConfig():
@@ -272,15 +270,6 @@ def init_metric(
             )
         case CIHiddenActsReconLossConfig():
             metric = CIHiddenActsReconLoss(model=model, device=device)
-        case PPGDEvalLossesConfig():
-            assert ppgd_effective_sources is not None
-            metric = PPGDEvalLosses(
-                model=model,
-                device=device,
-                ppgd_effective_sources=ppgd_effective_sources,
-                use_delta_component=run_config.use_delta_component,
-                output_loss_type=run_config.output_loss_type,
-            )
         case UVPlotsConfig():
             metric = UVPlots(
                 model=model,
@@ -313,7 +302,9 @@ def evaluate(
     slow_step: bool,
     n_eval_steps: int,
     current_frac_of_training: float,
-    ppgd_effective_sources: PPGDSources | None = None,
+    ppgd_states: dict[
+        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PersistentPGDState
+    ],
 ) -> MetricOutType:
     """Run evaluation and return a mapping of metric names to values/images."""
 
@@ -331,11 +322,25 @@ def evaluate(
             model=model,
             run_config=run_config,
             device=device,
-            ppgd_effective_sources=ppgd_effective_sources,
         )
         if metric.slow and not slow_step:
             continue
         metrics.append(metric)
+
+    # Auto-create PPGDEvalLosses for each persistent PGD state
+    for ppgd_cfg, state in ppgd_states.items():
+        name_suffix = "" if len(ppgd_states) == 1 else f"_{type(ppgd_cfg).__name__}"
+        ppgd_eval = PPGDEvalLosses(
+            model=model,
+            device=device,
+            ppgd_effective_sources=state.get_effective_sources(),
+            use_delta_component=run_config.use_delta_component,
+            output_loss_type=run_config.output_loss_type,
+            name_suffix=name_suffix,
+        )
+        if ppgd_eval.slow and not slow_step:
+            continue
+        metrics.append(ppgd_eval)
 
     # Weight deltas can be computed once per eval since params are frozen
     weight_deltas = model.calc_weight_deltas()
