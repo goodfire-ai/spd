@@ -38,9 +38,10 @@ module_info:
 - module_pattern: h.*.attn.o_proj
   C: 1024
 identity_module_info: null
+init_spd_checkpoint: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.0006
+- coeff: 0.0004
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
   beta: 0.2
@@ -53,7 +54,6 @@ loss_metric_configs:
   routing:
     type: uniform_k_subset
 - coeff: 0.5
-  classname: PersistentPGDReconLoss
   optimizer:
     type: adam
     beta1: 0.5
@@ -62,12 +62,13 @@ loss_metric_configs:
     lr_schedule:
       start_val: 0.01
       warmup_pct: 0.025
-      final_val_frac: 0.1
-      fn_type: cosine
+      final_val_frac: 1.0
+      fn_type: constant
   scope:
     type: per_batch_per_position
   use_sigmoid_parameterization: false
   n_warmup_steps: 2
+  classname: PersistentPGDReconLoss
 - coeff: 10000000.0
   classname: FaithfulnessLoss
 output_loss_type: kl
@@ -109,8 +110,10 @@ eval_metric_configs:
 - classname: CEandKLLosses
   rounding_threshold: 0.0
 - classname: CIMeanPerComponent
-- classname: StochasticHiddenActsReconLoss
-- init: random
+- coeff: null
+  classname: StochasticHiddenActsReconLoss
+- coeff: null
+  init: random
   step_size: 0.1
   n_steps: 20
   mask_scope: shared_across_batch
@@ -124,11 +127,14 @@ tokenizer_name: EleutherAI/gpt-neox-20b
 task_config:
   task_name: lm
   max_seq_len: 512
-  buffer_size: 1000
+  buffer_size: 10000
   dataset_name: danbraunai/pile-uncopyrighted-tok
   column_name: input_ids
+  train_data_split: train[:1000000]
+  eval_data_split: val[:100000]
   train_data_split: train
   eval_data_split: val
   shuffle_each_epoch: true
   is_tokenized: true
-  streaming: true
+  streaming: false
+  # streaming: true
