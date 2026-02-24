@@ -123,7 +123,7 @@ def optimize(
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     n_eval_steps: int,
     out_dir: Path | None,
-    tied_weights: list[tuple[str, str]] | None = None,
+    tied_weights: list[tuple[str, str]] | None,
 ) -> None:
     """Run the optimization loop for LM decomposition."""
 
@@ -288,7 +288,7 @@ def optimize(
                     batch=batch,
                     target_out=target_model_output.output,
                     ci=ci.lower_leaky,
-                    weight_deltas=weight_deltas,
+                    weight_deltas=weight_deltas if config.use_delta_component else None,
                 )
 
             losses = compute_losses(
@@ -301,6 +301,7 @@ def optimize(
                 pre_weight_acts=target_model_output.cache,
                 current_frac_of_training=step / config.steps,
                 sampling=config.sampling,
+                use_delta_component=config.use_delta_component,
                 n_mask_samples=config.n_mask_samples,
                 ppgd_states=ppgd_states,
                 output_loss_type=config.output_loss_type,
@@ -437,10 +438,10 @@ def run_experiment(
     eval_loader: DataLoader[Int[Tensor, "..."]]
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     experiment_tag: str,
-    run_id: str | None = None,
-    launch_id: str | None = None,
-    evals_id: str | None = None,
-    sweep_params: dict[str, Any] | None = None,
+    run_id: str | None,
+    launch_id: str | None,
+    evals_id: str | None,
+    sweep_params: dict[str, Any] | None,
     target_model_train_config: BaseConfig | None = None,
     tied_weights: list[tuple[str, str]] | None = None,
 ) -> None:

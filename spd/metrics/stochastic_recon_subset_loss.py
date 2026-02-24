@@ -22,7 +22,7 @@ def _stochastic_recon_subset_loss_update(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     router: Router,
 ) -> tuple[Float[Tensor, ""], int]:
     assert ci, "Empty ci"
@@ -64,7 +64,7 @@ def stochastic_recon_subset_loss(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     routing: SubsetRoutingType,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _stochastic_recon_subset_loss_update(
@@ -123,7 +123,7 @@ class StochasticReconSubsetLoss(Metric):
             batch=batch,
             target_out=target_out,
             ci=ci.lower_leaky,
-            weight_deltas=weight_deltas,
+            weight_deltas=weight_deltas if self.use_delta_component else None,
             router=self.router,
         )
         self.sum_loss += sum_loss

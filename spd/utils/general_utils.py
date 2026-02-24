@@ -79,10 +79,11 @@ def replace_pydantic_model[BaseModelType: BaseModel](
 def compute_feature_importances(
     batch_size: int,
     n_features: int,
-    importance_val: float,
+    importance_val: float | None,
     device: str,
 ) -> Float[Tensor, "batch_size n_features"]:
-    if importance_val == 1.0:
+    # Defines a tensor where the i^th feature has importance importance^i
+    if importance_val is None or importance_val == 1.0:
         importance_tensor = torch.ones(batch_size, n_features, device=device)
     else:
         powers = torch.arange(n_features, device=device)
@@ -251,7 +252,7 @@ def runtime_cast[T](type_: type[T], obj: Any) -> T:
     return obj
 
 
-def fetch_latest_checkpoint_name(filenames: list[str], prefix: str | None = None) -> str:
+def fetch_latest_checkpoint_name(filenames: list[str], prefix: str | None) -> str:
     """Fetch the latest checkpoint name from a list of .pth files.
 
     Assumes format is <name>_<step>.pth or <name>.pth.
@@ -269,7 +270,7 @@ def fetch_latest_checkpoint_name(filenames: list[str], prefix: str | None = None
     return latest_checkpoint_name
 
 
-def fetch_latest_local_checkpoint(run_dir: Path, prefix: str | None = None) -> Path:
+def fetch_latest_local_checkpoint(run_dir: Path, prefix: str | None) -> Path:
     """Fetch the latest checkpoint from a local run directory."""
     filenames = [file.name for file in run_dir.iterdir() if file.name.endswith(".pth")]
     latest_checkpoint_name = fetch_latest_checkpoint_name(filenames, prefix)

@@ -109,7 +109,7 @@ class TestStochasticReconLayerwiseLoss:
                 batch=batch,
                 target_out=target_out,
                 ci=ci,
-                weight_deltas=model.calc_weight_deltas(),
+                weight_deltas=None,
             )
 
             assert torch.allclose(actual_loss, torch.tensor(expected_loss), rtol=1e-5), (
@@ -118,15 +118,14 @@ class TestStochasticReconLayerwiseLoss:
 
     def test_layerwise_vs_full_loss(self: object) -> None:
         """For a single layer, layerwise and full loss should be the same."""
+        torch.manual_seed(42)
         fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
         model = make_one_layer_component_model(weight=fc_weight)
 
         batch = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
         target_out = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
         ci = {"fc": torch.tensor([[1.0]], dtype=torch.float32)}
-        weight_deltas = model.calc_weight_deltas()
 
-        torch.manual_seed(42)
         loss_full = stochastic_recon_loss(
             model=model,
             sampling="continuous",
@@ -135,9 +134,8 @@ class TestStochasticReconLayerwiseLoss:
             batch=batch,
             target_out=target_out,
             ci=ci,
-            weight_deltas=weight_deltas,
+            weight_deltas=None,
         )
-        torch.manual_seed(42)
         loss_layerwise = stochastic_recon_layerwise_loss(
             model=model,
             sampling="continuous",
@@ -146,7 +144,7 @@ class TestStochasticReconLayerwiseLoss:
             batch=batch,
             target_out=target_out,
             ci=ci,
-            weight_deltas=weight_deltas,
+            weight_deltas=None,
         )
 
         # For single layer, results should be the same

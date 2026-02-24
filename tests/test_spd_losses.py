@@ -568,7 +568,7 @@ class TestStochasticReconLoss:
             batch=batch,
             target_out=target_out,
             ci=ci,
-            weight_deltas=weight_deltas,
+            weight_deltas=None,
         )
 
         # Both should be valid
@@ -706,24 +706,25 @@ class TestPersistentPGDReconLoss:
     def test_basic_forward_and_state_update(self: object) -> None:
         """Test that persistent PGD computes loss and updates state."""
         fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
-        model = _make_seq_component_model(weight=fc_weight)
+        model = _make_component_model(weight=fc_weight)
 
-        batch = torch.tensor([[[1.0, 2.0], [0.5, 1.5]]], dtype=torch.float32)
-        target_out = torch.tensor([[[1.0, 2.0], [0.5, 1.5]]], dtype=torch.float32)
+        # Use (batch, seq) shaped data to match PersistentPGD's expectations
+        batch = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+        target_out = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+        # CI needs (batch, seq, C) shape for PersistentPGD
         ci = {"fc": torch.tensor([[[0.5], [0.5]]], dtype=torch.float32)}
 
         cfg = PersistentPGDReconLossConfig(
             optimizer=SignPGDConfig(lr_schedule=ScheduleConfig(start_val=0.1)),
             scope=SingleSourceScope(),
         )
-        weight_deltas = model.calc_weight_deltas()
 
         # Initialize state
         state = PersistentPGDState(
             module_to_c=model.module_to_c,
             batch_dims=(1, 2),
             device="cpu",
-            use_delta_component=True,
+            use_delta_component=False,
             cfg=cfg,
             output_loss_type="mse",
         )
@@ -737,9 +738,9 @@ class TestPersistentPGDReconLoss:
             batch=batch,
             target_out=target_out,
             ci=ci,
-            weight_deltas=weight_deltas,
+            weight_deltas=None,
         )
-        grad = state.get_grads(loss, retain_graph=True)
+        grad = state.get_grads(loss)
 
         # Apply PGD step
         state.step(grad)
@@ -758,12 +759,12 @@ class TestPersistentPGDReconLoss:
     def test_masks_persist_across_calls(self: object) -> None:
         """Test that masks persist and accumulate updates across calls."""
         fc_weight = torch.tensor([[2.0, 0.0], [0.0, 2.0]], dtype=torch.float32)
-        model = _make_seq_component_model(weight=fc_weight)
+        model = _make_component_model(weight=fc_weight)
 
-        batch = torch.tensor([[[1.0, 1.0], [0.5, 0.5]]], dtype=torch.float32)
-        target_out = torch.tensor([[[2.0, 2.0], [1.0, 1.0]]], dtype=torch.float32)
+        batch = torch.tensor([[1.0, 1.0]], dtype=torch.float32)
+        target_out = torch.tensor([[2.0, 2.0]], dtype=torch.float32)
+        # CI needs (batch, seq, C) shape for PersistentPGD
         ci = {"fc": torch.tensor([[[0.3], [0.3]]], dtype=torch.float32)}
-        weight_deltas = model.calc_weight_deltas()
 
         cfg = PersistentPGDReconLossConfig(
             optimizer=SignPGDConfig(lr_schedule=ScheduleConfig(start_val=0.1)),
@@ -774,7 +775,7 @@ class TestPersistentPGDReconLoss:
             module_to_c=model.module_to_c,
             batch_dims=(1, 2),
             device="cpu",
-            use_delta_component=True,
+            use_delta_component=False,
             cfg=cfg,
             output_loss_type="mse",
         )
@@ -788,9 +789,9 @@ class TestPersistentPGDReconLoss:
                 batch=batch,
                 target_out=target_out,
                 ci=ci,
-                weight_deltas=weight_deltas,
+                weight_deltas=None,
             )
-            grad = state.get_grads(loss, retain_graph=True)
+            grad = state.get_grads(loss)
             state.step(grad)
             assert loss >= 0.0
 
@@ -843,7 +844,7 @@ class TestPersistentPGDReconLoss:
             ci=ci,
             weight_deltas=weight_deltas,
         )
-        grad = state.get_grads(loss, retain_graph=True)
+        grad = state.get_grads(loss)
         state.step(grad)
 
         assert loss >= 0.0
@@ -887,28 +888,26 @@ class TestPersistentPGDReconLoss:
             scope=SingleSourceScope(),
         )
 
-        weight_deltas = model.calc_weight_deltas()
-
         state = PersistentPGDState(
             module_to_c=model.module_to_c,
             batch_dims=batch_dims,
             device="cpu",
-            use_delta_component=True,
+            use_delta_component=False,
             cfg=cfg,
             output_loss_type="mse",
         )
 
-        # Masks should have shape (1, 1, C+1) for single_mask scope with delta component
-        assert state.sources["fc"].shape == (1, 1, model.module_to_c["fc"] + 1)
+        # Masks should have shape (1, 1, C) for single_mask scope - single mask shared across batch
+        assert state.sources["fc"].shape == (1, 1, model.module_to_c["fc"])
 
         loss = state.compute_recon_loss(
             model=model,
             batch=batch,
             target_out=target_out,
             ci=ci,
-            weight_deltas=weight_deltas,
+            weight_deltas=None,
         )
-        grad = state.get_grads(loss, retain_graph=True)
+        grad = state.get_grads(loss)
         state.step(grad)
 
         assert loss >= 0.0
@@ -916,12 +915,12 @@ class TestPersistentPGDReconLoss:
     def test_adam_optimizer_state(self: object) -> None:
         """Test that Adam optimizer path updates internal state."""
         fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
-        model = _make_seq_component_model(weight=fc_weight)
+        model = _make_component_model(weight=fc_weight)
 
-        batch = torch.tensor([[[1.0, 2.0], [0.5, 1.5]]], dtype=torch.float32)
-        target_out = torch.tensor([[[0.5, 1.5], [0.25, 0.75]]], dtype=torch.float32)
+        batch = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+        target_out = torch.tensor([[0.5, 1.5]], dtype=torch.float32)
+        # CI needs (batch, seq, C) shape for PersistentPGD
         ci = {"fc": torch.tensor([[[0.4], [0.4]]], dtype=torch.float32)}
-        weight_deltas = model.calc_weight_deltas()
 
         cfg = PersistentPGDReconLossConfig(
             optimizer=AdamPGDConfig(
@@ -934,7 +933,7 @@ class TestPersistentPGDReconLoss:
             module_to_c=model.module_to_c,
             batch_dims=(1, 2),
             device="cpu",
-            use_delta_component=True,
+            use_delta_component=False,
             cfg=cfg,
             output_loss_type="mse",
         )
@@ -944,9 +943,9 @@ class TestPersistentPGDReconLoss:
             batch=batch,
             target_out=target_out,
             ci=ci,
-            weight_deltas=weight_deltas,
+            weight_deltas=None,
         )
-        grad = state.get_grads(loss, retain_graph=True)
+        grad = state.get_grads(loss)
         state.step(grad)
 
         assert loss >= 0.0
