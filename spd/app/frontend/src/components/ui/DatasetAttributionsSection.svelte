@@ -50,9 +50,6 @@
     const absMaxSource = $derived(maxAbs(attributions.attr_abs.positive_sources[0]?.value ?? 0, attributions.attr_abs.negative_sources[0]?.value ?? 0));
     const absMaxTarget = $derived(maxAbs(attributions.attr_abs.positive_targets[0]?.value ?? 0, attributions.attr_abs.negative_targets[0]?.value ?? 0));
 
-    // mean_squared_attr: unsigned (positive only)
-    const rmsMaxSource = $derived(attributions.mean_squared_attr.positive_sources[0]?.value ?? 0);
-    const rmsMaxTarget = $derived(attributions.mean_squared_attr.positive_targets[0]?.value ?? 0);
 </script>
 
 <div class="section">
@@ -64,10 +61,6 @@
         <label class="radio-item">
             <input type="radio" name="dataset-attr-metric" checked={selectedMetric === "attr_abs"} onchange={() => (selectedMetric = "attr_abs")} />
             <span class="stat-label">Abs Target</span>
-        </label>
-        <label class="radio-item">
-            <input type="radio" name="dataset-attr-metric" checked={selectedMetric === "mean_squared_attr"} onchange={() => (selectedMetric = "mean_squared_attr")} />
-            <span class="stat-label">RMS</span>
         </label>
     </div>
 
@@ -92,18 +85,6 @@
             incomingNegative={toEdgeAttribution(attributions.attr_abs.negative_sources, absMaxSource)}
             outgoingPositive={toEdgeAttribution(attributions.attr_abs.positive_targets, absMaxTarget)}
             outgoingNegative={toEdgeAttribution(attributions.attr_abs.negative_targets, absMaxTarget)}
-            pageSize={COMPONENT_CARD_CONSTANTS.DATASET_ATTRIBUTIONS_PAGE_SIZE}
-            onClick={handleClick}
-        />
-    {:else}
-        <EdgeAttributionGrid
-            title="Dataset Attributions"
-            incomingLabel="Incoming"
-            outgoingLabel="Outgoing"
-            incomingPositive={toEdgeAttribution(attributions.mean_squared_attr.positive_sources, rmsMaxSource)}
-            incomingNegative={[]}
-            outgoingPositive={toEdgeAttribution(attributions.mean_squared_attr.positive_targets, rmsMaxTarget)}
-            outgoingNegative={[]}
             pageSize={COMPONENT_CARD_CONSTANTS.DATASET_ATTRIBUTIONS_PAGE_SIZE}
             onClick={handleClick}
         />

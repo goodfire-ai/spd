@@ -19,17 +19,11 @@ export type SignedAttributions = {
     negative_targets: DatasetAttributionEntry[];
 };
 
-export type UnsignedAttributions = {
-    positive_sources: DatasetAttributionEntry[];
-    positive_targets: DatasetAttributionEntry[];
-};
-
-export type AttrMetric = "attr" | "attr_abs" | "mean_squared_attr";
+export type AttrMetric = "attr" | "attr_abs";
 
 export type AllMetricAttributions = {
     attr: SignedAttributions;
     attr_abs: SignedAttributions;
-    mean_squared_attr: UnsignedAttributions;
 };
 
 export type DatasetAttributionsMetadata = {

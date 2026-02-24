@@ -42,36 +42,39 @@ SPD_OUT_DIR/dataset_attributions/<run_id>/
 
 `AttributionRepo.open(run_id)` loads the latest `da-*` subrun that has a `dataset_attributions.pt`.
 
-## Three Attribution Metrics
+## Attribution Metrics
 
-The harvester accumulates three metrics simultaneously:
+Two metrics: `AttrMetric = Literal["attr", "attr_abs"]`
 
 | Metric | Formula | Description |
 |--------|---------|-------------|
 | `attr` | E[∂y/∂x · x] | Signed mean attribution |
 | `attr_abs` | E[∂\|y\|/∂x · x] | Attribution to absolute value of target (2 backward passes) |
-| `mean_squared_attr` | E[(∂y/∂x · x)²] | Mean squared attribution (pre-sqrt, mergeable across workers) |
 
-Naming convention: modifier *before* `attr` applies to the target (e.g. `attr_abs` = attribution to |target|). Modifier *after* applies to the attribution itself (e.g. `squared_attr` = squared attribution).
+Naming convention: modifier *before* `attr` applies to the target (e.g. `attr_abs` = attribution to |target|).
 
 ## Architecture
 
 ### Storage (`storage.py`)
 
-`DatasetAttributionStorage` stores three nested dicts:
-```
-attrs[target_layer][source_layer] = Tensor[target_d, source_d]
-```
+`DatasetAttributionStorage` stores four structurally distinct edge types:
+
+| Edge type | Fields | Shape | Has abs? |
+|-----------|--------|-------|----------|
+| component → component | `regular_attr`, `regular_attr_abs` | `dict[target, dict[source, (tgt_c, src_c)]]` | yes |
+| embed → component | `embed_attr`, `embed_attr_abs` | `dict[target, (tgt_c, vocab)]` | yes |
+| component → unembed | `unembed_attr` | `dict[source, (d_model, src_c)]` | no |
+| embed → unembed | `embed_unembed_attr` | `(d_model, vocab)` | no |
 
 All layer names use **canonical addressing** (`"embed"`, `"0.glu.up"`, `"output"`).
 
-For output targets, `target_d = d_model`. Output token attributions computed on-the-fly: `attr @ w_unembed[:, token_id]`.
+Unembed edges are stored in residual space (d_model dimensions). `w_unembed` is stored alongside the attribution data, so output token attributions are computed on-the-fly internally — callers never need to provide the projection matrix. No abs variant for unembed edges because abs is a nonlinear operation incompatible with residual-space storage.
 
-Key methods: `get_attribution()`, `get_top_sources()`, `get_top_targets()` — all take an `AttrMetric` parameter to select which metric dict to query. `merge(paths)` classmethod for combining worker results.
+Key methods: `get_top_sources(key, k, sign, metric)`, `get_top_targets(key, k, sign, metric)`. Both return `[]` for nonexistent components. `merge(paths)` classmethod for combining worker results via weighted average by n_tokens.
 
 ### Harvester (`harvester.py`)
 
-Accumulates attributions using gradient × activation. Uses **concrete module paths** internally (talks to model cache/CI). Key optimizations:
+Accumulates attributions using gradient × activation. Uses **concrete module paths** internally (talks to model cache/CI). Four accumulator groups mirror the storage edge types. Key optimizations:
 1. Sum outputs over positions before gradients (reduces backward passes)
 2. Output-residual storage (O(d_model) instead of O(vocab))
 3. `scatter_add_` for embed sources, vectorized `.add_()` for components (>14x faster than per-element loops)
@@ -98,12 +101,13 @@ Orchestrates the pipeline: loads model, builds gradient connectivity, runs batch
 
 ## Query Methods
 
-All query methods take `metric: AttrMetric` (`"attr"`, `"attr_abs"`, or `"mean_squared_attr"`).
+All query methods take `metric: AttrMetric` (`"attr"` or `"attr_abs"`).
 
-| Method | w_unembed? | Description |
-|--------|-----------|-------------|
-| `get_top_sources(target_key, k, sign, metric)` | If output target | Top sources → target |
-| `get_top_targets(source_key, k, sign, metric)` | If include_outputs | Top targets ← source |
-| `get_attribution(source_key, target_key, metric)` | If output target | Single attribution value |
+| Method | Description |
+|--------|-------------|
+| `get_top_sources(target_key, k, sign, metric)` | Top sources → target |
+| `get_top_targets(source_key, k, sign, metric)` | Top targets ← source |
 
 Key format: `"embed:{token_id}"`, `"0.glu.up:{c_idx}"`, `"output:{token_id}"`.
+
+Note: `attr_abs` returns empty for output targets (unembed edges have no abs variant).

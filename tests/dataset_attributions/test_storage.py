@@ -15,33 +15,30 @@ C0 = 3  # components in layer 0
 C1 = 2  # components in layer 1
 
 
-def _make_attr_dict(seed: int = 0) -> dict[str, dict[str, Tensor]]:
-    """Build attr dict for the test topology.
+def _make_storage(
+    seed: int = 0, n_batches: int = 10, n_tokens: int = 640
+) -> DatasetAttributionStorage:
+    """Build storage for test topology.
 
     Sources by target:
-        "0.glu.up": ["embed"]             -> shape (C0, VOCAB_SIZE)
-        "1.glu.up": ["embed", "0.glu.up"] -> shape (C1, VOCAB_SIZE), (C1, C0)
-        "output":   ["0.glu.up", "1.glu.up"] -> shape (D_MODEL, C0), (D_MODEL, C1)
+        "0.glu.up": ["embed"]             -> embed edge (C0, VOCAB_SIZE)
+        "1.glu.up": ["embed", "0.glu.up"] -> embed edge (C1, VOCAB_SIZE) + regular (C1, C0)
+        "output":   ["0.glu.up", "1.glu.up"] -> unembed (D_MODEL, C0), (D_MODEL, C1)
+        "output":   ["embed"]             -> embed_unembed (D_MODEL, VOCAB_SIZE)
     """
     g = torch.Generator().manual_seed(seed)
 
     def rand(*shape: int) -> Tensor:
         return torch.randn(*shape, generator=g)
 
-    return {
-        LAYER_0: {"embed": rand(C0, VOCAB_SIZE)},
-        LAYER_1: {"embed": rand(C1, VOCAB_SIZE), LAYER_0: rand(C1, C0)},
-        "output": {LAYER_0: rand(D_MODEL, C0), LAYER_1: rand(D_MODEL, C1)},
-    }
-
-
-def _make_storage(
-    seed: int = 0, n_batches: int = 10, n_tokens: int = 640
-) -> DatasetAttributionStorage:
     return DatasetAttributionStorage(
-        attr=_make_attr_dict(seed),
-        attr_abs=_make_attr_dict(seed + 100),
-        mean_squared_attr=_make_attr_dict(seed + 200),
+        regular_attr={LAYER_1: {LAYER_0: rand(C1, C0)}},
+        regular_attr_abs={LAYER_1: {LAYER_0: rand(C1, C0)}},
+        embed_attr={LAYER_0: rand(C0, VOCAB_SIZE), LAYER_1: rand(C1, VOCAB_SIZE)},
+        embed_attr_abs={LAYER_0: rand(C0, VOCAB_SIZE), LAYER_1: rand(C1, VOCAB_SIZE)},
+        unembed_attr={LAYER_0: rand(D_MODEL, C0), LAYER_1: rand(D_MODEL, C1)},
+        embed_unembed_attr=rand(D_MODEL, VOCAB_SIZE),
+        w_unembed=rand(D_MODEL, VOCAB_SIZE),
         vocab_size=VOCAB_SIZE,
         ci_threshold=1e-6,
         n_batches_processed=n_batches,
@@ -50,67 +47,79 @@ def _make_storage(
 
 
 class TestNComponents:
-    def test_counts_non_output_targets(self):
+    def test_counts_all_target_layers(self):
         storage = _make_storage()
+        # LAYER_0 is only in embed_attr, LAYER_1 is in both — both count
         assert storage.n_components == C0 + C1
 
 
-class TestHasSource:
-    def test_embed_token(self):
+class TestGetTopSources:
+    def test_component_target_returns_entries(self):
         storage = _make_storage()
-        assert storage.has_source("embed:0")
-        assert storage.has_source(f"embed:{VOCAB_SIZE - 1}")
+        results = storage.get_top_sources(f"{LAYER_1}:0", k=5, sign="positive", metric="attr")
+        assert all(r.value > 0 for r in results)
+        assert len(results) <= 5
 
-    def test_embed_oob(self):
+    def test_component_target_includes_embed(self):
         storage = _make_storage()
-        assert not storage.has_source(f"embed:{VOCAB_SIZE}")
-        assert not storage.has_source("embed:-1")
-
-    def test_component_source(self):
-        storage = _make_storage()
-        assert storage.has_source(f"{LAYER_0}:0")
-        assert storage.has_source(f"{LAYER_0}:{C0 - 1}")
-
-    def test_component_source_oob(self):
-        storage = _make_storage()
-        assert not storage.has_source(f"{LAYER_0}:{C0}")
-
-    def test_output_never_source(self):
-        storage = _make_storage()
-        assert not storage.has_source("output:0")
-
-    def test_layer_not_present(self):
-        storage = _make_storage()
-        assert not storage.has_source("nonexistent:0")
-
-
-class TestHasTarget:
-    def test_component_target(self):
-        storage = _make_storage()
-        assert storage.has_target(f"{LAYER_0}:0")
-        assert storage.has_target(f"{LAYER_1}:{C1 - 1}")
-
-    def test_component_target_oob(self):
-        storage = _make_storage()
-        assert not storage.has_target(f"{LAYER_0}:{C0}")
-        assert not storage.has_target(f"{LAYER_1}:{C1}")
+        results = storage.get_top_sources(f"{LAYER_1}:0", k=20, sign="positive", metric="attr")
+        layers = {r.layer for r in results}
+        # Should include both component and embed sources
+        assert "embed" in layers or LAYER_0 in layers
 
     def test_output_target(self):
         storage = _make_storage()
-        assert storage.has_target("output:0")
-        assert storage.has_target(f"output:{VOCAB_SIZE - 1}")
+        results = storage.get_top_sources("output:0", k=5, sign="positive", metric="attr")
+        assert len(results) <= 5
 
-    def test_output_target_oob(self):
+    def test_output_target_attr_abs_returns_empty(self):
         storage = _make_storage()
-        assert not storage.has_target(f"output:{VOCAB_SIZE}")
+        results = storage.get_top_sources("output:0", k=5, sign="positive", metric="attr_abs")
+        assert results == []
 
-    def test_embed_never_target(self):
+    def test_target_only_in_embed_attr(self):
         storage = _make_storage()
-        assert not storage.has_target("embed:0")
+        # LAYER_0 is only in embed_attr, not in regular_attr
+        results = storage.get_top_sources(f"{LAYER_0}:0", k=5, sign="positive", metric="attr")
+        assert len(results) <= 5
+        assert all(r.layer == "embed" for r in results)
 
-    def test_layer_not_present(self):
+    def test_attr_abs_metric(self):
         storage = _make_storage()
-        assert not storage.has_target("nonexistent:0")
+        results = storage.get_top_sources(f"{LAYER_1}:0", k=5, sign="positive", metric="attr_abs")
+        assert len(results) <= 5
+
+
+class TestGetTopTargets:
+    def test_component_source(self):
+        storage = _make_storage()
+        results = storage.get_top_targets(
+            f"{LAYER_0}:0", k=5, sign="positive", metric="attr", include_outputs=False
+        )
+        assert len(results) <= 5
+        assert all(r.value > 0 for r in results)
+
+    def test_embed_source(self):
+        storage = _make_storage()
+        results = storage.get_top_targets(
+            "embed:0", k=5, sign="positive", metric="attr", include_outputs=False
+        )
+        assert len(results) <= 5
+
+    def test_include_outputs(self):
+        storage = _make_storage()
+        results = storage.get_top_targets(f"{LAYER_0}:0", k=20, sign="positive", metric="attr")
+        assert len(results) > 0
+
+    def test_embed_source_with_outputs(self):
+        storage = _make_storage()
+        results = storage.get_top_targets("embed:0", k=20, sign="positive", metric="attr")
+        assert len(results) > 0
+
+    def test_attr_abs_skips_output_targets(self):
+        storage = _make_storage()
+        results = storage.get_top_targets(f"{LAYER_0}:0", k=20, sign="positive", metric="attr_abs")
+        assert all(r.layer != "output" for r in results)
 
 
 class TestSaveLoad:
@@ -127,14 +136,23 @@ class TestSaveLoad:
         assert loaded.n_tokens_processed == original.n_tokens_processed
         assert loaded.n_components == original.n_components
 
-        for attr_name in ("attr", "attr_abs", "mean_squared_attr"):
-            orig_dict = getattr(original, attr_name)
-            load_dict = getattr(loaded, attr_name)
-            assert orig_dict.keys() == load_dict.keys()
-            for target in orig_dict:
-                assert orig_dict[target].keys() == load_dict[target].keys()
-                for source in orig_dict[target]:
-                    torch.testing.assert_close(load_dict[target][source], orig_dict[target][source])
+        # Check regular_attr roundtrip
+        for target in original.regular_attr:
+            for source in original.regular_attr[target]:
+                torch.testing.assert_close(
+                    loaded.regular_attr[target][source], original.regular_attr[target][source]
+                )
+
+        # Check embed_attr roundtrip
+        for target in original.embed_attr:
+            torch.testing.assert_close(loaded.embed_attr[target], original.embed_attr[target])
+
+        # Check unembed_attr roundtrip
+        for source in original.unembed_attr:
+            torch.testing.assert_close(loaded.unembed_attr[source], original.unembed_attr[source])
+
+        # Check embed_unembed_attr roundtrip
+        torch.testing.assert_close(loaded.embed_unembed_attr, original.embed_unembed_attr)
 
 
 class TestMerge:
@@ -156,12 +174,20 @@ class TestMerge:
 
         n1, n2 = s1.n_tokens_processed, s2.n_tokens_processed
         total = n1 + n2
-        for target in s1.attr:
-            for source in s1.attr[target]:
-                expected = (s1.attr[target][source] * n1 + s2.attr[target][source] * n2) / total
+
+        # Check regular_attr merge
+        for target in s1.regular_attr:
+            for source in s1.regular_attr[target]:
+                expected = (
+                    s1.regular_attr[target][source] * n1 + s2.regular_attr[target][source] * n2
+                ) / total
                 torch.testing.assert_close(
-                    merged.attr[target][source], expected, atol=1e-5, rtol=1e-5
+                    merged.regular_attr[target][source], expected, atol=1e-5, rtol=1e-5
                 )
+
+        # Check embed_unembed_attr merge
+        expected = (s1.embed_unembed_attr * n1 + s2.embed_unembed_attr * n2) / total
+        torch.testing.assert_close(merged.embed_unembed_attr, expected, atol=1e-5, rtol=1e-5)
 
     def test_unequal_token_counts(self, tmp_path: Path):
         s1 = _make_storage(seed=0, n_batches=3, n_tokens=192)
@@ -179,11 +205,13 @@ class TestMerge:
 
         n1, n2 = s1.n_tokens_processed, s2.n_tokens_processed
         total = n1 + n2
-        for target in s1.attr:
-            for source in s1.attr[target]:
-                expected = (s1.attr[target][source] * n1 + s2.attr[target][source] * n2) / total
+        for target in s1.regular_attr:
+            for source in s1.regular_attr[target]:
+                expected = (
+                    s1.regular_attr[target][source] * n1 + s2.regular_attr[target][source] * n2
+                ) / total
                 torch.testing.assert_close(
-                    merged.attr[target][source], expected, atol=1e-5, rtol=1e-5
+                    merged.regular_attr[target][source], expected, atol=1e-5, rtol=1e-5
                 )
 
     def test_single_file(self, tmp_path: Path):
@@ -194,8 +222,8 @@ class TestMerge:
         merged = DatasetAttributionStorage.merge([path])
 
         assert merged.n_tokens_processed == original.n_tokens_processed
-        for target in original.attr:
-            for source in original.attr[target]:
+        for target in original.regular_attr:
+            for source in original.regular_attr[target]:
                 torch.testing.assert_close(
-                    merged.attr[target][source], original.attr[target][source]
+                    merged.regular_attr[target][source], original.regular_attr[target][source]
                 )

@@ -42,8 +42,6 @@ def main(
     logger.info("Loading adapter and model metadata...")
     adapter = adapter_from_id(decomposition_id)
     assert isinstance(adapter, SPDAdapter)
-    w_unembed = adapter._topology.get_unembed_weight()
-
     logger.info("Loading harvest data...")
     if harvest_subrun_id is not None:
         harvest = HarvestRepo(decomposition_id, subrun_id=harvest_subrun_id, readonly=True)
@@ -79,7 +77,6 @@ def main(
         model_metadata=adapter.model_metadata,
         db_path=db_path,
         tokenizer_name=adapter.tokenizer_name,
-        w_unembed=w_unembed,
     )
 
 

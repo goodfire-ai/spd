@@ -276,7 +276,6 @@ class AttributionHarvester:
                     attr_acc.add_(ci_weighted_attr_val_sum)
                     attr_acc_abs.add_(ci_weighted_attr_abs_sum)
 
-
     # def normalized_attrs(self) -> NormalizedAttrs:
     #     """Return the accumulated attributions normalized by n_tokens.
 

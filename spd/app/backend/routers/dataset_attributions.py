@@ -7,16 +7,14 @@ over the full training dataset.
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from jaxtyping import Float
 from pydantic import BaseModel
-from torch import Tensor
 
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
 from spd.dataset_attributions.storage import AttrMetric, DatasetAttributionStorage
 from spd.dataset_attributions.storage import DatasetAttributionEntry as StorageEntry
 
-ATTR_METRICS: list[AttrMetric] = ["attr", "attr_abs", "mean_squared_attr"]
+ATTR_METRICS: list[AttrMetric] = ["attr", "attr_abs"]
 
 
 class DatasetAttributionEntry(BaseModel):
@@ -45,7 +43,6 @@ class ComponentAttributions(BaseModel):
 class AllMetricAttributions(BaseModel):
     attr: ComponentAttributions
     attr_abs: ComponentAttributions
-    mean_squared_attr: ComponentAttributions
 
 
 router = APIRouter(prefix="/api/dataset_attributions", tags=["dataset_attributions"])
@@ -55,34 +52,10 @@ NOT_AVAILABLE_MSG = (
 )
 
 
-def _storage_key(canonical_layer: str, component_idx: int) -> str:
-    return f"{canonical_layer}:{component_idx}"
-
-
 def _require_storage(loaded: DepLoadedRun) -> DatasetAttributionStorage:
     if loaded.attributions is None:
         raise HTTPException(status_code=404, detail=NOT_AVAILABLE_MSG)
     return loaded.attributions.get_attributions()
-
-
-def _require_source(storage: DatasetAttributionStorage, component_key: str) -> None:
-    if not storage.has_source(component_key):
-        raise HTTPException(
-            status_code=404,
-            detail=f"Component {component_key} not found as source in attributions",
-        )
-
-
-def _require_target(storage: DatasetAttributionStorage, component_key: str) -> None:
-    if not storage.has_target(component_key):
-        raise HTTPException(
-            status_code=404,
-            detail=f"Component {component_key} not found as target in attributions",
-        )
-
-
-def _get_w_unembed(loaded: DepLoadedRun) -> Float[Tensor, "d_model vocab"]:
-    return loaded.topology.get_unembed_weight()
 
 
 def _to_api_entries(
@@ -108,47 +81,20 @@ def _get_component_attributions_for_metric(
     component_key: str,
     k: int,
     metric: AttrMetric,
-    is_source: bool,
-    is_target: bool,
-    w_unembed: Float[Tensor, "d_model vocab"] | None,
 ) -> ComponentAttributions:
     return ComponentAttributions(
         positive_sources=_to_api_entries(
             storage.get_top_sources(component_key, k, "positive", metric), loaded
-        )
-        if is_target
-        else [],
+        ),
         negative_sources=_to_api_entries(
             storage.get_top_sources(component_key, k, "negative", metric), loaded
-        )
-        if is_target
-        else [],
+        ),
         positive_targets=_to_api_entries(
-            storage.get_top_targets(
-                component_key,
-                k,
-                "positive",
-                metric,
-                w_unembed=w_unembed,
-                include_outputs=w_unembed is not None,
-            ),
-            loaded,
-        )
-        if is_source
-        else [],
+            storage.get_top_targets(component_key, k, "positive", metric), loaded
+        ),
         negative_targets=_to_api_entries(
-            storage.get_top_targets(
-                component_key,
-                k,
-                "negative",
-                metric,
-                w_unembed=w_unembed,
-                include_outputs=w_unembed is not None,
-            ),
-            loaded,
-        )
-        if is_source
-        else [],
+            storage.get_top_targets(component_key, k, "negative", metric), loaded
+        ),
     )
 
 
@@ -181,25 +127,14 @@ def get_component_attributions(
     loaded: DepLoadedRun,
     k: Annotated[int, Query(ge=1)] = 10,
 ) -> AllMetricAttributions:
-    """Get all attribution data for a component across all 3 metrics."""
+    """Get all attribution data for a component across all metrics."""
     storage = _require_storage(loaded)
-    component_key = _storage_key(layer, component_idx)
-
-    is_source = storage.has_source(component_key)
-    is_target = storage.has_target(component_key)
-
-    if not is_source and not is_target:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Component {component_key} not found in attributions",
-        )
-
-    w_unembed = _get_w_unembed(loaded) if is_source else None
+    component_key = f"{layer}:{component_idx}"
 
     return AllMetricAttributions(
         **{
             metric: _get_component_attributions_for_metric(
-                storage, loaded, component_key, k, metric, is_source, is_target, w_unembed
+                storage, loaded, component_key, k, metric
             )
             for metric in ATTR_METRICS
         }
@@ -217,13 +152,8 @@ def get_attribution_sources(
     metric: AttrMetric = "attr",
 ) -> list[DatasetAttributionEntry]:
     storage = _require_storage(loaded)
-    target_key = _storage_key(layer, component_idx)
-    _require_target(storage, target_key)
-
-    w_unembed = _get_w_unembed(loaded) if layer == "output" else None
-
     return _to_api_entries(
-        storage.get_top_sources(target_key, k, sign, metric, w_unembed=w_unembed), loaded
+        storage.get_top_sources(f"{layer}:{component_idx}", k, sign, metric), loaded
     )
 
 
@@ -238,11 +168,6 @@ def get_attribution_targets(
     metric: AttrMetric = "attr",
 ) -> list[DatasetAttributionEntry]:
     storage = _require_storage(loaded)
-    source_key = _storage_key(layer, component_idx)
-    _require_source(storage, source_key)
-
-    w_unembed = _get_w_unembed(loaded)
-
     return _to_api_entries(
-        storage.get_top_targets(source_key, k, sign, metric, w_unembed=w_unembed), loaded
+        storage.get_top_targets(f"{layer}:{component_idx}", k, sign, metric), loaded
     )

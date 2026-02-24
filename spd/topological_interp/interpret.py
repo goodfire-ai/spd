@@ -16,8 +16,6 @@ from functools import partial
 from pathlib import Path
 from typing import Literal
 
-from torch import Tensor
-
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.autointerp.llm_api import LLMError, LLMJob, LLMResult, map_llm_calls
 from spd.autointerp.schemas import ModelMetadata
@@ -57,7 +55,6 @@ def run_topological_interp(
     model_metadata: ModelMetadata,
     db_path: Path,
     tokenizer_name: str,
-    w_unembed: Tensor,
 ) -> None:
     logger.info("Loading tokenizer...")
     app_tok = AppTokenizer.from_pretrained(tokenizer_name)
@@ -111,14 +108,7 @@ def run_topological_interp(
             key: str, k: int, sign: Literal["positive", "negative"]
         ) -> list[DatasetAttributionEntry]:
             return _translate_entries(
-                attribution_storage.get_top_targets(
-                    _to_canon(key),
-                    k=k,
-                    sign=sign,
-                    metric=metric,
-                    w_unembed=w_unembed,
-                    include_outputs=True,
-                )
+                attribution_storage.get_top_targets(_to_canon(key), k=k, sign=sign, metric=metric)
             )
 
         return get

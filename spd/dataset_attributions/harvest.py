@@ -180,18 +180,21 @@ def harvest_attributions(
 
     # Translate concrete paths to canonical for storage
     to_canon = topology.target_to_canon
-    normalized = harvester.normalized_attrs()
 
-    def canonicalize(d: dict[str, dict[str, Tensor]]) -> dict[str, dict[str, Tensor]]:
-        return {
-            to_canon(target): {to_canon(src): tensor for src, tensor in src_attrs.items()}
-            for target, src_attrs in d.items()
-        }
+    def canon_nested(d: dict[str, dict[str, Tensor]]) -> dict[str, dict[str, Tensor]]:
+        return {to_canon(t): {to_canon(s): v for s, v in srcs.items()} for t, srcs in d.items()}
+
+    def canon_keys(d: dict[str, Tensor]) -> dict[str, Tensor]:
+        return {to_canon(k): v for k, v in d.items()}
 
     storage = DatasetAttributionStorage(
-        attr=canonicalize(normalized.attr),
-        attr_abs=canonicalize(normalized.attr_abs),
-        mean_squared_attr=canonicalize(normalized.mean_squared_attr),
+        regular_attr=canon_nested(harvester._regular_layers_acc),
+        regular_attr_abs=canon_nested(harvester._regular_layers_acc_abs),
+        embed_attr=canon_keys(harvester._embed_tgts_acc),
+        embed_attr_abs=canon_keys(harvester._embed_tgts_acc_abs),
+        unembed_attr=canon_keys(harvester._unembed_srcs_acc),
+        embed_unembed_attr=harvester._emb_unemb_attr_acc,
+        w_unembed=topology.get_unembed_weight(),
         vocab_size=vocab_size,
         ci_threshold=config.ci_threshold,
         n_batches_processed=harvester.n_batches,
