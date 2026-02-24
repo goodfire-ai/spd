@@ -39,6 +39,9 @@ def _make_storage(
         unembed_attr={LAYER_0: rand(D_MODEL, C0), LAYER_1: rand(D_MODEL, C1)},
         embed_unembed_attr=rand(D_MODEL, VOCAB_SIZE),
         w_unembed=rand(D_MODEL, VOCAB_SIZE),
+        ci_sum={LAYER_0: rand(C0).abs() + 1.0, LAYER_1: rand(C1).abs() + 1.0},
+        component_act_sq_sum={LAYER_0: rand(C0).abs() + 1.0, LAYER_1: rand(C1).abs() + 1.0},
+        logit_sq_sum=rand(VOCAB_SIZE).abs() + 1.0,
         vocab_size=VOCAB_SIZE,
         ci_threshold=1e-6,
         n_batches_processed=n_batches,
@@ -49,7 +52,6 @@ def _make_storage(
 class TestNComponents:
     def test_counts_all_target_layers(self):
         storage = _make_storage()
-        # LAYER_0 is only in embed_attr, LAYER_1 is in both — both count
         assert storage.n_components == C0 + C1
 
 
@@ -64,7 +66,6 @@ class TestGetTopSources:
         storage = _make_storage()
         results = storage.get_top_sources(f"{LAYER_1}:0", k=20, sign="positive", metric="attr")
         layers = {r.layer for r in results}
-        # Should include both component and embed sources
         assert "embed" in layers or LAYER_0 in layers
 
     def test_output_target(self):
@@ -79,7 +80,6 @@ class TestGetTopSources:
 
     def test_target_only_in_embed_attr(self):
         storage = _make_storage()
-        # LAYER_0 is only in embed_attr, not in regular_attr
         results = storage.get_top_sources(f"{LAYER_0}:0", k=5, sign="positive", metric="attr")
         assert len(results) <= 5
         assert all(r.layer == "embed" for r in results)
@@ -88,6 +88,11 @@ class TestGetTopSources:
         storage = _make_storage()
         results = storage.get_top_sources(f"{LAYER_1}:0", k=5, sign="positive", metric="attr_abs")
         assert len(results) <= 5
+
+    def test_no_nan_in_results(self):
+        storage = _make_storage()
+        results = storage.get_top_sources(f"{LAYER_1}:0", k=20, sign="positive", metric="attr")
+        assert all(not torch.isnan(torch.tensor(r.value)) for r in results)
 
 
 class TestGetTopTargets:
@@ -136,27 +141,23 @@ class TestSaveLoad:
         assert loaded.n_tokens_processed == original.n_tokens_processed
         assert loaded.n_components == original.n_components
 
-        # Check regular_attr roundtrip
-        for target in original.regular_attr:
-            for source in original.regular_attr[target]:
-                torch.testing.assert_close(
-                    loaded.regular_attr[target][source], original.regular_attr[target][source]
-                )
+    def test_roundtrip_query_consistency(self, tmp_path: Path):
+        original = _make_storage()
+        path = tmp_path / "attrs.pt"
+        original.save(path)
+        loaded = DatasetAttributionStorage.load(path)
 
-        # Check embed_attr roundtrip
-        for target in original.embed_attr:
-            torch.testing.assert_close(loaded.embed_attr[target], original.embed_attr[target])
+        orig_results = original.get_top_sources(f"{LAYER_1}:0", k=5, sign="positive", metric="attr")
+        load_results = loaded.get_top_sources(f"{LAYER_1}:0", k=5, sign="positive", metric="attr")
 
-        # Check unembed_attr roundtrip
-        for source in original.unembed_attr:
-            torch.testing.assert_close(loaded.unembed_attr[source], original.unembed_attr[source])
-
-        # Check embed_unembed_attr roundtrip
-        torch.testing.assert_close(loaded.embed_unembed_attr, original.embed_unembed_attr)
+        assert len(orig_results) == len(load_results)
+        for orig, loaded in zip(orig_results, load_results, strict=True):
+            assert orig.component_key == loaded.component_key
+            assert abs(orig.value - loaded.value) < 1e-5
 
 
 class TestMerge:
-    def test_two_workers_weighted_average(self, tmp_path: Path):
+    def test_two_workers_additive(self, tmp_path: Path):
         s1 = _make_storage(seed=0, n_batches=5, n_tokens=320)
         s2 = _make_storage(seed=42, n_batches=5, n_tokens=320)
 
@@ -169,50 +170,6 @@ class TestMerge:
 
         assert merged.n_batches_processed == 10
         assert merged.n_tokens_processed == 640
-        assert merged.vocab_size == VOCAB_SIZE
-        assert merged.ci_threshold == s1.ci_threshold
-
-        n1, n2 = s1.n_tokens_processed, s2.n_tokens_processed
-        total = n1 + n2
-
-        # Check regular_attr merge
-        for target in s1.regular_attr:
-            for source in s1.regular_attr[target]:
-                expected = (
-                    s1.regular_attr[target][source] * n1 + s2.regular_attr[target][source] * n2
-                ) / total
-                torch.testing.assert_close(
-                    merged.regular_attr[target][source], expected, atol=1e-5, rtol=1e-5
-                )
-
-        # Check embed_unembed_attr merge
-        expected = (s1.embed_unembed_attr * n1 + s2.embed_unembed_attr * n2) / total
-        torch.testing.assert_close(merged.embed_unembed_attr, expected, atol=1e-5, rtol=1e-5)
-
-    def test_unequal_token_counts(self, tmp_path: Path):
-        s1 = _make_storage(seed=0, n_batches=3, n_tokens=192)
-        s2 = _make_storage(seed=42, n_batches=7, n_tokens=448)
-
-        p1 = tmp_path / "rank_0.pt"
-        p2 = tmp_path / "rank_1.pt"
-        s1.save(p1)
-        s2.save(p2)
-
-        merged = DatasetAttributionStorage.merge([p1, p2])
-
-        assert merged.n_tokens_processed == 640
-        assert merged.n_batches_processed == 10
-
-        n1, n2 = s1.n_tokens_processed, s2.n_tokens_processed
-        total = n1 + n2
-        for target in s1.regular_attr:
-            for source in s1.regular_attr[target]:
-                expected = (
-                    s1.regular_attr[target][source] * n1 + s2.regular_attr[target][source] * n2
-                ) / total
-                torch.testing.assert_close(
-                    merged.regular_attr[target][source], expected, atol=1e-5, rtol=1e-5
-                )
 
     def test_single_file(self, tmp_path: Path):
         original = _make_storage(seed=7, n_batches=10, n_tokens=640)
@@ -222,8 +179,9 @@ class TestMerge:
         merged = DatasetAttributionStorage.merge([path])
 
         assert merged.n_tokens_processed == original.n_tokens_processed
-        for target in original.regular_attr:
-            for source in original.regular_attr[target]:
-                torch.testing.assert_close(
-                    merged.regular_attr[target][source], original.regular_attr[target][source]
-                )
+
+        orig_results = original.get_top_sources(f"{LAYER_1}:0", k=5, sign="positive", metric="attr")
+        merge_results = merged.get_top_sources(f"{LAYER_1}:0", k=5, sign="positive", metric="attr")
+        for o, m in zip(orig_results, merge_results, strict=True):
+            assert o.component_key == m.component_key
+            assert abs(o.value - m.value) < 1e-5

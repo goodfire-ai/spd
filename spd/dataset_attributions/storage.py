@@ -1,22 +1,25 @@
 """Storage classes for dataset attributions.
 
+Stores raw (unnormalized) attribution sums. Normalization happens at query time using
+stored metadata (CI sums, activation RMS, logit RMS).
+
 Four edge types, each with its own shape:
 - regular:        component → component  [tgt_c, src_c]  (signed + abs)
 - embed:          embed → component      [tgt_c, vocab]  (signed + abs)
 - unembed:        component → unembed    [d_model, src_c] (signed only, residual space)
 - embed_unembed:  embed → unembed        [d_model, vocab] (signed only, residual space)
 
-Output (unembed) attributions are stored in residual space. Token-level attributions
-are computed on-the-fly via w_unembed projection.
-
 Abs variants are unavailable for unembed edges because abs is a nonlinear operation
 incompatible with the residual-space storage trick.
+
+Normalization formula:
+    normed[t, s] = raw[t, s] / ci_sum[s] / target_rms[t]
+- ci_sum omitted for embed sources (no CI for embeddings)
+- target_rms is component activation RMS for component targets, logit RMS for output targets
 """
 
 import bisect
-from collections.abc import Callable
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
 from typing import Literal
 
@@ -26,6 +29,8 @@ from torch import Tensor
 from spd.log import logger
 
 AttrMetric = Literal["attr", "attr_abs"]
+
+EPS = 1e-10
 
 
 @dataclass
@@ -43,6 +48,9 @@ class DatasetAttributionStorage:
 
     All layer names use canonical addressing (e.g., "embed", "0.glu.up", "output").
 
+    Internally stores raw sums — normalization applied at query time.
+    Public interface: get_top_sources(), get_top_targets(), save/load/merge.
+
     Key formats:
         - embed tokens: "embed:{token_id}"
         - component layers: "canonical_layer:c_idx" (e.g., "0.glu.up:5")
@@ -58,18 +66,24 @@ class DatasetAttributionStorage:
         unembed_attr: dict[str, Tensor],
         embed_unembed_attr: Tensor,
         w_unembed: Tensor,
+        ci_sum: dict[str, Tensor],
+        component_act_sq_sum: dict[str, Tensor],
+        logit_sq_sum: Tensor,
         vocab_size: int,
         ci_threshold: float,
         n_batches_processed: int,
         n_tokens_processed: int,
     ):
-        self.regular_attr = regular_attr
-        self.regular_attr_abs = regular_attr_abs
-        self.embed_attr = embed_attr
-        self.embed_attr_abs = embed_attr_abs
-        self.unembed_attr = unembed_attr
-        self.embed_unembed_attr = embed_unembed_attr
-        self.w_unembed = w_unembed
+        self._regular_attr = regular_attr
+        self._regular_attr_abs = regular_attr_abs
+        self._embed_attr = embed_attr
+        self._embed_attr_abs = embed_attr_abs
+        self._unembed_attr = unembed_attr
+        self._embed_unembed_attr = embed_unembed_attr
+        self._w_unembed = w_unembed
+        self._ci_sum = ci_sum
+        self._component_act_sq_sum = component_act_sq_sum
+        self._logit_sq_sum = logit_sq_sum
         self.vocab_size = vocab_size
         self.ci_threshold = ci_threshold
         self.n_batches_processed = n_batches_processed
@@ -77,14 +91,13 @@ class DatasetAttributionStorage:
 
     @property
     def target_layers(self) -> set[str]:
-        return self.regular_attr.keys() | self.embed_attr.keys()
+        return self._regular_attr.keys() | self._embed_attr.keys()
 
     def _target_n_components(self, layer: str) -> int | None:
-        """Number of target components for a layer, or None if not a target."""
-        if layer in self.embed_attr:
-            return self.embed_attr[layer].shape[0]
-        if layer in self.regular_attr:
-            first_source = next(iter(self.regular_attr[layer].values()))
+        if layer in self._embed_attr:
+            return self._embed_attr[layer].shape[0]
+        if layer in self._regular_attr:
+            first_source = next(iter(self._regular_attr[layer].values()))
             return first_source.shape[0]
         return None
 
@@ -105,12 +118,23 @@ class DatasetAttributionStorage:
     def _select_metric(
         self, metric: AttrMetric
     ) -> tuple[dict[str, dict[str, Tensor]], dict[str, Tensor]]:
-        """Return (regular_dict, embed_dict) for the given metric."""
         match metric:
             case "attr":
-                return self.regular_attr, self.embed_attr
+                return self._regular_attr, self._embed_attr
             case "attr_abs":
-                return self.regular_attr_abs, self.embed_attr_abs
+                return self._regular_attr_abs, self._embed_attr_abs
+
+    def _component_rms(self, layer: str) -> Tensor:
+        """RMS activation for a component layer. Shape (n_components,)."""
+        return (self._component_act_sq_sum[layer] / self.n_tokens_processed).sqrt().clamp(min=EPS)
+
+    def _logit_rms(self) -> Tensor:
+        """RMS logit per token. Shape (vocab,)."""
+        return (self._logit_sq_sum / self.n_tokens_processed).sqrt().clamp(min=EPS)
+
+    def _ci_norm(self, layer: str) -> Tensor:
+        """CI sum for a source layer, clamped. Shape (n_components,)."""
+        return self._ci_sum[layer].clamp(min=EPS)
 
     def get_top_sources(
         self,
@@ -127,32 +151,30 @@ class DatasetAttributionStorage:
         if target_layer == "output":
             if metric == "attr_abs":
                 return []
-            w = self.w_unembed[:, target_idx].to(self.embed_unembed_attr.device)
+            w = self._w_unembed[:, target_idx].to(self._embed_unembed_attr.device)
+            target_norm = self._logit_rms()[target_idx]
 
-            # Component sources via unembed_attr
-            for source_layer, attr_matrix in self.unembed_attr.items():
-                values = w @ attr_matrix  # (d_model,) @ (d_model, src_c) → (src_c,)
-                value_segments.append(values)
+            for source_layer, attr_matrix in self._unembed_attr.items():
+                raw = w @ attr_matrix  # (src_c,)
+                value_segments.append(raw / self._ci_norm(source_layer) / target_norm)
                 layer_names.append(source_layer)
 
-            # Embed source via embed_unembed_attr
-            values = w @ self.embed_unembed_attr  # (d_model,) @ (d_model, vocab) → (vocab,)
-            value_segments.append(values)
+            raw = w @ self._embed_unembed_attr  # (vocab,)
+            value_segments.append(raw / target_norm)
             layer_names.append("embed")
         else:
             regular, embed = self._select_metric(metric)
+            target_norm = self._component_rms(target_layer)[target_idx]
 
-            # Component sources
             if target_layer in regular:
                 for source_layer, attr_matrix in regular[target_layer].items():
-                    values = attr_matrix[target_idx, :]
-                    value_segments.append(values)
+                    raw = attr_matrix[target_idx, :]  # (src_c,)
+                    value_segments.append(raw / self._ci_norm(source_layer) / target_norm)
                     layer_names.append(source_layer)
 
-            # Embed source
             if target_layer in embed:
-                values = embed[target_layer][target_idx, :]
-                value_segments.append(values)
+                raw = embed[target_layer][target_idx, :]  # (vocab,)
+                value_segments.append(raw / target_norm)
                 layer_names.append("embed")
 
         return self._top_k_from_segments(value_segments, layer_names, k, sign)
@@ -174,29 +196,30 @@ class DatasetAttributionStorage:
             regular, embed = self._select_metric(metric)
 
             for target_layer, attr_matrix in embed.items():
-                values = attr_matrix[:, source_idx]  # (tgt_c,)
-                value_segments.append(values)
+                raw = attr_matrix[:, source_idx]  # (tgt_c,)
+                value_segments.append(raw / self._component_rms(target_layer))
                 layer_names.append(target_layer)
 
             if include_outputs and metric == "attr":
-                residual = self.embed_unembed_attr[:, source_idx]  # (d_model,)
-                values = residual @ self.w_unembed  # (d_model,) @ (d_model, vocab) → (vocab,)
-                value_segments.append(values)
+                residual = self._embed_unembed_attr[:, source_idx]  # (d_model,)
+                raw = residual @ self._w_unembed  # (vocab,)
+                value_segments.append(raw / self._logit_rms())
                 layer_names.append("output")
         else:
             regular, embed = self._select_metric(metric)
+            ci = self._ci_norm(source_layer)[source_idx]
 
             for target_layer, sources in regular.items():
                 if source_layer not in sources:
                     continue
-                values = sources[source_layer][:, source_idx]  # (tgt_c,)
-                value_segments.append(values)
+                raw = sources[source_layer][:, source_idx]  # (tgt_c,)
+                value_segments.append(raw / ci / self._component_rms(target_layer))
                 layer_names.append(target_layer)
 
-            if include_outputs and metric == "attr" and source_layer in self.unembed_attr:
-                residual = self.unembed_attr[source_layer][:, source_idx]  # (d_model,)
-                values = residual @ self.w_unembed  # (d_model,) @ (d_model, vocab) → (vocab,)
-                value_segments.append(values)
+            if include_outputs and metric == "attr" and source_layer in self._unembed_attr:
+                residual = self._unembed_attr[source_layer][:, source_idx]  # (d_model,)
+                raw = residual @ self._w_unembed  # (vocab,)
+                value_segments.append(raw / ci / self._logit_rms())
                 layer_names.append("output")
 
         return self._top_k_from_segments(value_segments, layer_names, k, sign)
@@ -239,19 +262,18 @@ class DatasetAttributionStorage:
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-
-        to_cpu_nested = partial(_d_map_nested, lambda x: x.cpu())
-        to_cpu_flat = partial(_d_map, lambda x: x.cpu())
-
         torch.save(
             {
-                "regular_attr": to_cpu_nested(self.regular_attr),
-                "regular_attr_abs": to_cpu_nested(self.regular_attr_abs),
-                "embed_attr": to_cpu_flat(self.embed_attr),
-                "embed_attr_abs": to_cpu_flat(self.embed_attr_abs),
-                "unembed_attr": to_cpu_flat(self.unembed_attr),
-                "embed_unembed_attr": self.embed_unembed_attr.cpu(),
-                "w_unembed": self.w_unembed.cpu(),
+                "regular_attr": _to_cpu_nested(self._regular_attr),
+                "regular_attr_abs": _to_cpu_nested(self._regular_attr_abs),
+                "embed_attr": _to_cpu(self._embed_attr),
+                "embed_attr_abs": _to_cpu(self._embed_attr_abs),
+                "unembed_attr": _to_cpu(self._unembed_attr),
+                "embed_unembed_attr": self._embed_unembed_attr.cpu(),
+                "w_unembed": self._w_unembed.cpu(),
+                "ci_sum": _to_cpu(self._ci_sum),
+                "component_act_sq_sum": _to_cpu(self._component_act_sq_sum),
+                "logit_sq_sum": self._logit_sq_sum.cpu(),
                 "vocab_size": self.vocab_size,
                 "ci_threshold": self.ci_threshold,
                 "n_batches_processed": self.n_batches_processed,
@@ -273,6 +295,9 @@ class DatasetAttributionStorage:
             unembed_attr=data["unembed_attr"],
             embed_unembed_attr=data["embed_unembed_attr"],
             w_unembed=data["w_unembed"],
+            ci_sum=data["ci_sum"],
+            component_act_sq_sum=data["component_act_sq_sum"],
+            logit_sq_sum=data["logit_sq_sum"],
             vocab_size=data["vocab_size"],
             ci_threshold=data["ci_threshold"],
             n_batches_processed=data["n_batches_processed"],
@@ -283,73 +308,50 @@ class DatasetAttributionStorage:
     def merge(cls, paths: list[Path]) -> "DatasetAttributionStorage":
         """Merge partial attribution files from parallel workers.
 
-        Values are treated as means — merge is weighted average by n_tokens.
+        All stored values are raw sums — merge is element-wise addition.
         """
         assert paths, "No files to merge"
 
-        first = cls.load(paths[0])
-        n = first.n_tokens_processed
-
-        denorm_nested = partial(_d_map_nested, lambda x: (x * n).double())
-        denorm_flat = partial(_d_map, lambda x: (x * n).double())
-
-        total_regular = denorm_nested(first.regular_attr)
-        total_regular_abs = denorm_nested(first.regular_attr_abs)
-        total_embed = denorm_flat(first.embed_attr)
-        total_embed_abs = denorm_flat(first.embed_attr_abs)
-        total_unembed = denorm_flat(first.unembed_attr)
-        total_embed_unembed = (first.embed_unembed_attr * n).double()
-        total_tokens = n
-        total_batches = first.n_batches_processed
+        merged = cls.load(paths[0])
 
         for path in paths[1:]:
-            storage = cls.load(path)
-            assert storage.ci_threshold == first.ci_threshold, "CI threshold mismatch"
-            n = storage.n_tokens_processed
+            other = cls.load(path)
+            assert other.ci_threshold == merged.ci_threshold, "CI threshold mismatch"
 
-            for target, sources in storage.regular_attr.items():
+            for target, sources in other._regular_attr.items():
                 for source, tensor in sources.items():
-                    total_regular[target][source] += (tensor * n).double()
-                    total_regular_abs[target][source] += (
-                        storage.regular_attr_abs[target][source] * n
-                    ).double()
+                    merged._regular_attr[target][source] += tensor
+                    merged._regular_attr_abs[target][source] += other._regular_attr_abs[target][
+                        source
+                    ]
 
-            for target, tensor in storage.embed_attr.items():
-                total_embed[target] += (tensor * n).double()
-                total_embed_abs[target] += (storage.embed_attr_abs[target] * n).double()
+            for target, tensor in other._embed_attr.items():
+                merged._embed_attr[target] += tensor
+                merged._embed_attr_abs[target] += other._embed_attr_abs[target]
 
-            for source, tensor in storage.unembed_attr.items():
-                total_unembed[source] += (tensor * n).double()
+            for source, tensor in other._unembed_attr.items():
+                merged._unembed_attr[source] += tensor
 
-            total_embed_unembed += (storage.embed_unembed_attr * n).double()
-            total_tokens += n
-            total_batches += storage.n_batches_processed
+            merged._embed_unembed_attr += other._embed_unembed_attr
 
-        norm_nested = partial(_d_map_nested, lambda x: (x / total_tokens).float())
-        norm_flat = partial(_d_map, lambda x: (x / total_tokens).float())
+            for layer in other._ci_sum:
+                merged._ci_sum[layer] += other._ci_sum[layer]
 
-        return cls(
-            regular_attr=norm_nested(total_regular),
-            regular_attr_abs=norm_nested(total_regular_abs),
-            embed_attr=norm_flat(total_embed),
-            embed_attr_abs=norm_flat(total_embed_abs),
-            unembed_attr=norm_flat(total_unembed),
-            embed_unembed_attr=(total_embed_unembed / total_tokens).float(),
-            w_unembed=first.w_unembed,
-            vocab_size=first.vocab_size,
-            ci_threshold=first.ci_threshold,
-            n_batches_processed=total_batches,
-            n_tokens_processed=total_tokens,
-        )
+            for layer in other._component_act_sq_sum:
+                merged._component_act_sq_sum[layer] += other._component_act_sq_sum[layer]
+
+            merged._logit_sq_sum += other._logit_sq_sum
+            merged.n_tokens_processed += other.n_tokens_processed
+            merged.n_batches_processed += other.n_batches_processed
+
+        return merged
 
 
-def _d_map_nested(
-    f: Callable[[Tensor], Tensor], d: dict[str, dict[str, Tensor]]
-) -> dict[str, dict[str, Tensor]]:
+def _to_cpu_nested(d: dict[str, dict[str, Tensor]]) -> dict[str, dict[str, Tensor]]:
     return {
-        target: {source: f(v) for source, v in sources.items()} for target, sources in d.items()
+        target: {source: v.cpu() for source, v in sources.items()} for target, sources in d.items()
     }
 
 
-def _d_map(f: Callable[[Tensor], Tensor], d: dict[str, Tensor]) -> dict[str, Tensor]:
-    return {k: f(v) for k, v in d.items()}
+def _to_cpu(d: dict[str, Tensor]) -> dict[str, Tensor]:
+    return {k: v.cpu() for k, v in d.items()}

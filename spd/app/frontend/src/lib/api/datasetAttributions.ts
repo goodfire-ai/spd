@@ -31,9 +31,7 @@ export type DatasetAttributionsMetadata = {
 };
 
 export async function getDatasetAttributionsMetadata(): Promise<DatasetAttributionsMetadata> {
-    return fetchJson<DatasetAttributionsMetadata>(
-        apiUrl("/api/dataset_attributions/metadata").toString(),
-    );
+    return fetchJson<DatasetAttributionsMetadata>(apiUrl("/api/dataset_attributions/metadata").toString());
 }
 
 export async function getComponentAttributions(
