@@ -56,6 +56,29 @@ SCRIPT_DIR = Path(__file__).parent
 
 AblationMode = Literal["deterministic", "stochastic", "adversarial"]
 
+
+@dataclass
+class ComponentHeadAblation:
+    """Subtract a component's contribution from a specific head's q/k at a position."""
+
+    layer: int
+    qk: Literal["q", "k"]
+    v_col: Tensor  # (d_in,)
+    u_row: Tensor  # (d_out,)
+    head: int
+    pos: int
+
+
+def _extract_component_vectors(
+    spd_model: ComponentModel,
+    module_name: str,
+    comp_idx: int,
+) -> tuple[Tensor, Tensor]:
+    """Return (V_col, U_row) for a specific component. Both detached."""
+    components = spd_model.components[module_name]
+    return components.V[:, comp_idx].detach(), components.U[comp_idx, :].detach()
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Parsing helpers
 # ──────────────────────────────────────────────────────────────────────────────
@@ -104,6 +127,7 @@ def patched_attention_forward(
     head_pos_ablations: list[tuple[int, int, int]] | None = None,
     value_pos_ablations: list[tuple[int, int]] | None = None,
     value_head_pos_ablations: list[tuple[int, int, int]] | None = None,
+    component_head_ablations: list[ComponentHeadAblation] | None = None,
 ) -> Generator[AttentionData]:
     """Replace each CausalSelfAttention.forward to capture attention patterns and values.
 
@@ -132,6 +156,18 @@ def patched_attention_forward(
                 q = attn_module.q_proj(x)
                 k = attn_module.k_proj(x)
                 v = attn_module.v_proj(x)
+
+                if component_head_ablations is not None:
+                    for abl in component_head_ablations:
+                        if abl.layer == li and abl.pos < T:
+                            comp_act = x[:, abl.pos, :] @ abl.v_col.to(x.device)
+                            comp_out = comp_act.unsqueeze(-1) * abl.u_row.to(x.device)
+                            hd = attn_module.head_dim
+                            hs = slice(abl.head * hd, (abl.head + 1) * hd)
+                            if abl.qk == "q":
+                                q[:, abl.pos, hs] -= comp_out[:, hs]
+                            else:
+                                k[:, abl.pos, hs] -= comp_out[:, hs]
 
                 q = q.view(B, T, attn_module.n_head, attn_module.head_dim).transpose(1, 2)
                 k = k.view(B, T, attn_module.n_key_value_heads, attn_module.head_dim).transpose(
@@ -564,6 +600,32 @@ def _build_prev_token_component_positions(
     return positions
 
 
+def _build_component_head_ablations(
+    spd_model: ComponentModel,
+    parsed_components: list[tuple[str, int]],
+    heads: list[tuple[int, int]],
+    t: int,
+) -> list[ComponentHeadAblation]:
+    """Build per-head component ablations: q components at t, k components at t-1."""
+    ablations: list[ComponentHeadAblation] = []
+    for module_name, comp_idx in parsed_components:
+        v_col, u_row = _extract_component_vectors(spd_model, module_name, comp_idx)
+        if "q_proj" in module_name:
+            qk: Literal["q", "k"] = "q"
+            pos = t
+        elif "k_proj" in module_name:
+            qk = "k"
+            pos = t - 1
+        else:
+            raise AssertionError(
+                f"per-head component ablation only supports q_proj/k_proj, got {module_name!r}"
+            )
+        layer = _infer_layer_from_components([(module_name, comp_idx)])
+        for _layer, head in heads:
+            ablations.append(ComponentHeadAblation(layer, qk, v_col, u_row, head, pos))
+    return ablations
+
+
 def _build_stochastic_masks(
     _model: ComponentModel,
     ci: dict[str, Float[Tensor, "batch C"]],
@@ -890,12 +952,17 @@ def _capture_attn_outputs(
     head_pos_ablations: list[tuple[int, int, int]] | None = None,
     value_pos_ablations: list[tuple[int, int]] | None = None,
     value_head_pos_ablations: list[tuple[int, int, int]] | None = None,
+    component_head_ablations: list[ComponentHeadAblation] | None = None,
     spd_model: ComponentModel | None = None,
     mask_infos: dict[str, ComponentsMaskInfo] | None = None,
 ) -> tuple[AttnOutputs, Tensor]:
     """Run a forward pass capturing attention outputs and logits."""
     with patched_attention_forward(
-        target_model, head_pos_ablations, value_pos_ablations, value_head_pos_ablations
+        target_model,
+        head_pos_ablations,
+        value_pos_ablations,
+        value_head_pos_ablations,
+        component_head_ablations,
     ) as data:
         if spd_model is not None:
             out = spd_model(input_ids, mask_infos=mask_infos)
@@ -1014,6 +1081,82 @@ def _run_prev_token_component_ablation(
     )
 
 
+def _run_prev_token_head_restricted_component_ablation(
+    spd_model: ComponentModel,
+    target_model: LlamaSimpleMLP,
+    input_ids: Int[Tensor, "batch pos"],
+    parsed_components: list[tuple[str, int]],
+    restrict_heads: list[tuple[int, int]],
+    value_heads: list[tuple[int, int]],
+    t: int,
+) -> PrevTokenSampleResult:
+    """Per-head component ablation: subtract component contributions from specific heads only."""
+    layer = _infer_layer_from_components(parsed_components)
+    comp_head_abls = _build_component_head_ablations(
+        spd_model, parsed_components, restrict_heads, t
+    )
+    batch_shape = (input_ids.shape[0], input_ids.shape[1])
+
+    # All-ones baseline masks (SPD model reconstructs original output)
+    baseline_masks, _ = _build_deterministic_masks(spd_model, [], batch_shape, input_ids.device, t)
+    val_all = [(layer, t - 1)]
+    val_specific = [(layer, head, t - 1) for layer, head in value_heads]
+
+    baseline_outs, baseline_logits = _capture_attn_outputs(
+        target_model, input_ids, spd_model=spd_model, mask_infos=baseline_masks
+    )
+    a_outs, a_logits = _capture_attn_outputs(
+        target_model,
+        input_ids,
+        component_head_ablations=comp_head_abls,
+        spd_model=spd_model,
+        mask_infos=baseline_masks,
+    )
+    b_all_outs, _b_all_logits = _capture_attn_outputs(
+        target_model,
+        input_ids,
+        value_pos_ablations=val_all,
+        spd_model=spd_model,
+        mask_infos=baseline_masks,
+    )
+    b_spec_outs, _b_spec_logits = _capture_attn_outputs(
+        target_model,
+        input_ids,
+        value_head_pos_ablations=val_specific,
+        spd_model=spd_model,
+        mask_infos=baseline_masks,
+    )
+    ab_all_outs, a_b_all_logits = _capture_attn_outputs(
+        target_model,
+        input_ids,
+        component_head_ablations=comp_head_abls,
+        value_pos_ablations=val_all,
+        spd_model=spd_model,
+        mask_infos=baseline_masks,
+    )
+    ab_spec_outs, a_b_spec_logits = _capture_attn_outputs(
+        target_model,
+        input_ids,
+        component_head_ablations=comp_head_abls,
+        value_head_pos_ablations=val_specific,
+        spd_model=spd_model,
+        mask_infos=baseline_masks,
+    )
+
+    return PrevTokenSampleResult(
+        baseline_outs,
+        a_outs,
+        b_all_outs,
+        b_spec_outs,
+        ab_all_outs,
+        ab_spec_outs,
+        baseline_logits,
+        a_logits,
+        a_b_all_logits,
+        a_b_spec_logits,
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Main entry point
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1058,6 +1201,7 @@ def _run_prev_token_loop(
     parsed_heads: list[tuple[int, int]],
     parsed_components: list[tuple[str, int]],
     parsed_value_heads: list[tuple[int, int]],
+    parsed_restrict_heads: list[tuple[int, int]],
     n_samples: int,
     max_plot_samples: int,
     max_pos: int,
@@ -1093,6 +1237,17 @@ def _run_prev_token_loop(
             if is_head_ablation:
                 result = _run_prev_token_head_ablation(
                     target_model, input_ids, parsed_heads, parsed_value_heads, t
+                )
+            elif parsed_restrict_heads:
+                assert spd_model is not None
+                result = _run_prev_token_head_restricted_component_ablation(
+                    spd_model,
+                    target_model,
+                    input_ids,
+                    parsed_components,
+                    parsed_restrict_heads,
+                    parsed_value_heads,
+                    t,
                 )
             else:
                 assert spd_model is not None
@@ -1195,6 +1350,7 @@ def run_attention_ablation(
     max_pos: int = 128,
     prev_token_test: bool = False,
     value_heads: str | None = None,
+    restrict_to_heads: str | None = None,
     seed: int = 42,
 ) -> None:
     torch.manual_seed(seed)
@@ -1204,10 +1360,14 @@ def run_attention_ablation(
     assert (heads is None) != (components is None), "Provide exactly one of --heads or --components"
     if prev_token_test:
         assert value_heads is not None, "--value_heads required when --prev_token_test is set"
+    if restrict_to_heads is not None:
+        assert components is not None, "--restrict_to_heads requires --components"
+        assert prev_token_test, "--restrict_to_heads requires --prev_token_test"
     is_head_ablation = heads is not None
     parsed_heads = parse_heads(heads) if heads else []
     parsed_components = parse_components(components) if components else []
     parsed_value_heads = parse_heads(value_heads) if value_heads else []
+    parsed_restrict_heads = parse_heads(restrict_to_heads) if restrict_to_heads else []
 
     _entity, _project, run_id = parse_wandb_run_path(str(wandb_path))
     run_info = SPDRunInfo.from_path(wandb_path)
@@ -1284,6 +1444,7 @@ def run_attention_ablation(
             parsed_heads=parsed_heads,
             parsed_components=parsed_components,
             parsed_value_heads=parsed_value_heads,
+            parsed_restrict_heads=parsed_restrict_heads,
             n_samples=n_samples,
             max_plot_samples=max_plot_samples,
             max_pos=max_pos,
