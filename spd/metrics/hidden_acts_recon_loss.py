@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Literal, override
+from typing import Any, ClassVar, override
 
 import torch
 import torch.nn.functional as F
@@ -10,16 +10,14 @@ from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
-from spd.persistent_pgd import PPGDSources, get_ppgd_mask_infos
 from spd.routing import AllLayersRouter
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 PerModuleMSE = dict[str, tuple[Float[Tensor, ""], int]]
 
 
-def _calc_hidden_acts_mse(
+def calc_hidden_acts_mse(
     model: ComponentModel,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     mask_infos: dict[str, ComponentsMaskInfo],
@@ -80,7 +78,7 @@ def _stochastic_hidden_acts_recon_loss_update(
         for _ in range(n_mask_samples)
     ]
     for stoch_mask_infos in stoch_mask_infos_list:
-        per_module, _ = _calc_hidden_acts_mse(
+        per_module, _ = calc_hidden_acts_mse(
             model=model,
             batch=batch,
             mask_infos=stoch_mask_infos,
@@ -97,7 +95,7 @@ def _hidden_acts_recon_loss_compute(
     return sum_mse / n_examples
 
 
-def _compute_per_module_metrics(
+def compute_per_module_metrics(
     class_name: str,
     per_module_sum_mse: dict[str, Tensor],
     per_module_n_examples: dict[str, Tensor],
@@ -184,7 +182,7 @@ class StochasticHiddenActsReconLoss(Metric):
 
     @override
     def compute(self) -> dict[str, Float[Tensor, ""]]:
-        return _compute_per_module_metrics(
+        return compute_per_module_metrics(
             class_name=type(self).__name__,
             per_module_sum_mse=self.per_module_sum_mse,
             per_module_n_examples=self.per_module_n_examples,
@@ -213,7 +211,7 @@ class CIHiddenActsReconLoss(Metric):
     ) -> None:
         target_acts = self.model(batch, cache_type="output").cache
         mask_infos = make_mask_infos(ci.lower_leaky, weight_deltas_and_masks=None)
-        per_module, _output = _calc_hidden_acts_mse(
+        per_module, _output = calc_hidden_acts_mse(
             model=self.model,
             batch=batch,
             mask_infos=mask_infos,
@@ -228,85 +226,8 @@ class CIHiddenActsReconLoss(Metric):
 
     @override
     def compute(self) -> dict[str, Float[Tensor, ""]]:
-        return _compute_per_module_metrics(
+        return compute_per_module_metrics(
             class_name=type(self).__name__,
             per_module_sum_mse=self.per_module_sum_mse,
             per_module_n_examples=self.per_module_n_examples,
         )
-
-
-class PPGDEvalLosses(Metric):
-    """Eval losses using persistent PGD masks: hidden activation MSE and output reconstruction."""
-
-    slow: ClassVar[bool] = True
-    metric_section: ClassVar[str] = "loss"
-
-    def __init__(
-        self,
-        model: ComponentModel,
-        device: str,
-        ppgd_effective_sources: PPGDSources,
-        use_delta_component: bool,
-        output_loss_type: Literal["mse", "kl"],
-        name_suffix: str = "",
-    ) -> None:
-        self.model = model
-        self.ppgd_effective_sources = ppgd_effective_sources
-        self.use_delta_component = use_delta_component
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
-        self.device = device
-        self._name_suffix = name_suffix
-        self.per_module_sum_mse: dict[str, Tensor] = {}
-        self.per_module_n_examples: dict[str, Tensor] = {}
-        self.output_recon_sum_loss = torch.tensor(0.0, device=device)
-        self.output_recon_n_examples = torch.tensor(0, device=device)
-
-    @override
-    def update(
-        self,
-        *,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        ci: CIOutputs,
-        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
-        target_out: Float[Tensor, "..."],
-        **_: Any,
-    ) -> None:
-        target_acts = self.model(batch, cache_type="output").cache
-        batch_dims = next(iter(ci.lower_leaky.values())).shape[:-1]
-        mask_infos = get_ppgd_mask_infos(
-            ci=ci.lower_leaky,
-            weight_deltas=weight_deltas if self.use_delta_component else None,
-            ppgd_sources=self.ppgd_effective_sources,
-            routing_masks="all",
-            batch_dims=batch_dims,
-        )
-        per_module, comp_output = _calc_hidden_acts_mse(
-            model=self.model,
-            batch=batch,
-            mask_infos=mask_infos,
-            target_acts=target_acts,
-        )
-        for key, (mse, n) in per_module.items():
-            if key not in self.per_module_sum_mse:
-                self.per_module_sum_mse[key] = torch.tensor(0.0, device=self.device)
-                self.per_module_n_examples[key] = torch.tensor(0, device=self.device)
-            self.per_module_sum_mse[key] += mse.detach()
-            self.per_module_n_examples[key] += n
-        output_loss = calc_sum_recon_loss_lm(
-            pred=comp_output, target=target_out, loss_type=self.output_loss_type
-        )
-        self.output_recon_sum_loss += output_loss.detach()
-        self.output_recon_n_examples += target_out.numel()
-
-    @override
-    def compute(self) -> dict[str, Float[Tensor, ""]]:
-        class_name = type(self).__name__ + self._name_suffix
-        out = _compute_per_module_metrics(
-            class_name=f"{class_name}/hidden_acts",
-            per_module_sum_mse=self.per_module_sum_mse,
-            per_module_n_examples=self.per_module_n_examples,
-        )
-        sum_loss = all_reduce(self.output_recon_sum_loss, op=ReduceOp.SUM)
-        n_examples = all_reduce(self.output_recon_n_examples.float(), op=ReduceOp.SUM)
-        out[f"{class_name}/output_recon"] = sum_loss / n_examples
-        return out

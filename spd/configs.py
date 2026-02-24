@@ -591,6 +591,10 @@ class CIHiddenActsReconLossConfig(BaseConfig):
     classname: Literal["CIHiddenActsReconLoss"] = "CIHiddenActsReconLoss"
 
 
+class PPGDEvalLossesConfig(BaseConfig):
+    classname: Literal["PPGDEvalLosses"] = "PPGDEvalLosses"
+
+
 #### Metrics that can only be used in eval ####
 class CEandKLLossesConfig(BaseConfig):
     classname: Literal["CEandKLLosses"] = "CEandKLLosses"
@@ -671,6 +675,7 @@ EvalOnlyMetricConfigType = (
     | CIMeanPerComponentConfig
     | ComponentActivationDensityConfig
     | IdentityCIErrorConfig
+    | PPGDEvalLossesConfig
     | PermutedCIPlotsConfig
     | UVPlotsConfig
     | StochasticReconSubsetCEAndKLConfig

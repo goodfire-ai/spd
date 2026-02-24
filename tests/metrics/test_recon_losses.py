@@ -11,8 +11,8 @@ from spd.configs import PGDConfig
 from spd.metrics import ci_masked_recon_loss, pgd_recon_loss, stochastic_recon_loss
 from spd.metrics.hidden_acts_recon_loss import (
     CIHiddenActsReconLoss,
-    _calc_hidden_acts_mse,
     _sum_per_module_mse,
+    calc_hidden_acts_mse,
 )
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
@@ -184,7 +184,7 @@ def test_per_module_recon_manual_calculation() -> None:
     # Actual computation
     target_acts = model(batch, cache_type="output").cache
     mask_infos = make_mask_infos(ci, weight_deltas_and_masks=None)
-    per_module, _ = _calc_hidden_acts_mse(model, batch, mask_infos, target_acts)
+    per_module, _ = calc_hidden_acts_mse(model, batch, mask_infos, target_acts)
     sum_mse, n_examples = _sum_per_module_mse(per_module)
     actual_total = sum_mse / n_examples
 

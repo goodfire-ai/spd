@@ -32,6 +32,7 @@ from spd.configs import (
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
+    PPGDEvalLossesConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
@@ -51,11 +52,7 @@ from spd.metrics.ci_masked_recon_subset_loss import CIMaskedReconSubsetLoss
 from spd.metrics.ci_mean_per_component import CIMeanPerComponent
 from spd.metrics.component_activation_density import ComponentActivationDensity
 from spd.metrics.faithfulness_loss import FaithfulnessLoss
-from spd.metrics.hidden_acts_recon_loss import (
-    CIHiddenActsReconLoss,
-    PPGDEvalLosses,
-    StochasticHiddenActsReconLoss,
-)
+from spd.metrics.hidden_acts_recon_loss import CIHiddenActsReconLoss, StochasticHiddenActsReconLoss
 from spd.metrics.identity_ci_error import IdentityCIError
 from spd.metrics.importance_minimality_loss import ImportanceMinimalityLoss
 from spd.metrics.permuted_ci_plots import PermutedCIPlots
@@ -63,6 +60,7 @@ from spd.metrics.pgd_masked_recon_layerwise_loss import PGDReconLayerwiseLoss
 from spd.metrics.pgd_masked_recon_loss import PGDReconLoss
 from spd.metrics.pgd_masked_recon_subset_loss import PGDReconSubsetLoss
 from spd.metrics.pgd_utils import CreateDataIter, calc_multibatch_pgd_masked_recon_loss
+from spd.metrics.ppgd_eval_losses import PPGDEvalLosses
 from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwiseLoss
 from spd.metrics.stochastic_recon_loss import StochasticReconLoss
 from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetCEAndKL
@@ -129,6 +127,9 @@ def init_metric(
     model: ComponentModel,
     run_config: Config,
     device: str,
+    ppgd_states: dict[
+        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PersistentPGDState
+    ],
 ) -> Metric:
     match cfg:
         case ImportanceMinimalityLossConfig():
@@ -270,6 +271,15 @@ def init_metric(
             )
         case CIHiddenActsReconLossConfig():
             metric = CIHiddenActsReconLoss(model=model, device=device)
+        case PPGDEvalLossesConfig():
+            assert ppgd_states, "PPGDEvalLosses requires persistent PGD loss configs"
+            metric = PPGDEvalLosses(
+                model=model,
+                device=device,
+                ppgd_states=ppgd_states,
+                use_delta_component=run_config.use_delta_component,
+                output_loss_type=run_config.output_loss_type,
+            )
         case UVPlotsConfig():
             metric = UVPlots(
                 model=model,
@@ -322,25 +332,11 @@ def evaluate(
             model=model,
             run_config=run_config,
             device=device,
+            ppgd_states=ppgd_states,
         )
         if metric.slow and not slow_step:
             continue
         metrics.append(metric)
-
-    # Auto-create PPGDEvalLosses for each persistent PGD state
-    for ppgd_cfg, state in ppgd_states.items():
-        name_suffix = "" if len(ppgd_states) == 1 else f"_{type(ppgd_cfg).__name__}"
-        ppgd_eval = PPGDEvalLosses(
-            model=model,
-            device=device,
-            ppgd_effective_sources=state.get_effective_sources(),
-            use_delta_component=run_config.use_delta_component,
-            output_loss_type=run_config.output_loss_type,
-            name_suffix=name_suffix,
-        )
-        if ppgd_eval.slow and not slow_step:
-            continue
-        metrics.append(ppgd_eval)
 
     # Weight deltas can be computed once per eval since params are frozen
     weight_deltas = model.calc_weight_deltas()
