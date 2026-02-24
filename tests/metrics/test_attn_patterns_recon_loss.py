@@ -2,12 +2,14 @@ import torch
 
 from spd.configs import LayerwiseCiConfig
 from spd.metrics.attn_patterns_recon_loss import (
+    _compute_attn_patterns,
     ci_masked_attn_patterns_recon_loss,
     stochastic_attn_patterns_recon_loss,
 )
 from spd.models.component_model import ComponentModel
 from spd.pretrain.models.gpt2 import GPT2, GPT2Config
 from spd.pretrain.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
+from spd.pretrain.models.llama_simple import LlamaSimple, LlamaSimpleConfig
 from spd.utils.module_utils import ModulePathInfo
 
 
@@ -260,3 +262,116 @@ class TestCAttnPatternsReconLoss:
         )
 
         assert loss.item() > 0.01, f"Expected KL > 0 with random init, got {loss.item()}"
+
+
+def _make_llama_component_model(n_embd: int = 16, n_head: int = 2) -> ComponentModel:
+    """Create a 1-layer LlamaSimple with RoPE, wrapped in ComponentModel with q_proj/k_proj."""
+    config = LlamaSimpleConfig(
+        model_type="LlamaSimple",
+        block_size=32,
+        vocab_size=64,
+        n_layer=1,
+        n_head=n_head,
+        n_embd=n_embd,
+        n_intermediate=n_embd * 4 * 2 // 3,
+        use_grouped_query_attention=True,
+        n_key_value_heads=n_head,
+        flash_attention=False,
+        n_ctx=32,
+        rotary_dim=n_embd // n_head,
+    )
+    target = LlamaSimple(config)
+    target.requires_grad_(False)
+
+    module_path_info = [
+        ModulePathInfo(module_path="h.0.attn.q_proj", C=n_embd),
+        ModulePathInfo(module_path="h.0.attn.k_proj", C=n_embd),
+    ]
+
+    return ComponentModel(
+        target_model=target,
+        module_path_info=module_path_info,
+        ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[8]),
+        pretrained_model_output_attr="idx_0",
+        sigmoid_type="leaky_hard",
+    )
+
+
+class TestRoPEAttnPatternsReconLoss:
+    def test_rope_identity_decomposition_kl_near_zero(self) -> None:
+        """Identity decomposition with auto-detected RoPE should give KL ~ 0."""
+        torch.manual_seed(42)
+        n_embd = 16
+        n_head = 2
+        model = _make_llama_component_model(n_embd=n_embd, n_head=n_head)
+
+        for path in ["h.0.attn.q_proj", "h.0.attn.k_proj"]:
+            target_weight = model.target_weight(path)
+            with torch.no_grad():
+                model.components[path].V.copy_(target_weight.T)
+                model.components[path].U.copy_(torch.eye(n_embd))
+
+        batch = torch.randint(0, 64, (2, 8))
+        target_output = model(batch, cache_type="input")
+        pre_weight_acts = target_output.cache
+        ci = model.calc_causal_importances(
+            pre_weight_acts=pre_weight_acts, detach_inputs=False, sampling="continuous"
+        )
+
+        loss = ci_masked_attn_patterns_recon_loss(
+            model=model,
+            batch=batch,
+            pre_weight_acts=pre_weight_acts,
+            ci=ci.lower_leaky,
+            n_heads=n_head,
+            q_proj_path="h.*.attn.q_proj",
+            k_proj_path="h.*.attn.k_proj",
+            c_attn_path=None,
+        )
+
+        assert loss.item() < 1e-4, f"Expected KL ≈ 0 with identity decomposition, got {loss.item()}"
+
+    def test_rope_random_init_kl_positive(self) -> None:
+        """Random init with RoPE should give KL > 0."""
+        torch.manual_seed(42)
+        n_embd = 16
+        n_head = 2
+        model = _make_llama_component_model(n_embd=n_embd, n_head=n_head)
+
+        batch = torch.randint(0, 64, (2, 8))
+        target_output = model(batch, cache_type="input")
+        pre_weight_acts = target_output.cache
+        ci = model.calc_causal_importances(
+            pre_weight_acts=pre_weight_acts, detach_inputs=False, sampling="continuous"
+        )
+
+        loss = ci_masked_attn_patterns_recon_loss(
+            model=model,
+            batch=batch,
+            pre_weight_acts=pre_weight_acts,
+            ci=ci.lower_leaky,
+            n_heads=n_head,
+            q_proj_path="h.*.attn.q_proj",
+            k_proj_path="h.*.attn.k_proj",
+            c_attn_path=None,
+        )
+
+        assert loss.item() > 0.01, f"Expected KL > 0 with random init, got {loss.item()}"
+
+    def test_rope_changes_patterns(self) -> None:
+        """Applying RoPE should produce different attention patterns than without."""
+        torch.manual_seed(42)
+        n_embd = 16
+        n_head = 2
+        model = _make_llama_component_model(n_embd=n_embd, n_head=n_head)
+        attn_module = model.target_model.get_submodule("h.0.attn")
+
+        q = torch.randn(2, 8, n_embd)
+        k = torch.randn(2, 8, n_embd)
+
+        patterns_without_rope = _compute_attn_patterns(q, k, n_head, attn_module=None)
+        patterns_with_rope = _compute_attn_patterns(q, k, n_head, attn_module=attn_module)
+
+        assert not torch.allclose(patterns_without_rope, patterns_with_rope, atol=1e-6), (
+            "RoPE should change attention patterns"
+        )

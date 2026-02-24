@@ -5,7 +5,7 @@ from typing import Any, ClassVar, override
 import torch
 import torch.nn.functional as F
 from jaxtyping import Float, Int
-from torch import Tensor
+from torch import Tensor, nn
 from torch.distributed import ReduceOp
 
 from spd.configs import SamplingType
@@ -46,16 +46,49 @@ def _resolve_qk_paths(
     return q_paths, k_paths, False
 
 
+def _resolve_attn_modules(
+    model: ComponentModel,
+    q_paths: list[str],
+) -> list[nn.Module | None]:
+    """Derive parent attention module from Q paths, returning it if it has RoPE support.
+
+    For each Q path (e.g. "h.0.attn.q_proj"), strips the last segment to get the parent
+    attention module (e.g. "h.0.attn"). Returns the module if it has `apply_rotary_pos_emb`,
+    otherwise None.
+    """
+    result: list[nn.Module | None] = []
+    for q_path in q_paths:
+        parent_path = q_path.rsplit(".", 1)[0]
+        attn_module = model.target_model.get_submodule(parent_path)
+        if hasattr(attn_module, "apply_rotary_pos_emb"):
+            result.append(attn_module)
+        else:
+            result.append(None)
+    return result
+
+
 def _compute_attn_patterns(
     q: Float[Tensor, "batch seq d"],
     k: Float[Tensor, "batch seq d"],
     n_heads: int,
+    attn_module: nn.Module | None,
 ) -> Float[Tensor, "batch n_heads seq seq"]:
-    """Compute causal attention patterns from Q and K projections."""
+    """Compute causal attention patterns from Q and K projections.
+
+    If attn_module is provided (has RoPE), applies rotary positional embeddings to Q and K
+    before computing the dot-product attention.
+    """
     B, S, D = q.shape
     head_dim = D // n_heads
     q = q.view(B, S, n_heads, head_dim).transpose(1, 2)
     k = k.view(B, S, n_heads, head_dim).transpose(1, 2)
+
+    if attn_module is not None:
+        position_ids = torch.arange(S, device=q.device).unsqueeze(0)
+        cos = attn_module.rotary_cos[position_ids].to(q.dtype)  # pyright: ignore[reportIndexIssue]
+        sin = attn_module.rotary_sin[position_ids].to(q.dtype)  # pyright: ignore[reportIndexIssue]
+        q, k = attn_module.apply_rotary_pos_emb(q, k, cos, sin)  # pyright: ignore[reportCallIssue]
+
     attn = (q @ k.transpose(-2, -1)) / math.sqrt(head_dim)
     causal_mask = torch.triu(torch.ones(S, S, device=q.device, dtype=torch.bool), diagonal=1)
     attn = attn.masked_fill(causal_mask, float("-inf"))
@@ -79,11 +112,12 @@ def _attn_patterns_recon_loss_update(
     k_paths: list[str],
     is_combined: bool,
     n_heads: int,
+    attn_modules: list[nn.Module | None],
 ) -> tuple[Float[Tensor, ""], int]:
     """Shared update logic for both CI-masked and stochastic variants."""
     # 1. Compute target attention patterns from pre_weight_acts
     target_patterns: list[Float[Tensor, "batch n_heads seq seq"]] = []
-    for q_path, k_path in zip(q_paths, k_paths, strict=True):
+    for i, (q_path, k_path) in enumerate(zip(q_paths, k_paths, strict=True)):
         if is_combined:
             assert q_path == k_path
             target_out = model.components[q_path](pre_weight_acts[q_path])
@@ -91,7 +125,9 @@ def _attn_patterns_recon_loss_update(
         else:
             target_q = model.components[q_path](pre_weight_acts[q_path])
             target_k = model.components[k_path](pre_weight_acts[k_path])
-        target_patterns.append(_compute_attn_patterns(target_q, target_k, n_heads).detach())
+        target_patterns.append(
+            _compute_attn_patterns(target_q, target_k, n_heads, attn_modules[i]).detach()
+        )
 
     # 2. Compute masked attention patterns and KL divergence
     device = get_obj_device(pre_weight_acts)
@@ -122,7 +158,9 @@ def _attn_patterns_recon_loss_update(
                     weight_delta_and_mask=mask_infos[k_path].weight_delta_and_mask,
                 )
 
-            masked_patterns = _compute_attn_patterns(masked_q, masked_k, n_heads)
+            masked_patterns = _compute_attn_patterns(
+                masked_q, masked_k, n_heads, attn_modules[i]
+            )
             # KL(target || masked): sum over attention distribution dimension
             kl = F.kl_div(
                 masked_patterns.clamp(min=1e-12).log(),
@@ -157,6 +195,7 @@ def ci_masked_attn_patterns_recon_loss(
     c_attn_path: str | None,
 ) -> Float[Tensor, ""]:
     q_paths, k_paths, is_combined = _resolve_qk_paths(model, q_proj_path, k_proj_path, c_attn_path)
+    attn_modules = _resolve_attn_modules(model, q_paths)
     mask_infos = make_mask_infos(ci, weight_deltas_and_masks=None)
     sum_kl, n_distributions = _attn_patterns_recon_loss_update(
         model=model,
@@ -167,6 +206,7 @@ def ci_masked_attn_patterns_recon_loss(
         k_paths=k_paths,
         is_combined=is_combined,
         n_heads=n_heads,
+        attn_modules=attn_modules,
     )
     return _attn_patterns_recon_loss_compute(sum_kl, n_distributions)
 
@@ -190,6 +230,7 @@ class CIMaskedAttnPatternsReconLoss(Metric):
         self.q_paths, self.k_paths, self.is_combined = _resolve_qk_paths(
             model, q_proj_path, k_proj_path, c_attn_path
         )
+        self.attn_modules = _resolve_attn_modules(model, self.q_paths)
         self.sum_kl = torch.tensor(0.0, device=device)
         self.n_distributions = torch.tensor(0, device=device)
 
@@ -212,6 +253,7 @@ class CIMaskedAttnPatternsReconLoss(Metric):
             k_paths=self.k_paths,
             is_combined=self.is_combined,
             n_heads=self.n_heads,
+            attn_modules=self.attn_modules,
         )
         self.sum_kl += sum_kl
         self.n_distributions += n_distributions
@@ -240,6 +282,7 @@ def stochastic_attn_patterns_recon_loss(
     c_attn_path: str | None,
 ) -> Float[Tensor, ""]:
     q_paths, k_paths, is_combined = _resolve_qk_paths(model, q_proj_path, k_proj_path, c_attn_path)
+    attn_modules = _resolve_attn_modules(model, q_paths)
     mask_infos_list = [
         calc_stochastic_component_mask_info(
             causal_importances=ci,
@@ -258,6 +301,7 @@ def stochastic_attn_patterns_recon_loss(
         k_paths=k_paths,
         is_combined=is_combined,
         n_heads=n_heads,
+        attn_modules=attn_modules,
     )
     return _attn_patterns_recon_loss_compute(sum_kl, n_distributions)
 
@@ -287,6 +331,7 @@ class StochasticAttnPatternsReconLoss(Metric):
         self.q_paths, self.k_paths, self.is_combined = _resolve_qk_paths(
             model, q_proj_path, k_proj_path, c_attn_path
         )
+        self.attn_modules = _resolve_attn_modules(model, self.q_paths)
         self.sum_kl = torch.tensor(0.0, device=device)
         self.n_distributions = torch.tensor(0, device=device)
 
@@ -318,6 +363,7 @@ class StochasticAttnPatternsReconLoss(Metric):
             k_paths=self.k_paths,
             is_combined=self.is_combined,
             n_heads=self.n_heads,
+            attn_modules=self.attn_modules,
         )
         self.sum_kl += sum_kl
         self.n_distributions += n_distributions

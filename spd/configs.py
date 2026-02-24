@@ -604,6 +604,12 @@ class PersistentPGDReconSubsetEvalConfig(BaseConfig):
 
 
 class _AttnPatternsReconLossBaseConfig(LossMetricConfig):
+    """Attention pattern reconstruction loss config.
+
+    Supports standard attention and RoPE attention (auto-detected from the parent attention
+    module). Models using ALiBi, QK-norm, sliding window, etc. are not supported.
+    """
+
     n_heads: int
     q_proj_path: str | None = None
     k_proj_path: str | None = None
