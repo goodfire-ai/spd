@@ -195,10 +195,10 @@ def plot_single_relu_curve(
     model_fn: Callable[[Tensor], Tensor],
     device: str,
     model_config: ResidMLPModelConfig,
-    subtract_inputs: bool = True,
-    feature_idx: int = 15,
-    ax: plt.Axes | None = None,
-    label: bool = True,
+    subtract_inputs: bool,
+    feature_idx: int,
+    ax: plt.Axes | None,
+    label: bool,
 ):
     n_features = model_config.n_features
     batch_size = 1000

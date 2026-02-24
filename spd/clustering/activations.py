@@ -78,7 +78,7 @@ class FilteredActivations(NamedTuple):
 def filter_dead_components(
     activations: ActivationsTensor,
     labels: ComponentLabels,
-    filter_dead_threshold: float = 0.01,
+    filter_dead_threshold: float,
 ) -> FilteredActivations:
     """Filter out dead components based on a threshold
 
@@ -198,9 +198,9 @@ def process_activations(
         Float[Tensor, "samples C"]  # (sample x component gate activations)
         | Float[Tensor, " n_sample n_ctx C"],  # (sample x seq index x component gate activations)
     ],
-    filter_dead_threshold: float = 0.01,
-    seq_mode: Literal["concat", "seq_mean", None] = None,
-    filter_modules: ModuleFilterFunc | None = None,
+    filter_dead_threshold: float,
+    seq_mode: Literal["concat", "seq_mean", None],
+    filter_modules: ModuleFilterFunc | None,
 ) -> ProcessedActivations:
     """get back a dict of coactivations, slices, and concated activations
 

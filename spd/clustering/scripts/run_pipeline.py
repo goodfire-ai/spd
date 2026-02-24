@@ -151,7 +151,7 @@ def create_clustering_workspace_view(ensemble_id: str, project: str, entity: str
 def generate_clustering_commands(
     pipeline_config: ClusteringPipelineConfig,
     pipeline_run_id: str,
-    dataset_streaming: bool = False,
+    dataset_streaming: bool,
 ) -> list[str]:
     """Generate commands for each clustering run.
 

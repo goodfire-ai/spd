@@ -106,9 +106,9 @@ def harvest_attributions(
     wandb_path: str,
     config: DatasetAttributionConfig,
     output_dir: Path,
-    harvest_subrun_id: str | None = None,
-    rank: int | None = None,
-    world_size: int | None = None,
+    harvest_subrun_id: str | None,
+    rank: int | None,
+    world_size: int | None,
 ) -> None:
     """Compute dataset attributions over the training dataset.
 

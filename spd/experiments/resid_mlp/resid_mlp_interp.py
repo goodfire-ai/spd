@@ -71,8 +71,8 @@ def feature_contribution_plot(
     n_layers: int,
     n_features: int,
     d_mlp: int,
+    legend: bool,
     pre_labelled_neurons: dict[int, list[int]] | None = None,
-    legend: bool = True,
 ) -> dict[int, list[int]]:
     diag_relu_conns: Float[Tensor, "n_layers n_features d_mlp"] = relu_conns.cpu().detach()
 
@@ -151,7 +151,7 @@ def feature_contribution_plot(
 
 
 def compute_patched_weight_neuron_contributions(
-    model: ResidMLP, n_features: int | None = None
+    model: ResidMLP, n_features: int | None
 ) -> Float[Tensor, "n_layers n_features d_mlp"]:
     """Compute per-neuron contribution strengths for a *trained* ResidMLP.
 
@@ -209,7 +209,7 @@ def compute_patched_weight_neuron_contributions(
 def compute_spd_weight_neuron_contributions(
     model: ResidMLP,
     components: dict[str, Components],
-    n_features: int | None = None,
+    n_features: int | None,
 ) -> Float[Tensor, "n_layers n_features C d_mlp"]:
     """Compute per-neuron contribution strengths for the *SPD* factorisation.
 
@@ -264,7 +264,7 @@ def compute_spd_weight_neuron_contributions(
 def plot_spd_feature_contributions_truncated(
     model: ResidMLP,
     components: dict[str, Components],
-    n_features: int | None = 50,
+    n_features: int | None,
 ):
     n_layers = model.config.n_layers
     n_features = model.config.n_features if n_features is None else n_features
@@ -350,7 +350,7 @@ def plot_spd_feature_contributions_truncated(
 def plot_neuron_contribution_pairs(
     model: ResidMLP,
     components: dict[str, Components],
-    n_features: int | None = 50,
+    n_features: int | None,
 ) -> plt.Figure:
     """Create a scatter plot comparing target model and SPD component neuron contributions.
 

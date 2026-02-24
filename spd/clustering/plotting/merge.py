@@ -23,11 +23,11 @@ DEFAULT_PLOT_CONFIG: dict[str, Any] = dict(
 
 def plot_merge_matrix(
     merge_matrix: Bool[Tensor, "k_groups n_components"],
-    show: bool = True,
+    show: bool,
+    ax: "plt.Axes | None",
+    component_labels: ComponentLabels | None,
     figsize: tuple[int, int] = (10, 3),
     show_row_sums: bool | None = None,
-    ax: "plt.Axes | None" = None,
-    component_labels: ComponentLabels | None = None,
 ) -> None:
     import matplotlib.pyplot as plt
 
@@ -84,10 +84,10 @@ def plot_merge_iteration(
     costs: ClusterCoactivationShaped,
     # pair_cost: float,
     iteration: int,
-    component_labels: ComponentLabels | None = None,
+    component_labels: ComponentLabels | None,
+    show: bool,
     plot_config: dict[str, Any] | None = None,
     nan_diag: bool = True,
-    show: bool = False,
 ) -> plt.Figure:
     """Plot merge iteration results with merge tree, coactivations, and costs.
 
@@ -181,8 +181,8 @@ def plot_merge_iteration(
 
 def plot_dists_distribution(
     distances: DistancesArray,
-    mode: Literal["points", "dist"] = "points",
-    label: str | None = None,
+    mode: Literal["points", "dist"],
+    label: str | None,
     ax: plt.Axes | None = None,
     kwargs_fig: dict[str, Any] | None = None,
     kwargs_plot: dict[str, Any] | None = None,

@@ -40,7 +40,7 @@ router = APIRouter(prefix="/api/activation_contexts", tags=["activation_contexts
 
 
 def example_to_activation_contexts(
-    comp: ComponentData, tokenizer: AppTokenizer, limit: int | None = None
+    comp: ComponentData, tokenizer: AppTokenizer, limit: int | None
 ) -> SubcomponentActivationContexts:
     examples = comp.activation_examples
     if limit is not None:

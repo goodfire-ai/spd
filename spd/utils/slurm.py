@@ -252,7 +252,7 @@ def submit_slurm_job(
 
 def _sbatch_header(
     config: SlurmConfig,
-    is_array: bool = False,
+    is_array: bool,
     array_range: str | None = None,
 ) -> str:
     """Generate the #SBATCH directive block.

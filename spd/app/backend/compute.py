@@ -38,7 +38,7 @@ MAX_OUTPUT_NODES_PER_POS = 15
 def compute_layer_alive_info(
     layer_name: str,
     ci_lower_leaky: dict[str, Tensor],
-    ci_masked_out_probs: Float[Tensor, "1 seq vocab"] | None,
+    ci_masked_out_probs: Float[Tensor, "1 seq vocab"],
     output_prob_threshold: float,
     n_seq: int,
     device: str,
@@ -59,7 +59,6 @@ def compute_layer_alive_info(
         alive_mask = torch.ones(n_seq, 1, device=device, dtype=torch.bool)
         alive_c_idxs = [0]
     elif layer_name == unembed_path:
-        assert ci_masked_out_probs is not None
         assert ci_masked_out_probs.shape[0] == 1
         probs = ci_masked_out_probs[0]  # [seq, vocab]
         alive_mask = probs > output_prob_threshold
@@ -237,8 +236,8 @@ def compute_edges_from_ci(
     target_out_logits: Float[Tensor, "1 seq vocab"],
     output_prob_threshold: float,
     device: str,
-    on_progress: ProgressCallback | None = None,
-    loss_seq_pos: int | None = None,
+    on_progress: ProgressCallback | None,
+    loss_seq_pos: int | None,
 ) -> PromptAttributionResult:
     """Core edge computation from pre-computed CI values.
 
@@ -449,8 +448,8 @@ def compute_prompt_attributions(
     output_prob_threshold: float,
     sampling: SamplingType,
     device: str,
-    on_progress: ProgressCallback | None = None,
-    included_nodes: set[str] | None = None,
+    on_progress: ProgressCallback | None,
+    included_nodes: set[str] | None,
     loss_seq_pos: int | None = None,
 ) -> PromptAttributionResult:
     """Compute prompt attributions using the model's natural CI values.
@@ -507,7 +506,7 @@ def compute_prompt_attributions_optimized(
     optim_config: OptimCIConfig,
     output_prob_threshold: float,
     device: str,
-    on_progress: ProgressCallback | None = None,
+    on_progress: ProgressCallback | None,
 ) -> OptimizedPromptAttributionResult:
     """Compute prompt attributions using optimized sparse CI values.
 

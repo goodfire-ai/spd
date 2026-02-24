@@ -31,7 +31,7 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 def get_cluster_mapping(
     ensemble_dir: str | Path,
     n_iterations: int,
-    run_idx: int = 0,
+    run_idx: int,
 ) -> dict[str, int | None]:
     """Get mapping from component labels to cluster indices at a specific iteration.
 

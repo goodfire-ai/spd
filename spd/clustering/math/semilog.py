@@ -3,7 +3,7 @@ import math
 
 def semilog(
     value: float,
-    epsilon: float = 1e-3,
+    epsilon: float,
 ) -> float:
     if abs(value) < epsilon:
         return value

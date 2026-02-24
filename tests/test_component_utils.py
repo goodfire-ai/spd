@@ -8,12 +8,12 @@ class TestRandPerm:
     @pytest.mark.parametrize("shape", [(2, 3, 4), (100, 200, 134), (5, 6, 7)])
     @pytest.mark.parametrize("dim", [0, 1, 2])
     def test_creates_correct_shape(self, shape: tuple[int, ...], dim: int):
-        assert rand_perm(shape, dim=dim).shape == shape
+        assert rand_perm(shape, dim=dim, device="cpu", generator=None).shape == shape
 
     def test_creates_permutations(self):
         # Given a random permutation of shape (100, 200), along dim 1
         shape = (100, 200)
-        perm = rand_perm(shape, dim=1)
+        perm = rand_perm(shape, dim=1, device="cpu", generator=None)
 
         # when we sort along dim 1
         sorted_perm = perm.sort(dim=1).values
@@ -25,7 +25,7 @@ class TestRandPerm:
     def test_creates_permutations_along_correct_indices(self):
         # Given a random permutation of shape (100, 200), along dim 1
         shape = (100, 200)
-        perm = rand_perm(shape, dim=1)
+        perm = rand_perm(shape, dim=1, device="cpu", generator=None)
 
         # when we sort along dim 0 (not dim 1)
         sorted_perm_wrong_axis = perm.sort(dim=0).values
@@ -40,7 +40,7 @@ class TestSampleUniformKSubsetRoutingMasks:
     def test_creates_correct_shape(self):
         mask_shape = (100, 200)
         modules = ["a", "b"]
-        masks = sample_uniform_k_subset_routing_masks(mask_shape, modules)
+        masks = sample_uniform_k_subset_routing_masks(mask_shape, modules, device="cpu")
         assert masks["a"].shape == (100, 200)
         assert masks["b"].shape == (100, 200)
 
@@ -50,7 +50,9 @@ class TestSampleUniformKSubsetRoutingMasks:
         n_modules = 4
         mask_shape = (S,)
         modules = [str(i) for i in range(n_modules)]
-        masks = sample_uniform_k_subset_routing_masks(mask_shape, modules, generator=gen)
+        masks = sample_uniform_k_subset_routing_masks(
+            mask_shape, modules, device="cpu", generator=gen
+        )
         mask_matrix = torch.stack(list(masks.values()))
         assert mask_matrix.shape == (n_modules, S)
         position_wise_mask_sum = mask_matrix.sum(dim=0)
@@ -74,7 +76,9 @@ class TestSampleUniformKSubsetRoutingMasks:
 
         # Call the function with a generator
         gen1 = torch.Generator().manual_seed(seed)
-        masks1 = sample_uniform_k_subset_routing_masks(mask_shape, modules, generator=gen1)
+        masks1 = sample_uniform_k_subset_routing_masks(
+            mask_shape, modules, device="cpu", generator=gen1
+        )
         mask_block = torch.stack(list(masks1.values()))
         n_routed = mask_block.sum(dim=0)
 

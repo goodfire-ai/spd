@@ -20,6 +20,7 @@ def plot_activations(
     processed_activations: ProcessedActivations,
     save_dir: Path | None,
     n_samples_max: int,
+    wandb_run: wandb.sdk.wandb_run.Run | None,
     figure_prefix: str = "activations",
     figsize_raw: tuple[int, int] = (12, 4),
     figsize_concat: tuple[int, int] = (12, 2),
@@ -27,7 +28,6 @@ def plot_activations(
     hist_scales: tuple[str, str] = ("lin", "log"),
     hist_bins: int = 100,
     do_sorted_samples: bool = False,
-    wandb_run: wandb.sdk.wandb_run.Run | None = None,
 ) -> None:
     """Plot activation visualizations including raw, concatenated, sorted, and coactivations.
 
@@ -330,9 +330,7 @@ def plot_activations(
     plt.close(fig5)
 
 
-def add_component_labeling(
-    ax: plt.Axes, component_labels: ComponentLabels, axis: str = "x"
-) -> None:
+def add_component_labeling(ax: plt.Axes, component_labels: ComponentLabels, axis: str) -> None:
     """Add component labeling using major/minor ticks to show module boundaries.
 
     Args:

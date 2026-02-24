@@ -44,7 +44,7 @@ def _save_torch(data: Any, path: Path | str, **kwargs: Any) -> None:
     torch.save(data, path, **kwargs)
 
 
-def _save_text(data: str, path: Path | str, encoding: str = "utf-8") -> None:
+def _save_text(data: str, path: Path | str, encoding: str) -> None:
     with open(path, "w", encoding=encoding) as f:
         f.write(data)
 
@@ -410,7 +410,7 @@ def read_noneable_str(value: str) -> str | None:
 
 def run_locally(
     commands: list[str],
-    parallel: bool = False,
+    parallel: bool,
     track_resources: bool = False,
 ) -> dict[str, dict[str, float]] | None:
     """Run commands locally instead of via SLURM.

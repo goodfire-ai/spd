@@ -50,7 +50,7 @@ def merge_iteration(
     merge_config: MergeConfig,
     activations: ActivationsTensor,
     component_labels: ComponentLabels,
-    log_callback: LogCallback | None = None,
+    log_callback: LogCallback | None,
 ) -> MergeHistory:
     """
     Merge iteration with optional logging/plotting callbacks.

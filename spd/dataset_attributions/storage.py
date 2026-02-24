@@ -208,7 +208,7 @@ class DatasetAttributionStorage:
         self,
         source_key: str,
         target_key: str,
-        w_unembed: Float[Tensor, "d_model vocab"] | None = None,
+        w_unembed: Float[Tensor, "d_model vocab"] | None,
     ) -> float:
         """Get attribution strength from source to target.
 
@@ -288,7 +288,7 @@ class DatasetAttributionStorage:
         source_key: str,
         k: int,
         sign: Literal["positive", "negative"],
-        w_unembed: Float[Tensor, "d_model vocab"] | None = None,
+        w_unembed: Float[Tensor, "d_model vocab"] | None,
         include_outputs: bool = True,
     ) -> list[DatasetAttributionEntry]:
         """Get top-k target components this source attributes TO.

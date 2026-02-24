@@ -168,7 +168,7 @@ def _log_one(
     tensor_: Tensor,
     name: str,
     step: int,
-    single: bool = False,
+    single: bool,
     # use_log_counts: bool = True,
 ) -> None:
     """Log a single tensor."""

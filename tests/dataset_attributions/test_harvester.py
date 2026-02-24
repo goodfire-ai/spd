@@ -84,11 +84,11 @@ class TestDatasetAttributionStorage:
         )
 
         # wte:0 -> layer1:0
-        assert storage.get_attribution("wte:0", "layer1:0") == 1.0
+        assert storage.get_attribution("wte:0", "layer1:0", w_unembed=None) == 1.0
         # wte:1 -> layer1:1
-        assert storage.get_attribution("wte:1", "layer1:1") == 4.0
+        assert storage.get_attribution("wte:1", "layer1:1", w_unembed=None) == 4.0
         # layer1:0 -> layer1:1
-        assert storage.get_attribution("layer1:0", "layer1:1") == 6.0
+        assert storage.get_attribution("layer1:0", "layer1:1", w_unembed=None) == 6.0
 
     def test_get_attribution_output_target(self) -> None:
         """Test get_attribution for output targets (requires w_unembed)."""

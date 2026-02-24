@@ -30,7 +30,10 @@ class TestMergeIntegration:
 
         # Run merge iteration
         history = merge_iteration(
-            activations=activations, merge_config=config, component_labels=component_labels
+            activations=activations,
+            merge_config=config,
+            component_labels=component_labels,
+            log_callback=None,
         )
 
         # Check results
@@ -63,7 +66,10 @@ class TestMergeIntegration:
 
         # Run merge iteration
         history = merge_iteration(
-            activations=activations, merge_config=config, component_labels=component_labels
+            activations=activations,
+            merge_config=config,
+            component_labels=component_labels,
+            log_callback=None,
         )
 
         # Check results
@@ -101,6 +107,7 @@ class TestMergeIntegration:
             activations=activations.clone(),
             merge_config=config_range,
             component_labels=ComponentLabels(component_labels.copy()),
+            log_callback=None,
         )
 
         # Run with MCMC sampler (low temperature for near-deterministic)
@@ -116,6 +123,7 @@ class TestMergeIntegration:
             activations=activations.clone(),
             merge_config=config_mcmc,
             component_labels=ComponentLabels(component_labels.copy()),
+            log_callback=None,
         )
 
         # Both should reduce groups from initial count
@@ -141,7 +149,10 @@ class TestMergeIntegration:
         )
 
         history = merge_iteration(
-            activations=activations, merge_config=config, component_labels=component_labels
+            activations=activations,
+            merge_config=config,
+            component_labels=component_labels,
+            log_callback=None,
         )
 
         # First entry is after first merge, so should be 3 - 1 = 2

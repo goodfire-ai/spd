@@ -246,7 +246,7 @@ def flatten_metric_configs(config_dict: dict[str, Any]) -> dict[str, Any]:
     return flattened
 
 
-def fetch_latest_wandb_checkpoint(run: Run, prefix: str | None = None) -> File:
+def fetch_latest_wandb_checkpoint(run: Run, prefix: str | None) -> File:
     """Fetch the latest checkpoint from a wandb run."""
     filenames = [file.name for file in run.files() if file.name.endswith((".pth", ".pt"))]
     latest_checkpoint_name = fetch_latest_checkpoint_name(filenames, prefix)
@@ -303,8 +303,8 @@ def init_wandb(
     config: BaseConfig,
     project: str,
     run_id: str,
-    name: str | None = None,
-    tags: list[str] | None = None,
+    name: str | None,
+    tags: list[str] | None,
 ) -> None:
     """Initialize Weights & Biases and log the config.
 

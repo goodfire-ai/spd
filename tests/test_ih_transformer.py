@@ -131,6 +131,7 @@ def test_ih_transformer_decomposition_happy_path(tmp_path: Path) -> None:
         eval_loader=eval_loader,
         n_eval_steps=config.n_eval_steps,
         out_dir=tmp_path,
+        tied_weights=None,
     )
 
     # Basic assertion to ensure the test ran

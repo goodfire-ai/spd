@@ -313,8 +313,8 @@ def compute_target_metrics(
 
 
 def make_target_ci_solution(
-    identity_ci: list[dict[str, str | int]] | None = None,
-    dense_ci: list[dict[str, str | int]] | None = None,
+    identity_ci: list[dict[str, str | int]] | None,
+    dense_ci: list[dict[str, str | int]] | None,
 ) -> TargetCISolution | None:
     """Create a TargetCISolution from config specifications.
 

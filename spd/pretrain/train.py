@@ -82,9 +82,7 @@ def save_configs(
         log0(f"Saved model config to wandb from {str(model_config_file)}")
 
 
-def save_model(
-    save_dir: Path, model: nn.Module, step: int, wandb_project: str | None = None
-) -> None:
+def save_model(save_dir: Path, model: nn.Module, step: int, wandb_project: str | None) -> None:
     """Save model checkpoint and optionally upload to W&B."""
     state_dict = model.state_dict()
     # Remove DDP prefixes if present

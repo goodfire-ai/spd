@@ -218,7 +218,7 @@ def _build_out_probs(
     ci_masked_out_logits: torch.Tensor,
     target_out_logits: torch.Tensor,
     tok_display: Callable[[int], str],
-    adv_pgd_out_logits: torch.Tensor | None = None,
+    adv_pgd_out_logits: torch.Tensor | None,
 ) -> dict[str, OutputProbability]:
     """Build output probs dict from logit tensors.
 

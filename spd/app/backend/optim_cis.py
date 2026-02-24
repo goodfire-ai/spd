@@ -371,7 +371,7 @@ def optimize_ci_values(
     tokens: Tensor,
     config: OptimCIConfig,
     device: str,
-    on_progress: ProgressCallback | None = None,
+    on_progress: ProgressCallback | None,
 ) -> OptimizeCIResult:
     """Optimize CI values for a single prompt.
 

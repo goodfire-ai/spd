@@ -35,7 +35,7 @@ DISTANCES_METHODS: dict[DistancesMethod, Callable[[MergesAtIterArray], Distances
 
 def compute_distances(
     normalized_merge_array: MergesArray,
-    method: DistancesMethod = "perm_invariant_hamming",
+    method: DistancesMethod,
 ) -> DistancesArray:
     n_iters: int = normalized_merge_array.shape[1]
     merges_array_list: list[Int[np.ndarray, "n_ens n_components"]]

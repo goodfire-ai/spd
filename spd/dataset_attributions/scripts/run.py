@@ -72,7 +72,7 @@ def get_worker_command(
     rank: int,
     world_size: int,
     subrun_id: str,
-    harvest_subrun_id: str | None = None,
+    harvest_subrun_id: str | None,
 ) -> str:
     cmd = (
         f"python -m spd.dataset_attributions.scripts.run "

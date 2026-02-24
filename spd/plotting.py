@@ -31,7 +31,7 @@ def _plot_causal_importances_figure(
     colormap: str,
     input_magnitude: float,
     has_pos_dim: bool,
-    title_formatter: Callable[[str], str] | None = None,
+    title_formatter: Callable[[str], str] | None,
 ) -> Image.Image:
     """Plot causal importances for components stacked vertically.
 
@@ -305,7 +305,7 @@ def plot_causal_importance_vals(
 
 def plot_UV_matrices(
     components: dict[str, Components],
-    all_perm_indices: dict[str, Float[Tensor, " C"]] | None = None,
+    all_perm_indices: dict[str, Float[Tensor, " C"]] | None,
 ) -> Image.Image:
     """Plot V and U matrices for each instance, grouped by layer."""
     n_layers = len(components)

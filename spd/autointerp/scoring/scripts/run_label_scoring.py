@@ -99,7 +99,7 @@ def get_command(
     decomposition_id: str,
     scorer_type: LabelScorerType,
     config: AutointerpEvalConfig,
-    harvest_subrun_id: str | None = None,
+    harvest_subrun_id: str | None,
 ) -> str:
     config_json = config.model_dump_json(exclude_none=True)
     cmd = (

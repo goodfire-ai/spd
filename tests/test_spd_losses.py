@@ -740,7 +740,7 @@ class TestPersistentPGDReconLoss:
             ci=ci,
             weight_deltas=None,
         )
-        grad = state.get_grads(loss)
+        grad = state.get_grads(loss, retain_graph=False)
 
         # Apply PGD step
         state.step(grad)
@@ -791,7 +791,7 @@ class TestPersistentPGDReconLoss:
                 ci=ci,
                 weight_deltas=None,
             )
-            grad = state.get_grads(loss)
+            grad = state.get_grads(loss, retain_graph=False)
             state.step(grad)
             assert loss >= 0.0
 
@@ -844,7 +844,7 @@ class TestPersistentPGDReconLoss:
             ci=ci,
             weight_deltas=weight_deltas,
         )
-        grad = state.get_grads(loss)
+        grad = state.get_grads(loss, retain_graph=False)
         state.step(grad)
 
         assert loss >= 0.0
@@ -907,7 +907,7 @@ class TestPersistentPGDReconLoss:
             ci=ci,
             weight_deltas=None,
         )
-        grad = state.get_grads(loss)
+        grad = state.get_grads(loss, retain_graph=False)
         state.step(grad)
 
         assert loss >= 0.0
@@ -945,7 +945,7 @@ class TestPersistentPGDReconLoss:
             ci=ci,
             weight_deltas=None,
         )
-        grad = state.get_grads(loss)
+        grad = state.get_grads(loss, retain_graph=False)
         state.step(grad)
 
         assert loss >= 0.0

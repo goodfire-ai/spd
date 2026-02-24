@@ -95,7 +95,7 @@ class CausalSelfAttention(nn.Module):
         self,
         rotary_dim: int,
         n_ctx: int,
-        base: int = 10000,
+        base: int,
         dtype: torch.dtype = torch.float32,
     ) -> tuple[Tensor, Tensor]:
         """Precomputes sin and cos for rotary embeddings"""
