@@ -1158,6 +1158,204 @@ def _run_prev_token_head_restricted_component_ablation(
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Offset sweep
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _run_offset_sweep(
+    target_model: LlamaSimpleMLP,
+    spd_model: ComponentModel | None,
+    loader: Iterable[dict[str, Tensor]],
+    is_head_ablation: bool,
+    parsed_heads: list[tuple[int, int]],
+    parsed_components: list[tuple[str, int]],
+    parsed_restrict_heads: list[tuple[int, int]],
+    n_samples: int,
+    max_offsets: int,
+    max_pos: int,
+    seq_len: int,
+    run_id: str,
+    label: str,
+    sim_dir: Path,
+    column_name: str,
+    device: torch.device,
+) -> None:
+    """Sweep value ablation across offsets 1..max_offsets to profile which positions matter."""
+    if is_head_ablation:
+        layer = parsed_heads[0][0]
+    else:
+        layer = _infer_layer_from_components(parsed_components)
+
+    # offset -> layer -> list[float]
+    base_vs_a_nips: dict[str, dict[int, list[float]]] = {"nip": {}, "cos": {}}
+    base_vs_ab_by_offset: dict[int, dict[str, dict[int, list[float]]]] = {
+        offset: {"nip": {}, "cos": {}} for offset in range(1, max_offsets + 1)
+    }
+    n_processed = 0
+
+    with torch.no_grad():
+        for i, batch_data in enumerate(loader):
+            if i >= n_samples:
+                break
+
+            input_ids: Int[Tensor, "batch pos"] = batch_data[column_name][:, :seq_len].to(device)
+
+            sample_seq_len = input_ids.shape[1]
+            rng = random.Random(i)
+            t = rng.randint(max_offsets, min(sample_seq_len, max_pos) - 1)
+
+            # Compute baseline and A once
+            if is_head_ablation:
+                head_abl = [(ly, hd, t) for ly, hd in parsed_heads]
+                baseline_outs, _ = _capture_attn_outputs(target_model, input_ids)
+                a_outs, _ = _capture_attn_outputs(
+                    target_model, input_ids, head_pos_ablations=head_abl
+                )
+            elif parsed_restrict_heads:
+                assert spd_model is not None
+                comp_head_abls = _build_component_head_ablations(
+                    spd_model, parsed_components, parsed_restrict_heads, t
+                )
+                batch_shape = (input_ids.shape[0], input_ids.shape[1])
+                baseline_masks, _ = _build_deterministic_masks(
+                    spd_model, [], batch_shape, input_ids.device, t
+                )
+                baseline_outs, _ = _capture_attn_outputs(
+                    target_model, input_ids, spd_model=spd_model, mask_infos=baseline_masks
+                )
+                a_outs, _ = _capture_attn_outputs(
+                    target_model,
+                    input_ids,
+                    component_head_ablations=comp_head_abls,
+                    spd_model=spd_model,
+                    mask_infos=baseline_masks,
+                )
+            else:
+                assert spd_model is not None
+                component_positions = _build_prev_token_component_positions(parsed_components, t)
+                batch_shape = (input_ids.shape[0], input_ids.shape[1])
+                baseline_masks, ablated_masks = _build_deterministic_masks_multi_pos(
+                    spd_model, component_positions, batch_shape, input_ids.device
+                )
+                baseline_outs, _ = _capture_attn_outputs(
+                    target_model, input_ids, spd_model=spd_model, mask_infos=baseline_masks
+                )
+                a_outs, _ = _capture_attn_outputs(
+                    target_model, input_ids, spd_model=spd_model, mask_infos=ablated_masks
+                )
+
+            base_vs_a_nip, base_vs_a_cos = compute_ablation_metrics_at_pos(baseline_outs, a_outs, t)
+            _accum_comparison(base_vs_a_nips, base_vs_a_nip, base_vs_a_cos)
+
+            # Sweep offsets
+            for offset in range(1, max_offsets + 1):
+                val_pos = t - offset
+                assert val_pos >= 0
+                val_all = [(layer, val_pos)]
+
+                if is_head_ablation:
+                    head_abl = [(ly, hd, t) for ly, hd in parsed_heads]
+                    ab_outs, _ = _capture_attn_outputs(
+                        target_model,
+                        input_ids,
+                        head_pos_ablations=head_abl,
+                        value_pos_ablations=val_all,
+                    )
+                elif parsed_restrict_heads:
+                    assert spd_model is not None
+                    cha = _build_component_head_ablations(
+                        spd_model, parsed_components, parsed_restrict_heads, t
+                    )
+                    bs = (input_ids.shape[0], input_ids.shape[1])
+                    bm, _ = _build_deterministic_masks(spd_model, [], bs, input_ids.device, t)
+                    ab_outs, _ = _capture_attn_outputs(
+                        target_model,
+                        input_ids,
+                        component_head_ablations=cha,
+                        value_pos_ablations=val_all,
+                        spd_model=spd_model,
+                        mask_infos=bm,
+                    )
+                else:
+                    assert spd_model is not None
+                    cp = _build_prev_token_component_positions(parsed_components, t)
+                    bs = (input_ids.shape[0], input_ids.shape[1])
+                    _, am = _build_deterministic_masks_multi_pos(
+                        spd_model, cp, bs, input_ids.device
+                    )
+                    ab_outs, _ = _capture_attn_outputs(
+                        target_model,
+                        input_ids,
+                        value_pos_ablations=val_all,
+                        spd_model=spd_model,
+                        mask_infos=am,
+                    )
+
+                base_vs_ab_nip, base_vs_ab_cos = compute_ablation_metrics_at_pos(
+                    baseline_outs, ab_outs, t
+                )
+                _accum_comparison(base_vs_ab_by_offset[offset], base_vs_ab_nip, base_vs_ab_cos)
+
+            n_processed += 1
+            if (i + 1) % 10 == 0:
+                logger.info(f"Processed {i + 1}/{n_samples} samples")
+
+    assert n_processed > 0, "No samples processed"
+
+    # Compute means
+    base_vs_a_nip_mean = {
+        li: torch.tensor(vs).mean().item() for li, vs in base_vs_a_nips["nip"].items()
+    }
+
+    # Plot offset profile for each layer
+    layers = sorted(base_vs_a_nip_mean.keys())
+    offsets = list(range(1, max_offsets + 1))
+
+    for metric_key, metric_name in [("nip", "NIP"), ("cos", "Cosine Sim")]:
+        fig, axes = plt.subplots(len(layers), 1, figsize=(10, len(layers) * 2.5), squeeze=False)
+
+        for li_idx, li in enumerate(layers):
+            ax = axes[li_idx, 0]
+            means = [
+                torch.tensor(base_vs_ab_by_offset[o][metric_key][li]).mean().item() for o in offsets
+            ]
+            stds = [
+                torch.tensor(base_vs_ab_by_offset[o][metric_key][li]).std().item() for o in offsets
+            ]
+
+            ax.errorbar(offsets, means, yerr=stds, fmt="o-", capsize=3, markersize=4)
+            base_val = torch.tensor(base_vs_a_nips[metric_key][li]).mean().item()
+            ax.axhline(
+                y=base_val, color="red", linewidth=0.8, linestyle="--", label="Baseline vs A"
+            )
+            ax.axhline(y=1.0, color="gray", linewidth=0.5, linestyle=":")
+            ax.set_ylabel(f"Layer {li}", fontsize=9)
+            ax.set_xlabel("Offset (t - offset)", fontsize=8)
+            ax.legend(fontsize=7)
+
+        fig.suptitle(
+            f"{run_id} | {metric_name} offset profile (n={n_processed})",
+            fontsize=13,
+            fontweight="bold",
+        )
+        fig.tight_layout()
+        path = sim_dir / f"offset_profile_{metric_key}_{label}.png"
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        logger.info(f"Saved {path}")
+
+    # Log summary
+    logger.section(f"Offset sweep (n={n_processed})")
+    logger.info(f"Baseline vs A NIP: {base_vs_a_nip_mean}")
+    for offset in offsets:
+        nip_means = {
+            li: torch.tensor(vs).mean().item()
+            for li, vs in base_vs_ab_by_offset[offset]["nip"].items()
+        }
+        logger.info(f"  offset={offset}: Baseline vs AB NIP = {nip_means}")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Main entry point
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -1351,6 +1549,7 @@ def run_attention_ablation(
     prev_token_test: bool = False,
     value_heads: str | None = None,
     restrict_to_heads: str | None = None,
+    offset_sweep: int = 0,
     seed: int = 42,
 ) -> None:
     torch.manual_seed(seed)
@@ -1362,7 +1561,9 @@ def run_attention_ablation(
         assert value_heads is not None, "--value_heads required when --prev_token_test is set"
     if restrict_to_heads is not None:
         assert components is not None, "--restrict_to_heads requires --components"
-        assert prev_token_test, "--restrict_to_heads requires --prev_token_test"
+        assert prev_token_test or offset_sweep > 0, (
+            "--restrict_to_heads requires --prev_token_test or --offset_sweep"
+        )
     is_head_ablation = heads is not None
     parsed_heads = parse_heads(heads) if heads else []
     parsed_components = parse_components(components) if components else []
@@ -1434,6 +1635,27 @@ def run_attention_ablation(
     attn_dir.mkdir(parents=True, exist_ok=True)
     value_dir.mkdir(parents=True, exist_ok=True)
     sim_dir.mkdir(parents=True, exist_ok=True)
+
+    if offset_sweep > 0:
+        _run_offset_sweep(
+            target_model=target_model,
+            spd_model=spd_model,
+            loader=loader,
+            is_head_ablation=is_head_ablation,
+            parsed_heads=parsed_heads,
+            parsed_components=parsed_components,
+            parsed_restrict_heads=parsed_restrict_heads,
+            n_samples=n_samples,
+            max_offsets=offset_sweep,
+            max_pos=max_pos,
+            seq_len=seq_len,
+            run_id=run_id,
+            label=label,
+            sim_dir=sim_dir,
+            column_name=task_config.column_name,
+            device=device,
+        )
+        return
 
     if prev_token_test:
         _run_prev_token_loop(
