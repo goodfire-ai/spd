@@ -42,9 +42,7 @@ def _make_storage(
         ci_sum={LAYER_0: rand(C0).abs() + 1.0, LAYER_1: rand(C1).abs() + 1.0},
         component_act_sq_sum={LAYER_0: rand(C0).abs() + 1.0, LAYER_1: rand(C1).abs() + 1.0},
         logit_sq_sum=rand(VOCAB_SIZE).abs() + 1.0,
-        vocab_size=VOCAB_SIZE,
         ci_threshold=1e-6,
-        n_batches_processed=n_batches,
         n_tokens_processed=n_tokens,
     )
 
@@ -135,7 +133,6 @@ class TestSaveLoad:
 
         loaded = DatasetAttributionStorage.load(path)
 
-        assert loaded.vocab_size == original.vocab_size
         assert loaded.ci_threshold == original.ci_threshold
         assert loaded.n_batches_processed == original.n_batches_processed
         assert loaded.n_tokens_processed == original.n_tokens_processed

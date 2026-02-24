@@ -74,6 +74,12 @@ def get_command(
 
 
 if __name__ == "__main__":
-    import fire
+    # import fire
 
-    fire.Fire(main)
+    # fire.Fire(main)
+    main(
+        wandb_path="s-17805b61",
+        config_json={"n_batches": 1},
+        rank=0,
+        world_size=1,
+    )
