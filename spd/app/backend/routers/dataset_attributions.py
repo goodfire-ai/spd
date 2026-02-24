@@ -246,24 +246,3 @@ def get_attribution_targets(
     return _to_api_entries(
         storage.get_top_targets(source_key, k, sign, metric, w_unembed=w_unembed), loaded
     )
-
-
-@router.get("/between/{source_layer}/{source_idx}/{target_layer}/{target_idx}")
-@log_errors
-def get_attribution_between(
-    source_layer: str,
-    source_idx: int,
-    target_layer: str,
-    target_idx: int,
-    loaded: DepLoadedRun,
-    metric: AttrMetric = "attr",
-) -> float:
-    storage = _require_storage(loaded)
-    source_key = _storage_key(source_layer, source_idx)
-    target_key = _storage_key(target_layer, target_idx)
-    _require_source(storage, source_key)
-    _require_target(storage, target_key)
-
-    w_unembed = _get_w_unembed(loaded) if target_layer == "output" else None
-
-    return storage.get_attribution(source_key, target_key, metric, w_unembed=w_unembed)
