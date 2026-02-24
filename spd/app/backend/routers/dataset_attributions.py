@@ -27,7 +27,6 @@ class DatasetAttributionEntry(BaseModel):
 
 class DatasetAttributionMetadata(BaseModel):
     available: bool
-    n_batches_processed: int | None
     n_tokens_processed: int | None
     n_component_layer_keys: int | None
     ci_threshold: float | None
@@ -104,7 +103,6 @@ def get_attribution_metadata(loaded: DepLoadedRun) -> DatasetAttributionMetadata
     if loaded.attributions is None:
         return DatasetAttributionMetadata(
             available=False,
-            n_batches_processed=None,
             n_tokens_processed=None,
             n_component_layer_keys=None,
             ci_threshold=None,
@@ -112,7 +110,6 @@ def get_attribution_metadata(loaded: DepLoadedRun) -> DatasetAttributionMetadata
     storage = loaded.attributions.get_attributions()
     return DatasetAttributionMetadata(
         available=True,
-        n_batches_processed=storage.n_batches_processed,
         n_tokens_processed=storage.n_tokens_processed,
         n_component_layer_keys=storage.n_components,
         ci_threshold=storage.ci_threshold,
