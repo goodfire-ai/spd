@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 from spd.adapters import adapter_from_id
 from spd.harvest.config import IntruderEvalConfig
+from spd.harvest.db import HarvestDB
 from spd.harvest.intruder import run_intruder_scoring
 from spd.harvest.repo import HarvestRepo
 
@@ -24,7 +25,8 @@ def main(
 
     tokenizer_name = adapter_from_id(decomposition_id).tokenizer_name
 
-    harvest = HarvestRepo(decomposition_id, subrun_id=harvest_subrun_id, readonly=False)
+    harvest = HarvestRepo(decomposition_id, subrun_id=harvest_subrun_id, readonly=True)
+    score_db = HarvestDB(harvest._dir / "harvest.db")
 
     components = harvest.get_all_components()
 
@@ -34,12 +36,13 @@ def main(
             model=eval_config.model,
             openrouter_api_key=openrouter_api_key,
             tokenizer_name=tokenizer_name,
-            harvest=harvest,
+            score_db=score_db,
             eval_config=eval_config,
             limit=eval_config.limit,
             cost_limit_usd=eval_config.cost_limit_usd,
         )
     )
+    score_db.close()
 
 
 def get_command(decomposition_id: str, config: IntruderEvalConfig, harvest_subrun_id: str) -> str:

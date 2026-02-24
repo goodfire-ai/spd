@@ -8,8 +8,10 @@ import orjson
 
 from spd.harvest.config import HarvestConfig
 from spd.harvest.schemas import (
+    ActivationExample,
     ComponentData,
     ComponentSummary,
+    ComponentTokenPMI,
 )
 
 _SCHEMA = """\
@@ -59,11 +61,13 @@ def _deserialize_component(row: sqlite3.Row) -> ComponentData:
         component_key=row["component_key"],
         layer=row["layer"],
         component_idx=row["component_idx"],
-        mean_activations=orjson.loads(row["mean_activations"]),
         firing_density=row["firing_density"],
-        activation_examples=orjson.loads(row["activation_examples"]),
-        input_token_pmi=orjson.loads(row["input_token_pmi"]),
-        output_token_pmi=orjson.loads(row["output_token_pmi"]),
+        mean_activations=orjson.loads(row["mean_activations"]),
+        activation_examples=[
+            ActivationExample(**ex) for ex in orjson.loads(row["activation_examples"])
+        ],
+        input_token_pmi=ComponentTokenPMI(**orjson.loads(row["input_token_pmi"])),
+        output_token_pmi=ComponentTokenPMI(**orjson.loads(row["output_token_pmi"])),
     )
 
 
@@ -78,7 +82,6 @@ class HarvestDB:
             )
         else:
             self._conn = sqlite3.connect(str(db_path))
-            self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.executescript(_SCHEMA)
         self._conn.row_factory = sqlite3.Row
 
