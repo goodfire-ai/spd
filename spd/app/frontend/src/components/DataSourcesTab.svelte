@@ -104,9 +104,9 @@
     {:else if data.status === "error"}
         <p class="status-text error">Failed to load data sources: {data.error}</p>
     {:else if data.status === "loaded"}
-        {@const { harvest, autointerp, attributions } = data.data}
+        {@const { harvest, autointerp, attributions, graph_interp } = data.data}
 
-        {#if !harvest && !autointerp && !attributions}
+        {#if !harvest && !autointerp && !attributions && !graph_interp}
             <p class="status-text">No pipeline data available for this run.</p>
         {/if}
 
@@ -138,14 +138,33 @@
                     <span class="label">Subrun</span>
                     <span class="value mono">{attributions.subrun_id}</span>
 
-                    <span class="label">Batches</span>
-                    <span class="value">{attributions.n_batches_processed.toLocaleString()}</span>
-
                     <span class="label">Tokens</span>
                     <span class="value">{attributions.n_tokens_processed.toLocaleString()}</span>
 
                     <span class="label">CI threshold</span>
                     <span class="value mono">{attributions.ci_threshold}</span>
+                </div>
+            </section>
+        {/if}
+
+        {#if graph_interp}
+            <section class="source-section">
+                <h3 class="section-title">Graph Interp</h3>
+                <div class="info-grid">
+                    <span class="label">Subrun</span>
+                    <span class="value mono">{graph_interp.subrun_id}</span>
+
+                    {#each Object.entries(graph_interp.label_counts) as [key, value] (key)}
+                        <span class="label">{key} labels</span>
+                        <span class="value">{value.toLocaleString()}</span>
+                    {/each}
+
+                    {#if graph_interp.config}
+                        {#each Object.entries(graph_interp.config) as [key, value] (key)}
+                            <span class="label">{key}</span>
+                            <span class="value mono">{formatConfigValue(value)}</span>
+                        {/each}
+                    {/if}
                 </div>
             </section>
         {/if}

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { EdgeAttribution, OutputProbability } from "../../lib/promptAttributionsTypes";
+    import type { EdgeAttribution } from "../../lib/promptAttributionsTypes";
     import EdgeAttributionList from "./EdgeAttributionList.svelte";
     import SectionHeader from "./SectionHeader.svelte";
 
@@ -13,9 +13,6 @@
         outgoingNegative: EdgeAttribution[];
         pageSize: number;
         onClick: (key: string) => void;
-        // Optional: only needed for prompt-level attributions with wte/output pseudo-layers
-        tokens?: string[];
-        outputProbs?: Record<string, OutputProbability>;
     };
 
     let {
@@ -28,8 +25,6 @@
         outgoingNegative,
         pageSize,
         onClick,
-        tokens,
-        outputProbs,
     }: Props = $props();
 
     const hasAnyIncoming = $derived(incomingPositive.length > 0 || incomingNegative.length > 0);
@@ -48,8 +43,6 @@
                         {onClick}
                         direction="positive"
                         title="Positive"
-                        {tokens}
-                        {outputProbs}
                     />
                 </div>
             {/if}
@@ -61,8 +54,6 @@
                         {onClick}
                         direction="negative"
                         title="Negative"
-                        {tokens}
-                        {outputProbs}
                     />
                 </div>
             {/if}
@@ -82,8 +73,6 @@
                         {onClick}
                         direction="positive"
                         title="Positive"
-                        {tokens}
-                        {outputProbs}
                     />
                 </div>
             {/if}
@@ -95,8 +84,6 @@
                         {onClick}
                         direction="negative"
                         title="Negative"
-                        {tokens}
-                        {outputProbs}
                     />
                 </div>
             {/if}

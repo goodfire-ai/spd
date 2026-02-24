@@ -57,6 +57,7 @@ spd-harvest = "spd.harvest.scripts.run_slurm_cli:cli"
 spd-autointerp = "spd.autointerp.scripts.run_slurm_cli:cli"
 spd-attributions = "spd.dataset_attributions.scripts.run_slurm_cli:cli"
 spd-postprocess = "spd.postprocess.cli:cli"
+spd-graph-interp = "spd.graph_interp.scripts.run_slurm_cli:cli"
 
 [build-system]
 requires = ["setuptools", "wheel"]
@@ -69,7 +70,7 @@ include = ["spd*"]
 [tool.ruff]
 line-length = 100
 fix = true
-extend-exclude = ["spd/app/frontend"]
+extend-exclude = ["spd/app/frontend", ".circuits-ref"]
 
 [tool.ruff.lint]
 ignore = [

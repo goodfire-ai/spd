@@ -1,7 +1,7 @@
 <script lang="ts">
     import { getContext } from "svelte";
     import { colors } from "../../lib/colors";
-    import type { EdgeAttribution, OutputProbability } from "../../lib/promptAttributionsTypes";
+    import type { EdgeAttribution } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type InterpretationBackendState, type RunContext } from "../../lib/useRun.svelte";
     import { lerp } from "../prompt-attr/graphUtils";
 
@@ -13,12 +13,9 @@
         pageSize: number;
         direction: "positive" | "negative";
         title?: string;
-        // Optional: only needed for prompt-level attributions with embed/output pseudo-layers
-        tokens?: string[];
-        outputProbs?: Record<string, OutputProbability>;
     };
 
-    let { items, onClick, pageSize, direction, title, tokens, outputProbs }: Props = $props();
+    let { items, onClick, pageSize, direction, title }: Props = $props();
 
     // Extract component key (layer:cIdx) from either format
     function getComponentKey(key: string): string {
@@ -46,57 +43,6 @@
     function isTokenNode(key: string): boolean {
         const layer = key.split(":")[0];
         return layer === "embed" || layer === "output";
-    }
-
-    // Get the raw token text for a token node (used in tooltips)
-    function getTokenText(key: string): string {
-        const parts = key.split(":");
-
-        // Prompt attributions: 3-part keys (layer:seq:cIdx)
-        if (tokens && outputProbs && parts.length === 3) {
-            const [layer, seqStr, cIdx] = parts;
-            const seqIdx = parseInt(seqStr);
-
-            if (layer === "embed") {
-                if (seqIdx < 0 || seqIdx >= tokens.length) {
-                    throw new Error(
-                        `EdgeAttributionList: seqIdx ${seqIdx} out of bounds for tokens length ${tokens.length}`,
-                    );
-                }
-                return tokens[seqIdx];
-            }
-
-            if (layer === "output") {
-                const entry = outputProbs[`${seqIdx}:${cIdx}`];
-                if (!entry) {
-                    throw new Error(`EdgeAttributionList: output node ${key} not found in outputProbs`);
-                }
-                return entry.token;
-            }
-        }
-
-        // Dataset attributions: 2-part keys (layer:cIdx) - cIdx is vocab ID
-        if (parts.length === 2) {
-            const [layer, cIdx] = parts;
-
-            if (layer === "embed" || layer === "output") {
-                const vocabIdx = parseInt(cIdx);
-                // Tokens are guaranteed loaded when run is loaded (see useRun.svelte.ts)
-                if (runState.allTokens.status !== "loaded") {
-                    throw new Error(`allTokens not loaded (status: ${runState.allTokens.status})`);
-                }
-                const tokenInfo = runState.allTokens.data.find((t) => t.id === vocabIdx);
-                if (!tokenInfo) throw new Error(`Token not found for vocab index ${vocabIdx}`);
-                return tokenInfo.string;
-            }
-        }
-
-        throw new Error(`getTokenText called on non-token node: ${key}`);
-    }
-
-    // Get the quoted token string for display (e.g., "'hello'")
-    function getQuotedTokenLabel(key: string): string {
-        return `'${getTokenText(key)}'`;
     }
 
     // Get the token type label for the right side (e.g., "Input token" or "Output token")
@@ -156,7 +102,7 @@
         {/if}
     </div>
     <div class="items">
-        {#each paginatedItems as { key, value, normalizedMagnitude } (key)}
+        {#each paginatedItems as { key, value, normalizedMagnitude, tokenStr } (key)}
             {@const bgColor = getBgColor(normalizedMagnitude)}
             {@const textColor = normalizedMagnitude > 0.8 ? "white" : "var(--text-primary)"}
             {@const formattedKey = key}
@@ -170,9 +116,9 @@
                             <span class="interp-label" style="color: {textColor};">{interp.data.label}</span>
                             <span class="layer-label" style="color: {textColor};">{getLayerLabel(key)}</span>
                         </span>
-                    {:else if isToken}
+                    {:else if isToken && tokenStr}
                         <span class="pill-content">
-                            <span class="interp-label" style="color: {textColor};">{getQuotedTokenLabel(key)}</span>
+                            <span class="interp-label" style="color: {textColor};">'{tokenStr}'</span>
                             <span class="layer-label" style="color: {textColor};">{getTokenTypeLabel(key)}</span>
                         </span>
                     {:else}
@@ -206,8 +152,8 @@
                                 </svg>
                             </button>
                             <div class="tooltip-confidence">Confidence: {interp.data.confidence}</div>
-                        {:else if isToken}
-                            <div class="tooltip-token">Token: '{getTokenText(key)}'</div>
+                        {:else if isToken && tokenStr}
+                            <div class="tooltip-token">Token: '{tokenStr}'</div>
                         {/if}
                     </div>
                 {/if}
