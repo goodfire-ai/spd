@@ -97,20 +97,6 @@ def _hidden_acts_recon_loss_compute(
     return sum_mse / n_examples
 
 
-def _accumulate_into_state(
-    state_sum_mse: dict[str, Tensor],
-    state_n_examples: dict[str, Tensor],
-    per_module: PerModuleMSE,
-    device: str,
-) -> None:
-    for key, (mse, n) in per_module.items():
-        if key not in state_sum_mse:
-            state_sum_mse[key] = torch.tensor(0.0, device=device)
-            state_n_examples[key] = torch.tensor(0, device=device)
-        state_sum_mse[key] += mse.detach()
-        state_n_examples[key] += n
-
-
 def _compute_per_module_metrics(
     class_name: str,
     per_module_sum_mse: dict[str, Tensor],
@@ -189,12 +175,12 @@ class StochasticHiddenActsReconLoss(Metric):
             ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
         )
-        _accumulate_into_state(
-            state_sum_mse=self.per_module_sum_mse,
-            state_n_examples=self.per_module_n_examples,
-            per_module=per_module,
-            device=self.device,
-        )
+        for key, (mse, n) in per_module.items():
+            if key not in self.per_module_sum_mse:
+                self.per_module_sum_mse[key] = torch.tensor(0.0, device=self.device)
+                self.per_module_n_examples[key] = torch.tensor(0, device=self.device)
+            self.per_module_sum_mse[key] += mse.detach()
+            self.per_module_n_examples[key] += n
 
     @override
     def compute(self) -> dict[str, Float[Tensor, ""]]:
@@ -233,12 +219,12 @@ class CIHiddenActsReconLoss(Metric):
             mask_infos=mask_infos,
             target_acts=target_acts,
         )
-        _accumulate_into_state(
-            state_sum_mse=self.per_module_sum_mse,
-            state_n_examples=self.per_module_n_examples,
-            per_module=per_module,
-            device=self.device,
-        )
+        for key, (mse, n) in per_module.items():
+            if key not in self.per_module_sum_mse:
+                self.per_module_sum_mse[key] = torch.tensor(0.0, device=self.device)
+                self.per_module_n_examples[key] = torch.tensor(0, device=self.device)
+            self.per_module_sum_mse[key] += mse.detach()
+            self.per_module_n_examples[key] += n
 
     @override
     def compute(self) -> dict[str, Float[Tensor, ""]]:
@@ -298,12 +284,12 @@ class PPGDEvalLosses(Metric):
             mask_infos=mask_infos,
             target_acts=target_acts,
         )
-        _accumulate_into_state(
-            state_sum_mse=self.per_module_sum_mse,
-            state_n_examples=self.per_module_n_examples,
-            per_module=per_module,
-            device=self.device,
-        )
+        for key, (mse, n) in per_module.items():
+            if key not in self.per_module_sum_mse:
+                self.per_module_sum_mse[key] = torch.tensor(0.0, device=self.device)
+                self.per_module_n_examples[key] = torch.tensor(0, device=self.device)
+            self.per_module_sum_mse[key] += mse.detach()
+            self.per_module_n_examples[key] += n
         output_loss = calc_sum_recon_loss_lm(
             pred=comp_output, target=target_out, loss_type=self.output_loss_type
         )
