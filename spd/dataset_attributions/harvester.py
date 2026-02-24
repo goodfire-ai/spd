@@ -75,6 +75,7 @@ class AttributionHarvester:
 
         unembed_sources = sources_by_regular_target[self.unembed_path].copy()
         del sources_by_regular_target[self.unembed_path]
+        unembed_sources.remove(self.embed_path)
 
         self._emb_unemb_attr_acc = torch.zeros(
             (self.unembed_module.in_features, self.embedding_module.num_embeddings),
