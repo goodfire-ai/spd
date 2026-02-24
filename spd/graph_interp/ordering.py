@@ -1,4 +1,4 @@
-"""Layer ordering for topological interpretation.
+"""Layer ordering for graph interpretation.
 
 Uses the topology module's CanonicalWeight system for correct ordering
 across all model architectures. Canonical addresses are provided by

@@ -1,4 +1,4 @@
-"""Topological interpretation configuration."""
+"""Graph interpretation configuration."""
 
 from openrouter.components import Effort
 
@@ -7,7 +7,7 @@ from spd.dataset_attributions.storage import AttrMetric
 from spd.settings import DEFAULT_PARTITION_NAME
 
 
-class TopologicalInterpConfig(BaseConfig):
+class GraphInterpConfig(BaseConfig):
     model: str = "google/gemini-3-flash-preview"
     reasoning_effort: Effort = "low"
     attr_metric: AttrMetric = "attr_abs"
@@ -20,7 +20,7 @@ class TopologicalInterpConfig(BaseConfig):
     limit: int | None = None
 
 
-class TopologicalInterpSlurmConfig(BaseConfig):
-    config: TopologicalInterpConfig
+class GraphInterpSlurmConfig(BaseConfig):
+    config: GraphInterpConfig
     partition: str = DEFAULT_PARTITION_NAME
     time: str = "24:00:00"

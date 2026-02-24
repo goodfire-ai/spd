@@ -1,9 +1,9 @@
-"""SQLite database for topological interpretation data."""
+"""SQLite database for graph interpretation data."""
 
 import sqlite3
 from pathlib import Path
 
-from spd.topological_interp.schemas import LabelResult, PromptEdge
+from spd.graph_interp.schemas import LabelResult, PromptEdge
 
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS output_labels (
@@ -36,12 +36,11 @@ CREATE TABLE IF NOT EXISTS unified_labels (
 CREATE TABLE IF NOT EXISTS prompt_edges (
     component_key TEXT NOT NULL,
     related_key TEXT NOT NULL,
-    direction TEXT NOT NULL,
     pass TEXT NOT NULL,
     attribution REAL NOT NULL,
     related_label TEXT,
     related_confidence TEXT,
-    PRIMARY KEY (component_key, related_key, direction, pass)
+    PRIMARY KEY (component_key, related_key, pass)
 );
 
 CREATE TABLE IF NOT EXISTS config (
@@ -51,7 +50,7 @@ CREATE TABLE IF NOT EXISTS config (
 """
 
 
-class TopologicalInterpDB:
+class GraphInterpDB:
     def __init__(self, db_path: Path, readonly: bool = False) -> None:
         if readonly:
             self._conn = sqlite3.connect(
@@ -166,7 +165,6 @@ class TopologicalInterpDB:
             (
                 e.component_key,
                 e.related_key,
-                e.direction,
                 e.pass_name,
                 e.attribution,
                 e.related_label,
@@ -175,7 +173,7 @@ class TopologicalInterpDB:
             for e in edges
         ]
         self._conn.executemany(
-            "INSERT OR REPLACE INTO prompt_edges VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO prompt_edges VALUES (?, ?, ?, ?, ?, ?)",
             rows,
         )
         self._conn.commit()
@@ -184,6 +182,10 @@ class TopologicalInterpDB:
         rows = self._conn.execute(
             "SELECT * FROM prompt_edges WHERE component_key = ?", (component_key,)
         ).fetchall()
+        return [_row_to_prompt_edge(row) for row in rows]
+
+    def get_all_prompt_edges(self) -> list[PromptEdge]:
+        rows = self._conn.execute("SELECT * FROM prompt_edges").fetchall()
         return [_row_to_prompt_edge(row) for row in rows]
 
     # -- Config ----------------------------------------------------------------
@@ -219,7 +221,6 @@ def _row_to_prompt_edge(row: sqlite3.Row) -> PromptEdge:
     return PromptEdge(
         component_key=row["component_key"],
         related_key=row["related_key"],
-        direction=row["direction"],
         pass_name=row["pass"],
         attribution=row["attribution"],
         related_label=row["related_label"],

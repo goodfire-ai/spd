@@ -1,7 +1,7 @@
-"""CLI entry point for topological interpretation.
+"""CLI entry point for graph interpretation.
 
 Called by SLURM or directly:
-    python -m spd.topological_interp.scripts.run <decomposition_id> --config_json '{...}'
+    python -m spd.graph_interp.scripts.run <decomposition_id> --config_json '{...}'
 """
 
 import os
@@ -13,11 +13,11 @@ from dotenv import load_dotenv
 from spd.adapters import adapter_from_id
 from spd.adapters.spd import SPDAdapter
 from spd.dataset_attributions.repo import AttributionRepo
+from spd.graph_interp.config import GraphInterpConfig
+from spd.graph_interp.interpret import run_graph_interp
+from spd.graph_interp.schemas import get_graph_interp_subrun_dir
 from spd.harvest.repo import HarvestRepo
 from spd.log import logger
-from spd.topological_interp.config import TopologicalInterpConfig
-from spd.topological_interp.interpret import run_topological_interp
-from spd.topological_interp.schemas import get_topological_interp_subrun_dir
 
 
 def main(
@@ -26,18 +26,18 @@ def main(
     harvest_subrun_id: str | None = None,
 ) -> None:
     assert isinstance(config_json, dict), f"Expected dict from fire, got {type(config_json)}"
-    config = TopologicalInterpConfig.model_validate(config_json)
+    config = GraphInterpConfig.model_validate(config_json)
 
     load_dotenv()
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
     subrun_id = "ti-" + datetime.now().strftime("%Y%m%d_%H%M%S")
-    subrun_dir = get_topological_interp_subrun_dir(decomposition_id, subrun_id)
+    subrun_dir = get_graph_interp_subrun_dir(decomposition_id, subrun_id)
     subrun_dir.mkdir(parents=True, exist_ok=True)
     config.to_file(subrun_dir / "config.yaml")
     db_path = subrun_dir / "interp.db"
-    logger.info(f"Topological interp run: {subrun_dir}")
+    logger.info(f"Graph interp run: {subrun_dir}")
 
     logger.info("Loading adapter and model metadata...")
     adapter = adapter_from_id(decomposition_id)
@@ -67,7 +67,7 @@ def main(
 
     logger.info("Data loading complete")
 
-    run_topological_interp(
+    run_graph_interp(
         openrouter_api_key=openrouter_api_key,
         config=config,
         harvest=harvest,
@@ -82,12 +82,12 @@ def main(
 
 def get_command(
     decomposition_id: str,
-    config: TopologicalInterpConfig,
+    config: GraphInterpConfig,
     harvest_subrun_id: str | None = None,
 ) -> str:
     config_json = config.model_dump_json(exclude_none=True)
     cmd = (
-        "python -m spd.topological_interp.scripts.run "
+        "python -m spd.graph_interp.scripts.run "
         f"--decomposition_id {decomposition_id} "
         f"--config_json '{config_json}' "
     )

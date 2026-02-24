@@ -1,9 +1,9 @@
-"""Export topological interpretation data to JSON for the static HTML page.
+"""Export graph interpretation data to JSON for the static HTML page.
 
 Usage:
-    python -m spd.topological_interp.scripts.export_html s-17805b61
-    python -m spd.topological_interp.scripts.export_html s-17805b61 --subrun_id ti-20260223_213443
-    python -m spd.topological_interp.scripts.export_html s-17805b61 --mock
+    python -m spd.graph_interp.scripts.export_html s-17805b61
+    python -m spd.graph_interp.scripts.export_html s-17805b61 --subrun_id ti-20260223_213443
+    python -m spd.graph_interp.scripts.export_html s-17805b61 --mock
 """
 
 import json
@@ -11,9 +11,9 @@ import random
 from dataclasses import asdict
 from typing import Any
 
+from spd.graph_interp.repo import GraphInterpRepo
+from spd.graph_interp.schemas import LabelResult, get_graph_interp_dir
 from spd.settings import SPD_OUT_DIR
-from spd.topological_interp.repo import TopologicalInterpRepo
-from spd.topological_interp.schemas import LabelResult, get_topological_interp_dir
 
 WWW_DIR = SPD_OUT_DIR / "www"
 DATA_DIR = WWW_DIR / "data"
@@ -32,7 +32,7 @@ def _parse_component_key(key: str) -> tuple[str, int]:
     return layer, int(idx_str)
 
 
-def export_from_repo(repo: TopologicalInterpRepo) -> dict[str, Any]:
+def export_from_repo(repo: GraphInterpRepo) -> dict[str, Any]:
     output_labels = repo.get_all_output_labels()
     input_labels = repo.get_all_input_labels()
     unified_labels = repo.get_all_unified_labels()
@@ -228,29 +228,26 @@ def main(
     mock: bool = False,
 ) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = DATA_DIR / f"topological_interp_{decomposition_id}.json"
+    out_path = DATA_DIR / f"graph_interp_{decomposition_id}.json"
 
     if mock:
         data = generate_mock_data(decomposition_id)
         print(f"Generated mock data: {len(data['components'])} components")
     else:
         if subrun_id is not None:
-            base_dir = get_topological_interp_dir(decomposition_id)
+            base_dir = get_graph_interp_dir(decomposition_id)
             subrun_dir = base_dir / subrun_id
             assert subrun_dir.exists(), f"Subrun dir not found: {subrun_dir}"
             db_path = subrun_dir / "interp.db"
             assert db_path.exists(), f"No interp.db in {subrun_dir}"
-            from spd.topological_interp.db import TopologicalInterpDB
+            from spd.graph_interp.db import GraphInterpDB
 
-            db = TopologicalInterpDB(db_path, readonly=True)
-            repo = TopologicalInterpRepo(db=db, subrun_dir=subrun_dir, run_id=decomposition_id)
+            db = GraphInterpDB(db_path, readonly=True)
+            repo = GraphInterpRepo(db=db, subrun_dir=subrun_dir, run_id=decomposition_id)
         else:
-            repo = TopologicalInterpRepo.open(decomposition_id)
+            repo = GraphInterpRepo.open(decomposition_id)
             if repo is None:
-                print(
-                    f"No topological interp data for {decomposition_id}. "
-                    "Generating mock data instead."
-                )
+                print(f"No graph interp data for {decomposition_id}. Generating mock data instead.")
                 data = generate_mock_data(decomposition_id)
                 with open(out_path, "w") as f:
                     json.dump(data, f)

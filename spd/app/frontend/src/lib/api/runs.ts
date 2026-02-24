@@ -14,6 +14,7 @@ export type LoadedRun = {
     backend_user: string;
     dataset_attributions_available: boolean;
     dataset_search_enabled: boolean;
+    graph_interp_available: boolean;
 };
 
 export async function getStatus(): Promise<LoadedRun | null> {

@@ -33,10 +33,17 @@ class AttributionsInfo(BaseModel):
     ci_threshold: float
 
 
+class GraphInterpInfo(BaseModel):
+    subrun_id: str
+    config: dict[str, Any] | None
+    label_counts: dict[str, int]
+
+
 class DataSourcesResponse(BaseModel):
     harvest: HarvestInfo | None
     autointerp: AutointerpInfo | None
     attributions: AttributionsInfo | None
+    graph_interp: GraphInterpInfo | None
 
 
 router = APIRouter(prefix="/api/data_sources", tags=["data_sources"])
@@ -75,8 +82,17 @@ def get_data_sources(loaded: DepLoadedRun) -> DataSourcesResponse:
             ci_threshold=storage.ci_threshold,
         )
 
+    graph_interp_info: GraphInterpInfo | None = None
+    if loaded.graph_interp is not None:
+        graph_interp_info = GraphInterpInfo(
+            subrun_id=loaded.graph_interp.subrun_id,
+            config=loaded.graph_interp.get_config(),
+            label_counts=loaded.graph_interp.get_label_counts(),
+        )
+
     return DataSourcesResponse(
         harvest=harvest_info,
         autointerp=autointerp_info,
         attributions=attributions_info,
+        graph_interp=graph_interp_info,
     )

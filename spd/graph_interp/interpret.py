@@ -1,4 +1,4 @@
-"""Main three-phase topological interpretation execution.
+"""Main three-phase graph interpretation execution.
 
 Structure:
     output_labels = scan(layers_reversed, step)
@@ -24,30 +24,30 @@ from spd.dataset_attributions.storage import (
     DatasetAttributionEntry,
     DatasetAttributionStorage,
 )
-from spd.harvest.analysis import get_input_token_stats, get_output_token_stats
-from spd.harvest.repo import HarvestRepo
-from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
-from spd.log import logger
-from spd.topological_interp import graph_context
-from spd.topological_interp.config import TopologicalInterpConfig
-from spd.topological_interp.db import TopologicalInterpDB
-from spd.topological_interp.graph_context import RelatedComponent, get_related_components
-from spd.topological_interp.ordering import group_and_sort_by_layer
-from spd.topological_interp.prompts import (
+from spd.graph_interp import graph_context
+from spd.graph_interp.config import GraphInterpConfig
+from spd.graph_interp.db import GraphInterpDB
+from spd.graph_interp.graph_context import RelatedComponent, get_related_components
+from spd.graph_interp.ordering import group_and_sort_by_layer
+from spd.graph_interp.prompts import (
     LABEL_SCHEMA,
     format_input_prompt,
     format_output_prompt,
     format_unification_prompt,
 )
-from spd.topological_interp.schemas import LabelResult
+from spd.graph_interp.schemas import LabelResult, PromptEdge
+from spd.harvest.analysis import get_input_token_stats, get_output_token_stats
+from spd.harvest.repo import HarvestRepo
+from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
+from spd.log import logger
 
 GetRelated = Callable[[str, dict[str, LabelResult]], list[RelatedComponent]]
 Step = Callable[[list[str], dict[str, LabelResult]], Awaitable[dict[str, LabelResult]]]
 
 
-def run_topological_interp(
+def run_graph_interp(
     openrouter_api_key: str,
-    config: TopologicalInterpConfig,
+    config: GraphInterpConfig,
     harvest: HarvestRepo,
     attribution_storage: DatasetAttributionStorage,
     correlation_storage: CorrelationStorage,
@@ -68,7 +68,7 @@ def run_topological_interp(
 
     layers = group_and_sort_by_layer(all_keys, model_metadata.layer_descriptions)
     total = len(all_keys)
-    logger.info(f"Topological interp: {total} components across {len(layers)} layers")
+    logger.info(f"Graph interp: {total} components across {len(layers)} layers")
 
     # -- Injected behaviours ---------------------------------------------------
 
@@ -151,6 +151,7 @@ def run_topological_interp(
                 assert o_stats is not None, f"No output token stats for {key}"
 
                 related = get_related(key, labels_so_far)
+                _save_edges(db, key, related, "output")
                 prompt = format_output_prompt(
                     component=component,
                     model_metadata=model_metadata,
@@ -178,6 +179,7 @@ def run_topological_interp(
                 assert i_stats is not None, f"No input token stats for {key}"
 
                 related = get_related(key, labels_so_far)
+                _save_edges(db, key, related, "input")
                 prompt = format_input_prompt(
                     component=component,
                     model_metadata=model_metadata,
@@ -264,7 +266,7 @@ def run_topological_interp(
     # -- Run -------------------------------------------------------------------
 
     logger.info("Initializing DB and building scan steps...")
-    db = TopologicalInterpDB(db_path)
+    db = GraphInterpDB(db_path)
 
     metric = config.attr_metric
     get_targets = _make_get_targets(metric)
@@ -352,3 +354,24 @@ def _check_error_rate(n_errors: int, n_done: int) -> None:
         raise RuntimeError(
             f"Error rate {n_errors / total:.0%} ({n_errors}/{total}) exceeds 5% threshold"
         )
+
+
+def _save_edges(
+    db: GraphInterpDB,
+    component_key: str,
+    related: list[RelatedComponent],
+    pass_name: Literal["output", "input"],
+) -> None:
+    edges = [
+        PromptEdge(
+            component_key=component_key,
+            related_key=r.component_key,
+            pass_name=pass_name,
+            attribution=r.attribution,
+            related_label=r.label,
+            related_confidence=r.confidence,
+        )
+        for r in related
+    ]
+    if edges:
+        db.save_prompt_edges(edges)

@@ -57,7 +57,7 @@ spd-harvest = "spd.harvest.scripts.run_slurm_cli:cli"
 spd-autointerp = "spd.autointerp.scripts.run_slurm_cli:cli"
 spd-attributions = "spd.dataset_attributions.scripts.run_slurm_cli:cli"
 spd-postprocess = "spd.postprocess.cli:cli"
-spd-topological-interp = "spd.topological_interp.scripts.run_slurm_cli:cli"
+spd-graph-interp = "spd.graph_interp.scripts.run_slurm_cli:cli"
 
 [build-system]
 requires = ["setuptools", "wheel"]

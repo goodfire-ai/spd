@@ -7,6 +7,7 @@ from spd.app.backend.routers.correlations import router as correlations_router
 from spd.app.backend.routers.data_sources import router as data_sources_router
 from spd.app.backend.routers.dataset_attributions import router as dataset_attributions_router
 from spd.app.backend.routers.dataset_search import router as dataset_search_router
+from spd.app.backend.routers.graph_interp import router as graph_interp_router
 from spd.app.backend.routers.graphs import router as graphs_router
 from spd.app.backend.routers.intervention import router as intervention_router
 from spd.app.backend.routers.pretrain_info import router as pretrain_info_router
@@ -20,6 +21,7 @@ __all__ = [
     "correlations_router",
     "data_sources_router",
     "dataset_attributions_router",
+    "graph_interp_router",
     "dataset_search_router",
     "graphs_router",
     "intervention_router",

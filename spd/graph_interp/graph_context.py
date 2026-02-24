@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from typing import Literal
 
 from spd.dataset_attributions.storage import DatasetAttributionEntry
+from spd.graph_interp.ordering import parse_component_key
+from spd.graph_interp.schemas import LabelResult
 from spd.harvest.analysis import get_correlated_components
 from spd.harvest.storage import CorrelationStorage
-from spd.topological_interp.ordering import parse_component_key
-from spd.topological_interp.schemas import LabelResult
 
 
 @dataclass

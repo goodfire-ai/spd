@@ -1,4 +1,4 @@
-"""Shared prompt-building helpers for autointerp and topological interpretation.
+"""Shared prompt-building helpers for autointerp and graph interpretation.
 
 Pure functions for formatting component data into LLM prompt sections.
 """

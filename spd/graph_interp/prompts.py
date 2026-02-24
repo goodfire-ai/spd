@@ -1,4 +1,4 @@
-"""Prompt formatters for topological interpretation.
+"""Prompt formatters for graph interpretation.
 
 Three prompts:
 1. Output pass (late→early): "What does this component DO?" — output tokens, says examples, downstream
@@ -17,10 +17,10 @@ from spd.autointerp.prompt_helpers import (
     layer_position_note,
 )
 from spd.autointerp.schemas import ModelMetadata
+from spd.graph_interp.graph_context import RelatedComponent
+from spd.graph_interp.schemas import LabelResult
 from spd.harvest.analysis import TokenPRLift
 from spd.harvest.schemas import ComponentData
-from spd.topological_interp.graph_context import RelatedComponent
-from spd.topological_interp.schemas import LabelResult
 
 LABEL_SCHEMA: dict[str, object] = {
     "type": "object",

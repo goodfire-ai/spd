@@ -11,6 +11,7 @@
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
     import DatasetAttributionsSection from "../ui/DatasetAttributionsSection.svelte";
     import EdgeAttributionGrid from "../ui/EdgeAttributionGrid.svelte";
+    import GraphInterpBadge from "../ui/GraphInterpBadge.svelte";
     import InterpretationBadge from "../ui/InterpretationBadge.svelte";
     import SectionHeader from "../ui/SectionHeader.svelte";
     import StatusText from "../ui/StatusText.svelte";
@@ -48,6 +49,7 @@
 
     const clusterId = $derived(runState.clusterMapping?.data[`${layer}:${cIdx}`]);
     const intruderScore = $derived(runState.getIntruderScore(`${layer}:${cIdx}`));
+    const graphInterpLabel = $derived(runState.getGraphInterpLabel(`${layer}:${cIdx}`));
 
     // Handle clicking a correlated component - parse key and pin it at same seqIdx
     function handleCorrelationClick(componentKey: string) {
@@ -219,11 +221,16 @@
         </div>
     </div>
 
-    <InterpretationBadge
-        interpretation={componentData.interpretation}
-        interpretationDetail={componentData.interpretationDetail}
-        onGenerate={componentData.generateInterpretation}
-    />
+    <div class="interpretation-badges">
+        <InterpretationBadge
+            interpretation={componentData.interpretation}
+            interpretationDetail={componentData.interpretationDetail}
+            onGenerate={componentData.generateInterpretation}
+        />
+        {#if graphInterpLabel}
+            <GraphInterpBadge headline={graphInterpLabel} />
+        {/if}
+    </div>
 
     <!-- Activating examples (from harvest data) -->
     <div class="activating-examples-section">
@@ -338,6 +345,12 @@
         gap: var(--space-3);
         font-family: var(--font-sans);
         color: var(--text-primary);
+    }
+
+    .interpretation-badges {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
     }
 
     .card-header {

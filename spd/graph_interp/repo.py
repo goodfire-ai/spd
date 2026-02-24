@@ -1,9 +1,9 @@
-"""Topological interpretation data repository.
+"""Graph interpretation data repository.
 
-Owns SPD_OUT_DIR/topological_interp/<decomposition_id>/ and provides read access
+Owns SPD_OUT_DIR/graph_interp/<decomposition_id>/ and provides read access
 to output, input, and unified labels.
 
-Use TopologicalInterpRepo.open() to construct — returns None if no data exists.
+Use GraphInterpRepo.open() to construct — returns None if no data exists.
 """
 
 from pathlib import Path
@@ -11,23 +11,23 @@ from typing import Any
 
 import yaml
 
-from spd.topological_interp.db import TopologicalInterpDB
-from spd.topological_interp.schemas import LabelResult, PromptEdge, get_topological_interp_dir
+from spd.graph_interp.db import GraphInterpDB
+from spd.graph_interp.schemas import LabelResult, PromptEdge, get_graph_interp_dir
 
 
-class TopologicalInterpRepo:
-    """Read access to topological interpretation data for a single run."""
+class GraphInterpRepo:
+    """Read access to graph interpretation data for a single run."""
 
-    def __init__(self, db: TopologicalInterpDB, subrun_dir: Path, run_id: str) -> None:
+    def __init__(self, db: GraphInterpDB, subrun_dir: Path, run_id: str) -> None:
         self._db = db
         self._subrun_dir = subrun_dir
         self.subrun_id = subrun_dir.name
         self.run_id = run_id
 
     @classmethod
-    def open(cls, run_id: str) -> "TopologicalInterpRepo | None":
-        """Open topological interp data for a run. Returns None if no data exists."""
-        base_dir = get_topological_interp_dir(run_id)
+    def open(cls, run_id: str) -> "GraphInterpRepo | None":
+        """Open graph interp data for a run. Returns None if no data exists."""
+        base_dir = get_graph_interp_dir(run_id)
         if not base_dir.exists():
             return None
         candidates = sorted(
@@ -41,7 +41,7 @@ class TopologicalInterpRepo:
         if not db_path.exists():
             return None
         return cls(
-            db=TopologicalInterpDB(db_path, readonly=True),
+            db=GraphInterpDB(db_path, readonly=True),
             subrun_dir=subrun_dir,
             run_id=run_id,
         )
@@ -77,6 +77,9 @@ class TopologicalInterpRepo:
 
     def get_prompt_edges(self, component_key: str) -> list[PromptEdge]:
         return self._db.get_prompt_edges(component_key)
+
+    def get_all_prompt_edges(self) -> list[PromptEdge]:
+        return self._db.get_all_prompt_edges()
 
     # -- Stats -----------------------------------------------------------------
 

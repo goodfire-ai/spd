@@ -1,4 +1,4 @@
-"""SLURM launcher for topological interpretation.
+"""SLURM launcher for graph interpretation.
 
 Submits a single CPU job that runs the three-phase interpretation pipeline.
 Depends on both harvest merge and attribution merge jobs.
@@ -6,29 +6,29 @@ Depends on both harvest merge and attribution merge jobs.
 
 from dataclasses import dataclass
 
+from spd.graph_interp.config import GraphInterpSlurmConfig
+from spd.graph_interp.scripts import run
 from spd.log import logger
-from spd.topological_interp.config import TopologicalInterpSlurmConfig
-from spd.topological_interp.scripts import run
 from spd.utils.slurm import SlurmConfig, SubmitResult, generate_script, submit_slurm_job
 
 
 @dataclass
-class TopologicalInterpSubmitResult:
+class GraphInterpSubmitResult:
     result: SubmitResult
 
 
-def submit_topological_interp(
+def submit_graph_interp(
     decomposition_id: str,
-    config: TopologicalInterpSlurmConfig,
+    config: GraphInterpSlurmConfig,
     dependency_job_ids: list[str],
     snapshot_branch: str | None = None,
     harvest_subrun_id: str | None = None,
-) -> TopologicalInterpSubmitResult:
-    """Submit topological interpretation to SLURM.
+) -> GraphInterpSubmitResult:
+    """Submit graph interpretation to SLURM.
 
     Args:
         decomposition_id: ID of the target decomposition.
-        config: Topological interp SLURM configuration.
+        config: Graph interp SLURM configuration.
         dependency_job_ids: Jobs to wait for (harvest merge + attribution merge).
         snapshot_branch: Git snapshot branch to use.
         harvest_subrun_id: Specific harvest subrun to use.
@@ -39,11 +39,10 @@ def submit_topological_interp(
         harvest_subrun_id=harvest_subrun_id,
     )
 
-    # Chain dependencies: job starts only after ALL dependencies complete
     dependency_str = ":".join(dependency_job_ids) if dependency_job_ids else None
 
     slurm_config = SlurmConfig(
-        job_name="spd-topological-interp",
+        job_name="spd-graph-interp",
         partition=config.partition,
         n_gpus=0,
         cpus_per_task=16,
@@ -54,9 +53,9 @@ def submit_topological_interp(
         comment=decomposition_id,
     )
     script_content = generate_script(slurm_config, cmd)
-    result = submit_slurm_job(script_content, "spd-topological-interp")
+    result = submit_slurm_job(script_content, "spd-graph-interp")
 
-    logger.section("Topological interp job submitted")
+    logger.section("Graph interp job submitted")
     logger.values(
         {
             "Job ID": result.job_id,
@@ -67,4 +66,4 @@ def submit_topological_interp(
         }
     )
 
-    return TopologicalInterpSubmitResult(result=result)
+    return GraphInterpSubmitResult(result=result)

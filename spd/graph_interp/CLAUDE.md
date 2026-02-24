@@ -1,4 +1,4 @@
-# Topological Interpretation Module
+# Graph Interpretation Module
 
 Context-aware component labeling using network graph structure. Unlike standard autointerp (one-shot per component), this module uses dataset attributions to provide graph context: each component's prompt includes labels from already-labeled components connected via the attribution graph.
 
@@ -6,10 +6,10 @@ Context-aware component labeling using network graph structure. Unlike standard 
 
 ```bash
 # Via SLURM (standalone)
-spd-topological-interp <decomposition_id> --config config.yaml
+spd-graph-interp <decomposition_id> --config config.yaml
 
 # Direct execution
-python -m spd.topological_interp.scripts.run <decomposition_id> --config_json '{...}'
+python -m spd.graph_interp.scripts.run <decomposition_id> --config_json '{...}'
 ```
 
 Requires `OPENROUTER_API_KEY` env var. Requires both harvest data and dataset attributions to exist.
@@ -27,7 +27,7 @@ All three phases run in a single invocation. Resume is per-phase via completed k
 ## Data Storage
 
 ```
-SPD_OUT_DIR/topological_interp/<decomposition_id>/
+SPD_OUT_DIR/graph_interp/<decomposition_id>/
 └── ti-YYYYMMDD_HHMMSS/
     ├── interp.db       # SQLite: output_labels, input_labels, unified_labels, prompt_edges
     └── config.yaml
@@ -38,24 +38,24 @@ SPD_OUT_DIR/topological_interp/<decomposition_id>/
 - `output_labels`: component_key → label, confidence, reasoning, raw_response, prompt
 - `input_labels`: same schema as output_labels
 - `unified_labels`: same schema as output_labels
-- `prompt_edges`: directed filtered graph of (component, related_key, direction, pass, attribution, related_label)
+- `prompt_edges`: directed filtered graph of (component, related_key, pass, attribution, related_label)
 - `config`: key-value store
 
 ## Architecture
 
 | File | Purpose |
 |------|---------|
-| `config.py` | `TopologicalInterpConfig`, `TopologicalInterpSlurmConfig` |
+| `config.py` | `GraphInterpConfig`, `GraphInterpSlurmConfig` |
 | `schemas.py` | `LabelResult`, `PromptEdge`, path helpers |
-| `db.py` | `TopologicalInterpDB` — SQLite with WAL mode |
+| `db.py` | `GraphInterpDB` — SQLite with WAL mode |
 | `ordering.py` | Topological sort via `CanonicalWeight` from topology module |
 | `graph_context.py` | `RelatedComponent`, gather attributed + co-firing components |
 | `prompts.py` | Three prompt formatters (output, input, unification) |
 | `interpret.py` | Main three-phase execution loop |
-| `repo.py` | `TopologicalInterpRepo` — read-only access to results |
+| `repo.py` | `GraphInterpRepo` — read-only access to results |
 | `scripts/run.py` | CLI entry point (called by SLURM) |
 | `scripts/run_slurm.py` | SLURM submission |
-| `scripts/run_slurm_cli.py` | Thin CLI wrapper for `spd-topological-interp` |
+| `scripts/run_slurm_cli.py` | Thin CLI wrapper for `spd-graph-interp` |
 
 ## Dependencies
 
@@ -68,4 +68,4 @@ SPD_OUT_DIR/topological_interp/<decomposition_id>/
 
 - 0 GPUs, 16 CPUs, 240GB memory (CPU-only, LLM API calls)
 - Depends on both harvest merge AND attribution merge jobs
-- Entry point: `spd-topological-interp`
+- Entry point: `spd-graph-interp`
