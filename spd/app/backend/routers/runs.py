@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.dependencies import DepStateManager
+from spd.app.backend.routers.graph_interp import MOCK_MODE as _GRAPH_INTERP_MOCK_MODE
 from spd.app.backend.state import RunState
 from spd.app.backend.utils import log_errors
 from spd.autointerp.repo import InterpRepo
@@ -168,7 +169,9 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
         backend_user=getpass.getuser(),
         dataset_attributions_available=manager.run_state.attributions is not None,
         dataset_search_enabled=dataset_search_enabled,
-        graph_interp_available=manager.run_state.graph_interp is not None,
+        # TODO(oli): Remove MOCK_MODE import after real data available
+        graph_interp_available=manager.run_state.graph_interp is not None
+        or _GRAPH_INTERP_MOCK_MODE,
     )
 
 

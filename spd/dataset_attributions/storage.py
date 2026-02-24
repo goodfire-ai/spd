@@ -69,9 +69,7 @@ class DatasetAttributionStorage:
         ci_sum: dict[str, Tensor],
         component_act_sq_sum: dict[str, Tensor],
         logit_sq_sum: Tensor,
-        vocab_size: int,
         ci_threshold: float,
-        n_batches_processed: int,
         n_tokens_processed: int,
     ):
         self._regular_attr = regular_attr
@@ -84,9 +82,7 @@ class DatasetAttributionStorage:
         self._ci_sum = ci_sum
         self._component_act_sq_sum = component_act_sq_sum
         self._logit_sq_sum = logit_sq_sum
-        self.vocab_size = vocab_size
         self.ci_threshold = ci_threshold
-        self.n_batches_processed = n_batches_processed
         self.n_tokens_processed = n_tokens_processed
 
     @property
@@ -192,7 +188,9 @@ class DatasetAttributionStorage:
         value_segments: list[Tensor] = []
         layer_names: list[str] = []
 
-        if source_layer == "embed":
+        if source_layer == "output":
+            return []
+        elif source_layer == "embed":
             regular, embed = self._select_metric(metric)
 
             for target_layer, attr_matrix in embed.items():
@@ -269,14 +267,12 @@ class DatasetAttributionStorage:
                 "embed_attr": _to_cpu(self._embed_attr),
                 "embed_attr_abs": _to_cpu(self._embed_attr_abs),
                 "unembed_attr": _to_cpu(self._unembed_attr),
-                "embed_unembed_attr": self._embed_unembed_attr.cpu(),
-                "w_unembed": self._w_unembed.cpu(),
+                "embed_unembed_attr": self._embed_unembed_attr.detach().cpu(),
+                "w_unembed": self._w_unembed.detach().cpu(),
                 "ci_sum": _to_cpu(self._ci_sum),
                 "component_act_sq_sum": _to_cpu(self._component_act_sq_sum),
-                "logit_sq_sum": self._logit_sq_sum.cpu(),
-                "vocab_size": self.vocab_size,
+                "logit_sq_sum": self._logit_sq_sum.detach().cpu(),
                 "ci_threshold": self.ci_threshold,
-                "n_batches_processed": self.n_batches_processed,
                 "n_tokens_processed": self.n_tokens_processed,
             },
             path,
@@ -298,9 +294,7 @@ class DatasetAttributionStorage:
             ci_sum=data["ci_sum"],
             component_act_sq_sum=data["component_act_sq_sum"],
             logit_sq_sum=data["logit_sq_sum"],
-            vocab_size=data["vocab_size"],
             ci_threshold=data["ci_threshold"],
-            n_batches_processed=data["n_batches_processed"],
             n_tokens_processed=data["n_tokens_processed"],
         )
 
@@ -342,16 +336,16 @@ class DatasetAttributionStorage:
 
             merged._logit_sq_sum += other._logit_sq_sum
             merged.n_tokens_processed += other.n_tokens_processed
-            merged.n_batches_processed += other.n_batches_processed
 
         return merged
 
 
 def _to_cpu_nested(d: dict[str, dict[str, Tensor]]) -> dict[str, dict[str, Tensor]]:
     return {
-        target: {source: v.cpu() for source, v in sources.items()} for target, sources in d.items()
+        target: {source: v.detach().cpu() for source, v in sources.items()}
+        for target, sources in d.items()
     }
 
 
 def _to_cpu(d: dict[str, Tensor]) -> dict[str, Tensor]:
-    return {k: v.cpu() for k, v in d.items()}
+    return {k: v.detach().cpu() for k, v in d.items()}
