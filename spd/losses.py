@@ -4,7 +4,6 @@ from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.configs import (
-    CIMaskedAttnPatternsReconLossConfig,
     CIMaskedReconLayerwiseLossConfig,
     CIMaskedReconLossConfig,
     CIMaskedReconSubsetLossConfig,
@@ -17,7 +16,6 @@ from spd.configs import (
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
     SamplingType,
-    StochasticAttnPatternsReconLossConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
@@ -25,7 +23,6 @@ from spd.configs import (
     UnmaskedReconLossConfig,
 )
 from spd.metrics import (
-    ci_masked_attn_patterns_recon_loss,
     ci_masked_recon_layerwise_loss,
     ci_masked_recon_loss,
     ci_masked_recon_subset_loss,
@@ -34,7 +31,6 @@ from spd.metrics import (
     pgd_recon_layerwise_loss,
     pgd_recon_loss,
     pgd_recon_subset_loss,
-    stochastic_attn_patterns_recon_loss,
     stochastic_hidden_acts_recon_loss,
     stochastic_recon_layerwise_loss,
     stochastic_recon_loss,
@@ -185,31 +181,6 @@ def compute_losses(
                     batch=batch,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
-                )
-            case CIMaskedAttnPatternsReconLossConfig():
-                loss = ci_masked_attn_patterns_recon_loss(
-                    model=model,
-                    batch=batch,
-                    pre_weight_acts=pre_weight_acts,
-                    ci=ci.lower_leaky,
-                    n_heads=cfg.n_heads,
-                    q_proj_path=cfg.q_proj_path,
-                    k_proj_path=cfg.k_proj_path,
-                    c_attn_path=cfg.c_attn_path,
-                )
-            case StochasticAttnPatternsReconLossConfig():
-                loss = stochastic_attn_patterns_recon_loss(
-                    model=model,
-                    sampling=sampling,
-                    n_mask_samples=n_mask_samples,
-                    batch=batch,
-                    pre_weight_acts=pre_weight_acts,
-                    ci=ci.lower_leaky,
-                    weight_deltas=weight_deltas if use_delta_component else None,
-                    n_heads=cfg.n_heads,
-                    q_proj_path=cfg.q_proj_path,
-                    k_proj_path=cfg.k_proj_path,
-                    c_attn_path=cfg.c_attn_path,
                 )
             case PersistentPGDReconLossConfig() | PersistentPGDReconSubsetLossConfig():
                 loss = ppgd_states[cfg].compute_recon_loss(

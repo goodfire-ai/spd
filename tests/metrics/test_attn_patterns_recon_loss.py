@@ -2,9 +2,9 @@ import torch
 
 from spd.configs import LayerwiseCiConfig
 from spd.metrics.attn_patterns_recon_loss import (
+    CIMaskedAttnPatternsReconLoss,
+    StochasticAttnPatternsReconLoss,
     _compute_attn_patterns,
-    ci_masked_attn_patterns_recon_loss,
-    stochastic_attn_patterns_recon_loss,
 )
 from spd.models.component_model import ComponentModel
 from spd.pretrain.models.gpt2 import GPT2, GPT2Config
@@ -79,14 +79,11 @@ class TestAttnPatternsReconLoss:
         n_head = 2
         model = _make_gpt2_component_model(n_embd=n_embd, n_head=n_head)
 
-        # Set up identity decomposition: component weight = (V @ U).T = target weight
-        # LinearComponents.weight = einsum(V, U, "d_in C, C d_out -> d_out d_in")
-        # So V @ U = target_weight.T, meaning V = target_weight.T and U = eye works.
         for path in ["h.0.attn.q_proj", "h.0.attn.k_proj"]:
-            target_weight = model.target_weight(path)  # (d_out, d_in)
+            target_weight = model.target_weight(path)
             with torch.no_grad():
-                model.components[path].V.copy_(target_weight.T)  # (d_in, C=d_embd)
-                model.components[path].U.copy_(torch.eye(n_embd))  # (C=d_embd, d_out=d_embd)
+                model.components[path].V.copy_(target_weight.T)
+                model.components[path].U.copy_(torch.eye(n_embd))
 
         batch = torch.randint(0, 64, (2, 8))
         target_output = model(batch, cache_type="input")
@@ -95,16 +92,16 @@ class TestAttnPatternsReconLoss:
             pre_weight_acts=pre_weight_acts, detach_inputs=False, sampling="continuous"
         )
 
-        loss = ci_masked_attn_patterns_recon_loss(
+        metric = CIMaskedAttnPatternsReconLoss(
             model=model,
-            batch=batch,
-            pre_weight_acts=pre_weight_acts,
-            ci=ci.lower_leaky,
+            device="cpu",
             n_heads=n_head,
             q_proj_path="h.*.attn.q_proj",
             k_proj_path="h.*.attn.k_proj",
             c_attn_path=None,
         )
+        metric.update(batch=batch, pre_weight_acts=pre_weight_acts, ci=ci)
+        loss = metric.compute()
 
         assert loss.item() < 1e-4, f"Expected KL ≈ 0 with identity decomposition, got {loss.item()}"
 
@@ -122,16 +119,16 @@ class TestAttnPatternsReconLoss:
             pre_weight_acts=pre_weight_acts, detach_inputs=False, sampling="continuous"
         )
 
-        loss = ci_masked_attn_patterns_recon_loss(
+        metric = CIMaskedAttnPatternsReconLoss(
             model=model,
-            batch=batch,
-            pre_weight_acts=pre_weight_acts,
-            ci=ci.lower_leaky,
+            device="cpu",
             n_heads=n_head,
             q_proj_path="h.*.attn.q_proj",
             k_proj_path="h.*.attn.k_proj",
             c_attn_path=None,
         )
+        metric.update(batch=batch, pre_weight_acts=pre_weight_acts, ci=ci)
+        loss = metric.compute()
 
         assert loss.item() > 0.01, f"Expected KL > 0 with random init, got {loss.item()}"
 
@@ -155,19 +152,20 @@ class TestAttnPatternsReconLoss:
             pre_weight_acts=pre_weight_acts, detach_inputs=False, sampling="continuous"
         )
 
-        loss = stochastic_attn_patterns_recon_loss(
+        metric = StochasticAttnPatternsReconLoss(
             model=model,
+            device="cpu",
             sampling="continuous",
+            use_delta_component=False,
             n_mask_samples=2,
-            batch=batch,
-            pre_weight_acts=pre_weight_acts,
-            ci=ci.lower_leaky,
-            weight_deltas=None,
             n_heads=n_head,
             q_proj_path="h.*.attn.q_proj",
             k_proj_path="h.*.attn.k_proj",
             c_attn_path=None,
         )
+        weight_deltas = model.calc_weight_deltas()
+        metric.update(batch=batch, pre_weight_acts=pre_weight_acts, ci=ci, weight_deltas=weight_deltas)
+        loss = metric.compute()
 
         assert loss.item() < 1e-4, f"Expected KL ≈ 0 with identity decomposition, got {loss.item()}"
 
@@ -185,19 +183,20 @@ class TestAttnPatternsReconLoss:
             pre_weight_acts=pre_weight_acts, detach_inputs=False, sampling="continuous"
         )
 
-        loss = stochastic_attn_patterns_recon_loss(
+        metric = StochasticAttnPatternsReconLoss(
             model=model,
+            device="cpu",
             sampling="continuous",
+            use_delta_component=False,
             n_mask_samples=2,
-            batch=batch,
-            pre_weight_acts=pre_weight_acts,
-            ci=ci.lower_leaky,
-            weight_deltas=None,
             n_heads=n_head,
             q_proj_path="h.*.attn.q_proj",
             k_proj_path="h.*.attn.k_proj",
             c_attn_path=None,
         )
+        weight_deltas = model.calc_weight_deltas()
+        metric.update(batch=batch, pre_weight_acts=pre_weight_acts, ci=ci, weight_deltas=weight_deltas)
+        loss = metric.compute()
 
         assert loss.item() > 0.01, f"Expected KL > 0 with random init, got {loss.item()}"
 
@@ -223,16 +222,16 @@ class TestCAttnPatternsReconLoss:
             pre_weight_acts=pre_weight_acts, detach_inputs=False, sampling="continuous"
         )
 
-        loss = ci_masked_attn_patterns_recon_loss(
+        metric = CIMaskedAttnPatternsReconLoss(
             model=model,
-            batch=batch,
-            pre_weight_acts=pre_weight_acts,
-            ci=ci.lower_leaky,
+            device="cpu",
             n_heads=n_head,
             q_proj_path=None,
             k_proj_path=None,
             c_attn_path="h_torch.*.attn.c_attn",
         )
+        metric.update(batch=batch, pre_weight_acts=pre_weight_acts, ci=ci)
+        loss = metric.compute()
 
         assert loss.item() < 1e-4, f"Expected KL ≈ 0 with identity decomposition, got {loss.item()}"
 
@@ -250,16 +249,16 @@ class TestCAttnPatternsReconLoss:
             pre_weight_acts=pre_weight_acts, detach_inputs=False, sampling="continuous"
         )
 
-        loss = ci_masked_attn_patterns_recon_loss(
+        metric = CIMaskedAttnPatternsReconLoss(
             model=model,
-            batch=batch,
-            pre_weight_acts=pre_weight_acts,
-            ci=ci.lower_leaky,
+            device="cpu",
             n_heads=n_head,
             q_proj_path=None,
             k_proj_path=None,
             c_attn_path="h_torch.*.attn.c_attn",
         )
+        metric.update(batch=batch, pre_weight_acts=pre_weight_acts, ci=ci)
+        loss = metric.compute()
 
         assert loss.item() > 0.01, f"Expected KL > 0 with random init, got {loss.item()}"
 
@@ -318,16 +317,16 @@ class TestRoPEAttnPatternsReconLoss:
             pre_weight_acts=pre_weight_acts, detach_inputs=False, sampling="continuous"
         )
 
-        loss = ci_masked_attn_patterns_recon_loss(
+        metric = CIMaskedAttnPatternsReconLoss(
             model=model,
-            batch=batch,
-            pre_weight_acts=pre_weight_acts,
-            ci=ci.lower_leaky,
+            device="cpu",
             n_heads=n_head,
             q_proj_path="h.*.attn.q_proj",
             k_proj_path="h.*.attn.k_proj",
             c_attn_path=None,
         )
+        metric.update(batch=batch, pre_weight_acts=pre_weight_acts, ci=ci)
+        loss = metric.compute()
 
         assert loss.item() < 1e-4, f"Expected KL ≈ 0 with identity decomposition, got {loss.item()}"
 
@@ -345,16 +344,16 @@ class TestRoPEAttnPatternsReconLoss:
             pre_weight_acts=pre_weight_acts, detach_inputs=False, sampling="continuous"
         )
 
-        loss = ci_masked_attn_patterns_recon_loss(
+        metric = CIMaskedAttnPatternsReconLoss(
             model=model,
-            batch=batch,
-            pre_weight_acts=pre_weight_acts,
-            ci=ci.lower_leaky,
+            device="cpu",
             n_heads=n_head,
             q_proj_path="h.*.attn.q_proj",
             k_proj_path="h.*.attn.k_proj",
             c_attn_path=None,
         )
+        metric.update(batch=batch, pre_weight_acts=pre_weight_acts, ci=ci)
+        loss = metric.compute()
 
         assert loss.item() > 0.01, f"Expected KL > 0 with random init, got {loss.item()}"
 

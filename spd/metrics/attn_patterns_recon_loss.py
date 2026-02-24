@@ -184,33 +184,6 @@ def _attn_patterns_recon_loss_compute(
 # --- CI-masked variant ---
 
 
-def ci_masked_attn_patterns_recon_loss(
-    model: ComponentModel,
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    pre_weight_acts: dict[str, Float[Tensor, "..."]],
-    ci: dict[str, Float[Tensor, "... C"]],
-    n_heads: int,
-    q_proj_path: str | None,
-    k_proj_path: str | None,
-    c_attn_path: str | None,
-) -> Float[Tensor, ""]:
-    q_paths, k_paths, is_combined = _resolve_qk_paths(model, q_proj_path, k_proj_path, c_attn_path)
-    attn_modules = _resolve_attn_modules(model, q_paths)
-    mask_infos = make_mask_infos(ci, weight_deltas_and_masks=None)
-    sum_kl, n_distributions = _attn_patterns_recon_loss_update(
-        model=model,
-        batch=batch,
-        pre_weight_acts=pre_weight_acts,
-        mask_infos_list=[mask_infos],
-        q_paths=q_paths,
-        k_paths=k_paths,
-        is_combined=is_combined,
-        n_heads=n_heads,
-        attn_modules=attn_modules,
-    )
-    return _attn_patterns_recon_loss_compute(sum_kl, n_distributions)
-
-
 class CIMaskedAttnPatternsReconLoss(Metric):
     """Attention pattern reconstruction loss using CI masks."""
 
@@ -266,44 +239,6 @@ class CIMaskedAttnPatternsReconLoss(Metric):
 
 
 # --- Stochastic variant ---
-
-
-def stochastic_attn_patterns_recon_loss(
-    model: ComponentModel,
-    sampling: SamplingType,
-    n_mask_samples: int,
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    pre_weight_acts: dict[str, Float[Tensor, "..."]],
-    ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
-    n_heads: int,
-    q_proj_path: str | None,
-    k_proj_path: str | None,
-    c_attn_path: str | None,
-) -> Float[Tensor, ""]:
-    q_paths, k_paths, is_combined = _resolve_qk_paths(model, q_proj_path, k_proj_path, c_attn_path)
-    attn_modules = _resolve_attn_modules(model, q_paths)
-    mask_infos_list = [
-        calc_stochastic_component_mask_info(
-            causal_importances=ci,
-            component_mask_sampling=sampling,
-            weight_deltas=weight_deltas,
-            router=AllLayersRouter(),
-        )
-        for _ in range(n_mask_samples)
-    ]
-    sum_kl, n_distributions = _attn_patterns_recon_loss_update(
-        model=model,
-        batch=batch,
-        pre_weight_acts=pre_weight_acts,
-        mask_infos_list=mask_infos_list,
-        q_paths=q_paths,
-        k_paths=k_paths,
-        is_combined=is_combined,
-        n_heads=n_heads,
-        attn_modules=attn_modules,
-    )
-    return _attn_patterns_recon_loss_compute(sum_kl, n_distributions)
 
 
 class StochasticAttnPatternsReconLoss(Metric):

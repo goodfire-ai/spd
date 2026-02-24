@@ -603,7 +603,7 @@ class PersistentPGDReconSubsetEvalConfig(BaseConfig):
     classname: Literal["PersistentPGDReconSubsetEval"] = "PersistentPGDReconSubsetEval"
 
 
-class _AttnPatternsReconLossBaseConfig(LossMetricConfig):
+class _AttnPatternsReconLossBaseConfig(BaseConfig):
     """Attention pattern reconstruction loss config.
 
     Supports standard attention and RoPE attention (auto-detected from the parent attention
@@ -701,8 +701,6 @@ ReconLossConfigType = (
     | StochasticHiddenActsReconLossConfig
     | PersistentPGDReconLossConfig
     | PersistentPGDReconSubsetLossConfig
-    | CIMaskedAttnPatternsReconLossConfig
-    | StochasticAttnPatternsReconLossConfig
 )
 
 LossMetricConfigType = FaithfulnessLossConfig | ImportanceMinimalityLossConfig | ReconLossConfigType
@@ -722,6 +720,8 @@ EvalOnlyMetricConfigType = (
     | StochasticReconSubsetCEAndKLConfig
     | PGDMultiBatchReconLossConfig
     | PGDMultiBatchReconSubsetLossConfig
+    | CIMaskedAttnPatternsReconLossConfig
+    | StochasticAttnPatternsReconLossConfig
 )
 MetricConfigType = LossMetricConfigType | EvalOnlyMetricConfigType
 
