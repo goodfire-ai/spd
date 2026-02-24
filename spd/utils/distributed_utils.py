@@ -170,14 +170,12 @@ def sync_across_processes() -> None:
         dist.barrier()
 
 
-def all_reduce(
-    tensor: torch.Tensor, op: dist.ReduceOp.RedOpType = dist.ReduceOp.SUM
-) -> torch.Tensor:
+def all_reduce(tensor: torch.Tensor, op: dist.ReduceOp.RedOpType) -> torch.Tensor:
     """All-reduce a tensor across all processes.
 
     Args:
         tensor: Tensor to reduce
-        op: Reduction operation (default: SUM)
+        op: Reduction operation
 
     Returns:
         Reduced tensor

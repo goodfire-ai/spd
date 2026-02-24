@@ -20,7 +20,7 @@ def pgd_masked_recon_loss_update(
     model: ComponentModel,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
     target_out: Float[Tensor, "... vocab"],
     output_loss_type: Literal["mse", "kl"],
     router: Router,
@@ -37,7 +37,7 @@ def pgd_masked_recon_loss_update(
     adv_sources: dict[str, Float[Tensor, "*batch_dims mask_c"]] = {}
     for module_name in model.target_module_paths:
         module_c = model.module_to_c[module_name]
-        mask_c = module_c if weight_deltas is None else module_c + 1
+        mask_c = module_c + 1
         match pgd_config.mask_scope:
             case "unique_per_datapoint":
                 shape = torch.Size([*batch_dims, mask_c])
@@ -94,7 +94,7 @@ CreateDataIter = Callable[
 def calc_multibatch_pgd_masked_recon_loss(
     pgd_config: PGDMultiBatchConfig,
     model: ComponentModel,
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
     create_data_iter: CreateDataIter,
     output_loss_type: Literal["mse", "kl"],
     router: Router,
@@ -164,23 +164,17 @@ def _forward_with_adv_sources(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     adv_sources: dict[str, Float[Tensor, "*batch_dim_or_ones mask_c"]],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
     routing_masks: RoutingMasks,
     target_out: Float[Tensor, "... vocab"],
     output_loss_type: Literal["mse", "kl"],
     batch_dims: tuple[int, ...],
 ):
     expanded_adv_sources = {k: v.expand(*batch_dims, -1) for k, v in adv_sources.items()}
-    adv_sources_components: dict[str, Float[Tensor, "*batch_dims C"]]
-    match weight_deltas:
-        case None:
-            weight_deltas_and_masks = None
-            adv_sources_components = expanded_adv_sources
-        case dict():
-            weight_deltas_and_masks = {
-                k: (weight_deltas[k], expanded_adv_sources[k][..., -1]) for k in weight_deltas
-            }
-            adv_sources_components = {k: v[..., :-1] for k, v in expanded_adv_sources.items()}
+    weight_deltas_and_masks = {
+        k: (weight_deltas[k], expanded_adv_sources[k][..., -1]) for k in weight_deltas
+    }
+    adv_sources_components = {k: v[..., :-1] for k, v in expanded_adv_sources.items()}
 
     mask_infos = make_mask_infos(
         component_masks=_interpolate_component_mask(ci, adv_sources_components),
@@ -202,7 +196,7 @@ def _multibatch_pgd_fwd_bwd(
     adv_sources: dict[str, Float[Tensor, "*ones mask_c"]],
     pgd_config: PGDMultiBatchConfig,
     model: ComponentModel,
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
     data_iter: Iterator[Int[Tensor, "..."]]
     | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     device: torch.device | str,

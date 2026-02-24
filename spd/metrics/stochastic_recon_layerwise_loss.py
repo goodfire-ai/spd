@@ -22,7 +22,7 @@ def _stochastic_recon_layerwise_loss_update(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
 ) -> tuple[Float[Tensor, ""], int]:
     assert ci, "Empty ci"
     device = get_obj_device(ci)
@@ -63,7 +63,7 @@ def stochastic_recon_layerwise_loss(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _stochastic_recon_layerwise_loss_update(
         model=model,
@@ -118,7 +118,7 @@ class StochasticReconLayerwiseLoss(Metric):
             batch=batch,
             target_out=target_out,
             ci=ci.lower_leaky,
-            weight_deltas=weight_deltas if self.use_delta_component else None,
+            weight_deltas=weight_deltas,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples

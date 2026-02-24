@@ -88,6 +88,7 @@ class TestStochasticReconSubsetLoss:
             expected_loss = sum_loss / n_examples
 
             # Calculate actual loss
+            weight_deltas = model.calc_weight_deltas()
             actual_loss = stochastic_recon_subset_loss(
                 model=model,
                 sampling="continuous",
@@ -96,7 +97,7 @@ class TestStochasticReconSubsetLoss:
                 batch=batch,
                 target_out=target_out,
                 ci=ci,
-                weight_deltas=None,
+                weight_deltas=weight_deltas,
                 routing=UniformKSubsetRoutingConfig(),
             )
 

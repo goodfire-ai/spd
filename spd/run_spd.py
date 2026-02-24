@@ -288,7 +288,7 @@ def optimize(
                     batch=batch,
                     target_out=target_model_output.output,
                     ci=ci.lower_leaky,
-                    weight_deltas=weight_deltas if config.use_delta_component else None,
+                    weight_deltas=weight_deltas,
                 )
 
             losses = compute_losses(
@@ -301,7 +301,6 @@ def optimize(
                 pre_weight_acts=target_model_output.cache,
                 current_frac_of_training=step / config.steps,
                 sampling=config.sampling,
-                use_delta_component=config.use_delta_component,
                 n_mask_samples=config.n_mask_samples,
                 ppgd_states=ppgd_states,
                 output_loss_type=config.output_loss_type,

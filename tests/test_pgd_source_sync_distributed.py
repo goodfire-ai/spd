@@ -86,13 +86,15 @@ def _test_shared_across_batch_sources_synced():
     )
     router = AllLayersRouter()
 
+    weight_deltas = model.calc_weight_deltas()
+
     torch.manual_seed(7)
     with torch.no_grad():
         sum_loss, _ = pgd_masked_recon_loss_update(
             model=model,
             batch=batch,
             ci=ci,
-            weight_deltas=None,
+            weight_deltas=weight_deltas,
             target_out=target_out,
             output_loss_type="mse",
             router=router,
@@ -125,6 +127,7 @@ def _test_unique_per_datapoint_sources_independent():
     with torch.no_grad():
         target_out = model(batch).detach()
     ci = {"fc": torch.rand(2, 1, dtype=torch.float32, device=device)}
+    weight_deltas = model.calc_weight_deltas()
 
     pgd_config = PGDReconLossConfig(
         init="random", step_size=0.1, n_steps=3, mask_scope="unique_per_datapoint"
@@ -138,7 +141,7 @@ def _test_unique_per_datapoint_sources_independent():
             model=model,
             batch=batch,
             ci=ci,
-            weight_deltas=None,
+            weight_deltas=weight_deltas,
             target_out=target_out,
             output_loss_type="mse",
             router=router,

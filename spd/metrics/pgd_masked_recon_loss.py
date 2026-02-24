@@ -20,7 +20,7 @@ def pgd_recon_loss(
     target_out: Float[Tensor, "... vocab"],
     output_loss_type: Literal["mse", "kl"],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
     pgd_config: PGDConfig,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = pgd_masked_recon_loss_update(
@@ -64,14 +64,14 @@ class PGDReconLoss(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: CIOutputs,
-        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
         **_: Any,
     ) -> None:
         sum_loss, n_examples = pgd_masked_recon_loss_update(
             model=self.model,
             batch=batch,
             ci=ci.lower_leaky,
-            weight_deltas=weight_deltas if self.use_delta_component else None,
+            weight_deltas=weight_deltas,
             target_out=target_out,
             output_loss_type=self.output_loss_type,
             router=AllLayersRouter(),

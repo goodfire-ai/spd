@@ -193,6 +193,8 @@ def run_train(config: ResidMLPTrainConfig, device: str) -> Float[Tensor, ""]:
     )
     dataloader = DatasetGeneratedDataLoader(dataset, batch_size=config.batch_size, shuffle=False)
 
+    assert config.importance_val is not None
+    assert config.importance_val is not None
     feature_importances = compute_feature_importances(
         batch_size=config.batch_size,
         n_features=model_cfg.n_features,

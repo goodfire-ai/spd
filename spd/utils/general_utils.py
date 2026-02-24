@@ -39,12 +39,11 @@ def bf16_autocast(enabled: bool = True) -> torch.amp.autocast_mode.autocast:
     return torch.autocast(device_type=device_type, dtype=torch.bfloat16, enabled=enabled)
 
 
-def set_seed(seed: int | None) -> None:
+def set_seed(seed: int) -> None:
     """Set the random seed for random, PyTorch and NumPy"""
-    if seed is not None:
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        random.seed(seed)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
 
 
 def replace_pydantic_model[BaseModelType: BaseModel](
@@ -80,11 +79,10 @@ def replace_pydantic_model[BaseModelType: BaseModel](
 def compute_feature_importances(
     batch_size: int,
     n_features: int,
-    importance_val: float | None,
+    importance_val: float,
     device: str,
 ) -> Float[Tensor, "batch_size n_features"]:
-    # Defines a tensor where the i^th feature has importance importance^i
-    if importance_val is None or importance_val == 1.0:
+    if importance_val == 1.0:
         importance_tensor = torch.ones(batch_size, n_features, device=device)
     else:
         powers = torch.arange(n_features, device=device)

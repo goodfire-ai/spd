@@ -46,10 +46,10 @@ def tokenize_and_concatenate(
     dataset: Dataset,
     tokenizer: PreTrainedTokenizer,
     column_name: str,
-    max_length: int = 1024,
-    add_bos_token: bool = False,
+    max_length: int,
+    add_bos_token: bool,
+    to_lower: bool,
     num_proc: int = 10,
-    to_lower: bool = False,
 ) -> Dataset:
     """Helper function to tokenizer and concatenate a dataset of text. This converts the text to
     tokens, concatenates them (separated by EOS tokens) and then reshapes them into a 2D array of
@@ -149,8 +149,8 @@ def create_data_loader(
     dataset_config: DatasetConfig,
     batch_size: int,
     buffer_size: int,
+    global_seed: int,
     dist_state: DistributedState | None = None,
-    global_seed: int = 0,
     to_lower: bool = True,
 ) -> tuple[DataLoader[Any], PreTrainedTokenizer]:
     """Create a DataLoader for the given dataset.

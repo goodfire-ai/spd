@@ -364,7 +364,7 @@ def evaluate_multibatch_pgd(
     device: str,
 ) -> dict[str, float]:
     """Calculate multibatch PGD metrics."""
-    weight_deltas = model.calc_weight_deltas() if config.use_delta_component else None
+    weight_deltas = model.calc_weight_deltas()
 
     metrics: dict[str, float] = {}
     for multibatch_pgd_config in multibatch_pgd_eval_configs:

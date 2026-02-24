@@ -11,7 +11,7 @@ from spd.clustering.math.merge_matrix import GroupMerge
 def compute_mdl_cost(
     acts: Float[Tensor, " k_groups"],
     merges: GroupMerge,
-    alpha: float = 1.0,
+    alpha: float,
 ) -> float:
     r"""Compute MDL costs for merge matrices
 
@@ -38,7 +38,7 @@ def compute_mdl_cost(
 def compute_merge_costs(
     coact: ClusterCoactivationShaped,
     merges: GroupMerge,
-    alpha: float = 1.0,
+    alpha: float,
 ) -> ClusterCoactivationShaped:
     r"""Compute MDL costs for merge matrices
 

@@ -108,7 +108,7 @@ class TestStochasticHiddenActsReconLoss:
                 batch=batch,
                 pre_weight_acts=target_pre_weight_acts,
                 ci=ci,
-                weight_deltas=None,
+                weight_deltas=model.calc_weight_deltas(),
             )
 
             assert torch.allclose(actual_loss, torch.tensor(expected_loss), rtol=1e-5), (

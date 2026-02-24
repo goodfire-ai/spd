@@ -149,7 +149,7 @@ class StochasticReconSubsetCEAndKL(Metric):
             calc_stochastic_component_mask_info(
                 causal_importances=ci,
                 component_mask_sampling=self.sampling,
-                weight_deltas=weight_deltas if self.use_delta_component else None,
+                weight_deltas=weight_deltas,
                 router=AllLayersRouter(),
             )
             for _ in range(self.n_mask_samples)

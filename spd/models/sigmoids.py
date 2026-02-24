@@ -59,11 +59,11 @@ def lower_leaky_hard_sigmoid(x: Tensor, alpha: float = 0.01) -> Tensor:
     return LowerLeakyHardSigmoidFunction.apply(x, alpha)  # pyright: ignore[reportReturnType]
 
 
-def swish(x: Tensor, beta: float = 1.0) -> Tensor:
+def swish(x: Tensor, beta: float) -> Tensor:
     return x * torch.sigmoid(beta * x)
 
 
-def upside_down_swish(x: Tensor, beta: float = 1.0) -> Tensor:
+def upside_down_swish(x: Tensor, beta: float) -> Tensor:
     return x * torch.sigmoid(beta * -x)
 
 

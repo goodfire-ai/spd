@@ -72,8 +72,8 @@ class LayerRouter(Router):
 def rand_perm(
     shape: tuple[int, ...],
     dim: int,
-    device: torch.device | str = "cpu",
-    generator: torch.Generator | None = None,
+    device: torch.device | str,
+    generator: torch.Generator | None,
 ) -> Int[Tensor, "... k"]:
     """Create a LongTensor of shape `shape` containing random permutations along dimension `dim`.
     For example, if shape is (2, 3) and dim is 1, the returned tensor will be a 2x3 tensor with
@@ -97,7 +97,7 @@ def rand_perm(
 def sample_uniform_k_subset_routing_masks(
     mask_shape: tuple[int, ...],
     module_names: list[str],
-    device: torch.device | str = "cpu",
+    device: torch.device | str,
     generator: torch.Generator | None = None,
 ) -> dict[str, Bool[Tensor, "..."]]:
     """Creates routing masks for each module such that the number of modules routed to for each

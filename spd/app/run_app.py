@@ -95,7 +95,7 @@ def find_available_port(start_port: int) -> int:
     sys.exit(1)
 
 
-def _tcp_open(host: str, port: int, timeout: float = 0.5) -> bool:
+def _tcp_open(host: str, port: int, timeout: float) -> bool:
     """Returns True if a TCP connection can be established."""
     with contextlib.suppress(OSError), socket.create_connection((host, port), timeout=timeout):
         return True
