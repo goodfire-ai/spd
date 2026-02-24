@@ -32,7 +32,7 @@ from spd.configs import (
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
-    PPGDHiddenActsReconLossConfig,
+    PPGDEvalLossesConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
@@ -54,7 +54,7 @@ from spd.metrics.component_activation_density import ComponentActivationDensity
 from spd.metrics.faithfulness_loss import FaithfulnessLoss
 from spd.metrics.hidden_acts_recon_loss import (
     CIHiddenActsReconLoss,
-    PPGDHiddenActsReconLoss,
+    PPGDEvalLosses,
     StochasticHiddenActsReconLoss,
 )
 from spd.metrics.identity_ci_error import IdentityCIError
@@ -272,13 +272,14 @@ def init_metric(
             )
         case CIHiddenActsReconLossConfig():
             metric = CIHiddenActsReconLoss(model=model, device=device)
-        case PPGDHiddenActsReconLossConfig():
+        case PPGDEvalLossesConfig():
             assert ppgd_effective_sources is not None
-            metric = PPGDHiddenActsReconLoss(
+            metric = PPGDEvalLosses(
                 model=model,
                 device=device,
                 ppgd_effective_sources=ppgd_effective_sources,
                 use_delta_component=run_config.use_delta_component,
+                output_loss_type=run_config.output_loss_type,
             )
         case UVPlotsConfig():
             metric = UVPlots(

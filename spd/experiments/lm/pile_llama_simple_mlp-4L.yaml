@@ -111,11 +111,7 @@ eval_metric_configs:
 - classname: CIMeanPerComponent
 - classname: StochasticHiddenActsReconLoss
 - classname: CIHiddenActsReconLoss
-- classname: PPGDHiddenActsReconLoss
-  init: random
-  step_size: 0.1
-  n_steps: 20
-  mask_scope: shared_across_batch
+- classname: PPGDEvalLosses
 - init: random
   step_size: 0.1
   n_steps: 20
