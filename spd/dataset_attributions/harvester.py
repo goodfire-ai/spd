@@ -60,86 +60,89 @@ class AttributionHarvester:
     ):
         self.model = model
         self.sources_by_target = sources_by_target
-        self.vocab_size = vocab_size
         self.component_alive = component_alive
         self.sampling = sampling
         self.embed_path = embed_path
         self.embedding_module = embedding_module
         self.unembed_path = unembed_path
         self.unembed_module = unembed_module
+        self.output_d_model = unembed_module.in_features
         self.device = device
 
-        self.n_batches = 0
-        self.n_tokens = 0
-        self.output_d_model = unembed_module.in_features
 
-        sources_by_regular_target = {k: v.copy() for k, v in self.sources_by_target.items()}
-
-        unembed_sources = sources_by_regular_target[self.unembed_path].copy()
-        del sources_by_regular_target[self.unembed_path]
-        unembed_sources.remove(self.embed_path)
-
-        self._emb_unemb_attr_acc = torch.zeros(
-            (self.unembed_module.in_features, self.embedding_module.num_embeddings),
-            device=self.device,
+        # attribution accumulators
+        self._straight_through_attr_acc = torch.zeros(
+            (self.output_d_model, self.embedding_module.num_embeddings), device=self.device
         )
+        self._embed_tgts_acc = self._get_embed_targets_attr_accumulator(sources_by_target)
+        self._embed_tgts_acc_abs = self._get_embed_targets_attr_accumulator(sources_by_target)
+        self._unembed_srcs_acc = self._get_unembed_sources_attr_accumulator(sources_by_target)
+        self._regular_layers_acc = self._get_regular_layer_attr_accumulator(sources_by_target)
+        self._regular_layers_acc_abs = self._get_regular_layer_attr_accumulator(sources_by_target)
 
-        # we store attributions to the embedding *output*
-        embed_tgts_acc: dict[str, Tensor] = {}
-        embed_tgts_acc_abs: dict[str, Tensor] = {}
-        n_emb = self.embedding_module.num_embeddings
-        for target, sources in sources_by_regular_target.items():
-            if self.embed_path in sources:
-                tgt_c = self.model.module_to_c[target]
-                embed_tgts_acc[target] = torch.zeros((tgt_c, n_emb), device=self.device)
-                embed_tgts_acc_abs[target] = torch.zeros((tgt_c, n_emb), device=self.device)
-                sources.remove(self.embed_path)
-
-        # we use d_model here because we store attributions to the pre-unembed residual
-        # no abs version here because output is always positive
-        unembed_srcs_acc: dict[str, Tensor] = {}
-        d_model = self.unembed_module.in_features
-        for source in unembed_sources:
-            src_c = self.model.module_to_c[source]
-            unembed_srcs_acc[source] = torch.zeros((d_model, src_c), device=self.device)
-
-        # for normal components, we just go C <-> C
-        acc: dict[str, dict[str, Tensor]] = {}
-        acc_abs: dict[str, dict[str, Tensor]] = {}
-        for target_layer, source_layers in sources_by_regular_target.items():
-            acc[target_layer] = {}
-            acc_abs[target_layer] = {}
-            for source_layer in source_layers:
-                tgt_c = self.model.module_to_c[target_layer]
-                src_c = self.model.module_to_c[source_layer]
-                acc[target_layer][source_layer] = torch.zeros((tgt_c, src_c), device=self.device)
-                acc_abs[target_layer][source_layer] = torch.zeros(
-                    (tgt_c, src_c), device=self.device
-                )
-
-        self._embed_tgts_acc = embed_tgts_acc
-        self._embed_tgts_acc_abs = embed_tgts_acc_abs
-
-        self._regular_layers_acc = acc
-        self._regular_layers_acc_abs = acc_abs
-
-        self._unembed_srcs_acc = unembed_srcs_acc
-
+        # rms normalization accumulators
+        self.n_tokens = 0
         self._ci_sum_accumulator = {
-            layer: torch.zeros((c), device=self.device)
+            layer: torch.zeros((c,), device=self.device)
             for layer, c in self.model.module_to_c.items()
         }
-
         self._square_component_act_accumulator = {
-            layer: torch.zeros((c), device=self.device)
+            layer: torch.zeros((c,), device=self.device)
             for layer, c in self.model.module_to_c.items()
         }
+        self._logit_sq_sum = torch.zeros((self.unembed_module.out_features,), device=self.device)
 
-        self._logit_sq_sum = torch.zeros(self.vocab_size, device=self.device)
+
+
+    def _get_embed_targets_attr_accumulator(
+        self, sources_by_target: dict[str, list[str]]
+    ) -> dict[str, Tensor]:
+        # extract targets who's sources include the embedding
+        embed_targets_attr_accumulators: dict[str, Tensor] = {}
+        for target, sources in sources_by_target.items():
+            if target == self.unembed_path:
+                # ignore straight-through edge
+                continue
+            if self.embed_path in sources:
+                embed_targets_attr_accumulators[target] = torch.zeros(
+                    (self.model.module_to_c[target], self.embedding_module.num_embeddings),
+                    device=self.device,
+                )
+        return embed_targets_attr_accumulators
+
+    def _get_unembed_sources_attr_accumulator(
+        self, sources_by_target: dict[str, list[str]]
+    ) -> dict[str, Tensor]:
+        # extract the unembed's sources
+        unembed_sources_attr_accumulators: dict[str, Tensor] = {}
+        for source in sources_by_target[self.unembed_path]:
+            if source == self.embed_path:
+                # ignore straight-through edge
+                continue
+            unembed_sources_attr_accumulators[source] = torch.zeros(
+                (self.output_d_model, self.model.module_to_c[source]), device=self.device
+            )
+        return unembed_sources_attr_accumulators
+
+    def _get_regular_layer_attr_accumulator(
+        self, sources_by_target: dict[str, list[str]]
+    ) -> dict[str, dict[str, Tensor]]:
+        regular_layers_shapes: dict[str, dict[str, Tensor]] = {}
+        for target, sources in sources_by_target.items():
+            if target == self.unembed_path:
+                continue
+            regular_layers_shapes[target] = {}
+            for source in sources:
+                if source == self.embed_path:
+                    continue
+                regular_layers_shapes[target][source] = torch.zeros(
+                    (self.model.module_to_c[target], self.model.module_to_c[source]),
+                    device=self.device,
+                )
+        return regular_layers_shapes
 
     def process_batch(self, tokens: Int[Tensor, "batch seq"]) -> None:
         """Accumulate attributions from one batch."""
-        self.n_batches += 1
         self.n_tokens += tokens.numel()
 
         # Setup hooks to capture embedding output and pre-unembed residual
@@ -220,7 +223,7 @@ class AttributionHarvester:
                 for source_layer, act, grad in zip(source_layers, source_acts, grads, strict=True):
                     if source_layer == self.embed_path:
                         token_attr = (grad * act).sum(dim=-1)  # (B S)
-                        self._emb_unemb_attr_acc[d_idx].scatter_add_(
+                        self._straight_through_attr_acc[d_idx].scatter_add_(
                             0, tokens.flatten(), token_attr.flatten()
                         )
                     else:
@@ -323,13 +326,11 @@ class AttributionHarvester:
             embed_attr=_canon(self._embed_tgts_acc),
             embed_attr_abs=_canon(self._embed_tgts_acc_abs),
             unembed_attr=_canon(self._unembed_srcs_acc),
-            embed_unembed_attr=self._emb_unemb_attr_acc,
+            embed_unembed_attr=self._straight_through_attr_acc,
             w_unembed=topology.get_unembed_weight(),
             ci_sum=_canon(self._ci_sum_accumulator),
             component_act_sq_sum=_canon(self._square_component_act_accumulator),
             logit_sq_sum=self._logit_sq_sum,
-            vocab_size=self.vocab_size,
             ci_threshold=ci_threshold,
-            n_batches_processed=self.n_batches,
             n_tokens_processed=self.n_tokens,
         )

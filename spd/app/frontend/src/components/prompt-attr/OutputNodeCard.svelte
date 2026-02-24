@@ -134,7 +134,6 @@
         font-family: var(--font-mono);
     }
 
-
     .stats {
         margin: var(--space-1) 0;
         font-size: var(--text-sm);

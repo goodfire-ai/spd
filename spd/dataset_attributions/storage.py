@@ -69,9 +69,7 @@ class DatasetAttributionStorage:
         ci_sum: dict[str, Tensor],
         component_act_sq_sum: dict[str, Tensor],
         logit_sq_sum: Tensor,
-        vocab_size: int,
         ci_threshold: float,
-        n_batches_processed: int,
         n_tokens_processed: int,
     ):
         self._regular_attr = regular_attr
@@ -84,9 +82,7 @@ class DatasetAttributionStorage:
         self._ci_sum = ci_sum
         self._component_act_sq_sum = component_act_sq_sum
         self._logit_sq_sum = logit_sq_sum
-        self.vocab_size = vocab_size
         self.ci_threshold = ci_threshold
-        self.n_batches_processed = n_batches_processed
         self.n_tokens_processed = n_tokens_processed
 
     @property
@@ -274,9 +270,7 @@ class DatasetAttributionStorage:
                 "ci_sum": _to_cpu(self._ci_sum),
                 "component_act_sq_sum": _to_cpu(self._component_act_sq_sum),
                 "logit_sq_sum": self._logit_sq_sum.cpu(),
-                "vocab_size": self.vocab_size,
                 "ci_threshold": self.ci_threshold,
-                "n_batches_processed": self.n_batches_processed,
                 "n_tokens_processed": self.n_tokens_processed,
             },
             path,
@@ -298,9 +292,7 @@ class DatasetAttributionStorage:
             ci_sum=data["ci_sum"],
             component_act_sq_sum=data["component_act_sq_sum"],
             logit_sq_sum=data["logit_sq_sum"],
-            vocab_size=data["vocab_size"],
             ci_threshold=data["ci_threshold"],
-            n_batches_processed=data["n_batches_processed"],
             n_tokens_processed=data["n_tokens_processed"],
         )
 
@@ -342,7 +334,6 @@ class DatasetAttributionStorage:
 
             merged._logit_sq_sum += other._logit_sq_sum
             merged.n_tokens_processed += other.n_tokens_processed
-            merged.n_batches_processed += other.n_batches_processed
 
         return merged
 
