@@ -1,6 +1,7 @@
 <script lang="ts">
     import { getContext } from "svelte";
     import { colors } from "../../lib/colors";
+    import { isTokenNode } from "../../lib/componentKeys";
     import type { EdgeAttribution } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type InterpretationBackendState, type RunContext } from "../../lib/useRun.svelte";
     import { lerp } from "../prompt-attr/graphUtils";
@@ -37,12 +38,6 @@
         const interp = runState.getInterpretation(componentKey);
         if (interp.status === "loaded" && interp.data.status === "generated") return interp.data;
         return { status: "none" };
-    }
-
-    // Check if a key refers to a pseudo-layer token node (embed/output)
-    function isTokenNode(key: string): boolean {
-        const layer = key.split(":")[0];
-        return layer === "embed" || layer === "output";
     }
 
     // Get the token type label for the right side (e.g., "Input token" or "Output token")

@@ -41,6 +41,7 @@ from spd.app.backend.routers import (
 )
 from spd.app.backend.state import StateManager
 from spd.log import logger
+from spd.settings import SPD_APP_DEFAULT_RUN
 from spd.utils.distributed_utils import get_device
 
 DEVICE = get_device()
@@ -58,6 +59,12 @@ async def lifespan(app: FastAPI):  # pyright: ignore[reportUnusedParameter]
     logger.info(f"[STARTUP] DB initialized: {db.db_path}")
     logger.info(f"[STARTUP] Device: {DEVICE}")
     logger.info(f"[STARTUP] CUDA available: {torch.cuda.is_available()}")
+
+    if SPD_APP_DEFAULT_RUN is not None:
+        from spd.app.backend.routers.runs import load_run
+
+        logger.info(f"[STARTUP] Auto-loading default run: {SPD_APP_DEFAULT_RUN}")
+        load_run(SPD_APP_DEFAULT_RUN, context_length=512, manager=manager)
 
     yield
 

@@ -14,10 +14,11 @@ import {
     getComponentAttributions,
     getComponentCorrelations,
     getComponentTokenStats,
+    getGraphInterpComponentDetail,
     getInterpretationDetail,
     requestComponentInterpretation,
 } from "./api";
-import type { AllMetricAttributions, InterpretationDetail } from "./api";
+import type { AllMetricAttributions, GraphInterpComponentDetail, InterpretationDetail } from "./api";
 import type {
     SubcomponentCorrelationsResponse,
     SubcomponentActivationContexts,
@@ -41,6 +42,7 @@ export function useComponentDataExpectCached() {
     let tokenStats = $state<Loadable<TokenStatsResponse | null>>({ status: "uninitialized" });
     let datasetAttributions = $state<Loadable<AllMetricAttributions | null>>({ status: "uninitialized" });
     let interpretationDetail = $state<Loadable<InterpretationDetail | null>>({ status: "uninitialized" });
+    let graphInterpDetail = $state<Loadable<GraphInterpComponentDetail | null>>({ status: "uninitialized" });
 
     let currentCoords = $state<ComponentCoords | null>(null);
     let requestId = 0;
@@ -102,6 +104,26 @@ export function useComponentDataExpectCached() {
                     interpretationDetail = { status: "error", error };
                 }
             });
+
+        // Fetch graph interp detail
+        if (runState.graphInterpAvailable) {
+            graphInterpDetail = { status: "loading" };
+            getGraphInterpComponentDetail(layer, cIdx)
+                .then((data) => {
+                    if (isStale()) return;
+                    graphInterpDetail = { status: "loaded", data };
+                })
+                .catch((error) => {
+                    if (isStale()) return;
+                    if (error instanceof ApiError && error.status === 404) {
+                        graphInterpDetail = { status: "loaded", data: null };
+                    } else {
+                        graphInterpDetail = { status: "error", error };
+                    }
+                });
+        } else {
+            graphInterpDetail = { status: "loaded", data: null };
+        }
     }
 
     function load(layer: string, cIdx: number) {
@@ -144,6 +166,7 @@ export function useComponentDataExpectCached() {
         tokenStats = { status: "uninitialized" };
         datasetAttributions = { status: "uninitialized" };
         interpretationDetail = { status: "uninitialized" };
+        graphInterpDetail = { status: "uninitialized" };
     }
 
     // Interpretation is derived from the global cache
@@ -196,6 +219,9 @@ export function useComponentDataExpectCached() {
         },
         get interpretationDetail() {
             return interpretationDetail;
+        },
+        get graphInterpDetail() {
+            return graphInterpDetail;
         },
         load,
         reset,
