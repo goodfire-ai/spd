@@ -40,6 +40,7 @@ def _make_storage(seed: int = 0, n_tokens: int = 640) -> DatasetAttributionStora
         ci_sum={LAYER_0: rand(C0).abs() + 1.0, LAYER_1: rand(C1).abs() + 1.0},
         component_act_sq_sum={LAYER_0: rand(C0).abs() + 1.0, LAYER_1: rand(C1).abs() + 1.0},
         logit_sq_sum=rand(VOCAB_SIZE).abs() + 1.0,
+        embed_token_count=torch.randint(100, 1000, (VOCAB_SIZE,), generator=g),
         ci_threshold=1e-6,
         n_tokens_processed=n_tokens,
     )

@@ -13,8 +13,8 @@ Abs variants are unavailable for unembed edges because abs is a nonlinear operat
 incompatible with the residual-space storage trick.
 
 Normalization formula:
-    normed[t, s] = raw[t, s] / ci_sum[s] / target_rms[t]
-- ci_sum omitted for embed sources (no CI for embeddings)
+    normed[t, s] = raw[t, s] / source_denom[s] / target_rms[t]
+- source_denom is ci_sum[s] for component sources, embed_token_count[s] for embed sources
 - target_rms is component activation RMS for component targets, logit RMS for output targets
 """
 
@@ -69,6 +69,7 @@ class DatasetAttributionStorage:
         ci_sum: dict[str, Tensor],
         component_act_sq_sum: dict[str, Tensor],
         logit_sq_sum: Tensor,
+        embed_token_count: Tensor,
         ci_threshold: float,
         n_tokens_processed: int,
     ):
@@ -82,6 +83,7 @@ class DatasetAttributionStorage:
         self._ci_sum = ci_sum
         self._component_act_sq_sum = component_act_sq_sum
         self._logit_sq_sum = logit_sq_sum
+        self._embed_token_count = embed_token_count
         self.ci_threshold = ci_threshold
         self.n_tokens_processed = n_tokens_processed
 
@@ -132,6 +134,10 @@ class DatasetAttributionStorage:
         """CI sum for a source layer, clamped. Shape (n_components,)."""
         return self._ci_sum[layer].clamp(min=EPS)
 
+    def _embed_count(self) -> Tensor:
+        """Per-token occurrence count, clamped. Shape (vocab,)."""
+        return self._embed_token_count.float().clamp(min=EPS)
+
     def get_top_sources(
         self,
         target_key: str,
@@ -158,24 +164,22 @@ class DatasetAttributionStorage:
                 layer_names.append(source_layer)
 
             raw = w @ self._embed_unembed_attr  # (vocab,)
-            value_segments.append(raw / target_act_rms)
+            value_segments.append(raw / self._embed_count() / target_act_rms)
             layer_names.append("embed")
         else:
             regular_attr, embed_target_attr = self._select_metric(metric)
             target_act_rms = self._component_activation_rms(target_layer)[target_idx]
 
-            # commenting out guard. Should be a no-op because we're in the else block.
-            # if target_layer in regular_attr:
-            for source_layer, attr_matrix in regular_attr[target_layer].items():
-                raw = attr_matrix[target_idx, :]  # (src_c,)
-                value_segments.append(raw / self._layer_ci_sum(source_layer) / target_act_rms)
-                layer_names.append(source_layer)
+            if target_layer in regular_attr:
+                for source_layer, attr_matrix in regular_attr[target_layer].items():
+                    raw = attr_matrix[target_idx, :]  # (src_c,)
+                    value_segments.append(raw / self._layer_ci_sum(source_layer) / target_act_rms)
+                    layer_names.append(source_layer)
 
-            # same here
-            # if target_layer in embed_target_attr:
-            raw = embed_target_attr[target_layer][target_idx, :]  # (vocab,)
-            value_segments.append(raw / target_act_rms)
-            layer_names.append("embed")
+            if target_layer in embed_target_attr:
+                raw = embed_target_attr[target_layer][target_idx, :]  # (vocab,)
+                value_segments.append(raw / self._embed_count() / target_act_rms)
+                layer_names.append("embed")
 
         return self._top_k_from_segments(value_segments, layer_names, k, sign)
 
@@ -196,16 +200,19 @@ class DatasetAttributionStorage:
             return []
         elif source_layer == "embed":
             regular, embed = self._select_metric(metric)
+            embed_count = self._embed_count()[source_idx]
 
             for target_layer, attr_matrix in embed.items():
                 raw = attr_matrix[:, source_idx]  # (tgt_c,)
-                value_segments.append(raw / self._component_activation_rms(target_layer))
+                value_segments.append(
+                    raw / embed_count / self._component_activation_rms(target_layer)
+                )
                 layer_names.append(target_layer)
 
             if include_outputs and metric == "attr":
                 residual = self._embed_unembed_attr[:, source_idx]  # (d_model,)
                 raw = residual @ self._w_unembed  # (vocab,)
-                value_segments.append(raw / self._logit_activation_rms())
+                value_segments.append(raw / embed_count / self._logit_activation_rms())
                 layer_names.append("output")
         else:
             regular, embed = self._select_metric(metric)
@@ -276,6 +283,7 @@ class DatasetAttributionStorage:
                 "ci_sum": _to_cpu(self._ci_sum),
                 "component_act_sq_sum": _to_cpu(self._component_act_sq_sum),
                 "logit_sq_sum": self._logit_sq_sum.detach().cpu(),
+                "embed_token_count": self._embed_token_count.detach().cpu(),
                 "ci_threshold": self.ci_threshold,
                 "n_tokens_processed": self.n_tokens_processed,
             },
@@ -298,6 +306,7 @@ class DatasetAttributionStorage:
             ci_sum=data["ci_sum"],
             component_act_sq_sum=data["component_act_sq_sum"],
             logit_sq_sum=data["logit_sq_sum"],
+            embed_token_count=data["embed_token_count"],
             ci_threshold=data["ci_threshold"],
             n_tokens_processed=data["n_tokens_processed"],
         )
@@ -339,6 +348,7 @@ class DatasetAttributionStorage:
                 merged._component_act_sq_sum[layer] += other._component_act_sq_sum[layer]
 
             merged._logit_sq_sum += other._logit_sq_sum
+            merged._embed_token_count += other._embed_token_count
             merged.n_tokens_processed += other.n_tokens_processed
 
         return merged

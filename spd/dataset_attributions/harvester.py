@@ -79,6 +79,11 @@ class AttributionHarvester:
         self._regular_layers_acc = self._get_regular_layer_attr_accumulator(sources_by_target)
         self._regular_layers_acc_abs = self._get_regular_layer_attr_accumulator(sources_by_target)
 
+        # embed token occurrence counts for normalization (analogous to ci_sum for components)
+        self._embed_token_count = torch.zeros(
+            (self.embedding_module.num_embeddings,), dtype=torch.long, device=self.device
+        )
+
         # rms normalization accumulators
         self.n_tokens = 0
         self._ci_sum_accumulator = {
@@ -141,6 +146,9 @@ class AttributionHarvester:
     def process_batch(self, tokens: Int[Tensor, "batch seq"]) -> None:
         """Accumulate attributions from one batch."""
         self.n_tokens += tokens.numel()
+        self._embed_token_count.add_(
+            torch.bincount(tokens.flatten(), minlength=self.embedding_module.num_embeddings)
+        )
 
         # Setup hooks to capture embedding output and pre-unembed residual
         embed_out: list[Tensor] = []
@@ -309,6 +317,7 @@ class AttributionHarvester:
             ci_sum=_canon(self._ci_sum_accumulator),
             component_act_sq_sum=_canon(self._square_component_act_accumulator),
             logit_sq_sum=self._logit_sq_sum,
+            embed_token_count=self._embed_token_count,
             ci_threshold=ci_threshold,
             n_tokens_processed=self.n_tokens,
         )
