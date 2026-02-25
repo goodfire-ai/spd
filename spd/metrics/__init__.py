@@ -1,4 +1,10 @@
 # Note that "... as ..." allows for these to be imported elsewhere (See PEP 484 on re-exporting)
+from .attn_patterns_recon_loss import (
+    CIMaskedAttnPatternsReconLoss as CIMaskedAttnPatternsReconLoss,
+)
+from .attn_patterns_recon_loss import (
+    StochasticAttnPatternsReconLoss as StochasticAttnPatternsReconLoss,
+)
 from .ce_and_kl_losses import CEandKLLosses as CEandKLLosses
 from .ci_histograms import CIHistograms as CIHistograms
 from .ci_l0 import CI_L0 as CI_L0

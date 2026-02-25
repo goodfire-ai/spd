@@ -31,12 +31,12 @@ from spd.metrics import (
     pgd_recon_layerwise_loss,
     pgd_recon_loss,
     pgd_recon_subset_loss,
+    stochastic_hidden_acts_recon_loss,
     stochastic_recon_layerwise_loss,
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
     unmasked_recon_loss,
 )
-from spd.metrics.hidden_acts_recon_loss import stochastic_hidden_acts_recon_loss
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.persistent_pgd import PersistentPGDState
 

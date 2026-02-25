@@ -14,6 +14,7 @@ from spd.configs import (
     CI_L0Config,
     CIHiddenActsReconLossConfig,
     CIHistogramsConfig,
+    CIMaskedAttnPatternsReconLossConfig,
     CIMaskedReconLayerwiseLossConfig,
     CIMaskedReconLossConfig,
     CIMaskedReconSubsetLossConfig,
@@ -34,6 +35,7 @@ from spd.configs import (
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
+    StochasticAttnPatternsReconLossConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
@@ -43,6 +45,10 @@ from spd.configs import (
     UVPlotsConfig,
 )
 from spd.metrics import UnmaskedReconLoss
+from spd.metrics.attn_patterns_recon_loss import (
+    CIMaskedAttnPatternsReconLoss,
+    StochasticAttnPatternsReconLoss,
+)
 from spd.metrics.base import Metric
 from spd.metrics.ce_and_kl_losses import CEandKLLosses
 from spd.metrics.ci_histograms import CIHistograms
@@ -299,6 +305,27 @@ def init_metric(
                 use_delta_component=run_config.use_delta_component,
                 output_loss_type=run_config.output_loss_type,
                 metric_name=cfg.classname,
+            )
+        case CIMaskedAttnPatternsReconLossConfig():
+            metric = CIMaskedAttnPatternsReconLoss(
+                model=model,
+                device=device,
+                n_heads=cfg.n_heads,
+                q_proj_path=cfg.q_proj_path,
+                k_proj_path=cfg.k_proj_path,
+                c_attn_path=cfg.c_attn_path,
+            )
+        case StochasticAttnPatternsReconLossConfig():
+            metric = StochasticAttnPatternsReconLoss(
+                model=model,
+                device=device,
+                sampling=run_config.sampling,
+                use_delta_component=run_config.use_delta_component,
+                n_mask_samples=run_config.n_mask_samples,
+                n_heads=cfg.n_heads,
+                q_proj_path=cfg.q_proj_path,
+                k_proj_path=cfg.k_proj_path,
+                c_attn_path=cfg.c_attn_path,
             )
         case UVPlotsConfig():
             metric = UVPlots(
