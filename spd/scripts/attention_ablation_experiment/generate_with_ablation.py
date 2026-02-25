@@ -284,19 +284,26 @@ def _build_conditions(
 
 HTML_HEADER = """\
 <!DOCTYPE html><html><head><meta charset="utf-8"><style>
-body{font-family:'Menlo','Consolas',monospace;font-size:13px;max-width:1400px;margin:40px auto;background:#fafafa}
+body{font-family:'Menlo','Consolas',monospace;font-size:13px;max-width:1800px;margin:40px auto;background:#fafafa}
 h1{font-family:sans-serif}
 h2{font-family:sans-serif;border-top:2px solid #333;padding-top:16px;margin-top:40px;font-size:15px}
 .sample{margin-bottom:40px}
 .prompt{background:#e8e8e8;padding:8px 12px;border-radius:4px;white-space:pre-wrap;word-break:break-all;margin:8px 0}
 table{border-collapse:collapse;margin:12px 0}
-td,th{padding:3px 5px;text-align:center;border:1px solid #ccc;min-width:28px;font-size:11px}
-th{background:#f0f0f0;font-weight:600}
+td,th{padding:4px 8px;border:1px solid #ccc;font-size:12px;vertical-align:top}
+th{background:#f0f0f0;font-weight:600;text-align:center}
 .match{background:#e8f5e9}
 .diff{background:#ffcdd2;font-weight:bold}
-.tok{white-space:pre}
-.label{text-align:left;font-weight:600;padding-right:12px;background:#f5f5f5;min-width:230px;font-size:10px}
+.tok{white-space:pre;text-align:center;min-width:50px}
+.label{text-align:left;font-weight:600;background:#f5f5f5;min-width:230px;font-size:11px}
 .info{font-family:sans-serif;font-size:13px;color:#555;margin:4px 0}
+.logit-cell{text-align:left;white-space:nowrap;font-size:11px;padding:4px 10px}
+.logit-entry{display:flex;justify-content:space-between;gap:12px;padding:1px 0}
+.logit-tok{color:#333}
+.logit-val{font-weight:600}
+.logit-pos{color:#2e7d32}
+.logit-neg{color:#c62828}
+.base-change{text-align:center;font-size:11px;white-space:nowrap}
 </style></head><body>
 """
 
@@ -332,14 +339,38 @@ def _render_sample_html(
     h.append('<div style="overflow-x:auto"><table>')
     h.append(
         "<tr><th></th><th>predicted</th>"
-        "<th>baseline pred logit change</th>"
-        f"<th>top {top_k} increased</th>"
-        f"<th>top {top_k} decreased</th></tr>"
+        f"<th>baseline token<br>logit change</th>"
+        f"<th>top {top_k} logit increases</th>"
+        f"<th>top {top_k} logit decreases</th></tr>"
     )
+
+    def _logit_list(token_ids: Tensor, values: Tensor, positive: bool) -> str:
+        entries = []
+        for j in range(len(token_ids)):
+            tok = _fmt_tok(decode_tok([int(token_ids[j].item())]))
+            val = values[j].item()
+            css_class = "logit-pos" if positive else "logit-neg"
+            entries.append(
+                f'<div class="logit-entry">'
+                f'<span class="logit-tok">{tok}</span>'
+                f'<span class="logit-val {css_class}">{val:+.2f}</span>'
+                f"</div>"
+            )
+        return "".join(entries)
 
     for name, pred, baseline_name in conditions:
         tok = decode_tok([pred.token_id])
         css = "match" if tok == ref_tok else "diff"
+
+        if name == baseline_name:
+            h.append(
+                f'<tr><td class="label">{html.escape(name)}</td>'
+                f'<td class="tok {css}">{_fmt_tok(tok)}</td>'
+                f'<td class="base-change">-</td>'
+                f'<td class="logit-cell">-</td>'
+                f'<td class="logit-cell">-</td></tr>'
+            )
+            continue
 
         # Logit diff vs appropriate baseline
         base_logits = logits_by_name[baseline_name]
@@ -349,35 +380,20 @@ def _render_sample_html(
         base_pred_id = int(base_logits.argmax().item())
         base_pred_tok = _fmt_tok(decode_tok([base_pred_id]))
         base_pred_change = diff[base_pred_id].item()
+        change_css = "logit-neg" if base_pred_change < 0 else "logit-pos"
 
         # Top-k increases and decreases
         top_inc_vals, top_inc_ids = diff.topk(top_k)
         top_dec_vals, top_dec_ids = (-diff).topk(top_k)
 
-        inc_parts = [
-            f"{_fmt_tok(decode_tok([int(tid)]))} ({top_inc_vals[j].item():+.1f})"
-            for j, tid in enumerate(top_inc_ids.tolist())
-        ]
-        dec_parts = [
-            f"{_fmt_tok(decode_tok([int(tid)]))} ({-top_dec_vals[j].item():+.1f})"
-            for j, tid in enumerate(top_dec_ids.tolist())
-        ]
-
-        if name == baseline_name:
-            # Baseline row: no diff to show
-            h.append(
-                f'<tr><td class="label">{html.escape(name)}</td>'
-                f'<td class="tok {css}">{_fmt_tok(tok)}</td>'
-                f"<td>-</td><td>-</td><td>-</td></tr>"
-            )
-        else:
-            h.append(
-                f'<tr><td class="label">{html.escape(name)}</td>'
-                f'<td class="tok {css}">{_fmt_tok(tok)}</td>'
-                f'<td style="font-size:10px">{base_pred_tok}: {base_pred_change:+.2f}</td>'
-                f'<td style="font-size:10px">{", ".join(inc_parts)}</td>'
-                f'<td style="font-size:10px">{", ".join(dec_parts)}</td></tr>'
-            )
+        h.append(
+            f'<tr><td class="label">{html.escape(name)}</td>'
+            f'<td class="tok {css}">{_fmt_tok(tok)}</td>'
+            f'<td class="base-change">{base_pred_tok} '
+            f'<span class="{change_css}">{base_pred_change:+.2f}</span></td>'
+            f'<td class="logit-cell">{_logit_list(top_inc_ids, top_inc_vals, True)}</td>'
+            f'<td class="logit-cell">{_logit_list(top_dec_ids, -top_dec_vals, False)}</td></tr>'
+        )
 
     h.append("</table></div></div>")
     return "\n".join(h)
