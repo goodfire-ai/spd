@@ -41,10 +41,10 @@ identity_module_info: null
 init_spd_checkpoint: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.0004
+- coeff: 0.0006
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
-  beta: 0.2
+  beta: 0.0
   p_anneal_start_frac: 0.0
   p_anneal_final_p: 0.4
   p_anneal_end_frac: 1.0
@@ -53,22 +53,40 @@ loss_metric_configs:
   classname: StochasticReconSubsetLoss
   routing:
     type: uniform_k_subset
-- coeff: 0.5
-  optimizer:
-    type: adam
-    beta1: 0.5
-    beta2: 0.99
-    eps: 1.0e-08
-    lr_schedule:
-      start_val: 0.01
-      warmup_pct: 0.025
-      final_val_frac: 1.0
-      fn_type: constant
-  scope:
-    type: per_batch_per_position
-  use_sigmoid_parameterization: false
-  n_warmup_steps: 2
-  classname: PersistentPGDReconLoss
+# - coeff: 0.5
+#   classname: PersistentPGDReconSubsetLoss
+#   optimizer:
+#     type: adam
+#     lr_schedule:
+#       start_val: 0.1
+#       warmup_pct: 0.0
+#       final_val_frac: 1.0
+#       fn_type: constant
+#     beta1: 0.9
+#     beta2: 0.99
+#     eps: 1.0e-08
+#   scope:
+#     type: repeat_across_batch
+#     n_sources: 8
+#   routing:
+#     type: uniform_k_subset
+#   n_warmup_steps: 0
+# - coeff: 0.5
+#   optimizer:
+#     type: adam
+#     beta1: 0.5
+#     beta2: 0.99
+#     eps: 1.0e-08
+#     lr_schedule:
+#       start_val: 0.01
+#       warmup_pct: 0.025
+#       final_val_frac: 1.0
+#       fn_type: constant
+#   scope:
+#     type: per_batch_per_position
+#   use_sigmoid_parameterization: false
+#   n_warmup_steps: 2
+#   classname: PersistentPGDReconLoss
 - coeff: 10000000.0
   classname: FaithfulnessLoss
 output_loss_type: kl
