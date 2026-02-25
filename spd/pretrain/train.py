@@ -298,7 +298,7 @@ def main(config_path_or_obj: Path | str | Config | None = None) -> None:
     train_loader, train_tokenizer = create_data_loader(
         dataset_config=config.train_dataset_config,
         batch_size=B,
-        buffer_size=1000,
+        buffer_size=10000,
         global_seed=0,
         dist_state=dist_state,
     )
@@ -307,7 +307,7 @@ def main(config_path_or_obj: Path | str | Config | None = None) -> None:
     val_loader, _ = create_data_loader(
         dataset_config=config.val_dataset_config,
         batch_size=B,
-        buffer_size=1000,
+        buffer_size=10000,
         global_seed=0,
         dist_state=None,  # Don't split validation data - all ranks evaluate same data
     )

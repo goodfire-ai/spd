@@ -269,7 +269,7 @@ class LMTaskConfig(BaseConfig):
         description="Maximum sequence length to truncate or pad inputs to",
     )
     buffer_size: PositiveInt = Field(
-        default=1000,
+        default=10000,
         description="Buffered sample count for streaming dataset shuffling",
     )
     dataset_name: str = Field(
