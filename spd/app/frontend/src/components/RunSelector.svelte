@@ -87,7 +87,7 @@
         <form class="custom-form" onsubmit={handleCustomSubmit}>
             <input
                 type="text"
-                placeholder="e.g. goodfire/spd/runs/33n6xjjt"
+                placeholder="e.g. s-17805b61 or goodfire/spd/runs/33n6xjjt"
                 bind:value={customPath}
                 disabled={isLoading}
             />

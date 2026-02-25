@@ -147,6 +147,7 @@ def app_with_state():
             harvest=None,
             interp=None,
             attributions=None,
+            graph_interp=None,
         )
 
         manager = StateManager.get()

@@ -4,6 +4,7 @@
     import ClusterPathInput from "./ClusterPathInput.svelte";
     import DatasetExplorerTab from "./DatasetExplorerTab.svelte";
     import DataSourcesTab from "./DataSourcesTab.svelte";
+    import ModelGraphTab from "./ModelGraphTab.svelte";
     import PromptAttributionsTab from "./PromptAttributionsTab.svelte";
     import DisplaySettingsDropdown from "./ui/DisplaySettingsDropdown.svelte";
     import ActivationContextsTab from "./ActivationContextsTab.svelte";
@@ -14,7 +15,9 @@
         runState.run?.status === "loaded" && runState.run.data.dataset_search_enabled,
     );
 
-    let activeTab = $state<"prompts" | "components" | "dataset-search" | "data-sources" | null>(null);
+    const graphInterpAvailable = $derived(runState.graphInterpAvailable);
+
+    let activeTab = $state<"prompts" | "components" | "dataset-search" | "model-graph" | "data-sources" | null>(null);
 
     $effect(() => {
         if (runState.prompts.status === "loaded" && activeTab === null) {
@@ -67,6 +70,16 @@
                         Dataset Search
                     </button>
                 {/if}
+                {#if graphInterpAvailable}
+                    <button
+                        type="button"
+                        class="tab-button"
+                        class:active={activeTab === "model-graph"}
+                        onclick={() => (activeTab = "model-graph")}
+                    >
+                        Model Graph
+                    </button>
+                {/if}
                 <button
                     type="button"
                     class="tab-button"
@@ -104,6 +117,11 @@
             {#if datasetSearchEnabled}
                 <div class="tab-content" class:hidden={activeTab !== "dataset-search"}>
                     <DatasetExplorerTab />
+                </div>
+            {/if}
+            {#if graphInterpAvailable}
+                <div class="tab-content" class:hidden={activeTab !== "model-graph"}>
+                    <ModelGraphTab />
                 </div>
             {/if}
             <div class="tab-content" class:hidden={activeTab !== "data-sources"}>

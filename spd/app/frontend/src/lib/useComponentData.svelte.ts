@@ -8,7 +8,7 @@ import {
     getInterpretationDetail,
     requestComponentInterpretation,
 } from "./api";
-import type { ComponentAttributions, InterpretationDetail } from "./api";
+import type { AllMetricAttributions, InterpretationDetail } from "./api";
 import type {
     SubcomponentCorrelationsResponse,
     SubcomponentActivationContexts,
@@ -23,7 +23,7 @@ const TOKEN_STATS_TOP_K = 200;
 /** Dataset attributions top-k */
 const DATASET_ATTRIBUTIONS_TOP_K = 20;
 
-export type { ComponentAttributions as DatasetAttributions };
+export type { AllMetricAttributions as DatasetAttributions };
 
 export type ComponentCoords = { layer: string; cIdx: number };
 
@@ -43,7 +43,7 @@ export function useComponentData() {
     // null inside Loadable means "no data for this component" (404)
     let correlations = $state<Loadable<SubcomponentCorrelationsResponse | null>>({ status: "uninitialized" });
     let tokenStats = $state<Loadable<TokenStatsResponse | null>>({ status: "uninitialized" });
-    let datasetAttributions = $state<Loadable<ComponentAttributions | null>>({ status: "uninitialized" });
+    let datasetAttributions = $state<Loadable<AllMetricAttributions | null>>({ status: "uninitialized" });
 
     let interpretationDetail = $state<Loadable<InterpretationDetail | null>>({ status: "uninitialized" });
 

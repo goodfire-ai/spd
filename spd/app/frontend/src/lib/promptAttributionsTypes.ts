@@ -20,6 +20,7 @@ export type EdgeAttribution = {
     key: string; // "layer:seq:cIdx" for prompt or "layer:cIdx" for dataset
     value: number; // raw attribution value (positive or negative)
     normalizedMagnitude: number; // |value| / maxAbsValue, for color intensity (0-1)
+    tokenStr: string | null; // resolved token string for embed/output layers
 };
 
 export type OutputProbability = {

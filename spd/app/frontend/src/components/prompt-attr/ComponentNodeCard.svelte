@@ -11,6 +11,7 @@
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
     import DatasetAttributionsSection from "../ui/DatasetAttributionsSection.svelte";
     import EdgeAttributionGrid from "../ui/EdgeAttributionGrid.svelte";
+    import GraphInterpBadge from "../ui/GraphInterpBadge.svelte";
     import InterpretationBadge from "../ui/InterpretationBadge.svelte";
     import SectionHeader from "../ui/SectionHeader.svelte";
     import StatusText from "../ui/StatusText.svelte";
@@ -48,6 +49,7 @@
 
     const clusterId = $derived(runState.clusterMapping?.data[`${layer}:${cIdx}`]);
     const intruderScore = $derived(runState.getIntruderScore(`${layer}:${cIdx}`));
+    const graphInterpLabel = $derived(runState.getGraphInterpLabel(`${layer}:${cIdx}`));
 
     // Handle clicking a correlated component - parse key and pin it at same seqIdx
     function handleCorrelationClick(componentKey: string) {
@@ -130,6 +132,16 @@
     const currentNodeKey = $derived(`${layer}:${seqIdx}:${cIdx}`);
     const N_EDGES_TO_DISPLAY = 20;
 
+    function resolveTokenStr(nodeKey: string): string | null {
+        const parts = nodeKey.split(":");
+        if (parts.length !== 3) return null;
+        const [layer, seqStr, cIdx] = parts;
+        const seqIdx = parseInt(seqStr);
+        if (layer === "embed") return tokens[seqIdx] ?? null;
+        if (layer === "output") return outputProbs[`${seqIdx}:${cIdx}`]?.token ?? null;
+        return null;
+    }
+
     function getTopEdgeAttributions(
         edges: EdgeData[],
         isPositive: boolean,
@@ -144,6 +156,7 @@
             key: getKey(e),
             value: e.val,
             normalizedMagnitude: Math.abs(e.val) / maxAbsVal,
+            tokenStr: resolveTokenStr(getKey(e)),
         }));
     }
 
@@ -208,11 +221,16 @@
         </div>
     </div>
 
-    <InterpretationBadge
-        interpretation={componentData.interpretation}
-        interpretationDetail={componentData.interpretationDetail}
-        onGenerate={componentData.generateInterpretation}
-    />
+    <div class="interpretation-badges">
+        <InterpretationBadge
+            interpretation={componentData.interpretation}
+            interpretationDetail={componentData.interpretationDetail}
+            onGenerate={componentData.generateInterpretation}
+        />
+        {#if graphInterpLabel}
+            <GraphInterpBadge headline={graphInterpLabel} />
+        {/if}
+    </div>
 
     <!-- Activating examples (from harvest data) -->
     <div class="activating-examples-section">
@@ -249,8 +267,6 @@
             {outgoingNegative}
             pageSize={COMPONENT_CARD_CONSTANTS.PROMPT_ATTRIBUTIONS_PAGE_SIZE}
             onClick={handleEdgeNodeClick}
-            {tokens}
-            {outputProbs}
         />
     {/if}
 
@@ -329,6 +345,12 @@
         gap: var(--space-3);
         font-family: var(--font-sans);
         color: var(--text-primary);
+    }
+
+    .interpretation-badges {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
     }
 
     .card-header {

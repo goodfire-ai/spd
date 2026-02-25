@@ -32,6 +32,7 @@ from spd.app.backend.routers import (
     data_sources_router,
     dataset_attributions_router,
     dataset_search_router,
+    graph_interp_router,
     graphs_router,
     intervention_router,
     pretrain_info_router,
@@ -158,6 +159,7 @@ app.include_router(dataset_search_router)
 app.include_router(dataset_attributions_router)
 app.include_router(agents_router)
 app.include_router(data_sources_router)
+app.include_router(graph_interp_router)
 app.include_router(pretrain_info_router)
 
 
