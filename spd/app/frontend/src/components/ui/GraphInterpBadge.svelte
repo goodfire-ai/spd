@@ -1,17 +1,48 @@
 <script lang="ts">
-    import type { GraphInterpHeadline } from "../../lib/api";
+    import type { GraphInterpComponentDetail, GraphInterpHeadline } from "../../lib/api";
+    import { getGraphInterpComponentDetail } from "../../lib/api";
+    import { formatComponentKey } from "../../lib/componentKeys";
 
     interface Props {
         headline: GraphInterpHeadline;
+        layer: string;
+        cIdx: number;
     }
 
-    let { headline }: Props = $props();
+    let { headline, layer, cIdx }: Props = $props();
 
     let expanded = $state(false);
+    let detail = $state<GraphInterpComponentDetail | null>(null);
+    let detailError = $state<string | null>(null);
+    let fetched = false;
+
+    async function toggle() {
+        expanded = !expanded;
+        if (expanded && !fetched) {
+            fetched = true;
+            try {
+                detail = await getGraphInterpComponentDetail(layer, cIdx);
+            } catch (e) {
+                detailError = String(e);
+            }
+        }
+    }
+
+    const incomingEdges = $derived(
+        detail?.edges
+            .filter((e) => e.pass_name === "input")
+            .sort((a, b) => Math.abs(b.attribution) - Math.abs(a.attribution)) ?? [],
+    );
+
+    const outgoingEdges = $derived(
+        detail?.edges
+            .filter((e) => e.pass_name === "output")
+            .sort((a, b) => Math.abs(b.attribution) - Math.abs(a.attribution)) ?? [],
+    );
 </script>
 
 <div class="graph-interp-container">
-    <button class="graph-interp-badge" onclick={() => (expanded = !expanded)} type="button">
+    <button class="graph-interp-badge" onclick={toggle} type="button">
         <div class="badge-header">
             <span class="badge-label">{headline.label}</span>
             <span class="confidence confidence-{headline.confidence}">{headline.confidence}</span>
@@ -28,6 +59,61 @@
             </div>
         {/if}
     </button>
+
+    {#if expanded}
+        <div class="detail-section">
+            {#if detailError}
+                <div class="detail-error">{detailError}</div>
+            {:else if detail === null}
+                <div class="detail-loading">Loading...</div>
+            {:else}
+                <div class="detail-columns">
+                    <div class="detail-column">
+                        <span class="column-title">Input</span>
+                        {#if detail.input?.reasoning}
+                            <p class="reasoning-text">{detail.input.reasoning}</p>
+                        {/if}
+                        {#each incomingEdges as edge (edge.related_key)}
+                            <div class="edge-row">
+                                <span class="edge-key">{formatComponentKey(edge.related_key, edge.token_str)}</span>
+                                <span
+                                    class="edge-attr"
+                                    class:positive={edge.attribution > 0}
+                                    class:negative={edge.attribution < 0}
+                                >
+                                    {edge.attribution > 0 ? "+" : ""}{edge.attribution.toFixed(3)}
+                                </span>
+                                {#if edge.related_label}
+                                    <span class="edge-label">{edge.related_label}</span>
+                                {/if}
+                            </div>
+                        {/each}
+                    </div>
+                    <div class="detail-column">
+                        <span class="column-title">Output</span>
+                        {#if detail.output?.reasoning}
+                            <p class="reasoning-text">{detail.output.reasoning}</p>
+                        {/if}
+                        {#each outgoingEdges as edge (edge.related_key)}
+                            <div class="edge-row">
+                                <span class="edge-key">{formatComponentKey(edge.related_key, edge.token_str)}</span>
+                                <span
+                                    class="edge-attr"
+                                    class:positive={edge.attribution > 0}
+                                    class:negative={edge.attribution < 0}
+                                >
+                                    {edge.attribution > 0 ? "+" : ""}{edge.attribution.toFixed(3)}
+                                </span>
+                                {#if edge.related_label}
+                                    <span class="edge-label">{edge.related_label}</span>
+                                {/if}
+                            </div>
+                        {/each}
+                    </div>
+                </div>
+            {/if}
+        </div>
+    {/if}
 </div>
 
 <style>
@@ -125,5 +211,87 @@
         text-transform: uppercase;
         color: var(--text-muted);
         min-width: 24px;
+    }
+
+    .detail-section {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+        padding: var(--space-3);
+        background: var(--bg-elevated);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-default);
+    }
+
+    .detail-loading,
+    .detail-error {
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+    }
+
+    .detail-error {
+        color: var(--semantic-error);
+    }
+
+    .detail-columns {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--space-3);
+    }
+
+    .detail-column {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+
+    .column-title {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        padding-bottom: var(--space-1);
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .reasoning-text {
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+        line-height: 1.5;
+        margin: 0;
+    }
+
+    .edge-row {
+        display: flex;
+        align-items: baseline;
+        gap: var(--space-2);
+        font-size: var(--text-xs);
+    }
+
+    .edge-key {
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
+        flex-shrink: 0;
+    }
+
+    .edge-attr {
+        font-family: var(--font-mono);
+        font-weight: 600;
+        flex-shrink: 0;
+    }
+
+    .edge-attr.positive {
+        color: var(--status-positive-bright);
+    }
+
+    .edge-attr.negative {
+        color: var(--semantic-error);
+    }
+
+    .edge-label {
+        color: var(--text-muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 </style>

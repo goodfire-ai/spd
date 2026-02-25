@@ -24,6 +24,22 @@ export type GraphInterpDetail = {
     unified: LabelDetail | null;
 };
 
+export type PromptEdgeResponse = {
+    related_key: string;
+    pass_name: string;
+    attribution: number;
+    related_label: string | null;
+    related_confidence: string | null;
+    token_str: string | null;
+};
+
+export type GraphInterpComponentDetail = {
+    output: LabelDetail | null;
+    input: LabelDetail | null;
+    unified: LabelDetail | null;
+    edges: PromptEdgeResponse[];
+};
+
 export type GraphNode = {
     component_key: string;
     label: string;
@@ -54,6 +70,10 @@ export async function getAllGraphInterpLabels(): Promise<Record<string, GraphInt
 
 export async function getGraphInterpDetail(layer: string, cIdx: number): Promise<GraphInterpDetail> {
     return fetchJson<GraphInterpDetail>(`/api/graph_interp/labels/${layer}/${cIdx}`);
+}
+
+export async function getGraphInterpComponentDetail(layer: string, cIdx: number): Promise<GraphInterpComponentDetail> {
+    return fetchJson<GraphInterpComponentDetail>(`/api/graph_interp/detail/${layer}/${cIdx}`);
 }
 
 export async function getModelGraph(): Promise<ModelGraphResponse> {

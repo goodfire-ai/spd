@@ -20,8 +20,13 @@ MOCK_MODE = False
 MAX_GRAPH_NODES = 500
 
 
+_ALREADY_CANONICAL = {"embed", "output"}
+
+
 def _concrete_to_canonical_key(concrete_key: str, topology: TransformerTopology) -> str:
     layer, idx = concrete_key.rsplit(":", 1)
+    if layer in _ALREADY_CANONICAL:
+        return concrete_key
     canonical = topology.target_to_canon(layer)
     return f"{canonical}:{idx}"
 
@@ -54,6 +59,22 @@ class GraphInterpDetail(BaseModel):
     output: LabelDetail | None
     input: LabelDetail | None
     unified: LabelDetail | None
+
+
+class PromptEdgeResponse(BaseModel):
+    related_key: str
+    pass_name: str
+    attribution: float
+    related_label: str | None
+    related_confidence: str | None
+    token_str: str | None
+
+
+class GraphInterpComponentDetail(BaseModel):
+    output: LabelDetail | None
+    input: LabelDetail | None
+    unified: LabelDetail | None
+    edges: list[PromptEdgeResponse]
 
 
 class GraphNode(BaseModel):
@@ -104,10 +125,7 @@ def get_all_labels(loaded: DepLoadedRun) -> dict[str, GraphInterpHeadline]:
 
         label = u or o or i
         assert label is not None
-        try:
-            canonical_key = _concrete_to_canonical_key(concrete_key, topology)
-        except (KeyError, AssertionError):
-            canonical_key = concrete_key
+        canonical_key = _concrete_to_canonical_key(concrete_key, topology)
 
         result[canonical_key] = GraphInterpHeadline(
             label=label.label,
@@ -117,6 +135,17 @@ def get_all_labels(loaded: DepLoadedRun) -> dict[str, GraphInterpHeadline]:
         )
 
     return result
+
+
+def _to_detail(label: LabelResult | None) -> LabelDetail | None:
+    if label is None:
+        return None
+    return LabelDetail(
+        label=label.label,
+        confidence=label.confidence,
+        reasoning=label.reasoning,
+        prompt=label.prompt,
+    )
 
 
 @router.get("/labels/{layer}/{c_idx}")
@@ -131,24 +160,47 @@ def get_label_detail(layer: str, c_idx: int, loaded: DepLoadedRun) -> GraphInter
 
     concrete_key = _canonical_to_concrete_key(layer, c_idx, loaded.topology)
 
-    o = repo.get_output_label(concrete_key)
-    i = repo.get_input_label(concrete_key)
-    u = repo.get_unified_label(concrete_key)
+    return GraphInterpDetail(
+        output=_to_detail(repo.get_output_label(concrete_key)),
+        input=_to_detail(repo.get_input_label(concrete_key)),
+        unified=_to_detail(repo.get_unified_label(concrete_key)),
+    )
 
-    def to_detail(label: LabelResult | None) -> LabelDetail | None:
-        if label is None:
-            return None
-        return LabelDetail(
-            label=label.label,
-            confidence=label.confidence,
-            reasoning=label.reasoning,
-            prompt=label.prompt,
+
+@router.get("/detail/{layer}/{c_idx}")
+@log_errors
+def get_component_detail(
+    layer: str, c_idx: int, loaded: DepLoadedRun
+) -> GraphInterpComponentDetail:
+    repo = loaded.graph_interp
+    if repo is None:
+        raise HTTPException(status_code=404, detail="Graph interp data not available")
+
+    topology = loaded.topology
+    concrete_key = _canonical_to_concrete_key(layer, c_idx, topology)
+
+    raw_edges = repo.get_prompt_edges(concrete_key)
+    tokenizer = loaded.tokenizer
+    edges = []
+    for e in raw_edges:
+        rel_layer, rel_idx = e.related_key.rsplit(":", 1)
+        token_str = tokenizer.decode([int(rel_idx)]) if rel_layer in ("embed", "output") else None
+        edges.append(
+            PromptEdgeResponse(
+                related_key=_concrete_to_canonical_key(e.related_key, topology),
+                pass_name=e.pass_name,
+                attribution=e.attribution,
+                related_label=e.related_label,
+                related_confidence=e.related_confidence,
+                token_str=token_str,
+            )
         )
 
-    return GraphInterpDetail(
-        output=to_detail(o),
-        input=to_detail(i),
-        unified=to_detail(u),
+    return GraphInterpComponentDetail(
+        output=_to_detail(repo.get_output_label(concrete_key)),
+        input=_to_detail(repo.get_input_label(concrete_key)),
+        unified=_to_detail(repo.get_unified_label(concrete_key)),
+        edges=edges,
     )
 
 
@@ -167,10 +219,7 @@ def get_model_graph(loaded: DepLoadedRun) -> ModelGraphResponse:
     unified = repo.get_all_unified_labels()
     nodes = []
     for concrete_key, label in unified.items():
-        try:
-            canonical_key = _concrete_to_canonical_key(concrete_key, topology)
-        except (KeyError, AssertionError):
-            canonical_key = concrete_key
+        canonical_key = _concrete_to_canonical_key(concrete_key, topology)
         nodes.append(
             GraphNode(
                 component_key=canonical_key,
@@ -185,12 +234,8 @@ def get_model_graph(loaded: DepLoadedRun) -> ModelGraphResponse:
     raw_edges = repo.get_all_prompt_edges()
     edges = []
     for e in raw_edges:
-        try:
-            comp_canon = _concrete_to_canonical_key(e.component_key, topology)
-            rel_canon = _concrete_to_canonical_key(e.related_key, topology)
-        except (KeyError, AssertionError):
-            comp_canon = e.component_key
-            rel_canon = e.related_key
+        comp_canon = _concrete_to_canonical_key(e.component_key, topology)
+        rel_canon = _concrete_to_canonical_key(e.related_key, topology)
 
         match e.pass_name:
             case "output":

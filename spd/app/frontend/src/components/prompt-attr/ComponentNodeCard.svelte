@@ -228,7 +228,7 @@
             onGenerate={componentData.generateInterpretation}
         />
         {#if graphInterpLabel}
-            <GraphInterpBadge headline={graphInterpLabel} />
+            <GraphInterpBadge headline={graphInterpLabel} {layer} {cIdx} />
         {/if}
     </div>
 
