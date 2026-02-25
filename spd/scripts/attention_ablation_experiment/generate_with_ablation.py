@@ -465,17 +465,23 @@ def generate_with_ablation(
 
     with torch.no_grad():
         # Dataset samples: take first prompt_len tokens, pick random t, truncate to t+1
+        n_collected = 0
         for i, batch_data in enumerate(loader):
-            if i >= n_samples:
+            if n_collected >= n_samples:
                 break
             input_ids: Int[Tensor, "1 seq"] = batch_data[task_config.column_name][
                 :, :prompt_len
             ].to(device)
+            # Skip non-ASCII samples (non-English text)
+            text = decode_tok(input_ids[0].tolist())
+            if not text.isascii():
+                continue
             rng = random.Random(i)
             t = rng.randint(1, min(input_ids.shape[1], prompt_len) - 1)
             run_sample(input_ids[:, : t + 1], t, f"Dataset sample {i}")
-            if (i + 1) % 10 == 0:
-                logger.info(f"Dataset: {i + 1}/{n_samples}")
+            n_collected += 1
+            if n_collected % 10 == 0:
+                logger.info(f"Dataset: {n_collected}/{n_samples}")
 
         # Crafted prompts: use full text, ablate at last token
         if include_crafted:
