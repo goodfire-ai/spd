@@ -7,6 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 source .venv/bin/activate
 ```
+If working in a worktree, make sure there's a local `.venv` first by running `uv sync` in the worktree directory. Do NOT `cd` to the main repo — all commands (including git) should run in the worktree.
+
 Repo requires `.env` file with WandB credentials (see `.env.example`)
 
 
