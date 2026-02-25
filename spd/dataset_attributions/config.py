@@ -26,3 +26,4 @@ class AttributionsSlurmConfig(BaseConfig):
     partition: str = DEFAULT_PARTITION_NAME
     time: str = "48:00:00"
     merge_time: str = "01:00:00"
+    merge_mem: str = "200G"

@@ -4,18 +4,31 @@ Computes component-to-component attribution strengths aggregated over the full
 training dataset using gradient x activation formula, summed over all positions
 and batches.
 
+Three metrics are accumulated:
+- attr:         E[∂y/∂x · x]           (signed mean attribution)
+- attr_abs:     E[∂|y|/∂x · x]         (attribution to absolute value of target)
+- squared_attr: E[(∂y/∂x · x)²]        (mean squared attribution, for RMS)
+
+Naming convention: modifier before "attr" applies to the target (e.g. attr_abs =
+attribution to |target|), modifier after applies to the attribution itself
+(e.g. squared_attr = squared attribution).
+
 Uses residual-based storage for scalability:
-- Component targets: accumulated directly to comp_accumulator
-- Output targets: accumulated as attributions to output residual stream (source_to_out_residual)
-  Output attributions computed on-the-fly at query time via w_unembed
+- Component targets: accumulated directly
+- Output targets: accumulated as attributions to output residual stream,
+  computed on-the-fly at query time via w_unembed
+
+All layer keys are concrete module paths (e.g. "wte", "h.0.attn.q_proj", "lm_head").
+Translation to canonical names happens at the storage boundary in harvest.py.
 """
 
+from collections import defaultdict
+from dataclasses import dataclass
 from typing import Any
 
 import torch
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Bool, Int
 from torch import Tensor, nn
-from tqdm.auto import tqdm
 
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
@@ -24,7 +37,7 @@ from spd.utils.general_utils import bf16_autocast
 
 
 class AttributionHarvester:
-    """Accumulates attribution strengths across batches.
+    """Accumulates attribution strengths across batches using concrete module paths.
 
     The attribution formula is:
         attribution[src, tgt] = Σ_batch Σ_pos (∂out[pos, tgt] / ∂in[pos, src]) × in_act[pos, src]
@@ -35,11 +48,6 @@ class AttributionHarvester:
     2. For output targets, store attributions to the pre-unembed residual
        (d_model dimensions) instead of vocab tokens. This eliminates the expensive
        O((V+C) × d_model × V) matmul during harvesting and reduces storage.
-
-    Index structure:
-        - Sources: wte tokens [0, vocab_size) + component layers [vocab_size, ...)
-        - Component targets: [0, n_components) in comp_accumulator
-        - Output targets: via out_residual_accumulator (computed on-the-fly at query time)
     """
 
     sampling: SamplingType
@@ -48,95 +56,113 @@ class AttributionHarvester:
         self,
         model: ComponentModel,
         sources_by_target: dict[str, list[str]],
-        n_components: int,
         vocab_size: int,
-        source_alive: Bool[Tensor, " n_sources"],
-        target_alive: Bool[Tensor, " n_components"],
+        component_alive: dict[str, Bool[Tensor, " n_components"]],
         sampling: SamplingType,
+        embed_path: str,
         embedding_module: nn.Embedding,
+        unembed_path: str,
         unembed_module: nn.Linear,
         device: torch.device,
-        show_progress: bool = False,
     ):
         self.model = model
         self.sources_by_target = sources_by_target
-        self.n_components = n_components
         self.vocab_size = vocab_size
-        self.source_alive = source_alive
-        self.target_alive = target_alive
+        self.component_alive = component_alive
         self.sampling = sampling
+        self.embed_path = embed_path
         self.embedding_module = embedding_module
+        self.unembed_path = unembed_path
         self.unembed_module = unembed_module
         self.device = device
-        self.show_progress = show_progress
 
-        self.n_sources = vocab_size + n_components
         self.n_batches = 0
         self.n_tokens = 0
+        self.output_d_model = unembed_module.in_features
 
-        # Split accumulators for component and output targets
-        self.comp_accumulator = torch.zeros(self.n_sources, n_components, device=device)
-
-        # For output targets: store attributions to output residual dimensions
-        self.d_model = unembed_module.in_features
-        self.out_residual_accumulator = torch.zeros(self.n_sources, self.d_model, device=device)
-
-        # Build per-layer index ranges for sources
-        self.component_layer_names = list(model.target_module_paths)
-        self.source_layer_to_idx_range = self._build_source_layer_index_ranges()
-        self.target_layer_to_idx_range = self._build_target_layer_index_ranges()
-
-        # Pre-compute alive indices per layer
-        self.alive_source_idxs_per_layer = self._build_alive_indices(
-            self.source_layer_to_idx_range, source_alive
+        self.attr_accumulator = self._build_accumulator(
+            sources_by_target, component_alive, unembed_module, vocab_size, device
         )
-        self.alive_target_idxs_per_layer = self._build_alive_indices(
-            self.target_layer_to_idx_range, target_alive
+        self.attr_abs_accumulator = self._build_accumulator(
+            sources_by_target, component_alive, unembed_module, vocab_size, device
+        )
+        self.square_attr_accumulator = self._build_accumulator(
+            sources_by_target, component_alive, unembed_module, vocab_size, device
         )
 
-    def _build_source_layer_index_ranges(self) -> dict[str, tuple[int, int]]:
-        """Source order: wte tokens [0, vocab_size), then component layers."""
-        ranges: dict[str, tuple[int, int]] = {"wte": (0, self.vocab_size)}
-        idx = self.vocab_size
-        for layer in self.component_layer_names:
-            n = self.model.module_to_c[layer]
-            ranges[layer] = (idx, idx + n)
-            idx += n
-        return ranges
+    def _build_accumulator(
+        self,
+        sources_by_target: dict[str, list[str]],
+        component_alive: dict[str, Bool[Tensor, " n_components"]],
+        unembed_module: nn.Linear,
+        vocab_size: int,
+        device: torch.device,
+    ) -> dict[str, dict[str, Tensor]]:
+        accumulator: dict[str, dict[str, Tensor]] = {}
 
-    def _build_target_layer_index_ranges(self) -> dict[str, tuple[int, int]]:
-        """Target order: component layers [0, n_components). Output handled separately."""
-        ranges: dict[str, tuple[int, int]] = {}
-        idx = 0
-        for layer in self.component_layer_names:
-            n = self.model.module_to_c[layer]
-            ranges[layer] = (idx, idx + n)
-            idx += n
-        # Note: "output" not included - handled via out_residual_accumulator
-        return ranges
+        for target_layer, source_layers in sources_by_target.items():
+            if target_layer == self.unembed_path:
+                target_d = unembed_module.in_features
+            else:
+                (target_c,) = component_alive[target_layer].shape
+                target_d = target_c
 
-    def _build_alive_indices(
-        self, layer_ranges: dict[str, tuple[int, int]], alive_mask: Bool[Tensor, " n"]
-    ) -> dict[str, list[int]]:
-        """Get alive local indices for each layer."""
-        return {
-            layer: torch.where(alive_mask[start:end])[0].tolist()
-            for layer, (start, end) in layer_ranges.items()
-        }
+            source_acc: dict[str, Tensor] = {}
+            for source_layer in source_layers:
+                if source_layer == self.embed_path:
+                    source_d = vocab_size
+                else:
+                    (source_c,) = component_alive[source_layer].shape
+                    source_d = source_c
+
+                source_acc[source_layer] = torch.zeros((target_d, source_d), device=device)
+
+            accumulator[target_layer] = source_acc
+
+        return accumulator
+
+    @dataclass
+    class NormalizedAttrs:
+        attr: dict[str, dict[str, Tensor]]
+        attr_abs: dict[str, dict[str, Tensor]]
+        mean_squared_attr: dict[str, dict[str, Tensor]]
+
+    def normalized_attrs(self) -> NormalizedAttrs:
+        """Return the accumulated attributions normalized by n_tokens.
+
+        mean_squared_attr is pre-sqrt so it can be merged across workers.
+        """
+        attr = defaultdict[str, dict[str, Tensor]](dict)
+        attr_abs = defaultdict[str, dict[str, Tensor]](dict)
+        mean_squared_attr = defaultdict[str, dict[str, Tensor]](dict)
+
+        for target in self.attr_accumulator:
+            for source in self.sources_by_target[target]:
+                attr[target][source] = self.attr_accumulator[target][source] / self.n_tokens
+                attr_abs[target][source] = self.attr_abs_accumulator[target][source] / self.n_tokens
+                mean_squared_attr[target][source] = (
+                    self.square_attr_accumulator[target][source] / self.n_tokens
+                )
+
+        return self.NormalizedAttrs(
+            attr=attr,
+            attr_abs=attr_abs,
+            mean_squared_attr=mean_squared_attr,
+        )
 
     def process_batch(self, tokens: Int[Tensor, "batch seq"]) -> None:
         """Accumulate attributions from one batch."""
         self.n_batches += 1
         self.n_tokens += tokens.numel()
 
-        # Setup hooks to capture wte output and pre-unembed residual
-        wte_out: list[Tensor] = []
+        # Setup hooks to capture embedding output and pre-unembed residual
+        embed_out: list[Tensor] = []
         pre_unembed: list[Tensor] = []
 
-        def wte_hook(_mod: nn.Module, _args: Any, _kwargs: Any, out: Tensor) -> Tensor:
+        def embed_hook(_mod: nn.Module, _args: Any, _kwargs: Any, out: Tensor) -> Tensor:
             out.requires_grad_(True)
-            wte_out.clear()
-            wte_out.append(out)
+            embed_out.clear()
+            embed_out.append(out)
             return out
 
         def pre_unembed_hook(_mod: nn.Module, args: tuple[Any, ...], _kwargs: Any) -> None:
@@ -144,7 +170,7 @@ class AttributionHarvester:
             pre_unembed.clear()
             pre_unembed.append(args[0])
 
-        h1 = self.embedding_module.register_forward_hook(wte_hook, with_kwargs=True)
+        h1 = self.embedding_module.register_forward_hook(embed_hook, with_kwargs=True)
         h2 = self.unembed_module.register_forward_pre_hook(pre_unembed_hook, with_kwargs=True)
 
         # Get masks with all components active
@@ -153,6 +179,7 @@ class AttributionHarvester:
             ci = self.model.calc_causal_importances(
                 pre_weight_acts=out.cache, sampling=self.sampling, detach_inputs=False
             )
+
         mask_infos = make_mask_infos(
             component_masks={k: torch.ones_like(v) for k, v in ci.lower_leaky.items()},
             routing_masks="all",
@@ -168,92 +195,140 @@ class AttributionHarvester:
         h2.remove()
 
         cache = comp_output.cache
-        cache["wte_post_detach"] = wte_out[0]
-        cache["pre_unembed"] = pre_unembed[0]
-        cache["tokens"] = tokens
+        cache[f"{self.embed_path}_post_detach"] = embed_out[0]
+        cache[f"{self.unembed_path}_pre_detach"] = pre_unembed[0]
 
-        # Process each target layer
-        layers = list(self.sources_by_target.items())
-        pbar = tqdm(layers, desc="Targets", disable=not self.show_progress, leave=False)
-        for target_layer, source_layers in pbar:
-            if target_layer == "output":
-                self._process_output_targets(source_layers, cache)
+        for target_layer in self.sources_by_target:
+            if target_layer == self.unembed_path:
+                self._process_output_targets(
+                    cache,
+                    tokens,
+                    ci.lower_leaky,
+                )
             else:
-                self._process_component_targets(target_layer, source_layers, cache)
-
-    def _process_component_targets(
-        self,
-        target_layer: str,
-        source_layers: list[str],
-        cache: dict[str, Tensor],
-    ) -> None:
-        """Process attributions to a component layer."""
-        target_start, _ = self.target_layer_to_idx_range[target_layer]
-        alive_targets = self.alive_target_idxs_per_layer[target_layer]
-        if not alive_targets:
-            return
-
-        # Sum over batch and sequence
-        target_acts = cache[f"{target_layer}_pre_detach"].sum(dim=(0, 1))
-        source_acts = [cache[f"{s}_post_detach"] for s in source_layers]
-
-        for t_idx in alive_targets:
-            grads = torch.autograd.grad(target_acts[t_idx], source_acts, retain_graph=True)
-            self._accumulate_attributions(
-                self.comp_accumulator[:, target_start + t_idx],
-                source_layers,
-                grads,
-                source_acts,
-                cache["tokens"],
-            )
+                self._process_component_targets(
+                    cache,
+                    tokens,
+                    ci.lower_leaky,
+                    target_layer,
+                )
 
     def _process_output_targets(
         self,
-        source_layers: list[str],
         cache: dict[str, Tensor],
+        tokens: Int[Tensor, "batch seq"],
+        ci: dict[str, Tensor],
     ) -> None:
-        """Process output attributions via output-residual-space storage.
+        """Process output attributions via output-residual-space storage."""
+        out_residual = cache[f"{self.unembed_path}_pre_detach"]
 
-        Instead of computing and storing attributions to vocab tokens directly,
-        we store attributions to output residual dimensions. Output attributions are
-        computed on-the-fly at query time via: attr[src, token] = out_residual[src] @ w_unembed[:, token]
-        """
-        # Sum output residual over batch and sequence -> [d_model]
-        out_residual = cache["pre_unembed"].sum(dim=(0, 1))
+        out_residual_sum = out_residual.sum(dim=(0, 1))
+        out_residual_sum_abs = out_residual.abs().sum(dim=(0, 1))
+
+        source_layers = self.sources_by_target[self.unembed_path]
         source_acts = [cache[f"{s}_post_detach"] for s in source_layers]
 
-        for d_idx in range(self.d_model):
-            grads = torch.autograd.grad(out_residual[d_idx], source_acts, retain_graph=True)
-            self._accumulate_attributions(
-                self.out_residual_accumulator[:, d_idx],
-                source_layers,
-                grads,
-                source_acts,
-                cache["tokens"],
+        for d_idx in range(self.output_d_model):
+            grads = torch.autograd.grad(out_residual_sum[d_idx], source_acts, retain_graph=True)
+            abs_grads = torch.autograd.grad(
+                out_residual_sum_abs[d_idx], source_acts, retain_graph=True
             )
 
+            self._accumulate_attributions(
+                self.unembed_path,
+                d_idx,
+                source_layers,
+                source_acts,
+                list(grads),
+                list(abs_grads),
+                ci,
+                tokens,
+            )
+
+    def _process_component_targets(
+        self,
+        cache: dict[str, Tensor],
+        tokens: Int[Tensor, "batch seq"],
+        ci: dict[str, Tensor],
+        target_layer: str,
+    ) -> None:
+        """Process attributions to a component layer."""
+        alive_targets = self.component_alive[target_layer]
+        if not alive_targets.any():
+            return
+
+        target_acts_raw = cache[f"{target_layer}_pre_detach"]
+
+        target_ci_detached = ci[target_layer].detach()
+        ci_weighted_target_acts = (target_acts_raw * target_ci_detached).sum(dim=(0, 1))
+        ci_weighted_target_acts_abs = (target_acts_raw.abs() * target_ci_detached).sum(dim=(0, 1))
+
+        source_layers = self.sources_by_target[target_layer]
+        source_acts = [cache[f"{s}_post_detach"] for s in source_layers]
+
+        for t_idx in torch.where(alive_targets)[0].tolist():
+            grads = torch.autograd.grad(
+                ci_weighted_target_acts[t_idx], source_acts, retain_graph=True
+            )
+
+            abs_grads = torch.autograd.grad(
+                ci_weighted_target_acts_abs[t_idx], source_acts, retain_graph=True
+            )
+
+            self._accumulate_attributions(
+                target_layer,
+                t_idx,
+                source_layers,
+                source_acts,
+                list(grads),
+                list(abs_grads),
+                ci,
+                tokens,
+            )
+
+    @torch.no_grad()  # pyright: ignore[reportUntypedFunctionDecorator]
     def _accumulate_attributions(
         self,
-        target_col: Float[Tensor, " n_sources"],
+        target_layer: str,
+        target_idx: int,
         source_layers: list[str],
-        grads: tuple[Tensor, ...],
         source_acts: list[Tensor],
+        source_grads: list[Tensor],
+        source_abs_grads: list[Tensor],
+        ci: dict[str, Tensor],
         tokens: Int[Tensor, "batch seq"],
     ) -> None:
         """Accumulate grad*act attributions from sources to a target column."""
-        with torch.no_grad():
-            for layer, grad, act in zip(source_layers, grads, source_acts, strict=True):
-                alive = self.alive_source_idxs_per_layer[layer]
-                if not alive:
-                    continue
 
-                if layer == "wte":
-                    # Per-token: sum grad*act over d_model, scatter by token id
-                    attr = (grad * act).sum(dim=-1).flatten()
-                    target_col.scatter_add_(0, tokens.flatten(), attr)
-                else:
-                    # Per-component: sum grad*act over batch and sequence
-                    start, _ = self.source_layer_to_idx_range[layer]
-                    attr = (grad * act).sum(dim=(0, 1))
-                    for c in alive:
-                        target_col[start + c] += attr[c]
+        attr_accumulator = self.attr_accumulator[target_layer]
+        attr_abs_accumulator = self.attr_abs_accumulator[target_layer]
+        square_attr_accumulator = self.square_attr_accumulator[target_layer]
+
+        for source_layer, act, grad, abs_grad in zip(
+            source_layers, source_acts, source_grads, source_abs_grads, strict=True
+        ):
+            attr_acc = attr_accumulator[source_layer][target_idx]
+            attr_abs_acc = attr_abs_accumulator[source_layer][target_idx]
+            square_attr_acc = square_attr_accumulator[source_layer][target_idx]
+
+            # Embed has no CI (all tokens always active)
+            source_ci = ci[source_layer] if source_layer != self.embed_path else 1.0
+
+            ci_weighted_attr = grad * act * source_ci
+            ci_weighted_attr_abs = abs_grad * act * source_ci
+            ci_weighted_squared_attr = ci_weighted_attr.square()
+
+            if source_layer == self.embed_path:
+                # Per-token: sum grad*act*ci over d_model, scatter by token id
+                attr = ci_weighted_attr.sum(dim=-1).flatten()
+                attr_abs = ci_weighted_attr_abs.sum(dim=-1).flatten()
+                attr_squared = ci_weighted_squared_attr.sum(dim=-1).flatten()
+
+                attr_acc.scatter_add_(0, tokens.flatten(), attr)
+                attr_abs_acc.scatter_add_(0, tokens.flatten(), attr_abs)
+                square_attr_acc.scatter_add_(0, tokens.flatten(), attr_squared)
+            else:
+                # Per-component: sum grad*act*ci over batch and sequence
+                attr_acc.add_(ci_weighted_attr.sum(dim=(0, 1)))
+                attr_abs_acc.add_(ci_weighted_attr_abs.sum(dim=(0, 1)))
+                square_attr_acc.add_(ci_weighted_squared_attr.sum(dim=(0, 1)))
