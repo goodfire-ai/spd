@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 
 from spd.adapters import adapter_from_id
 from spd.autointerp.config import AutointerpEvalConfig
+from spd.autointerp.db import InterpDB
 from spd.autointerp.repo import InterpRepo
 from spd.autointerp.scoring.detection import run_detection_scoring
 from spd.autointerp.scoring.fuzzing import run_fuzzing_scoring
@@ -40,14 +41,17 @@ def main(
         f"No autointerp data for {decomposition_id}. Run autointerp first."
     )
 
+    # Separate writable DB for saving scores (the repo's DB is readonly/immutable)
+    score_db = InterpDB(interp_repo._subrun_dir / "interp.db")
+
     if harvest_subrun_id is not None:
         harvest = HarvestRepo(
             decomposition_id=decomposition_id,
             subrun_id=harvest_subrun_id,
-            readonly=False,
+            readonly=True,
         )
     else:
-        harvest = HarvestRepo.open_most_recent(decomposition_id, readonly=False)
+        harvest = HarvestRepo.open_most_recent(decomposition_id, readonly=True)
         assert harvest is not None, f"No harvest data for {decomposition_id}"
 
     components = harvest.get_all_components()
@@ -58,6 +62,7 @@ def main(
                 run_detection_scoring(
                     components=components,
                     interp_repo=interp_repo,
+                    score_db=score_db,
                     model=config.model,
                     reasoning_effort=config.reasoning_effort,
                     openrouter_api_key=openrouter_api_key,
@@ -74,6 +79,7 @@ def main(
                 run_fuzzing_scoring(
                     components=components,
                     interp_repo=interp_repo,
+                    score_db=score_db,
                     model=config.model,
                     reasoning_effort=config.reasoning_effort,
                     openrouter_api_key=openrouter_api_key,
@@ -85,6 +91,8 @@ def main(
                     cost_limit_usd=config.cost_limit_usd,
                 )
             )
+
+    score_db.close()
 
 
 def get_command(

@@ -19,7 +19,7 @@ from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
 from spd.autointerp.llm_api import LLMError, LLMJob, LLMResult, map_llm_calls
 from spd.harvest.config import IntruderEvalConfig
-from spd.harvest.repo import HarvestRepo
+from spd.harvest.db import HarvestDB
 from spd.harvest.schemas import ActivationExample, ComponentData
 from spd.log import logger
 
@@ -146,7 +146,7 @@ async def run_intruder_scoring(
     model: str,
     openrouter_api_key: str,
     tokenizer_name: str,
-    harvest: HarvestRepo,
+    score_db: HarvestDB,
     eval_config: IntruderEvalConfig,
     limit: int | None,
     cost_limit_usd: float | None,
@@ -163,7 +163,7 @@ async def run_intruder_scoring(
 
     density_index = DensityIndex(components, min_examples=n_real + 1)
 
-    existing_scores = harvest.get_scores("intruder")
+    existing_scores = score_db.get_scores("intruder")
     completed = set(existing_scores.keys())
     if completed:
         logger.info(f"Resuming: {len(completed)} already scored")
@@ -234,7 +234,7 @@ async def run_intruder_scoring(
         score = correct / len(trials) if trials else 0.0
         result = IntruderResult(component_key=ck, score=score, trials=trials, n_errors=n_err)
         results.append(result)
-        harvest.save_score(ck, "intruder", score, json.dumps(asdict(result)))
+        score_db.save_score(ck, "intruder", score, json.dumps(asdict(result)))
 
     logger.info(f"Scored {len(results)} components")
     return results

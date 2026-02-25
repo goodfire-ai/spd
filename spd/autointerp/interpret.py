@@ -190,10 +190,8 @@ def run_interpret(
                         f"Error rate {error_rate:.0%} ({n_errors}/{len(remaining)}) exceeds 20% threshold"
                     )
 
-        except Exception as e:
-            logger.error(f"Error: {type(e).__name__}: {e}")
+        finally:
             db.close()
-            raise e
 
         logger.info(f"Completed {len(results)} interpretations -> {db_path}")
         return results
