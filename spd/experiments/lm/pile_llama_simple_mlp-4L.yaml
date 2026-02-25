@@ -53,6 +53,24 @@ loss_metric_configs:
   classname: StochasticReconSubsetLoss
   routing:
     type: uniform_k_subset
+# - coeff: 0.5
+#   classname: PersistentPGDReconSubsetLoss
+#   optimizer:
+#     type: adam
+#     lr_schedule:
+#       start_val: 0.1
+#       warmup_pct: 0.0
+#       final_val_frac: 1.0
+#       fn_type: constant
+#     beta1: 0.9
+#     beta2: 0.99
+#     eps: 1.0e-08
+#   scope:
+#     type: repeat_across_batch
+#     n_sources: 8
+#   routing:
+#     type: uniform_k_subset
+#   n_warmup_steps: 0
 - coeff: 0.5
   optimizer:
     type: adam
@@ -73,11 +91,11 @@ loss_metric_configs:
   classname: FaithfulnessLoss
 output_loss_type: kl
 lr_schedule:
-  start_val: 5.0e-05
+  start_val: 3e-4
   warmup_pct: 0.0
   final_val_frac: 0.1
   fn_type: cosine
-steps: 400000
+steps: 200000
 batch_size: 64
 grad_clip_norm_components: 0.01
 grad_clip_norm_ci_fns: null
