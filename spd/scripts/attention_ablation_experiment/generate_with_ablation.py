@@ -45,36 +45,52 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 SCRIPT_DIR = Path(__file__).parent
 
 CRAFTED_PROMPTS = [
+    # Phrases where prev token strongly predicts next
     ("Once upon a", "Phrase"),
     ("The United States of", "Bigram"),
     ("Thank you very", "Phrase"),
     ("Dear Sir or", "Phrase"),
-    ("2 + 2 =", "Math"),
-    ("import numpy as", "Code"),
-    ("What is your", "Question"),
-    ("ready, set,", "Phrase"),
     ("black and", "Phrase"),
+    ("war and", "Phrase"),
+    ("the king and", "Phrase"),
+    ("the end of the", "Phrase"),
+    ("open the", "Phrase"),
+    ("from A to", "Phrase"),
+    ("ready, set,", "Phrase"),
+    ("less than", "Comparison"),
+    # Prev token = key context for next word
     ("New York", "Place"),
+    ("he said she", "Narrative"),
+    ("What is your", "Question"),
+    ("input and", "Phrase"),
+    ("north south east", "Directions"),
+    # Code: prev token determines syntax
+    ("import numpy as", "Code"),
     ("if x ==", "Code"),
     ("return self.", "Code"),
-    ("<html><body>", "HTML"),
-    ("rock, paper,", "Game"),
-    ("from A to", "Phrase"),
-    ("http://www.", "URL"),
-    ("dog cat dog cat dog", "Repetition"),
-    ("he said she", "Narrative"),
-    ("north south east", "Directions"),
-    ("the end of the", "Phrase"),
-    ("yes or no? yes or", "Repetition"),
-    ("10, 20, 30,", "Counting"),
-    ("the king and", "Phrase"),
-    ("input and", "Phrase"),
-    ("red blue red blue red", "Repetition"),
-    ("open the", "Phrase"),
     ("def f(x):", "Code"),
     ("is not", "Code"),
-    ("less than", "Comparison"),
-    ("war and", "Phrase"),
+    ("for i in", "Code"),
+    ("x = x +", "Code"),
+    # Sequences / repetition: prev token predicts pattern
+    ("2 + 2 =", "Math"),
+    ("10, 20, 30,", "Counting"),
+    ("A B C D E F", "Alphabet"),
+    ("dog cat dog cat dog", "Repetition"),
+    ("red blue red blue red", "Repetition"),
+    ("yes or no? yes or", "Repetition"),
+    ("1 2 3 4 5 6 7", "Counting"),
+    ("mon tue wed thu", "Days"),
+    # Structured: prev token signals format
+    ("<html><body>", "HTML"),
+    ("http://www.", "URL"),
+    ("rock, paper,", "Game"),
+    # Bigrams where the pair is a fixed expression
+    ("pro and", "Phrase"),
+    ("trial and", "Phrase"),
+    ("more or", "Phrase"),
+    ("sooner or", "Phrase"),
+    ("back and", "Phrase"),
 ]
 
 
@@ -265,8 +281,9 @@ th{background:#f0f0f0;font-weight:600;text-align:center}
 .label{text-align:left;font-weight:600;background:#f5f5f5;min-width:230px;font-size:11px}
 .info{font-family:sans-serif;font-size:13px;color:#555;margin:4px 0}
 .logit-cell{text-align:left;white-space:nowrap;font-size:11px;padding:2px 4px;line-height:1.3;width:1px}
-.logit-pos{color:#2e7d32;font-weight:600}
-.logit-neg{color:#c62828;font-weight:600}
+.logit-pos{color:#2e7d32}
+.logit-neg{color:#c62828}
+.logit-val{font-size:9px}
 .base-change{text-align:center;font-size:11px;white-space:nowrap}
 </style></head><body>
 """
@@ -313,7 +330,7 @@ def _render_sample_html(
     def _logit_cell(tok_id: int, val: float, positive: bool) -> str:
         tok = _fmt_tok(decode_tok([tok_id]))
         css_class = "logit-pos" if positive else "logit-neg"
-        return f'<td class="logit-cell">{tok}<br><span class="{css_class}">{val:+.1f}</span></td>'
+        return f'<td class="logit-cell">{tok}<br><span class="{css_class} logit-val">{val:+.1f}</span></td>'
 
     for name, pred, baseline_name in conditions:
         tok = decode_tok([pred.token_id])
