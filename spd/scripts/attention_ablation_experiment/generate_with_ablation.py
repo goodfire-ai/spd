@@ -297,12 +297,9 @@ th{background:#f0f0f0;font-weight:600;text-align:center}
 .tok{white-space:pre;text-align:center;min-width:50px}
 .label{text-align:left;font-weight:600;background:#f5f5f5;min-width:230px;font-size:11px}
 .info{font-family:sans-serif;font-size:13px;color:#555;margin:4px 0}
-.logit-cell{text-align:left;white-space:nowrap;font-size:11px;padding:4px 10px}
-.logit-entry{display:flex;justify-content:space-between;gap:12px;padding:1px 0}
-.logit-tok{color:#333}
-.logit-val{font-weight:600}
-.logit-pos{color:#2e7d32}
-.logit-neg{color:#c62828}
+.logit-cell{text-align:left;white-space:nowrap;font-size:11px;padding:4px 8px}
+.logit-pos{color:#2e7d32;font-weight:600}
+.logit-neg{color:#c62828;font-weight:600}
 .base-change{text-align:center;font-size:11px;white-space:nowrap}
 </style></head><body>
 """
@@ -345,18 +342,13 @@ def _render_sample_html(
     )
 
     def _logit_list(token_ids: Tensor, values: Tensor, positive: bool) -> str:
-        entries = []
+        parts = []
         for j in range(len(token_ids)):
             tok = _fmt_tok(decode_tok([int(token_ids[j].item())]))
             val = values[j].item()
             css_class = "logit-pos" if positive else "logit-neg"
-            entries.append(
-                f'<div class="logit-entry">'
-                f'<span class="logit-tok">{tok}</span>'
-                f'<span class="logit-val {css_class}">{val:+.2f}</span>'
-                f"</div>"
-            )
-        return "".join(entries)
+            parts.append(f'{tok}<span class="{css_class}">({val:+.1f})</span>')
+        return " &nbsp; ".join(parts)
 
     for name, pred, baseline_name in conditions:
         tok = decode_tok([pred.token_id])
