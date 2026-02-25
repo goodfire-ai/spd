@@ -301,6 +301,10 @@ class LMTaskConfig(BaseConfig):
         default=False,
         description="Whether to use a streaming dataset",
     )
+    dataset_seed: int | None = Field(
+        default=None,
+        description="Seed for dataset shuffling/sampling. When None, uses the global `seed`.",
+    )
 
 
 class ModulePatternInfoConfig(BaseConfig):
@@ -710,7 +714,10 @@ class Config(BaseConfig):
     )
 
     # --- General ---
-    seed: int = Field(default=0, description="Random seed for reproducibility")
+    seed: int = Field(
+        default=0,
+        description="Random seed for reproducibility. Does not affect dataset shuffling if dataset_seed is set in TaskConfig.",
+    )
     autocast_bf16: bool = Field(
         default=True,
         description="Whether to use torch.autocast with bfloat16 mixed precision",
