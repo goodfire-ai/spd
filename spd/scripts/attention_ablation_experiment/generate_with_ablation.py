@@ -334,33 +334,30 @@ def _render_sample_html(
     h.append(f'<div class="prompt">{html.escape("".join(prompt_tokens))}</div>')
 
     h.append('<div style="overflow-x:auto"><table>')
-    h.append(
-        "<tr><th></th><th>predicted</th>"
-        f"<th>baseline token<br>logit change</th>"
-        f"<th>top {top_k} logit increases</th>"
-        f"<th>top {top_k} logit decreases</th></tr>"
-    )
 
-    def _logit_list(token_ids: Tensor, values: Tensor, positive: bool) -> str:
-        parts = []
-        for j in range(len(token_ids)):
-            tok = _fmt_tok(decode_tok([int(token_ids[j].item())]))
-            val = values[j].item()
-            css_class = "logit-pos" if positive else "logit-neg"
-            parts.append(f'{tok}<span class="{css_class}">({val:+.1f})</span>')
-        return " &nbsp; ".join(parts)
+    # Header: label, predicted, baseline change, k increase cols, k decrease cols
+    h.append("<tr><th></th><th>predicted</th><th>base tok<br>logit &Delta;</th>")
+    for j in range(top_k):
+        h.append(f"<th>inc {j + 1}</th>")
+    for j in range(top_k):
+        h.append(f"<th>dec {j + 1}</th>")
+    h.append("</tr>")
+
+    def _logit_cell(tok_id: int, val: float, positive: bool) -> str:
+        tok = _fmt_tok(decode_tok([tok_id]))
+        css_class = "logit-pos" if positive else "logit-neg"
+        return f'<td class="logit-cell">{tok} <span class="{css_class}">{val:+.1f}</span></td>'
 
     for name, pred, baseline_name in conditions:
         tok = decode_tok([pred.token_id])
         css = "match" if tok == ref_tok else "diff"
 
         if name == baseline_name:
+            empty_cells = '<td class="logit-cell">-</td>' * (1 + 2 * top_k)
             h.append(
                 f'<tr><td class="label">{html.escape(name)}</td>'
                 f'<td class="tok {css}">{_fmt_tok(tok)}</td>'
-                f'<td class="base-change">-</td>'
-                f'<td class="logit-cell">-</td>'
-                f'<td class="logit-cell">-</td></tr>'
+                f"{empty_cells}</tr>"
             )
             continue
 
@@ -378,14 +375,18 @@ def _render_sample_html(
         top_inc_vals, top_inc_ids = diff.topk(top_k)
         top_dec_vals, top_dec_ids = (-diff).topk(top_k)
 
-        h.append(
-            f'<tr><td class="label">{html.escape(name)}</td>'
-            f'<td class="tok {css}">{_fmt_tok(tok)}</td>'
-            f'<td class="base-change">{base_pred_tok} '
-            f'<span class="{change_css}">{base_pred_change:+.2f}</span></td>'
-            f'<td class="logit-cell">{_logit_list(top_inc_ids, top_inc_vals, True)}</td>'
-            f'<td class="logit-cell">{_logit_list(top_dec_ids, -top_dec_vals, False)}</td></tr>'
+        row = f'<tr><td class="label">{html.escape(name)}</td>'
+        row += f'<td class="tok {css}">{_fmt_tok(tok)}</td>'
+        row += (
+            f'<td class="logit-cell">{base_pred_tok} '
+            f'<span class="{change_css}">{base_pred_change:+.1f}</span></td>'
         )
+        for j in range(top_k):
+            row += _logit_cell(int(top_inc_ids[j].item()), top_inc_vals[j].item(), True)
+        for j in range(top_k):
+            row += _logit_cell(int(top_dec_ids[j].item()), -top_dec_vals[j].item(), False)
+        row += "</tr>"
+        h.append(row)
 
     h.append("</table></div></div>")
     return "\n".join(h)
