@@ -264,7 +264,7 @@ th{background:#f0f0f0;font-weight:600;text-align:center}
 .tok{white-space:pre;text-align:center;min-width:50px}
 .label{text-align:left;font-weight:600;background:#f5f5f5;min-width:230px;font-size:11px}
 .info{font-family:sans-serif;font-size:13px;color:#555;margin:4px 0}
-.logit-cell{text-align:center;white-space:nowrap;font-size:11px;padding:2px 4px;line-height:1.3}
+.logit-cell{text-align:left;white-space:nowrap;font-size:11px;padding:2px 4px;line-height:1.3;width:1px}
 .logit-pos{color:#2e7d32;font-weight:600}
 .logit-neg{color:#c62828;font-weight:600}
 .base-change{text-align:center;font-size:11px;white-space:nowrap}
