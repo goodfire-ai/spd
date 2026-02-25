@@ -206,95 +206,78 @@ def _build_conditions(
     parsed_restrict_heads: list[tuple[int, int]],
     n_layers: int,
 ) -> list[tuple[str, list[int]]]:
-    """Run all conditions and return (name, generated_tokens) pairs in display order."""
+    """Run all conditions and return (name, generated_tokens) pairs in display order.
+
+    Conditions:
+      - Baselines: target model, SPD model
+      - Head ablation: zero head output at t (if parsed_heads provided)
+      - Value ablations: zero values at t-1, t-1&t-2, all positions (if parsed_heads
+        provided, since the layer is inferred from the head spec)
+      - Component ablations: full (mask-based) and per-head (subtraction-based)
+    """
+    assert t >= 2, f"t must be >= 2 for value ablation conditions, got {t}"
     seq_len = prompt_ids.shape[1]
     conditions: list[tuple[str, list[int]]] = []
 
+    def gen(**kwargs: Any) -> list[int]:
+        return _generate_greedy(target_model, prompt_ids, gen_len, **kwargs)
+
     # --- Baselines ---
-    conditions.append(("Target model", _generate_greedy(target_model, prompt_ids, gen_len)))
-    conditions.append(
-        (
-            "SPD baseline",
-            _generate_greedy(target_model, prompt_ids, gen_len, spd_model=spd_model),
-        )
-    )
+    conditions.append(("Target model", gen()))
+    conditions.append(("SPD baseline", gen(spd_model=spd_model)))
 
     # --- Head ablation: zero head output at t ---
     if parsed_heads:
         head_abl = [(layer, head, t) for layer, head in parsed_heads]
-        label = f"Head ablated ({_head_label(parsed_heads)})"
         conditions.append(
             (
-                label,
-                _generate_greedy(target_model, prompt_ids, gen_len, head_pos_ablations=head_abl),
+                f"Head ablated ({_head_label(parsed_heads)})",
+                gen(head_pos_ablations=head_abl),
             )
         )
 
-    # --- Value ablations at layer(s) derived from parsed_heads ---
-    # These zero value vectors in the attention computation, preventing
-    # information from specific positions from flowing through attention.
+    # --- Value ablations ---
+    # Zero value vectors in the attention computation, preventing information
+    # from specific positions from flowing through attention.
+    # Layer is derived from parsed_heads (value ablation tests whether the head's
+    # layer uses values from t-1, so it only makes sense with a head specified).
     if parsed_heads:
         val_layer = parsed_heads[0][0]
         hl = _head_label(parsed_heads)
 
-        if t >= 1:
-            conditions.append(
-                (
-                    f"Vals @t-1 (all heads, L{val_layer})",
-                    _generate_greedy(
-                        target_model,
-                        prompt_ids,
-                        gen_len,
-                        value_pos_ablations=[(val_layer, t - 1)],
-                    ),
-                )
+        conditions.append(
+            (
+                f"Vals @t-1 (all heads, L{val_layer})",
+                gen(value_pos_ablations=[(val_layer, t - 1)]),
             )
-            conditions.append(
-                (
-                    f"Vals @t-1 ({hl})",
-                    _generate_greedy(
-                        target_model,
-                        prompt_ids,
-                        gen_len,
-                        value_head_pos_ablations=[(ly, hd, t - 1) for ly, hd in parsed_heads],
-                    ),
-                )
+        )
+        conditions.append(
+            (
+                f"Vals @t-1 ({hl})",
+                gen(value_head_pos_ablations=[(ly, hd, t - 1) for ly, hd in parsed_heads]),
             )
-        if t >= 2:
-            conditions.append(
-                (
-                    f"Vals @t-1,t-2 (all heads, L{val_layer})",
-                    _generate_greedy(
-                        target_model,
-                        prompt_ids,
-                        gen_len,
-                        value_pos_ablations=[(val_layer, t - 1), (val_layer, t - 2)],
-                    ),
-                )
+        )
+        conditions.append(
+            (
+                f"Vals @t-1,t-2 (all heads, L{val_layer})",
+                gen(value_pos_ablations=[(val_layer, t - 1), (val_layer, t - 2)]),
             )
-
-        # Persistent: zero all prompt values in one layer
+        )
         conditions.append(
             (
                 f"Vals @all (L{val_layer}) [persist]",
-                _generate_greedy(
-                    target_model,
-                    prompt_ids,
-                    gen_len,
+                gen(
                     value_pos_ablations=[(val_layer, p) for p in range(seq_len)],
                     ablate_first_only=False,
                 ),
             )
         )
 
-    # Persistent: zero all prompt values in ALL layers
+    # Persistent: zero all prompt values in ALL layers (doesn't need a head spec)
     conditions.append(
         (
             "Vals @all (ALL layers) [persist]",
-            _generate_greedy(
-                target_model,
-                prompt_ids,
-                gen_len,
+            gen(
                 value_pos_ablations=[(ly, p) for ly in range(n_layers) for p in range(seq_len)],
                 ablate_first_only=False,
             ),
@@ -313,28 +296,15 @@ def _build_conditions(
         conditions.append(
             (
                 f"Full comp ({set_name})",
-                _generate_greedy(
-                    target_model,
-                    prompt_ids,
-                    gen_len,
-                    spd_model=spd_model,
-                    mask_infos=ablated_masks,
-                ),
+                gen(spd_model=spd_model, mask_infos=ablated_masks),
             )
         )
         if parsed_restrict_heads:
             cha = _build_component_head_ablations(spd_model, comps, parsed_restrict_heads, t)
-            rh_label = _head_label(parsed_restrict_heads)
             conditions.append(
                 (
-                    f"Per-head {rh_label} ({set_name})",
-                    _generate_greedy(
-                        target_model,
-                        prompt_ids,
-                        gen_len,
-                        spd_model=spd_model,
-                        component_head_ablations=cha,
-                    ),
+                    f"Per-head {_head_label(parsed_restrict_heads)} ({set_name})",
+                    gen(spd_model=spd_model, component_head_ablations=cha),
                 )
             )
 
@@ -474,6 +444,23 @@ def generate_with_ablation(
 
     all_tables: list[str] = []
 
+    def run_sample(prompt_ids: Tensor, t: int, label: str) -> None:
+        prompt_tokens = [decode_tok([tid]) for tid in prompt_ids[0].tolist()]
+        conditions = _build_conditions(
+            target_model,
+            spd_model,
+            prompt_ids,
+            t,
+            gen_len,
+            parsed_heads,
+            parsed_comp_sets,
+            parsed_restrict_heads,
+            n_layers,
+        )
+        all_tables.append(
+            _render_sample_html(prompt_tokens, conditions, t, label, gen_len, decode_tok)
+        )
+
     with torch.no_grad():
         # Dataset samples: take first prompt_len tokens, pick random t, truncate to t+1
         for i, batch_data in enumerate(loader):
@@ -484,25 +471,7 @@ def generate_with_ablation(
             ].to(device)
             rng = random.Random(i)
             t = rng.randint(2, min(input_ids.shape[1], prompt_len) - 1)
-            prompt_ids = input_ids[:, : t + 1]
-            prompt_tokens = [decode_tok([tid]) for tid in prompt_ids[0].tolist()]
-
-            conditions = _build_conditions(
-                target_model,
-                spd_model,
-                prompt_ids,
-                t,
-                gen_len,
-                parsed_heads,
-                parsed_comp_sets,
-                parsed_restrict_heads,
-                n_layers,
-            )
-            all_tables.append(
-                _render_sample_html(
-                    prompt_tokens, conditions, t, f"Dataset sample {i}", gen_len, decode_tok
-                )
-            )
+            run_sample(input_ids[:, : t + 1], t, f"Dataset sample {i}")
             if (i + 1) % 10 == 0:
                 logger.info(f"Dataset: {i + 1}/{n_samples}")
 
@@ -514,25 +483,7 @@ def generate_with_ablation(
                     token_ids if isinstance(token_ids, list) else token_ids.ids  # pyright: ignore[reportAttributeAccessIssue]
                 )
                 ids_tensor = torch.tensor([ids_list], device=device)
-                t = ids_tensor.shape[1] - 1
-                prompt_tokens = [decode_tok([tid]) for tid in ids_tensor[0].tolist()]
-
-                conditions = _build_conditions(
-                    target_model,
-                    spd_model,
-                    ids_tensor,
-                    t,
-                    gen_len,
-                    parsed_heads,
-                    parsed_comp_sets,
-                    parsed_restrict_heads,
-                    n_layers,
-                )
-                all_tables.append(
-                    _render_sample_html(
-                        prompt_tokens, conditions, t, f"Crafted: {desc}", gen_len, decode_tok
-                    )
-                )
+                run_sample(ids_tensor, ids_tensor.shape[1] - 1, f"Crafted: {desc}")
                 if (idx + 1) % 10 == 0:
                     logger.info(f"Crafted: {idx + 1}/{len(CRAFTED_PROMPTS)}")
 
