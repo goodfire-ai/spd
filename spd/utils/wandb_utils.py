@@ -54,7 +54,8 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "PGDReconLayerwiseLoss": "PGDReconLayer",
     "PersistentPGDReconLoss": "PersistPGDRecon",
     "PersistentPGDReconSubsetLoss": "PersistPGDReconSub",
-    "StochasticHiddenActsReconLoss": "StochHiddenRecon",
+    "StochasticHiddenActsReconLoss": "StochHiddenActRecon",
+    "CIHiddenActsReconLoss": "CIHiddenActRecon",
     "UnmaskedReconLoss": "UnmaskedRecon",
     # Eval metrics
     "CEandKLLosses": "CEandKL",
@@ -68,6 +69,8 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "StochasticReconSubsetCEAndKL": "StochReconSubCEKL",
     "PGDMultiBatchReconLoss": "PGDMultiBatchRecon",
     "PGDMultiBatchReconSubsetLoss": "PGDMultiBatchReconSub",
+    "PersistentPGDReconEval": "PersistPGDReconEval",
+    "PersistentPGDReconSubsetEval": "PersistPGDReconSubEval",
 }
 
 
