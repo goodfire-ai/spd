@@ -33,8 +33,9 @@ dependencies = [
     "orjson",
     "aiolimiter>=1.2",
     "openrouter>=0.1.1",
-    "httpx>=0.28.0",
-    "zstandard" # For streaming datasets
+    "httpx>=0.28.0", # For streaming datasets
+    "zstandard",
+    "scribe",
 ]
 
 [dependency-groups]
@@ -147,3 +148,6 @@ filterwarnings = [
     # Ignore Pydantic V1 deprecation warnings from wandb_workspaces
     "ignore:Pydantic V1 style.*:DeprecationWarning:wandb_workspaces",
 ]
+
+[tool.uv.sources]
+scribe = { path = "../scribe-internal" }
