@@ -29,8 +29,10 @@ class TestSPDRun:
     @patch("spd.scripts.run.create_slurm_array_script")
     @patch("spd.scripts.run.create_git_snapshot")
     @patch("spd.scripts.run._create_wandb_views_and_report")
+    @patch("spd.scripts.run.get_wandb_run_url", return_value="https://wandb.ai/test/runs/test")
     def test_sweep_creates_slurm_array(
         self,
+        mock_get_wandb_run_url,
         mock_create_wandb_views_and_report,
         mock_create_git_snapshot,
         mock_create_slurm_array_script,

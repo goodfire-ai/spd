@@ -120,8 +120,8 @@ tokenizer_name: EleutherAI/gpt-neox-20b
 task_config:
   task_name: lm
   max_seq_len: 512
-  buffer_size: 1000
-  dataset_name: danbraunai/pile-uncopyrighted-tok
+  buffer_size: 10000
+  dataset_name: danbraunai/pile-uncopyrighted-tok-shuffled
   column_name: input_ids
   train_data_split: train
   eval_data_split: val
