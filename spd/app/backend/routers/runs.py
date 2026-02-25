@@ -13,8 +13,9 @@ from spd.app.backend.dependencies import DepStateManager
 from spd.app.backend.state import RunState
 from spd.app.backend.utils import log_errors
 from spd.autointerp.repo import InterpRepo
+from spd.autointerp.schemas import AUTOINTERP_DATA_DIR
 from spd.configs import LMTaskConfig
-from spd.dataset_attributions.repo import AttributionRepo
+from spd.dataset_attributions.repo import AttributionRepo, get_attributions_dir
 from spd.harvest.repo import HarvestRepo
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -42,6 +43,19 @@ class LoadedRun(BaseModel):
     backend_user: str
     dataset_attributions_available: bool
     dataset_search_enabled: bool
+
+
+class DiscoveredRun(BaseModel):
+    run_id: str
+    n_labels: int
+    has_harvest: bool
+    has_detection: bool
+    has_fuzzing: bool
+    has_intruder: bool
+    has_dataset_attributions: bool
+    model_type: str | None
+    arch_summary: str | None
+    created_at: str | None
 
 
 router = APIRouter(prefix="/api", tags=["runs"])
@@ -180,3 +194,92 @@ def health_check() -> dict[str, str]:
 def whoami() -> dict[str, str]:
     """Return the current backend user."""
     return {"user": getpass.getuser()}
+
+
+def _try_get_arch_info(run_id: str) -> tuple[str | None, str | None]:
+    """Get model type and arch summary for a run. Downloads config from wandb if needed."""
+    from spd.app.backend.routers.pretrain_info import (
+        _get_pretrain_info,
+        _load_spd_config_lightweight,
+    )
+
+    try:
+        spd_config = _load_spd_config_lightweight(f"goodfire/spd/{run_id}")
+        info = _get_pretrain_info(spd_config)
+        return info.model_type, info.summary
+    except Exception:
+        logger.debug(f"[discover] Failed to get arch info for {run_id}", exc_info=True)
+        return None, None
+
+
+def _fetch_wandb_created_dates(run_ids: list[str]) -> dict[str, str]:
+    """Fetch created_at timestamps from wandb for a batch of runs."""
+    import wandb
+
+    api = wandb.Api()
+    dates: dict[str, str] = {}
+    for run_id in run_ids:
+        try:
+            r = api.run(f"goodfire/spd/{run_id}")
+            dates[run_id] = r.created_at
+        except Exception:
+            logger.debug(f"[discover] Failed to fetch wandb date for {run_id}")
+    return dates
+
+
+@router.get("/runs/discover")
+@log_errors
+def discover_runs() -> list[DiscoveredRun]:
+    """Scan SPD_OUT_DIR for all runs that have autointerp labels.
+
+    Returns runs sorted by wandb creation date (newest first). Includes arch
+    info from local cache.
+    """
+    if not AUTOINTERP_DATA_DIR.exists():
+        return []
+
+    runs: list[DiscoveredRun] = []
+    for run_dir in AUTOINTERP_DATA_DIR.iterdir():
+        if not run_dir.is_dir():
+            continue
+        run_id = run_dir.name
+
+        interp = InterpRepo.open(run_id)
+        if interp is None:
+            continue
+
+        n_labels = interp.get_interpretation_count()
+        if n_labels == 0:
+            continue
+
+        score_types = interp.get_available_score_types()
+
+        harvest = HarvestRepo.open_most_recent(run_id)
+        has_intruder = bool(harvest.get_scores("intruder")) if harvest is not None else False
+
+        has_ds_attrs = get_attributions_dir(run_id).exists() and any(
+            d.is_dir() and d.name.startswith("da-") for d in get_attributions_dir(run_id).iterdir()
+        )
+
+        model_type, arch_summary = _try_get_arch_info(run_id)
+
+        runs.append(
+            DiscoveredRun(
+                run_id=run_id,
+                n_labels=n_labels,
+                has_harvest=harvest is not None,
+                has_detection="detection" in score_types,
+                has_fuzzing="fuzzing" in score_types,
+                has_intruder=has_intruder,
+                has_dataset_attributions=has_ds_attrs,
+                model_type=model_type,
+                arch_summary=arch_summary,
+                created_at=None,
+            )
+        )
+
+    dates = _fetch_wandb_created_dates([r.run_id for r in runs])
+    for r in runs:
+        r.created_at = dates.get(r.run_id)
+    runs.sort(key=lambda r: r.created_at or "", reverse=True)
+    return runs
