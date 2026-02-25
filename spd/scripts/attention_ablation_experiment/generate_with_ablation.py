@@ -45,70 +45,36 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 SCRIPT_DIR = Path(__file__).parent
 
 CRAFTED_PROMPTS = [
-    ("The cat sat on the mat. The cat sat on the", "Repetition"),
+    ("Once upon a time", "Phrase"),
     ("The United States of", "Bigram"),
-    ('def hello_world():\n    print("Hello', "Code"),
-    ("Once upon a", "Phrase"),
-    ("1, 2, 3, 4, 5, 6, 7, 8, 9,", "Counting"),
-    ("<div><p>Hello</p></", "HTML"),
-    ("Thank you very", "Phrase"),
-    ("the the the the the the the the", "Repetition"),
-    ("Dear Sir or", "Phrase"),
-    ('{"name": "John", "age":', "JSON"),
-    ("The quick brown fox jumps over the", "Phrase"),
-    ("2 + 2 =", "Math"),
-    ("import numpy as", "Code"),
-    ("red, green, blue, yellow,", "List"),
-    ("What is your", "Question"),
-    (
-        "The president of the United States gave a speech about the economy"
-        " and said that the country needs to invest in",
-        "Long",
-    ),
-    (
-        "In a shocking turn of events, the company announced that it would be"
-        " laying off thousands of workers due to the recent",
-        "Long",
-    ),
-    (
-        "def fibonacci(n):\n    if n <= 1:\n        return n\n"
-        "    return fibonacci(n-1) + fibonacci(n-",
-        "Code",
-    ),
-    (
-        "The recipe calls for 2 cups of flour, 1 cup of sugar, 3 eggs, and a pinch of",
-        "Long",
-    ),
-    (
-        "She walked into the room and saw that everyone was staring at her."
-        " She felt embarrassed because she had forgotten to",
-        "Narrative",
-    ),
-    ("To install the package, run the following command:\n\npip install", "Docs"),
-    (
-        "The temperature today is expected to reach a high of 95 degrees"
-        " Fahrenheit, which is about 35 degrees",
-        "Conversion",
-    ),
-    ("A B C D E F G H I J K L M N O P Q R S T U V W X Y", "Alphabet"),
-    (
-        "The patient was diagnosed with a severe case of pneumonia"
-        " and was immediately admitted to the",
-        "Medical",
-    ),
-    (
-        "<!DOCTYPE html>\n<html>\n<head>\n<title>My Page</title>\n</head>\n"
-        "<body>\n<h1>Welcome</h1>\n<p>This is my",
-        "HTML",
-    ),
-    ("for i in range(10):\n    for j in range(10):\n        if i ==", "Code"),
-    ("Mon Tue Wed Thu Fri Sat", "Days"),
-    (
-        "January February March April May June July August September October November",
-        "Months",
-    ),
-    ("The cat chased the mouse. The dog chased the cat. The lion chased the", "Pattern"),
-    ("SELECT * FROM users WHERE name =", "SQL"),
+    ("Thank you very much", "Phrase"),
+    ("Dear Sir or Madam", "Phrase"),
+    ("2 + 2 = 4 +", "Math"),
+    ("import numpy as np", "Code"),
+    ("ready, set, go, ready,", "Phrase"),
+    ("the cat sat on the", "Repetition"),
+    ("if x == 0:\n    return", "Code"),
+    ("return self.weight", "Code"),
+    ("<html><body><p>Hello", "HTML"),
+    ("rock, paper, scissors,", "Game"),
+    ("from A to Z and", "Phrase"),
+    ("http://www.example.com/", "URL"),
+    ("dog cat dog cat dog", "Repetition"),
+    ("he said that she", "Narrative"),
+    ("north south east west", "Directions"),
+    ("the end of the", "Phrase"),
+    ("yes or no? yes or", "Repetition"),
+    ("10, 20, 30, 40,", "Counting"),
+    ("the king and queen", "Phrase"),
+    ("input and output of", "Phrase"),
+    ("red blue red blue red", "Repetition"),
+    ("open the door and", "Phrase"),
+    ("def f(self, x):", "Code"),
+    ("is not the same", "Phrase"),
+    ("less than or equal", "Comparison"),
+    ("war and peace and", "Phrase"),
+    ("for i in range(", "Code"),
+    ("What is your name", "Question"),
 ]
 
 
@@ -180,7 +146,7 @@ def _build_conditions(
     n_layers: int,
 ) -> list[ConditionResult]:
     """Run all conditions and return (name, prediction, baseline_name) triples."""
-    assert t >= 2, f"t must be >= 2 for value ablation conditions, got {t}"
+    assert t >= 1, f"t must be >= 1, got {t}"
     seq_len = prompt_ids.shape[1]
     conditions: list[ConditionResult] = []
     TARGET = "Target model"
@@ -224,13 +190,14 @@ def _build_conditions(
                 TARGET,
             )
         )
-        conditions.append(
-            (
-                f"Vals @t-1,t-2 (all heads, L{val_layer})",
-                predict(value_pos_ablations=[(val_layer, t - 1), (val_layer, t - 2)]),
-                TARGET,
+        if t >= 2:
+            conditions.append(
+                (
+                    f"Vals @t-1,t-2 (all heads, L{val_layer})",
+                    predict(value_pos_ablations=[(val_layer, t - 1), (val_layer, t - 2)]),
+                    TARGET,
+                )
             )
-        )
         conditions.append(
             (
                 f"Vals @all prev (all heads, L{val_layer})",
@@ -488,7 +455,7 @@ def generate_with_ablation(
                 :, :prompt_len
             ].to(device)
             rng = random.Random(i)
-            t = rng.randint(2, min(input_ids.shape[1], prompt_len) - 1)
+            t = rng.randint(1, min(input_ids.shape[1], prompt_len) - 1)
             run_sample(input_ids[:, : t + 1], t, f"Dataset sample {i}")
             if (i + 1) % 10 == 0:
                 logger.info(f"Dataset: {i + 1}/{n_samples}")
