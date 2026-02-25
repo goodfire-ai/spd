@@ -330,7 +330,7 @@ th{background:#f0f0f0;font-weight:600}
 
 def generate_with_ablation(
     wandb_path: ModelPath,
-    comp_sets: str | None = None,
+    comp_sets: str | dict[str, str] | None = None,
     heads: str | None = None,
     restrict_to_heads: str | None = None,
     n_samples: int = 40,
@@ -353,7 +353,8 @@ def generate_with_ablation(
 
     parsed_comp_sets: dict[str, list[tuple[str, int]]] = {}
     if comp_sets is not None:
-        for name, spec in json.loads(comp_sets).items():
+        raw: dict[str, str] = json.loads(comp_sets) if isinstance(comp_sets, str) else comp_sets
+        for name, spec in raw.items():
             parsed_comp_sets[name] = parse_components(spec)
 
     parsed_heads = parse_heads(heads) if heads else []
