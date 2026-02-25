@@ -126,12 +126,20 @@ def _build_baseline_mask_infos(
     return make_mask_infos(masks)
 
 
+class Prediction:
+    __slots__ = ("token_id", "logits")
+
+    def __init__(self, token_id: int, logits: Tensor):
+        self.token_id = token_id
+        self.logits = logits
+
+
 def _predict_next_token(
     target_model: LlamaSimpleMLP,
     prompt_ids: Int[Tensor, "1 prompt_len"],
     **ablation_kwargs: Any,
-) -> int:
-    """Run one forward pass with ablation and return the greedy next token."""
+) -> Prediction:
+    """Run one forward pass with ablation and return the greedy next token + logits."""
     spd_model: ComponentModel | None = ablation_kwargs.pop("spd_model", None)
     mask_infos: dict[str, ComponentsMaskInfo] | None = ablation_kwargs.pop("mask_infos", None)
 
@@ -145,7 +153,8 @@ def _predict_next_token(
             logits, _ = target_model(prompt_ids)
             assert logits is not None
 
-    return int(logits[0, -1].argmax().item())
+    last_logits = logits[0, -1].detach().cpu()
+    return Prediction(int(last_logits.argmax().item()), last_logits)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -157,6 +166,9 @@ def _head_label(heads: list[tuple[int, int]]) -> str:
     return ",".join(f"L{ly}H{hd}" for ly, hd in heads)
 
 
+ConditionResult = tuple[str, Prediction, str]  # (name, prediction, baseline_name)
+
+
 def _build_conditions(
     target_model: LlamaSimpleMLP,
     spd_model: ComponentModel,
@@ -166,18 +178,20 @@ def _build_conditions(
     comp_sets: dict[str, list[tuple[str, int]]],
     parsed_restrict_heads: list[tuple[int, int]],
     n_layers: int,
-) -> list[tuple[str, int]]:
-    """Run all conditions and return (name, predicted_token) pairs in display order."""
+) -> list[ConditionResult]:
+    """Run all conditions and return (name, prediction, baseline_name) triples."""
     assert t >= 2, f"t must be >= 2 for value ablation conditions, got {t}"
     seq_len = prompt_ids.shape[1]
-    conditions: list[tuple[str, int]] = []
+    conditions: list[ConditionResult] = []
+    TARGET = "Target model"
+    SPD = "SPD baseline"
 
-    def predict(**kwargs: Any) -> int:
+    def predict(**kwargs: Any) -> Prediction:
         return _predict_next_token(target_model, prompt_ids, **kwargs)
 
     # --- Baselines ---
-    conditions.append(("Target model", predict()))
-    conditions.append(("SPD baseline", predict(spd_model=spd_model)))
+    conditions.append((TARGET, predict(), TARGET))
+    conditions.append((SPD, predict(spd_model=spd_model), SPD))
 
     # --- Head ablation: zero head output at t ---
     if parsed_heads:
@@ -186,6 +200,7 @@ def _build_conditions(
             (
                 f"Head ablated ({_head_label(parsed_heads)})",
                 predict(head_pos_ablations=head_abl),
+                TARGET,
             )
         )
 
@@ -199,24 +214,28 @@ def _build_conditions(
             (
                 f"Vals @t-1 (all heads, L{val_layer})",
                 predict(value_pos_ablations=[(val_layer, t - 1)]),
+                TARGET,
             )
         )
         conditions.append(
             (
                 f"Vals @t-1 ({hl})",
                 predict(value_head_pos_ablations=[(ly, hd, t - 1) for ly, hd in parsed_heads]),
+                TARGET,
             )
         )
         conditions.append(
             (
                 f"Vals @t-1,t-2 (all heads, L{val_layer})",
                 predict(value_pos_ablations=[(val_layer, t - 1), (val_layer, t - 2)]),
+                TARGET,
             )
         )
         conditions.append(
             (
                 f"Vals @all prev (all heads, L{val_layer})",
                 predict(value_pos_ablations=[(val_layer, p) for p in range(seq_len)]),
+                TARGET,
             )
         )
 
@@ -226,6 +245,7 @@ def _build_conditions(
             predict(
                 value_pos_ablations=[(ly, p) for ly in range(n_layers) for p in range(seq_len)]
             ),
+            TARGET,
         )
     )
 
@@ -242,6 +262,7 @@ def _build_conditions(
             (
                 f"Full comp ({set_name})",
                 predict(spd_model=spd_model, mask_infos=ablated_masks),
+                SPD,
             )
         )
         if parsed_restrict_heads:
@@ -250,6 +271,7 @@ def _build_conditions(
                 (
                     f"Per-head {_head_label(parsed_restrict_heads)} ({set_name})",
                     predict(spd_model=spd_model, component_head_ablations=cha),
+                    SPD,
                 )
             )
 
@@ -281,13 +303,22 @@ th{background:#f0f0f0;font-weight:600}
 
 def _render_sample_html(
     prompt_tokens: list[str],
-    conditions: list[tuple[str, int]],
+    conditions: list[ConditionResult],
     t: int,
     label: str,
     decode_tok: Any,
+    top_k: int = 5,
 ) -> str:
-    ref_token_id = conditions[0][1]
-    ref_tok = decode_tok([ref_token_id])
+    # Build lookup from condition name to logits for baseline resolution
+    logits_by_name: dict[str, Tensor] = {}
+    for name, pred, _baseline in conditions:
+        logits_by_name[name] = pred.logits
+
+    ref_tok = decode_tok([conditions[0][1].token_id])
+
+    def _fmt_tok(tok: str) -> str:
+        return html.escape(tok).replace("\n", "\\n").replace(" ", "&nbsp;")
+
     h: list[str] = []
     h.append(f'<div class="sample"><h2>{html.escape(label)} | ablation at t={t}</h2>')
     ablated_tok = html.escape(prompt_tokens[t]) if t < len(prompt_tokens) else "?"
@@ -297,16 +328,56 @@ def _render_sample_html(
         f' t={t}: "<b>{ablated_tok}</b>", t-1: "<b>{prev_tok}</b>"</div>'
     )
     h.append(f'<div class="prompt">{html.escape("".join(prompt_tokens))}</div>')
-    h.append('<div style="overflow-x:auto"><table><tr><th></th><th>predicted token</th></tr>')
 
-    for name, token_id in conditions:
-        tok = decode_tok([token_id])
-        escaped = html.escape(tok).replace("\n", "\\n").replace(" ", "&nbsp;")
+    h.append('<div style="overflow-x:auto"><table>')
+    h.append(
+        "<tr><th></th><th>predicted</th>"
+        "<th>baseline pred logit change</th>"
+        f"<th>top {top_k} increased</th>"
+        f"<th>top {top_k} decreased</th></tr>"
+    )
+
+    for name, pred, baseline_name in conditions:
+        tok = decode_tok([pred.token_id])
         css = "match" if tok == ref_tok else "diff"
-        h.append(
-            f'<tr><td class="label">{html.escape(name)}</td>'
-            f'<td class="tok {css}">{escaped}</td></tr>'
-        )
+
+        # Logit diff vs appropriate baseline
+        base_logits = logits_by_name[baseline_name]
+        diff = pred.logits - base_logits
+
+        # Change in baseline's predicted token logit
+        base_pred_id = int(base_logits.argmax().item())
+        base_pred_tok = _fmt_tok(decode_tok([base_pred_id]))
+        base_pred_change = diff[base_pred_id].item()
+
+        # Top-k increases and decreases
+        top_inc_vals, top_inc_ids = diff.topk(top_k)
+        top_dec_vals, top_dec_ids = (-diff).topk(top_k)
+
+        inc_parts = [
+            f"{_fmt_tok(decode_tok([int(tid)]))} ({top_inc_vals[j].item():+.1f})"
+            for j, tid in enumerate(top_inc_ids.tolist())
+        ]
+        dec_parts = [
+            f"{_fmt_tok(decode_tok([int(tid)]))} ({-top_dec_vals[j].item():+.1f})"
+            for j, tid in enumerate(top_dec_ids.tolist())
+        ]
+
+        if name == baseline_name:
+            # Baseline row: no diff to show
+            h.append(
+                f'<tr><td class="label">{html.escape(name)}</td>'
+                f'<td class="tok {css}">{_fmt_tok(tok)}</td>'
+                f"<td>-</td><td>-</td><td>-</td></tr>"
+            )
+        else:
+            h.append(
+                f'<tr><td class="label">{html.escape(name)}</td>'
+                f'<td class="tok {css}">{_fmt_tok(tok)}</td>'
+                f'<td style="font-size:10px">{base_pred_tok}: {base_pred_change:+.2f}</td>'
+                f'<td style="font-size:10px">{", ".join(inc_parts)}</td>'
+                f'<td style="font-size:10px">{", ".join(dec_parts)}</td></tr>'
+            )
 
     h.append("</table></div></div>")
     return "\n".join(h)
