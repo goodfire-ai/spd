@@ -32,7 +32,6 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
 from spd.pretrain.models.llama_simple_mlp import LlamaSimpleMLP
 from spd.scripts.attention_ablation_experiment.attention_ablation_experiment import (
-    ComponentHeadAblation,
     _build_component_head_ablations,
     _build_deterministic_masks_multi_pos,
     _build_prev_token_component_positions,
@@ -127,83 +126,26 @@ def _build_baseline_mask_infos(
     return make_mask_infos(masks)
 
 
-def _forward_once(
-    target_model: LlamaSimpleMLP,
-    input_ids: Int[Tensor, "1 seq_len"],
-    *,
-    spd_model: ComponentModel | None = None,
-    baseline_mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-    mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-    head_pos_ablations: list[tuple[int, int, int]] | None = None,
-    value_pos_ablations: list[tuple[int, int]] | None = None,
-    value_head_pos_ablations: list[tuple[int, int, int]] | None = None,
-    component_head_ablations: list[ComponentHeadAblation] | None = None,
-) -> Tensor:
-    """Single forward pass, returning logits.
-
-    When spd_model is provided, uses mask_infos (or baseline_mask_infos if mask_infos is None).
-    """
-    with patched_attention_forward(
-        target_model,
-        head_pos_ablations=head_pos_ablations,
-        value_pos_ablations=value_pos_ablations,
-        value_head_pos_ablations=value_head_pos_ablations,
-        component_head_ablations=component_head_ablations,
-    ):
-        if spd_model is not None:
-            out = spd_model(input_ids, mask_infos=mask_infos or baseline_mask_infos)
-            assert isinstance(out, Tensor)
-            return out
-        else:
-            logits, _ = target_model(input_ids)
-            assert logits is not None
-            return logits
-
-
-def _generate_greedy_one_shot(
+def _predict_next_token(
     target_model: LlamaSimpleMLP,
     prompt_ids: Int[Tensor, "1 prompt_len"],
-    gen_len: int,
     **ablation_kwargs: Any,
-) -> list[int]:
-    """Ablation on the FIRST generation step only, then generate normally.
+) -> int:
+    """Run one forward pass with ablation and return the greedy next token."""
+    spd_model: ComponentModel | None = ablation_kwargs.pop("spd_model", None)
+    mask_infos: dict[str, ComponentsMaskInfo] | None = ablation_kwargs.pop("mask_infos", None)
 
-    The ablation affects the first predicted token. Subsequent tokens are
-    generated without any ablation, but conditioned on the (potentially
-    different) first token. Since there's no KV cache, each step re-processes
-    the full sequence from scratch — the ablation does NOT persist to later
-    steps even though the ablated positions are still in the prompt.
-    """
-    spd_model = ablation_kwargs.get("spd_model")
-    baseline_mask_infos = (
-        _build_baseline_mask_infos(spd_model, prompt_ids.device) if spd_model is not None else None
-    )
+    with patched_attention_forward(target_model, **ablation_kwargs):
+        if spd_model is not None:
+            baseline = _build_baseline_mask_infos(spd_model, prompt_ids.device)
+            out = spd_model(prompt_ids, mask_infos=mask_infos or baseline)
+            assert isinstance(out, Tensor)
+            logits = out
+        else:
+            logits, _ = target_model(prompt_ids)
+            assert logits is not None
 
-    # Step 0: with ablation
-    logits = _forward_once(
-        target_model, prompt_ids, baseline_mask_infos=baseline_mask_infos, **ablation_kwargs
-    )
-    first_token = int(logits[0, -1].argmax().item())
-    generated = [first_token]
-    input_ids = torch.cat(
-        [prompt_ids, torch.tensor([[first_token]], device=prompt_ids.device)], dim=1
-    )
-
-    # Steps 1+: no ablation (clean forward passes)
-    for _step in range(gen_len - 1):
-        logits = _forward_once(
-            target_model,
-            input_ids,
-            spd_model=spd_model,
-            baseline_mask_infos=baseline_mask_infos,
-        )
-        next_token = int(logits[0, -1].argmax().item())
-        generated.append(next_token)
-        input_ids = torch.cat(
-            [input_ids, torch.tensor([[next_token]], device=input_ids.device)], dim=1
-        )
-
-    return generated
+    return int(logits[0, -1].argmax().item())
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -220,41 +162,34 @@ def _build_conditions(
     spd_model: ComponentModel,
     prompt_ids: Int[Tensor, "1 seq_len"],
     t: int,
-    gen_len: int,
     parsed_heads: list[tuple[int, int]],
     comp_sets: dict[str, list[tuple[str, int]]],
     parsed_restrict_heads: list[tuple[int, int]],
     n_layers: int,
-) -> list[tuple[str, list[int]]]:
-    """Run all conditions and return (name, generated_tokens) pairs in display order.
-
-    Conditions:
-      - Baselines: target model, SPD model
-      - Head ablation: zero head output at t (if parsed_heads provided)
-      - Value ablations: zero values at t-1, t-1&t-2, all positions (if parsed_heads
-        provided, since the layer is inferred from the head spec)
-      - Component ablations: full (mask-based) and per-head (subtraction-based)
-    """
+) -> list[tuple[str, int]]:
+    """Run all conditions and return (name, predicted_token) pairs in display order."""
     assert t >= 2, f"t must be >= 2 for value ablation conditions, got {t}"
     seq_len = prompt_ids.shape[1]
-    conditions: list[tuple[str, list[int]]] = []
-    args = (target_model, prompt_ids, gen_len)
+    conditions: list[tuple[str, int]] = []
+
+    def predict(**kwargs: Any) -> int:
+        return _predict_next_token(target_model, prompt_ids, **kwargs)
 
     # --- Baselines ---
-    conditions.append(("Target model", _generate_greedy_one_shot(*args)))
-    conditions.append(("SPD baseline", _generate_greedy_one_shot(*args, spd_model=spd_model)))
+    conditions.append(("Target model", predict()))
+    conditions.append(("SPD baseline", predict(spd_model=spd_model)))
 
-    # --- Head ablation: zero head output at t (one-shot: affects first token only) ---
+    # --- Head ablation: zero head output at t ---
     if parsed_heads:
         head_abl = [(layer, head, t) for layer, head in parsed_heads]
         conditions.append(
             (
                 f"Head ablated ({_head_label(parsed_heads)})",
-                _generate_greedy_one_shot(*args, head_pos_ablations=head_abl),
+                predict(head_pos_ablations=head_abl),
             )
         )
 
-    # --- Value ablations: zero values at specific positions for one prediction ---
+    # --- Value ablations: zero values at specific positions ---
     # Layer derived from parsed_heads (tests whether the head's layer uses values from t-1).
     if parsed_heads:
         val_layer = parsed_heads[0][0]
@@ -263,46 +198,38 @@ def _build_conditions(
         conditions.append(
             (
                 f"Vals @t-1 (all heads, L{val_layer})",
-                _generate_greedy_one_shot(*args, value_pos_ablations=[(val_layer, t - 1)]),
+                predict(value_pos_ablations=[(val_layer, t - 1)]),
             )
         )
         conditions.append(
             (
                 f"Vals @t-1 ({hl})",
-                _generate_greedy_one_shot(
-                    *args, value_head_pos_ablations=[(ly, hd, t - 1) for ly, hd in parsed_heads]
-                ),
+                predict(value_head_pos_ablations=[(ly, hd, t - 1) for ly, hd in parsed_heads]),
             )
         )
         conditions.append(
             (
                 f"Vals @t-1,t-2 (all heads, L{val_layer})",
-                _generate_greedy_one_shot(
-                    *args, value_pos_ablations=[(val_layer, t - 1), (val_layer, t - 2)]
-                ),
+                predict(value_pos_ablations=[(val_layer, t - 1), (val_layer, t - 2)]),
             )
         )
         conditions.append(
             (
                 f"Vals @all prev (all heads, L{val_layer})",
-                _generate_greedy_one_shot(
-                    *args, value_pos_ablations=[(val_layer, p) for p in range(seq_len)]
-                ),
+                predict(value_pos_ablations=[(val_layer, p) for p in range(seq_len)]),
             )
         )
 
-    # Zero all values at all positions in ALL layers for one prediction
     conditions.append(
         (
             "Vals @all prev (ALL layers)",
-            _generate_greedy_one_shot(
-                *args,
-                value_pos_ablations=[(ly, p) for ly in range(n_layers) for p in range(seq_len)],
+            predict(
+                value_pos_ablations=[(ly, p) for ly in range(n_layers) for p in range(seq_len)]
             ),
         )
     )
 
-    # --- Component ablations (one-shot): affect first prediction only ---
+    # --- Component ablations ---
     # Full: zero component masks at t (q) / t-1 (k), affects all heads
     # Per-head: subtract component contribution from restrict_heads' rows only
     for set_name, comps in comp_sets.items():
@@ -314,7 +241,7 @@ def _build_conditions(
         conditions.append(
             (
                 f"Full comp ({set_name})",
-                _generate_greedy_one_shot(*args, spd_model=spd_model, mask_infos=ablated_masks),
+                predict(spd_model=spd_model, mask_infos=ablated_masks),
             )
         )
         if parsed_restrict_heads:
@@ -322,9 +249,7 @@ def _build_conditions(
             conditions.append(
                 (
                     f"Per-head {_head_label(parsed_restrict_heads)} ({set_name})",
-                    _generate_greedy_one_shot(
-                        *args, spd_model=spd_model, component_head_ablations=cha
-                    ),
+                    predict(spd_model=spd_model, component_head_ablations=cha),
                 )
             )
 
@@ -356,13 +281,13 @@ th{background:#f0f0f0;font-weight:600}
 
 def _render_sample_html(
     prompt_tokens: list[str],
-    conditions: list[tuple[str, list[int]]],
+    conditions: list[tuple[str, int]],
     t: int,
     label: str,
-    gen_len: int,
     decode_tok: Any,
 ) -> str:
-    ref_tokens = [decode_tok([tid]) for tid in conditions[0][1]]
+    ref_token_id = conditions[0][1]
+    ref_tok = decode_tok([ref_token_id])
     h: list[str] = []
     h.append(f'<div class="sample"><h2>{html.escape(label)} | ablation at t={t}</h2>')
     ablated_tok = html.escape(prompt_tokens[t]) if t < len(prompt_tokens) else "?"
@@ -372,19 +297,16 @@ def _render_sample_html(
         f' t={t}: "<b>{ablated_tok}</b>", t-1: "<b>{prev_tok}</b>"</div>'
     )
     h.append(f'<div class="prompt">{html.escape("".join(prompt_tokens))}</div>')
-    h.append('<div style="overflow-x:auto"><table><tr><th></th>')
-    for j in range(gen_len):
-        h.append(f"<th>{j}</th>")
-    h.append("</tr>")
+    h.append('<div style="overflow-x:auto"><table><tr><th></th><th>predicted token</th></tr>')
 
-    for name, gen_ids in conditions:
-        decoded = [decode_tok([tid]) for tid in gen_ids]
-        h.append(f'<tr><td class="label">{html.escape(name)}</td>')
-        for j, tok in enumerate(decoded):
-            escaped = html.escape(tok).replace("\n", "\\n").replace(" ", "&nbsp;")
-            css = "match" if tok == ref_tokens[j] else "diff"
-            h.append(f'<td class="tok {css}">{escaped}</td>')
-        h.append("</tr>")
+    for name, token_id in conditions:
+        tok = decode_tok([token_id])
+        escaped = html.escape(tok).replace("\n", "\\n").replace(" ", "&nbsp;")
+        css = "match" if tok == ref_tok else "diff"
+        h.append(
+            f'<tr><td class="label">{html.escape(name)}</td>'
+            f'<td class="tok {css}">{escaped}</td></tr>'
+        )
 
     h.append("</table></div></div>")
     return "\n".join(h)
@@ -402,7 +324,6 @@ def generate_with_ablation(
     restrict_to_heads: str | None = None,
     n_samples: int = 40,
     prompt_len: int = 16,
-    gen_len: int = 24,
     include_crafted: bool = True,
     seed: int = 42,
 ) -> None:
@@ -471,15 +392,12 @@ def generate_with_ablation(
             spd_model,
             prompt_ids,
             t,
-            gen_len,
             parsed_heads,
             parsed_comp_sets,
             parsed_restrict_heads,
             n_layers,
         )
-        all_tables.append(
-            _render_sample_html(prompt_tokens, conditions, t, label, gen_len, decode_tok)
-        )
+        all_tables.append(_render_sample_html(prompt_tokens, conditions, t, label, decode_tok))
 
     with torch.no_grad():
         # Dataset samples: take first prompt_len tokens, pick random t, truncate to t+1
