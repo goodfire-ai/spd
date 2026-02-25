@@ -116,7 +116,7 @@ tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M
 task_config:
   task_name: lm
   max_seq_len: 512
-  buffer_size: 1000
+  buffer_size: 10000
   dataset_name: SimpleStories/SimpleStories
   column_name: story
   train_data_split: train

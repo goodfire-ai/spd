@@ -95,7 +95,7 @@ pretrained_model_name: wandb:goodfire/spd/runs/gf6rbga0
 pretrained_model_output_attr: idx_0
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M
 task_config:
-  buffer_size: 1000
+  buffer_size: 10000
   column_name: story
   dataset_name: SimpleStories/SimpleStories
   eval_data_split: test
