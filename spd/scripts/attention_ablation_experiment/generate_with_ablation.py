@@ -126,59 +126,112 @@ def _build_baseline_mask_infos(
     return make_mask_infos(masks)
 
 
-def _generate_greedy(
+def _forward_once(
     target_model: LlamaSimpleMLP,
-    prompt_ids: Int[Tensor, "1 prompt_len"],
-    gen_len: int,
+    input_ids: Int[Tensor, "1 seq_len"],
     *,
     spd_model: ComponentModel | None = None,
+    baseline_mask_infos: dict[str, ComponentsMaskInfo] | None = None,
     mask_infos: dict[str, ComponentsMaskInfo] | None = None,
     head_pos_ablations: list[tuple[int, int, int]] | None = None,
     value_pos_ablations: list[tuple[int, int]] | None = None,
     value_head_pos_ablations: list[tuple[int, int, int]] | None = None,
     component_head_ablations: list[ComponentHeadAblation] | None = None,
-    ablate_first_only: bool = True,
-) -> list[int]:
-    """Generate tokens greedily with optional ablation.
+) -> Tensor:
+    """Single forward pass, returning logits.
 
-    Two model modes:
-      - spd_model=None: uses target_model directly. head_pos_ablations and
-        value_*_ablations are applied in the patched attention forward.
-      - spd_model provided: uses SPD component model with mask_infos for
-        ablated steps and all-ones baseline masks for non-ablated steps.
-        component_head_ablations subtract per-head contributions in the
-        patched forward.
-
-    Ablation is applied on step 0 only (ablate_first_only=True, default)
-    or on every step (ablate_first_only=False, for [persist] conditions).
+    When spd_model is provided, uses mask_infos (or baseline_mask_infos if mask_infos is None).
     """
+    with patched_attention_forward(
+        target_model,
+        head_pos_ablations=head_pos_ablations,
+        value_pos_ablations=value_pos_ablations,
+        value_head_pos_ablations=value_head_pos_ablations,
+        component_head_ablations=component_head_ablations,
+    ):
+        if spd_model is not None:
+            out = spd_model(input_ids, mask_infos=mask_infos or baseline_mask_infos)
+            assert isinstance(out, Tensor)
+            return out
+        else:
+            logits, _ = target_model(input_ids)
+            assert logits is not None
+            return logits
+
+
+def _generate_greedy_one_shot(
+    target_model: LlamaSimpleMLP,
+    prompt_ids: Int[Tensor, "1 prompt_len"],
+    gen_len: int,
+    **ablation_kwargs: Any,
+) -> list[int]:
+    """Ablation on the FIRST generation step only, then generate normally.
+
+    The ablation affects the first predicted token. Subsequent tokens are
+    generated without any ablation, but conditioned on the (potentially
+    different) first token. Since there's no KV cache, each step re-processes
+    the full sequence from scratch — the ablation does NOT persist to later
+    steps even though the ablated positions are still in the prompt.
+    """
+    spd_model = ablation_kwargs.get("spd_model")
     baseline_mask_infos = (
         _build_baseline_mask_infos(spd_model, prompt_ids.device) if spd_model is not None else None
     )
+
+    # Step 0: with ablation
+    logits = _forward_once(
+        target_model, prompt_ids, baseline_mask_infos=baseline_mask_infos, **ablation_kwargs
+    )
+    first_token = int(logits[0, -1].argmax().item())
+    generated = [first_token]
+    input_ids = torch.cat(
+        [prompt_ids, torch.tensor([[first_token]], device=prompt_ids.device)], dim=1
+    )
+
+    # Steps 1+: no ablation (clean forward passes)
+    for _step in range(gen_len - 1):
+        logits = _forward_once(
+            target_model,
+            input_ids,
+            spd_model=spd_model,
+            baseline_mask_infos=baseline_mask_infos,
+        )
+        next_token = int(logits[0, -1].argmax().item())
+        generated.append(next_token)
+        input_ids = torch.cat(
+            [input_ids, torch.tensor([[next_token]], device=input_ids.device)], dim=1
+        )
+
+    return generated
+
+
+def _generate_greedy_persistent(
+    target_model: LlamaSimpleMLP,
+    prompt_ids: Int[Tensor, "1 prompt_len"],
+    gen_len: int,
+    **ablation_kwargs: Any,
+) -> list[int]:
+    """Ablation applied on EVERY generation step.
+
+    Since there's no KV cache, each step re-processes the full sequence from
+    scratch. Without re-applying the ablation, the model would recompute
+    the ablated values normally and the effect would vanish. This function
+    re-applies the ablation on every step so it genuinely persists.
+    """
+    spd_model = ablation_kwargs.get("spd_model")
+    baseline_mask_infos = (
+        _build_baseline_mask_infos(spd_model, prompt_ids.device) if spd_model is not None else None
+    )
+
     generated: list[int] = []
     input_ids = prompt_ids.clone()
 
-    for step in range(gen_len):
-        ablate = step == 0 or not ablate_first_only
-
-        with patched_attention_forward(
-            target_model,
-            head_pos_ablations=head_pos_ablations if ablate else None,
-            value_pos_ablations=value_pos_ablations if ablate else None,
-            value_head_pos_ablations=value_head_pos_ablations if ablate else None,
-            component_head_ablations=component_head_ablations if ablate else None,
-        ):
-            if spd_model is not None:
-                step_masks = mask_infos if ablate else baseline_mask_infos
-                out = spd_model(input_ids, mask_infos=step_masks)
-                assert isinstance(out, Tensor)
-                logits = out
-            else:
-                logits, _ = target_model(input_ids)
-                assert logits is not None
-
-        next_token = logits[0, -1].argmax().item()
-        generated.append(int(next_token))
+    for _step in range(gen_len):
+        logits = _forward_once(
+            target_model, input_ids, baseline_mask_infos=baseline_mask_infos, **ablation_kwargs
+        )
+        next_token = int(logits[0, -1].argmax().item())
+        generated.append(next_token)
         input_ids = torch.cat(
             [input_ids, torch.tensor([[next_token]], device=input_ids.device)], dim=1
         )
@@ -218,29 +271,24 @@ def _build_conditions(
     assert t >= 2, f"t must be >= 2 for value ablation conditions, got {t}"
     seq_len = prompt_ids.shape[1]
     conditions: list[tuple[str, list[int]]] = []
-
-    def gen(**kwargs: Any) -> list[int]:
-        return _generate_greedy(target_model, prompt_ids, gen_len, **kwargs)
+    args = (target_model, prompt_ids, gen_len)
 
     # --- Baselines ---
-    conditions.append(("Target model", gen()))
-    conditions.append(("SPD baseline", gen(spd_model=spd_model)))
+    conditions.append(("Target model", _generate_greedy_one_shot(*args)))
+    conditions.append(("SPD baseline", _generate_greedy_one_shot(*args, spd_model=spd_model)))
 
-    # --- Head ablation: zero head output at t ---
+    # --- Head ablation: zero head output at t (one-shot: affects first token only) ---
     if parsed_heads:
         head_abl = [(layer, head, t) for layer, head in parsed_heads]
         conditions.append(
             (
                 f"Head ablated ({_head_label(parsed_heads)})",
-                gen(head_pos_ablations=head_abl),
+                _generate_greedy_one_shot(*args, head_pos_ablations=head_abl),
             )
         )
 
-    # --- Value ablations ---
-    # Zero value vectors in the attention computation, preventing information
-    # from specific positions from flowing through attention.
-    # Layer is derived from parsed_heads (value ablation tests whether the head's
-    # layer uses values from t-1, so it only makes sense with a head specified).
+    # --- Value ablations (one-shot): zero values at specific positions for one prediction ---
+    # Layer derived from parsed_heads (tests whether the head's layer uses values from t-1).
     if parsed_heads:
         val_layer = parsed_heads[0][0]
         hl = _head_label(parsed_heads)
@@ -248,43 +296,48 @@ def _build_conditions(
         conditions.append(
             (
                 f"Vals @t-1 (all heads, L{val_layer})",
-                gen(value_pos_ablations=[(val_layer, t - 1)]),
+                _generate_greedy_one_shot(*args, value_pos_ablations=[(val_layer, t - 1)]),
             )
         )
         conditions.append(
             (
                 f"Vals @t-1 ({hl})",
-                gen(value_head_pos_ablations=[(ly, hd, t - 1) for ly, hd in parsed_heads]),
+                _generate_greedy_one_shot(
+                    *args, value_head_pos_ablations=[(ly, hd, t - 1) for ly, hd in parsed_heads]
+                ),
             )
         )
         conditions.append(
             (
                 f"Vals @t-1,t-2 (all heads, L{val_layer})",
-                gen(value_pos_ablations=[(val_layer, t - 1), (val_layer, t - 2)]),
-            )
-        )
-        conditions.append(
-            (
-                f"Vals @all (L{val_layer}) [persist]",
-                gen(
-                    value_pos_ablations=[(val_layer, p) for p in range(seq_len)],
-                    ablate_first_only=False,
+                _generate_greedy_one_shot(
+                    *args, value_pos_ablations=[(val_layer, t - 1), (val_layer, t - 2)]
                 ),
             )
         )
 
-    # Persistent: zero all prompt values in ALL layers (doesn't need a head spec)
+        # Persistent: model never has access to values at prompt positions in this layer
+        conditions.append(
+            (
+                f"Vals @all (L{val_layer}) [persist]",
+                _generate_greedy_persistent(
+                    *args, value_pos_ablations=[(val_layer, p) for p in range(seq_len)]
+                ),
+            )
+        )
+
+    # Persistent: model never has access to any attention values at any prompt position
     conditions.append(
         (
             "Vals @all (ALL layers) [persist]",
-            gen(
+            _generate_greedy_persistent(
+                *args,
                 value_pos_ablations=[(ly, p) for ly in range(n_layers) for p in range(seq_len)],
-                ablate_first_only=False,
             ),
         )
     )
 
-    # --- Component ablations ---
+    # --- Component ablations (one-shot): affect first prediction only ---
     # Full: zero component masks at t (q) / t-1 (k), affects all heads
     # Per-head: subtract component contribution from restrict_heads' rows only
     for set_name, comps in comp_sets.items():
@@ -296,7 +349,7 @@ def _build_conditions(
         conditions.append(
             (
                 f"Full comp ({set_name})",
-                gen(spd_model=spd_model, mask_infos=ablated_masks),
+                _generate_greedy_one_shot(*args, spd_model=spd_model, mask_infos=ablated_masks),
             )
         )
         if parsed_restrict_heads:
@@ -304,7 +357,9 @@ def _build_conditions(
             conditions.append(
                 (
                     f"Per-head {_head_label(parsed_restrict_heads)} ({set_name})",
-                    gen(spd_model=spd_model, component_head_ablations=cha),
+                    _generate_greedy_one_shot(
+                        *args, spd_model=spd_model, component_head_ablations=cha
+                    ),
                 )
             )
 
