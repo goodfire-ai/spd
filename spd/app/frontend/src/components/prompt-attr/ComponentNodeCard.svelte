@@ -227,8 +227,8 @@
             interpretationDetail={componentData.interpretationDetail}
             onGenerate={componentData.generateInterpretation}
         />
-        {#if graphInterpLabel}
-            <GraphInterpBadge headline={graphInterpLabel} {layer} {cIdx} />
+        {#if graphInterpLabel && componentData.graphInterpDetail.status === "loaded" && componentData.graphInterpDetail.data}
+            <GraphInterpBadge headline={graphInterpLabel} detail={componentData.graphInterpDetail.data} />
         {/if}
     </div>
 

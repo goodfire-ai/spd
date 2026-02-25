@@ -1,32 +1,15 @@
 <script lang="ts">
     import type { GraphInterpComponentDetail, GraphInterpHeadline } from "../../lib/api";
-    import { getGraphInterpComponentDetail } from "../../lib/api";
     import { formatComponentKey } from "../../lib/componentKeys";
 
     interface Props {
         headline: GraphInterpHeadline;
-        layer: string;
-        cIdx: number;
+        detail: GraphInterpComponentDetail | null;
     }
 
-    let { headline, layer, cIdx }: Props = $props();
+    let { headline, detail }: Props = $props();
 
     let expanded = $state(false);
-    let detail = $state<GraphInterpComponentDetail | null>(null);
-    let detailError = $state<string | null>(null);
-    let fetched = false;
-
-    async function toggle() {
-        expanded = !expanded;
-        if (expanded && !fetched) {
-            fetched = true;
-            try {
-                detail = await getGraphInterpComponentDetail(layer, cIdx);
-            } catch (e) {
-                detailError = String(e);
-            }
-        }
-    }
 
     const incomingEdges = $derived(
         detail?.edges
@@ -42,7 +25,7 @@
 </script>
 
 <div class="graph-interp-container">
-    <button class="graph-interp-badge" onclick={toggle} type="button">
+    <button class="graph-interp-badge" onclick={() => (expanded = !expanded)} type="button">
         <div class="badge-header">
             <span class="badge-label">{headline.label}</span>
             <span class="confidence confidence-{headline.confidence}">{headline.confidence}</span>
@@ -60,58 +43,52 @@
         {/if}
     </button>
 
-    {#if expanded}
+    {#if expanded && detail}
         <div class="detail-section">
-            {#if detailError}
-                <div class="detail-error">{detailError}</div>
-            {:else if detail === null}
-                <div class="detail-loading">Loading...</div>
-            {:else}
-                <div class="detail-columns">
-                    <div class="detail-column">
-                        <span class="column-title">Input</span>
-                        {#if detail.input?.reasoning}
-                            <p class="reasoning-text">{detail.input.reasoning}</p>
-                        {/if}
-                        {#each incomingEdges as edge (edge.related_key)}
-                            <div class="edge-row">
-                                <span class="edge-key">{formatComponentKey(edge.related_key, edge.token_str)}</span>
-                                <span
-                                    class="edge-attr"
-                                    class:positive={edge.attribution > 0}
-                                    class:negative={edge.attribution < 0}
-                                >
-                                    {edge.attribution > 0 ? "+" : ""}{edge.attribution.toFixed(3)}
-                                </span>
-                                {#if edge.related_label}
-                                    <span class="edge-label">{edge.related_label}</span>
-                                {/if}
-                            </div>
-                        {/each}
-                    </div>
-                    <div class="detail-column">
-                        <span class="column-title">Output</span>
-                        {#if detail.output?.reasoning}
-                            <p class="reasoning-text">{detail.output.reasoning}</p>
-                        {/if}
-                        {#each outgoingEdges as edge (edge.related_key)}
-                            <div class="edge-row">
-                                <span class="edge-key">{formatComponentKey(edge.related_key, edge.token_str)}</span>
-                                <span
-                                    class="edge-attr"
-                                    class:positive={edge.attribution > 0}
-                                    class:negative={edge.attribution < 0}
-                                >
-                                    {edge.attribution > 0 ? "+" : ""}{edge.attribution.toFixed(3)}
-                                </span>
-                                {#if edge.related_label}
-                                    <span class="edge-label">{edge.related_label}</span>
-                                {/if}
-                            </div>
-                        {/each}
-                    </div>
+            <div class="detail-columns">
+                <div class="detail-column">
+                    <span class="column-title">Input</span>
+                    {#if detail.input?.reasoning}
+                        <p class="reasoning-text">{detail.input.reasoning}</p>
+                    {/if}
+                    {#each incomingEdges as edge (edge.related_key)}
+                        <div class="edge-row">
+                            <span class="edge-key">{formatComponentKey(edge.related_key, edge.token_str)}</span>
+                            <span
+                                class="edge-attr"
+                                class:positive={edge.attribution > 0}
+                                class:negative={edge.attribution < 0}
+                            >
+                                {edge.attribution > 0 ? "+" : ""}{edge.attribution.toFixed(3)}
+                            </span>
+                            {#if edge.related_label}
+                                <span class="edge-label">{edge.related_label}</span>
+                            {/if}
+                        </div>
+                    {/each}
                 </div>
-            {/if}
+                <div class="detail-column">
+                    <span class="column-title">Output</span>
+                    {#if detail.output?.reasoning}
+                        <p class="reasoning-text">{detail.output.reasoning}</p>
+                    {/if}
+                    {#each outgoingEdges as edge (edge.related_key)}
+                        <div class="edge-row">
+                            <span class="edge-key">{formatComponentKey(edge.related_key, edge.token_str)}</span>
+                            <span
+                                class="edge-attr"
+                                class:positive={edge.attribution > 0}
+                                class:negative={edge.attribution < 0}
+                            >
+                                {edge.attribution > 0 ? "+" : ""}{edge.attribution.toFixed(3)}
+                            </span>
+                            {#if edge.related_label}
+                                <span class="edge-label">{edge.related_label}</span>
+                            {/if}
+                        </div>
+                    {/each}
+                </div>
+            </div>
         </div>
     {/if}
 </div>
@@ -221,16 +198,6 @@
         background: var(--bg-elevated);
         border-radius: var(--radius-md);
         border: 1px solid var(--border-default);
-    }
-
-    .detail-loading,
-    .detail-error {
-        font-size: var(--text-xs);
-        color: var(--text-muted);
-    }
-
-    .detail-error {
-        color: var(--semantic-error);
     }
 
     .detail-columns {

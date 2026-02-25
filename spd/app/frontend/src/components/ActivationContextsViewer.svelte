@@ -422,12 +422,8 @@
                 interpretationDetail={componentData.interpretationDetail}
                 onGenerate={componentData.generateInterpretation}
             />
-            {#if currentGraphInterpLabel}
-                <GraphInterpBadge
-                    headline={currentGraphInterpLabel}
-                    layer={selectedLayer}
-                    cIdx={currentMetadata.subcomponent_idx}
-                />
+            {#if currentGraphInterpLabel && componentData.graphInterpDetail.status === "loaded" && componentData.graphInterpDetail.data}
+                <GraphInterpBadge headline={currentGraphInterpLabel} detail={componentData.graphInterpDetail.data} />
             {/if}
         </div>
 
