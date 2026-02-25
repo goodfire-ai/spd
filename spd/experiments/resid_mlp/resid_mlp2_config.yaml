@@ -22,9 +22,9 @@ use_delta_component: true
 # --- Loss config ---
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
-    coeff: 0.0001
+    coeff: 5e-6
     pnorm: 2.0
-    beta: 0
+    beta: 1
   - classname: "StochasticReconSubsetLoss"
     coeff: 2.0
   - classname: "PGDReconSubsetLoss"
@@ -34,7 +34,7 @@ loss_metric_configs:
     n_steps: 1
     mask_scope: shared_across_batch
   - classname: "FaithfulnessLoss"
-    coeff: 0.0
+    coeff: 1.0
 output_loss_type: mse
 
 # --- Training ---
