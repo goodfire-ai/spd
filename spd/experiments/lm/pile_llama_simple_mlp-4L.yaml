@@ -41,7 +41,7 @@ identity_module_info: null
 init_spd_checkpoint: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.0004
+- coeff: 0.0005
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
   beta: 0.2
