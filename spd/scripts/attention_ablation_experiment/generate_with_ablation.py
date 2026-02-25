@@ -264,7 +264,7 @@ th{background:#f0f0f0;font-weight:600;text-align:center}
 .tok{white-space:pre;text-align:center;min-width:50px}
 .label{text-align:left;font-weight:600;background:#f5f5f5;min-width:230px;font-size:11px}
 .info{font-family:sans-serif;font-size:13px;color:#555;margin:4px 0}
-.logit-cell{text-align:left;white-space:nowrap;font-size:11px;padding:4px 8px}
+.logit-cell{text-align:center;white-space:nowrap;font-size:11px;padding:2px 4px;line-height:1.3}
 .logit-pos{color:#2e7d32;font-weight:600}
 .logit-neg{color:#c62828;font-weight:600}
 .base-change{text-align:center;font-size:11px;white-space:nowrap}
@@ -278,7 +278,7 @@ def _render_sample_html(
     t: int,
     label: str,
     decode_tok: Any,
-    top_k: int = 5,
+    top_k: int = 20,
 ) -> str:
     # Build lookup from condition name to logits for baseline resolution
     logits_by_name: dict[str, Tensor] = {}
@@ -313,7 +313,7 @@ def _render_sample_html(
     def _logit_cell(tok_id: int, val: float, positive: bool) -> str:
         tok = _fmt_tok(decode_tok([tok_id]))
         css_class = "logit-pos" if positive else "logit-neg"
-        return f'<td class="logit-cell">{tok} <span class="{css_class}">{val:+.1f}</span></td>'
+        return f'<td class="logit-cell">{tok}<br><span class="{css_class}">{val:+.1f}</span></td>'
 
     for name, pred, baseline_name in conditions:
         tok = decode_tok([pred.token_id])
