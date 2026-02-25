@@ -1,4 +1,4 @@
-"""Sanity checks for stochastic, CI, and PGD reconstruction losses."""
+"""Sanity checks for stochastic, CI, PGD, and persistent PGD reconstruction losses."""
 
 from collections.abc import Callable
 
@@ -14,8 +14,10 @@ from spd.metrics.hidden_acts_recon_loss import (
     _sum_per_module_mse,
     calc_hidden_acts_mse,
 )
-from spd.models.component_model import ComponentModel
+from spd.metrics.ppgd_eval_losses import PPGDReconEval
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import make_mask_infos
+from spd.persistent_pgd import PPGDSources, get_ppgd_mask_infos
 from tests.metrics.fixtures import (
     OneLayerLinearModel,
     TwoLayerLinearModel,
@@ -216,3 +218,104 @@ def test_per_module_recon_metric_keys() -> None:
     }
     for v in result.values():
         assert v.item() >= 0
+
+
+def _make_ci_outputs(ci: dict[str, Tensor]) -> CIOutputs:
+    return CIOutputs(
+        lower_leaky=ci,
+        upper_leaky=ci,
+        pre_sigmoid={k: torch.ones_like(v) * 10 for k, v in ci.items()},
+    )
+
+
+def test_ppgd_recon_eval_metric_keys() -> None:
+    """PPGDReconEval.compute() returns hidden_acts (total + per-module) and output_recon keys."""
+    torch.manual_seed(42)
+
+    model = make_two_layer_component_model(weight1=torch.randn(3, 2), weight2=torch.randn(2, 3))
+    batch = torch.randn(2, 2)
+    target_out = model.target_model(batch)
+    ci = {"fc1": torch.ones(2, 1), "fc2": torch.ones(2, 1)}
+    sources: PPGDSources = {k: torch.zeros(1, v.shape[-1]) for k, v in ci.items()}
+
+    metric = PPGDReconEval(
+        model=model,
+        device="cpu",
+        effective_sources=sources,
+        use_delta_component=False,
+        output_loss_type="mse",
+        metric_name="my_ppgd",
+    )
+    metric.update(
+        batch=batch,
+        ci=_make_ci_outputs(ci),
+        weight_deltas={},
+        target_out=target_out,
+    )
+    result = metric.compute()
+
+    assert set(result.keys()) == {
+        "my_ppgd/hidden_acts",
+        "my_ppgd/hidden_acts/fc1",
+        "my_ppgd/hidden_acts/fc2",
+        "my_ppgd/output_recon",
+    }
+    for v in result.values():
+        assert v.item() >= 0
+
+
+def test_ppgd_recon_eval_manual_calculation() -> None:
+    """Verify PPGD hidden-acts MSE and output recon match hand-computed values."""
+    torch.manual_seed(42)
+
+    fc1_weight = torch.randn(3, 2)
+    fc2_weight = torch.randn(2, 3)
+    model = make_two_layer_component_model(weight1=fc1_weight, weight2=fc2_weight)
+
+    V1, U1 = model.components["fc1"].V, model.components["fc1"].U
+    V2, U2 = model.components["fc2"].V, model.components["fc2"].U
+
+    batch = torch.randn(1, 2)
+    ci = {"fc1": torch.tensor([[0.8]]), "fc2": torch.tensor([[0.7]])}
+    adv_sources: PPGDSources = {"fc1": torch.tensor([[0.3]]), "fc2": torch.tensor([[0.5]])}
+
+    # mask = ci + (1 - ci) * source
+    mask_fc1 = ci["fc1"] + (1 - ci["fc1"]) * adv_sources["fc1"]  # 0.8 + 0.2*0.3 = 0.86
+    mask_fc2 = ci["fc2"] + (1 - ci["fc2"]) * adv_sources["fc2"]  # 0.7 + 0.3*0.5 = 0.85
+
+    # Target activations
+    assert isinstance(model.target_model, TwoLayerLinearModel)
+    target_fc1 = batch @ model.target_model.fc1.weight.data.T
+    target_fc2 = target_fc1 @ model.target_model.fc2.weight.data.T
+
+    # Component activations with PPGD masks
+    comp_fc1 = batch @ (V1 * mask_fc1) @ U1
+    comp_fc2 = comp_fc1 @ (V2 * mask_fc2) @ U2
+
+    expected_fc1_mse = F.mse_loss(comp_fc1, target_fc1, reduction="sum")
+    expected_fc2_mse = F.mse_loss(comp_fc2, target_fc2, reduction="sum")
+    expected_hidden_total = (expected_fc1_mse + expected_fc2_mse) / (
+        target_fc1.numel() + target_fc2.numel()
+    )
+    expected_output_recon = ((comp_fc2 - target_fc2) ** 2).sum() / comp_fc2.numel()
+
+    # Actual computation via get_ppgd_mask_infos + calc_hidden_acts_mse
+    target_acts = model(batch, cache_type="output").cache
+    mask_infos = get_ppgd_mask_infos(
+        ci=ci,
+        weight_deltas=None,
+        ppgd_sources=adv_sources,
+        routing_masks="all",
+        batch_dims=(1,),
+    )
+    per_module, comp_output = calc_hidden_acts_mse(model, batch, mask_infos, target_acts)
+    sum_mse, n_examples = _sum_per_module_mse(per_module)
+    actual_hidden_total = sum_mse / n_examples
+    actual_output_recon = ((comp_output - target_fc2) ** 2).sum() / comp_output.numel()
+
+    assert torch.allclose(actual_hidden_total, expected_hidden_total, rtol=1e-5)
+    assert torch.allclose(actual_output_recon, expected_output_recon, rtol=1e-5)
+    fc1_mse, _ = per_module["fc1"]
+    assert torch.allclose(fc1_mse, expected_fc1_mse, rtol=1e-5)
+    fc2_mse, _ = per_module["fc2"]
+    assert torch.allclose(fc2_mse, expected_fc2_mse, rtol=1e-5)
