@@ -699,7 +699,10 @@ class Config(BaseConfig):
     )
 
     # --- General ---
-    seed: int = Field(default=0, description="Random seed for reproducibility")
+    seed: int = Field(
+        default=0,
+        description="Random seed for reproducibility. Does not affect dataset shuffling if dataset_seed is set in TaskConfig.",
+    )
     autocast_bf16: bool = Field(
         default=True,
         description="Whether to use torch.autocast with bfloat16 mixed precision",
