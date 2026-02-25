@@ -10,6 +10,7 @@
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "./ui/ComponentCorrelationMetrics.svelte";
+    import GraphInterpBadge from "./ui/GraphInterpBadge.svelte";
     import InterpretationBadge from "./ui/InterpretationBadge.svelte";
     import SectionHeader from "./ui/SectionHeader.svelte";
     import StatusText from "./ui/StatusText.svelte";
@@ -37,6 +38,9 @@
     let currentMetadata = $derived<SubcomponentMetadata>(currentLayerMetadata[currentPage]);
     let currentIntruderScore = $derived(
         currentMetadata ? runState.getIntruderScore(`${selectedLayer}:${currentMetadata.subcomponent_idx}`) : null,
+    );
+    let currentGraphInterpLabel = $derived(
+        currentMetadata ? runState.getGraphInterpLabel(`${selectedLayer}:${currentMetadata.subcomponent_idx}`) : null,
     );
 
     // Component data hook - call load() explicitly when component changes
@@ -412,11 +416,16 @@
             {/if}
         </SectionHeader>
 
-        <InterpretationBadge
-            interpretation={componentData.interpretation}
-            interpretationDetail={componentData.interpretationDetail}
-            onGenerate={componentData.generateInterpretation}
-        />
+        <div class="interpretation-badges">
+            <InterpretationBadge
+                interpretation={componentData.interpretation}
+                interpretationDetail={componentData.interpretationDetail}
+                onGenerate={componentData.generateInterpretation}
+            />
+            {#if currentGraphInterpLabel}
+                <GraphInterpBadge headline={currentGraphInterpLabel} />
+            {/if}
+        </div>
 
         <!-- Activation examples -->
         {#if componentData.componentDetail.status === "loading"}
@@ -696,6 +705,12 @@
     }
 
     .correlations-section {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+
+    .interpretation-badges {
         display: flex;
         flex-direction: column;
         gap: var(--space-2);
