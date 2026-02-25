@@ -2,8 +2,9 @@
 
 Produces an HTML comparison table with token-level alignment and color-coding.
 Each sample picks a random position t, truncates the prompt to t+1 tokens,
-then generates greedily. Ablation is applied on the first forward pass only
-(except [persist] conditions which ablate on every step).
+then generates greedily. All ablations apply on the first forward pass only
+(one predicted token). Subsequent tokens are generated without ablation but
+conditioned on the (potentially different) first token.
 
 Usage:
     python -m spd.scripts.attention_ablation_experiment.generate_with_ablation \
@@ -205,40 +206,6 @@ def _generate_greedy_one_shot(
     return generated
 
 
-def _generate_greedy_persistent(
-    target_model: LlamaSimpleMLP,
-    prompt_ids: Int[Tensor, "1 prompt_len"],
-    gen_len: int,
-    **ablation_kwargs: Any,
-) -> list[int]:
-    """Ablation applied on EVERY generation step.
-
-    Since there's no KV cache, each step re-processes the full sequence from
-    scratch. Without re-applying the ablation, the model would recompute
-    the ablated values normally and the effect would vanish. This function
-    re-applies the ablation on every step so it genuinely persists.
-    """
-    spd_model = ablation_kwargs.get("spd_model")
-    baseline_mask_infos = (
-        _build_baseline_mask_infos(spd_model, prompt_ids.device) if spd_model is not None else None
-    )
-
-    generated: list[int] = []
-    input_ids = prompt_ids.clone()
-
-    for _step in range(gen_len):
-        logits = _forward_once(
-            target_model, input_ids, baseline_mask_infos=baseline_mask_infos, **ablation_kwargs
-        )
-        next_token = int(logits[0, -1].argmax().item())
-        generated.append(next_token)
-        input_ids = torch.cat(
-            [input_ids, torch.tensor([[next_token]], device=input_ids.device)], dim=1
-        )
-
-    return generated
-
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Condition definitions
 # ──────────────────────────────────────────────────────────────────────────────
@@ -287,7 +254,7 @@ def _build_conditions(
             )
         )
 
-    # --- Value ablations (one-shot): zero values at specific positions for one prediction ---
+    # --- Value ablations: zero values at specific positions for one prediction ---
     # Layer derived from parsed_heads (tests whether the head's layer uses values from t-1).
     if parsed_heads:
         val_layer = parsed_heads[0][0]
@@ -315,22 +282,20 @@ def _build_conditions(
                 ),
             )
         )
-
-        # Persistent: model never has access to values at prompt positions in this layer
         conditions.append(
             (
-                f"Vals @all (L{val_layer}) [persist]",
-                _generate_greedy_persistent(
+                f"Vals @all prev (all heads, L{val_layer})",
+                _generate_greedy_one_shot(
                     *args, value_pos_ablations=[(val_layer, p) for p in range(seq_len)]
                 ),
             )
         )
 
-    # Persistent: model never has access to any attention values at any prompt position
+    # Zero all values at all positions in ALL layers for one prediction
     conditions.append(
         (
-            "Vals @all (ALL layers) [persist]",
-            _generate_greedy_persistent(
+            "Vals @all prev (ALL layers)",
+            _generate_greedy_one_shot(
                 *args,
                 value_pos_ablations=[(ly, p) for ly in range(n_layers) for p in range(seq_len)],
             ),
@@ -551,8 +516,8 @@ def generate_with_ablation(
         "<h1>Generation Comparison: Ablation Effects</h1>",
         f'<p class="info">Model: {run_id} | {n_layers} layers</p>',
         f'<p class="info">Component sets: {comp_desc}</p>' if comp_desc else "",
-        '<p class="info">[persist] = every step. Others = first step only. '
-        "Green = matches target. Red = differs.</p>",
+        '<p class="info">All ablations apply on the first generated token only. '
+        "Subsequent tokens generated normally. Green = matches target. Red = differs.</p>",
         *all_tables,
         "</body></html>",
     ]
