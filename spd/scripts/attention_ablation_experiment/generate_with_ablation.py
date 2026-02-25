@@ -1,20 +1,14 @@
 """Generate text completions with and without ablation at a single position.
 
 Produces an HTML comparison table with token-level alignment and color-coding.
-Ablation applied at position t on the first forward pass only (except [persist]
-conditions which ablate on every step).
+Each sample picks a random position t, truncates the prompt to t+1 tokens,
+then generates greedily. Ablation is applied on the first forward pass only
+(except [persist] conditions which ablate on every step).
 
 Usage:
     python -m spd.scripts.attention_ablation_experiment.generate_with_ablation \
         wandb:goodfire/spd/runs/s-275c8f21 \
-        --comp_sets '{"q279+k177": "h.1.attn.q_proj:279,h.1.attn.k_proj:177"}' \
-        --heads L1H1 --restrict_to_heads L1H1 \
-        --n_samples 40 --prompt_len 16 --gen_len 24
-
-    # Multi-layer example:
-    python -m spd.scripts.attention_ablation_experiment.generate_with_ablation \
-        wandb:goodfire/spd/runs/s-275c8f21 \
-        --comp_sets '{"2c": "h.1.attn.q_proj:279,h.1.attn.k_proj:177", "multi": "h.0.attn.q_proj:1,h.1.attn.q_proj:279,h.1.attn.k_proj:177,h.3.attn.k_proj:169"}' \
+        --comp_sets '{"2c": "h.1.attn.q_proj:279,h.1.attn.k_proj:177"}' \
         --heads L1H1 --restrict_to_heads L1H1 \
         --n_samples 40 --prompt_len 16 --gen_len 24
 """
@@ -118,11 +112,16 @@ CRAFTED_PROMPTS = [
 ]
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Generation
+# ──────────────────────────────────────────────────────────────────────────────
+
+
 def _build_baseline_mask_infos(
     spd_model: ComponentModel,
     device: torch.device,
 ) -> dict[str, ComponentsMaskInfo]:
-    """Build all-ones (batch=1, C) masks for SPD model baseline."""
+    """All-ones masks so the SPD model uses component reconstruction (not target passthrough)."""
     masks = {name: torch.ones(1, c, device=device) for name, c in spd_model.module_to_c.items()}
     return make_mask_infos(masks)
 
@@ -131,6 +130,7 @@ def _generate_greedy(
     target_model: LlamaSimpleMLP,
     prompt_ids: Int[Tensor, "1 prompt_len"],
     gen_len: int,
+    *,
     spd_model: ComponentModel | None = None,
     mask_infos: dict[str, ComponentsMaskInfo] | None = None,
     head_pos_ablations: list[tuple[int, int, int]] | None = None,
@@ -139,8 +139,19 @@ def _generate_greedy(
     component_head_ablations: list[ComponentHeadAblation] | None = None,
     ablate_first_only: bool = True,
 ) -> list[int]:
-    """Generate tokens greedily. Ablation applied only on the first forward pass
-    unless ablate_first_only=False."""
+    """Generate tokens greedily with optional ablation.
+
+    Two model modes:
+      - spd_model=None: uses target_model directly. head_pos_ablations and
+        value_*_ablations are applied in the patched attention forward.
+      - spd_model provided: uses SPD component model with mask_infos for
+        ablated steps and all-ones baseline masks for non-ablated steps.
+        component_head_ablations subtract per-head contributions in the
+        patched forward.
+
+    Ablation is applied on step 0 only (ablate_first_only=True, default)
+    or on every step (ablate_first_only=False, for [persist] conditions).
+    """
     baseline_mask_infos = (
         _build_baseline_mask_infos(spd_model, prompt_ids.device) if spd_model is not None else None
     )
@@ -148,17 +159,17 @@ def _generate_greedy(
     input_ids = prompt_ids.clone()
 
     for step in range(gen_len):
-        use_ablation = step == 0 or not ablate_first_only
+        ablate = step == 0 or not ablate_first_only
 
         with patched_attention_forward(
             target_model,
-            head_pos_ablations=head_pos_ablations if use_ablation else None,
-            value_pos_ablations=value_pos_ablations if use_ablation else None,
-            value_head_pos_ablations=value_head_pos_ablations if use_ablation else None,
-            component_head_ablations=component_head_ablations if use_ablation else None,
+            head_pos_ablations=head_pos_ablations if ablate else None,
+            value_pos_ablations=value_pos_ablations if ablate else None,
+            value_head_pos_ablations=value_head_pos_ablations if ablate else None,
+            component_head_ablations=component_head_ablations if ablate else None,
         ):
             if spd_model is not None:
-                step_masks = mask_infos if use_ablation else baseline_mask_infos
+                step_masks = mask_infos if ablate else baseline_mask_infos
                 out = spd_model(input_ids, mask_infos=step_masks)
                 assert isinstance(out, Tensor)
                 logits = out
@@ -168,146 +179,171 @@ def _generate_greedy(
 
         next_token = logits[0, -1].argmax().item()
         generated.append(int(next_token))
-        next_tensor = torch.tensor([[next_token]], device=input_ids.device)
-        input_ids = torch.cat([input_ids, next_tensor], dim=1)
+        input_ids = torch.cat(
+            [input_ids, torch.tensor([[next_token]], device=input_ids.device)], dim=1
+        )
 
     return generated
 
 
-def _run_all_conditions(
+# ──────────────────────────────────────────────────────────────────────────────
+# Condition definitions
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _head_label(heads: list[tuple[int, int]]) -> str:
+    return ",".join(f"L{ly}H{hd}" for ly, hd in heads)
+
+
+def _build_conditions(
     target_model: LlamaSimpleMLP,
     spd_model: ComponentModel,
-    prompt_ids: Int[Tensor, "1 prompt_len"],
+    prompt_ids: Int[Tensor, "1 seq_len"],
     t: int,
     gen_len: int,
     parsed_heads: list[tuple[int, int]],
     comp_sets: dict[str, list[tuple[str, int]]],
     parsed_restrict_heads: list[tuple[int, int]],
     n_layers: int,
-) -> dict[str, list[int]]:
+) -> list[tuple[str, list[int]]]:
+    """Run all conditions and return (name, generated_tokens) pairs in display order."""
     seq_len = prompt_ids.shape[1]
-    r: dict[str, list[int]] = {}
+    conditions: list[tuple[str, list[int]]] = []
 
-    r["Target model"] = _generate_greedy(target_model, prompt_ids, gen_len)
-    r["SPD baseline"] = _generate_greedy(target_model, prompt_ids, gen_len, spd_model=spd_model)
+    # --- Baselines ---
+    conditions.append(("Target model", _generate_greedy(target_model, prompt_ids, gen_len)))
+    conditions.append(
+        (
+            "SPD baseline",
+            _generate_greedy(target_model, prompt_ids, gen_len, spd_model=spd_model),
+        )
+    )
 
+    # --- Head ablation: zero head output at t ---
     if parsed_heads:
         head_abl = [(layer, head, t) for layer, head in parsed_heads]
-        r["Head ablated"] = _generate_greedy(
-            target_model, prompt_ids, gen_len, head_pos_ablations=head_abl
+        label = f"Head ablated ({_head_label(parsed_heads)})"
+        conditions.append(
+            (
+                label,
+                _generate_greedy(target_model, prompt_ids, gen_len, head_pos_ablations=head_abl),
+            )
         )
 
-    # Value ablation conditions
-    if t >= 1:
-        r["Vals @t-1 (all heads)"] = _generate_greedy(
-            target_model, prompt_ids, gen_len, value_pos_ablations=[(1, t - 1)]
+    # --- Value ablations at layer(s) derived from parsed_heads ---
+    # These zero value vectors in the attention computation, preventing
+    # information from specific positions from flowing through attention.
+    if parsed_heads:
+        val_layer = parsed_heads[0][0]
+        hl = _head_label(parsed_heads)
+
+        if t >= 1:
+            conditions.append(
+                (
+                    f"Vals @t-1 (all heads, L{val_layer})",
+                    _generate_greedy(
+                        target_model,
+                        prompt_ids,
+                        gen_len,
+                        value_pos_ablations=[(val_layer, t - 1)],
+                    ),
+                )
+            )
+            conditions.append(
+                (
+                    f"Vals @t-1 ({hl})",
+                    _generate_greedy(
+                        target_model,
+                        prompt_ids,
+                        gen_len,
+                        value_head_pos_ablations=[(ly, hd, t - 1) for ly, hd in parsed_heads],
+                    ),
+                )
+            )
+        if t >= 2:
+            conditions.append(
+                (
+                    f"Vals @t-1,t-2 (all heads, L{val_layer})",
+                    _generate_greedy(
+                        target_model,
+                        prompt_ids,
+                        gen_len,
+                        value_pos_ablations=[(val_layer, t - 1), (val_layer, t - 2)],
+                    ),
+                )
+            )
+
+        # Persistent: zero all prompt values in one layer
+        conditions.append(
+            (
+                f"Vals @all (L{val_layer}) [persist]",
+                _generate_greedy(
+                    target_model,
+                    prompt_ids,
+                    gen_len,
+                    value_pos_ablations=[(val_layer, p) for p in range(seq_len)],
+                    ablate_first_only=False,
+                ),
+            )
         )
-        r["Vals @t-1 (L1H1)"] = _generate_greedy(
-            target_model, prompt_ids, gen_len, value_head_pos_ablations=[(1, 1, t - 1)]
+
+    # Persistent: zero all prompt values in ALL layers
+    conditions.append(
+        (
+            "Vals @all (ALL layers) [persist]",
+            _generate_greedy(
+                target_model,
+                prompt_ids,
+                gen_len,
+                value_pos_ablations=[(ly, p) for ly in range(n_layers) for p in range(seq_len)],
+                ablate_first_only=False,
+            ),
         )
-    if t >= 2:
-        r["Vals @t-1,t-2 (all)"] = _generate_greedy(
-            target_model, prompt_ids, gen_len, value_pos_ablations=[(1, t - 1), (1, t - 2)]
-        )
-    r["Vals @all (L1) [persist]"] = _generate_greedy(
-        target_model,
-        prompt_ids,
-        gen_len,
-        value_pos_ablations=[(1, p) for p in range(seq_len)],
-        ablate_first_only=False,
-    )
-    r["Vals @all (ALL) [persist]"] = _generate_greedy(
-        target_model,
-        prompt_ids,
-        gen_len,
-        value_pos_ablations=[(ly, p) for ly in range(n_layers) for p in range(seq_len)],
-        ablate_first_only=False,
     )
 
-    # Component ablation conditions
+    # --- Component ablations ---
+    # Full: zero component masks at t (q) / t-1 (k), affects all heads
+    # Per-head: subtract component contribution from restrict_heads' rows only
     for set_name, comps in comp_sets.items():
         cp = _build_prev_token_component_positions(comps, t)
         bs = (prompt_ids.shape[0], prompt_ids.shape[1])
         _, ablated_masks = _build_deterministic_masks_multi_pos(
             spd_model, cp, bs, prompt_ids.device
         )
-        r[f"Full comp ({set_name})"] = _generate_greedy(
-            target_model, prompt_ids, gen_len, spd_model=spd_model, mask_infos=ablated_masks
+        conditions.append(
+            (
+                f"Full comp ({set_name})",
+                _generate_greedy(
+                    target_model,
+                    prompt_ids,
+                    gen_len,
+                    spd_model=spd_model,
+                    mask_infos=ablated_masks,
+                ),
+            )
         )
         if parsed_restrict_heads:
             cha = _build_component_head_ablations(spd_model, comps, parsed_restrict_heads, t)
-            r[f"Per-head ({set_name})"] = _generate_greedy(
-                target_model,
-                prompt_ids,
-                gen_len,
-                spd_model=spd_model,
-                component_head_ablations=cha,
+            rh_label = _head_label(parsed_restrict_heads)
+            conditions.append(
+                (
+                    f"Per-head {rh_label} ({set_name})",
+                    _generate_greedy(
+                        target_model,
+                        prompt_ids,
+                        gen_len,
+                        spd_model=spd_model,
+                        component_head_ablations=cha,
+                    ),
+                )
             )
 
-    return r
+    return conditions
 
 
-def _make_condition_order(
-    parsed_heads: list[tuple[int, int]],
-    comp_sets: dict[str, list[tuple[str, int]]],
-    parsed_restrict_heads: list[tuple[int, int]],
-) -> list[str]:
-    order = ["Target model", "SPD baseline"]
-    if parsed_heads:
-        order.append("Head ablated")
-    order.extend(
-        [
-            "Vals @t-1 (all heads)",
-            "Vals @t-1 (L1H1)",
-            "Vals @t-1,t-2 (all)",
-            "Vals @all (L1) [persist]",
-            "Vals @all (ALL) [persist]",
-        ]
-    )
-    for set_name in comp_sets:
-        order.append(f"Full comp ({set_name})")
-        if parsed_restrict_heads:
-            order.append(f"Per-head ({set_name})")
-    return order
-
-
-def _make_table_html(
-    prompt_tokens: list[str],
-    results: dict[str, list[int]],
-    t: int,
-    label: str,
-    gen_len: int,
-    condition_order: list[str],
-    decode_tok: Any,
-) -> str:
-    ref = [decode_tok([tid]) for tid in results["Target model"]]
-    h: list[str] = []
-    h.append(f'<div class="sample"><h2>{html.escape(label)} | ablation at t={t}</h2>')
-    prompt_text = html.escape("".join(prompt_tokens))
-    ablated_tok = html.escape(prompt_tokens[t]) if t < len(prompt_tokens) else "?"
-    prev_tok = html.escape(prompt_tokens[t - 1]) if t >= 1 else "?"
-    h.append(
-        f'<div class="info">Prompt ({len(prompt_tokens)} tok).'
-        f' t={t}: "<b>{ablated_tok}</b>", t-1: "<b>{prev_tok}</b>"</div>'
-    )
-    h.append(f'<div class="prompt">{prompt_text}</div>')
-    h.append('<div style="overflow-x:auto"><table><tr><th></th>')
-    for j in range(gen_len):
-        h.append(f"<th>{j}</th>")
-    h.append("</tr>")
-    for name in condition_order:
-        if name not in results:
-            continue
-        decoded = [decode_tok([tid]) for tid in results[name]]
-        h.append(f'<tr><td class="label">{html.escape(name)}</td>')
-        for j, tok in enumerate(decoded):
-            escaped = html.escape(tok).replace("\n", "\\n").replace(" ", "&nbsp;")
-            css = "match" if tok == ref[j] else "diff"
-            h.append(f'<td class="tok {css}">{escaped}</td>')
-        h.append("</tr>")
-    h.append("</table></div></div>")
-    return "\n".join(h)
-
+# ──────────────────────────────────────────────────────────────────────────────
+# HTML rendering
+# ──────────────────────────────────────────────────────────────────────────────
 
 HTML_HEADER = """\
 <!DOCTYPE html><html><head><meta charset="utf-8"><style>
@@ -328,6 +364,47 @@ th{background:#f0f0f0;font-weight:600}
 """
 
 
+def _render_sample_html(
+    prompt_tokens: list[str],
+    conditions: list[tuple[str, list[int]]],
+    t: int,
+    label: str,
+    gen_len: int,
+    decode_tok: Any,
+) -> str:
+    ref_tokens = [decode_tok([tid]) for tid in conditions[0][1]]
+    h: list[str] = []
+    h.append(f'<div class="sample"><h2>{html.escape(label)} | ablation at t={t}</h2>')
+    ablated_tok = html.escape(prompt_tokens[t]) if t < len(prompt_tokens) else "?"
+    prev_tok = html.escape(prompt_tokens[t - 1]) if t >= 1 else "?"
+    h.append(
+        f'<div class="info">Prompt ({len(prompt_tokens)} tok).'
+        f' t={t}: "<b>{ablated_tok}</b>", t-1: "<b>{prev_tok}</b>"</div>'
+    )
+    h.append(f'<div class="prompt">{html.escape("".join(prompt_tokens))}</div>')
+    h.append('<div style="overflow-x:auto"><table><tr><th></th>')
+    for j in range(gen_len):
+        h.append(f"<th>{j}</th>")
+    h.append("</tr>")
+
+    for name, gen_ids in conditions:
+        decoded = [decode_tok([tid]) for tid in gen_ids]
+        h.append(f'<tr><td class="label">{html.escape(name)}</td>')
+        for j, tok in enumerate(decoded):
+            escaped = html.escape(tok).replace("\n", "\\n").replace(" ", "&nbsp;")
+            css = "match" if tok == ref_tokens[j] else "diff"
+            h.append(f'<td class="tok {css}">{escaped}</td>')
+        h.append("</tr>")
+
+    h.append("</table></div></div>")
+    return "\n".join(h)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Main
+# ──────────────────────────────────────────────────────────────────────────────
+
+
 def generate_with_ablation(
     wandb_path: ModelPath,
     comp_sets: str | dict[str, str] | None = None,
@@ -343,7 +420,7 @@ def generate_with_ablation(
 
     Args:
         comp_sets: JSON dict mapping set names to component specs, e.g.
-            '{"2c": "h.1.attn.q_proj:279,h.1.attn.k_proj:177", "7c": "..."}'
+            '{"2c": "h.1.attn.q_proj:279,h.1.attn.k_proj:177"}'
         heads: Head spec for head ablation, e.g. "L1H1"
         restrict_to_heads: Head spec for per-head component ablation
     """
@@ -363,7 +440,6 @@ def generate_with_ablation(
     _entity, _project, run_id = parse_wandb_run_path(str(wandb_path))
     run_info = SPDRunInfo.from_path(wandb_path)
     config = run_info.config
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     spd_model = ComponentModel.from_run_info(run_info)
@@ -396,26 +472,10 @@ def generate_with_ablation(
     out_dir = SCRIPT_DIR / "out" / run_id / "generations"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    condition_order = _make_condition_order(parsed_heads, parsed_comp_sets, parsed_restrict_heads)
-
-    # Build HTML header
-    comp_desc = ", ".join(
-        f"<b>{name}</b> ({len(comps)})" for name, comps in parsed_comp_sets.items()
-    )
-    html_parts = [
-        HTML_HEADER,
-        "<h1>Generation Comparison: Ablation Effects</h1>",
-        f'<p class="info">Model: {run_id} | {n_layers} layers</p>',
-        f'<p class="info">Component sets: {comp_desc}</p>' if comp_desc else "",
-        f'<p class="info">{len(condition_order)} conditions. '
-        "[persist] = every step. Others = first step only.</p>",
-        '<p class="info">Green = matches target. Red = differs.</p>',
-    ]
-
     all_tables: list[str] = []
 
     with torch.no_grad():
-        # Dataset samples
+        # Dataset samples: take first prompt_len tokens, pick random t, truncate to t+1
         for i, batch_data in enumerate(loader):
             if i >= n_samples:
                 break
@@ -427,7 +487,7 @@ def generate_with_ablation(
             prompt_ids = input_ids[:, : t + 1]
             prompt_tokens = [decode_tok([tid]) for tid in prompt_ids[0].tolist()]
 
-            results = _run_all_conditions(
+            conditions = _build_conditions(
                 target_model,
                 spd_model,
                 prompt_ids,
@@ -439,20 +499,14 @@ def generate_with_ablation(
                 n_layers,
             )
             all_tables.append(
-                _make_table_html(
-                    prompt_tokens,
-                    results,
-                    t,
-                    f"Dataset sample {i}",
-                    gen_len,
-                    condition_order,
-                    decode_tok,
+                _render_sample_html(
+                    prompt_tokens, conditions, t, f"Dataset sample {i}", gen_len, decode_tok
                 )
             )
             if (i + 1) % 10 == 0:
                 logger.info(f"Dataset: {i + 1}/{n_samples}")
 
-        # Crafted prompts
+        # Crafted prompts: use full text, ablate at last token
         if include_crafted:
             for idx, (text, desc) in enumerate(CRAFTED_PROMPTS):
                 token_ids = encode(text)
@@ -463,7 +517,7 @@ def generate_with_ablation(
                 t = ids_tensor.shape[1] - 1
                 prompt_tokens = [decode_tok([tid]) for tid in ids_tensor[0].tolist()]
 
-                results = _run_all_conditions(
+                conditions = _build_conditions(
                     target_model,
                     spd_model,
                     ids_tensor,
@@ -475,22 +529,27 @@ def generate_with_ablation(
                     n_layers,
                 )
                 all_tables.append(
-                    _make_table_html(
-                        prompt_tokens,
-                        results,
-                        t,
-                        f"Crafted: {desc}",
-                        gen_len,
-                        condition_order,
-                        decode_tok,
+                    _render_sample_html(
+                        prompt_tokens, conditions, t, f"Crafted: {desc}", gen_len, decode_tok
                     )
                 )
                 if (idx + 1) % 10 == 0:
                     logger.info(f"Crafted: {idx + 1}/{len(CRAFTED_PROMPTS)}")
 
-    html_parts.extend(all_tables)
-    html_parts.append("</body></html>")
-
+    # Write HTML
+    comp_desc = ", ".join(
+        f"<b>{name}</b> ({len(comps)})" for name, comps in parsed_comp_sets.items()
+    )
+    html_parts = [
+        HTML_HEADER,
+        "<h1>Generation Comparison: Ablation Effects</h1>",
+        f'<p class="info">Model: {run_id} | {n_layers} layers</p>',
+        f'<p class="info">Component sets: {comp_desc}</p>' if comp_desc else "",
+        '<p class="info">[persist] = every step. Others = first step only. '
+        "Green = matches target. Red = differs.</p>",
+        *all_tables,
+        "</body></html>",
+    ]
     html_path = out_dir / "comparison.html"
     html_path.write_text("\n".join(html_parts))
     logger.info(f"Saved {html_path} ({len(all_tables)} samples)")
