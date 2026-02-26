@@ -306,6 +306,22 @@ class OptimCIConfig:
 ProgressCallback = Callable[[int, int, str], None]  # (current, total, stage)
 
 
+class CISnapshot(BaseModel):
+    """Snapshot of alive component counts during CI optimization for visualization."""
+
+    step: int
+    total_steps: int
+    layers: list[str]
+    seq_len: int
+    initial_alive: list[list[int]]  # layers × seq
+    current_alive: list[list[int]]  # layers × seq
+    l0_total: float
+    loss: float
+
+
+CISnapshotCallback = Callable[[CISnapshot], None]
+
+
 @dataclass
 class OptimizeCIResult:
     """Result from CI optimization including params and final metrics."""
@@ -372,6 +388,7 @@ def optimize_ci_values(
     config: OptimCIConfig,
     device: str,
     on_progress: ProgressCallback | None = None,
+    on_ci_snapshot: CISnapshotCallback | None = None,
 ) -> OptimizeCIResult:
     """Optimize CI values for a single prompt.
 
@@ -406,13 +423,40 @@ def optimize_ci_values(
 
     weight_deltas = model.calc_weight_deltas()
 
+    # Precompute snapshot metadata for CI visualization
+    snapshot_layers = list(alive_info.alive_counts.keys())
+    snapshot_initial_alive = [alive_info.alive_counts[layer] for layer in snapshot_layers]
+    snapshot_seq_len = tokens.shape[1]
+
     params = ci_params.get_parameters()
     optimizer = optim.AdamW(params, lr=config.lr, weight_decay=config.weight_decay)
 
     progress_interval = max(1, config.steps // 20)  # Report ~20 times during optimization
+    latest_loss: float = 0.0
     for step in tqdm(range(config.steps), desc="Optimizing CI values"):
-        if on_progress is not None and step % progress_interval == 0:
-            on_progress(step, config.steps, "optimizing")
+        if step % progress_interval == 0:
+            if on_progress is not None:
+                on_progress(step, config.steps, "optimizing")
+
+            if on_ci_snapshot is not None:
+                with torch.no_grad():
+                    snap_ci = ci_params.create_ci_outputs(model, device)
+                    current_alive = [
+                        (snap_ci.lower_leaky[layer][0] > 0.0).sum(dim=-1).tolist()
+                        for layer in snapshot_layers
+                    ]
+                on_ci_snapshot(
+                    CISnapshot(
+                        step=step,
+                        total_steps=config.steps,
+                        layers=snapshot_layers,
+                        seq_len=snapshot_seq_len,
+                        initial_alive=snapshot_initial_alive,
+                        current_alive=current_alive,
+                        l0_total=sum(sum(row) for row in current_alive),
+                        loss=latest_loss,
+                    )
+                )
 
         optimizer.zero_grad()
 
@@ -446,6 +490,7 @@ def optimize_ci_values(
 
         recon_loss = _compute_recon_loss(recon_out, config.loss_config, target_out, device)
         total_loss = config.loss_config.coeff * recon_loss + imp_min_coeff * imp_min_loss
+        latest_loss = total_loss.item()
 
         # PGD adversarial loss (runs in tandem with recon)
         if config.adv_pgd is not None:
