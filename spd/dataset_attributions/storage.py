@@ -13,8 +13,8 @@ Abs variants are unavailable for unembed edges because abs is a nonlinear operat
 incompatible with the residual-space storage trick.
 
 Normalization formula:
-    normed[t, s] = raw[t, s] / ci_sum[s] / target_rms[t]
-- ci_sum omitted for embed sources (no CI for embeddings)
+    normed[t, s] = raw[t, s] / source_denom[s] / target_rms[t]
+- source_denom is ci_sum[s] for component sources, embed_token_count[s] for embed sources
 - target_rms is component activation RMS for component targets, logit RMS for output targets
 """
 
@@ -69,6 +69,7 @@ class DatasetAttributionStorage:
         ci_sum: dict[str, Tensor],
         component_act_sq_sum: dict[str, Tensor],
         logit_sq_sum: Tensor,
+        embed_token_count: Tensor,
         ci_threshold: float,
         n_tokens_processed: int,
     ):
@@ -82,6 +83,7 @@ class DatasetAttributionStorage:
         self._ci_sum = ci_sum
         self._component_act_sq_sum = component_act_sq_sum
         self._logit_sq_sum = logit_sq_sum
+        self._embed_token_count = embed_token_count
         self.ci_threshold = ci_threshold
         self.n_tokens_processed = n_tokens_processed
 
@@ -120,17 +122,21 @@ class DatasetAttributionStorage:
             case "attr_abs":
                 return self._regular_attr_abs, self._embed_attr_abs
 
-    def _component_rms(self, layer: str) -> Tensor:
+    def _component_activation_rms(self, layer: str) -> Tensor:
         """RMS activation for a component layer. Shape (n_components,)."""
         return (self._component_act_sq_sum[layer] / self.n_tokens_processed).sqrt().clamp(min=EPS)
 
-    def _logit_rms(self) -> Tensor:
+    def _logit_activation_rms(self) -> Tensor:
         """RMS logit per token. Shape (vocab,)."""
         return (self._logit_sq_sum / self.n_tokens_processed).sqrt().clamp(min=EPS)
 
-    def _ci_norm(self, layer: str) -> Tensor:
+    def _layer_ci_sum(self, layer: str) -> Tensor:
         """CI sum for a source layer, clamped. Shape (n_components,)."""
         return self._ci_sum[layer].clamp(min=EPS)
+
+    def _embed_count(self) -> Tensor:
+        """Per-token occurrence count, clamped. Shape (vocab,)."""
+        return self._embed_token_count.float().clamp(min=EPS)
 
     def get_top_sources(
         self,
@@ -143,34 +149,36 @@ class DatasetAttributionStorage:
 
         value_segments: list[Tensor] = []
         layer_names: list[str] = []
+        if target_layer == "embed":
+            return []
 
         if target_layer == "output":
             if metric == "attr_abs":
                 return []
             w = self._w_unembed[:, target_idx].to(self._embed_unembed_attr.device)
-            target_norm = self._logit_rms()[target_idx]
+            target_act_rms = self._logit_activation_rms()[target_idx]
 
             for source_layer, attr_matrix in self._unembed_attr.items():
                 raw = w @ attr_matrix  # (src_c,)
-                value_segments.append(raw / self._ci_norm(source_layer) / target_norm)
+                value_segments.append(raw / self._layer_ci_sum(source_layer) / target_act_rms)
                 layer_names.append(source_layer)
 
             raw = w @ self._embed_unembed_attr  # (vocab,)
-            value_segments.append(raw / target_norm)
+            value_segments.append(raw / self._embed_count() / target_act_rms)
             layer_names.append("embed")
         else:
-            regular, embed = self._select_metric(metric)
-            target_norm = self._component_rms(target_layer)[target_idx]
+            regular_attr, embed_target_attr = self._select_metric(metric)
+            target_act_rms = self._component_activation_rms(target_layer)[target_idx]
 
-            if target_layer in regular:
-                for source_layer, attr_matrix in regular[target_layer].items():
+            if target_layer in regular_attr:
+                for source_layer, attr_matrix in regular_attr[target_layer].items():
                     raw = attr_matrix[target_idx, :]  # (src_c,)
-                    value_segments.append(raw / self._ci_norm(source_layer) / target_norm)
+                    value_segments.append(raw / self._layer_ci_sum(source_layer) / target_act_rms)
                     layer_names.append(source_layer)
 
-            if target_layer in embed:
-                raw = embed[target_layer][target_idx, :]  # (vocab,)
-                value_segments.append(raw / target_norm)
+            if target_layer in embed_target_attr:
+                raw = embed_target_attr[target_layer][target_idx, :]  # (vocab,)
+                value_segments.append(raw / self._embed_count() / target_act_rms)
                 layer_names.append("embed")
 
         return self._top_k_from_segments(value_segments, layer_names, k, sign)
@@ -192,32 +200,35 @@ class DatasetAttributionStorage:
             return []
         elif source_layer == "embed":
             regular, embed = self._select_metric(metric)
+            embed_count = self._embed_count()[source_idx]
 
             for target_layer, attr_matrix in embed.items():
                 raw = attr_matrix[:, source_idx]  # (tgt_c,)
-                value_segments.append(raw / self._component_rms(target_layer))
+                value_segments.append(
+                    raw / embed_count / self._component_activation_rms(target_layer)
+                )
                 layer_names.append(target_layer)
 
             if include_outputs and metric == "attr":
                 residual = self._embed_unembed_attr[:, source_idx]  # (d_model,)
                 raw = residual @ self._w_unembed  # (vocab,)
-                value_segments.append(raw / self._logit_rms())
+                value_segments.append(raw / embed_count / self._logit_activation_rms())
                 layer_names.append("output")
         else:
             regular, embed = self._select_metric(metric)
-            ci = self._ci_norm(source_layer)[source_idx]
+            ci = self._layer_ci_sum(source_layer)[source_idx]
 
             for target_layer, sources in regular.items():
                 if source_layer not in sources:
                     continue
                 raw = sources[source_layer][:, source_idx]  # (tgt_c,)
-                value_segments.append(raw / ci / self._component_rms(target_layer))
+                value_segments.append(raw / ci / self._component_activation_rms(target_layer))
                 layer_names.append(target_layer)
 
             if include_outputs and metric == "attr" and source_layer in self._unembed_attr:
                 residual = self._unembed_attr[source_layer][:, source_idx]  # (d_model,)
                 raw = residual @ self._w_unembed  # (vocab,)
-                value_segments.append(raw / ci / self._logit_rms())
+                value_segments.append(raw / ci / self._logit_activation_rms())
                 layer_names.append("output")
 
         return self._top_k_from_segments(value_segments, layer_names, k, sign)
@@ -258,6 +269,22 @@ class DatasetAttributionStorage:
             )
         return results
 
+    def get_attribution(self, source_key: str, target_key: str) -> float:
+        source_layer, source_idx = self._parse_key(source_key)
+        target_layer, target_idx = self._parse_key(target_key)
+
+        if target_layer == "output" and source_layer == "embed":
+            return (self._embed_unembed_attr[:, source_idx] @ self._w_unembed[:, target_idx]).item()
+        elif target_layer == "output" and source_layer != "embed":
+            return (
+                self._unembed_attr[source_layer][:, source_idx] @ self._w_unembed[:, target_idx]
+            ).item()
+        elif target_layer != "output" and source_layer == "embed":
+            return (self._embed_attr[target_layer][target_idx, source_idx]).item()
+        else:
+            assert target_layer != "output" and source_layer != "embed"
+            return (self._regular_attr[target_layer][source_layer][target_idx, source_idx]).item()
+
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(
@@ -272,6 +299,7 @@ class DatasetAttributionStorage:
                 "ci_sum": _to_cpu(self._ci_sum),
                 "component_act_sq_sum": _to_cpu(self._component_act_sq_sum),
                 "logit_sq_sum": self._logit_sq_sum.detach().cpu(),
+                "embed_token_count": self._embed_token_count.detach().cpu(),
                 "ci_threshold": self.ci_threshold,
                 "n_tokens_processed": self.n_tokens_processed,
             },
@@ -294,6 +322,7 @@ class DatasetAttributionStorage:
             ci_sum=data["ci_sum"],
             component_act_sq_sum=data["component_act_sq_sum"],
             logit_sq_sum=data["logit_sq_sum"],
+            embed_token_count=data["embed_token_count"],
             ci_threshold=data["ci_threshold"],
             n_tokens_processed=data["n_tokens_processed"],
         )
@@ -335,6 +364,7 @@ class DatasetAttributionStorage:
                 merged._component_act_sq_sum[layer] += other._component_act_sq_sum[layer]
 
             merged._logit_sq_sum += other._logit_sq_sum
+            merged._embed_token_count += other._embed_token_count
             merged.n_tokens_processed += other.n_tokens_processed
 
         return merged

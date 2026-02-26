@@ -234,7 +234,7 @@ export function formatNodeKeyForDisplay(nodeKey: string, displayNames: Record<st
 // "embed" and "output" are pseudo-layers used for visualization but are not part of the
 // decomposed model. They cannot be intervened on - only the internal layers (attn/mlp)
 // can have their components selectively activated.
-const NON_INTERVENTABLE_LAYERS = new Set(["embed", "output"]);
+const NON_INTERVENTABLE_LAYERS = new Set(["embed", "wte", "output"]);
 
 export function isInterventableNode(nodeKey: string): boolean {
     const layer = nodeKey.split(":")[0];

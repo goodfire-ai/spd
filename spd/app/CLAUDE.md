@@ -51,6 +51,9 @@ backend/
     ├── intervention.py    # Selective component activation
     ├── correlations.py    # Component correlations + token stats + interpretations
     ├── clusters.py        # Component clustering
+    ├── dataset_search.py  # SimpleStories dataset search
+    ├── agents.py          # Various useful endpoints that AI agents should look at when helping
+    ├── mcp.py             # MCP (Model Context Protocol) endpoint for Claude Code 
     ├── dataset_search.py  # Dataset search (reads dataset from run config)
     └── agents.py          # Various useful endpoints that AI agents should look at when helping
 ```

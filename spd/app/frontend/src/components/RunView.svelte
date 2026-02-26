@@ -3,6 +3,7 @@
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import ClusterPathInput from "./ClusterPathInput.svelte";
     import DatasetExplorerTab from "./DatasetExplorerTab.svelte";
+    import InvestigationsTab from "./InvestigationsTab.svelte";
     import DataSourcesTab from "./DataSourcesTab.svelte";
     import ModelGraphTab from "./ModelGraphTab.svelte";
     import PromptAttributionsTab from "./PromptAttributionsTab.svelte";
@@ -17,7 +18,7 @@
 
     const graphInterpAvailable = $derived(runState.graphInterpAvailable);
 
-    let activeTab = $state<"prompts" | "components" | "dataset-search" | "model-graph" | "data-sources" | null>(null);
+    let activeTab = $state<"prompts" | "components" | "dataset-search" | "model-graph" | "data-sources" | "investigations" | null>(null);
 
     $effect(() => {
         if (runState.prompts.status === "loaded" && activeTab === null) {
@@ -43,7 +44,23 @@
         {/if}
 
         <nav class="nav-group">
-            {#if runState.run?.status === "loaded" && runState.run.data}
+            <button
+                type="button"
+                class="tab-button"
+                class:active={activeTab === "investigations"}
+                onclick={() => (activeTab = "investigations")}
+            >
+                Investigations
+            </button>
+            <button
+                type="button"
+                class="tab-button"
+                class:active={activeTab === "dataset-search"}
+                onclick={() => (activeTab = "dataset-search")}
+            >
+                Dataset Explorer
+            </button>
+            {#if runState.run.status === "loaded" && runState.run.data}
                 <button
                     type="button"
                     class="tab-button"
@@ -106,6 +123,10 @@
                 {runState.run.error}
             </div>
         {/if}
+        <!-- Investigations tab - always available, doesn't require loaded run -->
+        <div class="tab-content" class:hidden={activeTab !== "investigations"}>
+            <InvestigationsTab />
+        </div>
         {#if runState.prompts.status === "loaded"}
             <!-- Use hidden class instead of conditional rendering to preserve state -->
             <div class="tab-content" class:hidden={activeTab !== "prompts"}>

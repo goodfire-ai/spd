@@ -79,6 +79,11 @@ class AttributionHarvester:
         self._regular_layers_acc = self._get_regular_layer_attr_accumulator(sources_by_target)
         self._regular_layers_acc_abs = self._get_regular_layer_attr_accumulator(sources_by_target)
 
+        # embed token occurrence counts for normalization (analogous to ci_sum for components)
+        self._embed_token_count = torch.zeros(
+            (self.embedding_module.num_embeddings,), dtype=torch.long, device=self.device
+        )
+
         # rms normalization accumulators
         self.n_tokens = 0
         self._ci_sum_accumulator = {
@@ -141,6 +146,9 @@ class AttributionHarvester:
     def process_batch(self, tokens: Int[Tensor, "batch seq"]) -> None:
         """Accumulate attributions from one batch."""
         self.n_tokens += tokens.numel()
+        self._embed_token_count.add_(
+            torch.bincount(tokens.flatten(), minlength=self.embedding_module.num_embeddings)
+        )
 
         # Setup hooks to capture embedding output and pre-unembed residual
         embed_out: list[Tensor] = []
@@ -174,21 +182,21 @@ class AttributionHarvester:
 
         # Forward pass with gradients
         with torch.enable_grad(), bf16_autocast():
-            comp_output: OutputWithCache = self.model(
+            model_output: OutputWithCache = self.model(
                 tokens, mask_infos=mask_infos, cache_type="component_acts"
             )
 
         h1.remove()
         h2.remove()
 
-        cache = comp_output.cache
+        cache = model_output.cache
         cache[f"{self.embed_path}_post_detach"] = embed_out[0]
         cache[f"{self.unembed_path}_pre_detach"] = pre_unembed[0]
 
         with torch.no_grad():
             for real_layer, ci_vals in ci.lower_leaky.items():
                 self._ci_sum_accumulator[real_layer].add_(ci_vals.sum(dim=(0, 1)))
-            self._logit_sq_sum.add_(comp_output.output.detach().square().sum(dim=(0, 1)))
+            self._logit_sq_sum.add_(model_output.output.detach().square().sum(dim=(0, 1)))
 
         for target_layer in self.sources_by_target:
             if target_layer == self.unembed_path:
@@ -309,6 +317,7 @@ class AttributionHarvester:
             ci_sum=_canon(self._ci_sum_accumulator),
             component_act_sq_sum=_canon(self._square_component_act_accumulator),
             logit_sq_sum=self._logit_sq_sum,
+            embed_token_count=self._embed_token_count,
             ci_threshold=ci_threshold,
             n_tokens_processed=self.n_tokens,
         )

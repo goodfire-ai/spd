@@ -264,8 +264,20 @@ def _build_out_probs(
 
 def stream_computation(
     work: Callable[[ProgressCallback], GraphData | GraphDataWithOptimization],
+    gpu_lock: threading.Lock,
 ) -> StreamingResponse:
-    """Run graph computation in a thread with SSE streaming for progress updates."""
+    """Run graph computation in a thread with SSE streaming for progress updates.
+
+    Acquires gpu_lock before starting and holds it until computation completes.
+    Raises 503 if the lock is already held by another operation.
+    """
+    # Try to acquire lock non-blocking - fail fast if GPU is busy
+    if not gpu_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=503,
+            detail="GPU operation already in progress. Please wait and retry.",
+        )
+
     progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
 
     def on_progress(current: int, total: int, stage: str) -> None:
@@ -280,28 +292,31 @@ def stream_computation(
             progress_queue.put({"type": "error", "error": str(e)})
 
     def generate() -> Generator[str]:
-        thread = threading.Thread(target=compute_thread)
-        thread.start()
+        try:
+            thread = threading.Thread(target=compute_thread)
+            thread.start()
 
-        while True:
-            try:
-                msg = progress_queue.get(timeout=0.1)
-            except queue.Empty:
-                if not thread.is_alive():
+            while True:
+                try:
+                    msg = progress_queue.get(timeout=0.1)
+                except queue.Empty:
+                    if not thread.is_alive():
+                        break
+                    continue
+
+                if msg["type"] == "progress":
+                    yield f"data: {json.dumps(msg)}\n\n"
+                elif msg["type"] == "error":
+                    yield f"data: {json.dumps(msg)}\n\n"
                     break
-                continue
+                elif msg["type"] == "result":
+                    complete_data = {"type": "complete", "data": msg["result"].model_dump()}
+                    yield f"data: {json.dumps(complete_data)}\n\n"
+                    break
 
-            if msg["type"] == "progress":
-                yield f"data: {json.dumps(msg)}\n\n"
-            elif msg["type"] == "error":
-                yield f"data: {json.dumps(msg)}\n\n"
-                break
-            elif msg["type"] == "result":
-                complete_data = {"type": "complete", "data": msg["result"].model_dump()}
-                yield f"data: {json.dumps(complete_data)}\n\n"
-                break
-
-        thread.join()
+            thread.join()
+        finally:
+            gpu_lock.release()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -513,7 +528,7 @@ def compute_graph_stream(
             l0_total=fg.l0_total,
         )
 
-    return stream_computation(work)
+    return stream_computation(work, manager._gpu_lock)
 
 
 def _edge_to_edge_data(edge: Edge) -> EdgeData:
@@ -738,7 +753,7 @@ def compute_graph_optimized_stream(
             ),
         )
 
-    return stream_computation(work)
+    return stream_computation(work, manager._gpu_lock)
 
 
 @dataclass
