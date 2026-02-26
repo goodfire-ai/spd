@@ -271,13 +271,5 @@ def seed_per_rank(base_seed: int) -> None:
         torch.cuda.manual_seed(seed)
 
 
-def broadcast_model_params(model: torch.nn.Module) -> None:
-    """Broadcast all model parameters from rank 0 to ensure identical init across ranks."""
-    if not is_distributed():
-        return
-    for param in model.parameters():
-        dist.broadcast(param.data, src=0)
-
-
 def get_config_json(config: Config) -> str:
     return f"json:{json.dumps(config.model_dump(mode='json'))}"
