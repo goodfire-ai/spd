@@ -271,7 +271,6 @@ body{font-family:'Menlo','Consolas',monospace;font-size:13px;max-width:1800px;ma
 h1{font-family:sans-serif}
 h2{font-family:sans-serif;border-top:2px solid #333;padding-top:16px;margin-top:40px;font-size:15px}
 .sample{margin-bottom:40px}
-.prompt{background:#e8e8e8;padding:8px 12px;border-radius:4px;white-space:pre-wrap;word-break:break-all;margin:8px 0}
 table{border-collapse:collapse;margin:12px 0}
 td,th{padding:4px 8px;border:1px solid #ccc;font-size:12px;vertical-align:top}
 th{background:#f0f0f0;font-weight:600;text-align:center}
@@ -280,6 +279,7 @@ th{background:#f0f0f0;font-weight:600;text-align:center}
 .tok{white-space:pre;text-align:center;min-width:50px}
 .label{text-align:left;font-weight:600;background:#f5f5f5;min-width:230px;font-size:11px}
 .info{font-family:sans-serif;font-size:13px;color:#555;margin:4px 0}
+.prompt-inline{background:#e8e8e8;padding:2px 6px;border-radius:3px;font-family:'Menlo','Consolas',monospace}
 .logit-cell{text-align:left;white-space:nowrap;font-size:11px;padding:2px 4px;line-height:1.3;width:1px}
 .logit-pos{color:#2e7d32}
 .logit-neg{color:#c62828}
@@ -308,14 +308,11 @@ def _render_sample_html(
         return html.escape(tok).replace("\n", "\\n").replace(" ", "&nbsp;")
 
     h: list[str] = []
-    h.append(f'<div class="sample"><h2>{html.escape(label)} | ablation at t={t}</h2>')
-    ablated_tok = html.escape(prompt_tokens[t]) if t < len(prompt_tokens) else "?"
-    prev_tok = html.escape(prompt_tokens[t - 1]) if t >= 1 else "?"
+    prompt_text = "".join(prompt_tokens)
     h.append(
-        f'<div class="info">Prompt ({len(prompt_tokens)} tok).'
-        f' t={t}: "<b>{ablated_tok}</b>", t-1: "<b>{prev_tok}</b>"</div>'
+        f'<div class="sample"><h2>{html.escape(label)} | '
+        f'<span class="prompt-inline">{html.escape(prompt_text)}</span> | t={t}</h2>'
     )
-    h.append(f'<div class="prompt">{html.escape("".join(prompt_tokens))}</div>')
 
     h.append('<div style="overflow-x:auto"><table>')
 
