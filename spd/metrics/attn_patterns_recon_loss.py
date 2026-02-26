@@ -158,9 +158,7 @@ def _attn_patterns_recon_loss_update(
                     weight_delta_and_mask=mask_infos[k_path].weight_delta_and_mask,
                 )
 
-            masked_patterns = _compute_attn_patterns(
-                masked_q, masked_k, n_heads, attn_modules[i]
-            )
+            masked_patterns = _compute_attn_patterns(masked_q, masked_k, n_heads, attn_modules[i])
             # KL(target || masked): sum over attention distribution dimension
             kl = F.kl_div(
                 masked_patterns.clamp(min=1e-12).log(),

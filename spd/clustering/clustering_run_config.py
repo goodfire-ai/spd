@@ -43,6 +43,10 @@ class ClusteringRunConfig(BaseConfig):
     )
 
     batch_size: PositiveInt = Field(..., description="Batch size for processing")
+    n_tokens: PositiveInt | None = Field(
+        default=None,
+        description="Number of token activation samples to collect (one per sequence, LM only)",
+    )
     dataset_seed: int = Field(0, description="Seed for dataset generation/loading")
     ensemble_id: str | None = Field(
         default=None,

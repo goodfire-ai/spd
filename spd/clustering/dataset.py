@@ -1,11 +1,12 @@
 """Dataset loading utilities for clustering runs.
 
-Each clustering run loads its own dataset batch, seeded by the run index.
+Each clustering run loads its own dataset, seeded by the run index.
 """
 
 from typing import Any
 
-from spd.clustering.consts import BatchTensor
+from torch.utils.data import DataLoader
+
 from spd.configs import LMTaskConfig, ResidMLPTaskConfig
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.resid_mlp.models import ResidMLP
@@ -13,16 +14,14 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.spd_types import TaskName
 
 
-def load_dataset(
+def create_clustering_dataloader(
     model_path: str,
     task_name: TaskName,
     batch_size: int,
     seed: int,
     **kwargs: Any,
-) -> BatchTensor:
-    """Load a single batch for clustering.
-
-    Each run gets its own dataset batch, seeded by index in ensemble.
+) -> DataLoader[Any]:
+    """Create a dataloader for clustering.
 
     Args:
         model_path: Path to decomposed model
@@ -31,18 +30,18 @@ def load_dataset(
         seed: Random seed for dataset
 
     Returns:
-        Single batch of data
+        DataLoader yielding batches
     """
     match task_name:
         case "lm":
-            return _load_lm_batch(
+            return _create_lm_dataloader(
                 model_path=model_path,
                 batch_size=batch_size,
                 seed=seed,
                 **kwargs,
             )
         case "resid_mlp":
-            return _load_resid_mlp_batch(
+            return _create_resid_mlp_dataloader(
                 model_path=model_path,
                 batch_size=batch_size,
                 seed=seed,
@@ -52,10 +51,10 @@ def load_dataset(
             raise ValueError(f"Unsupported task: {task_name}")
 
 
-def _load_lm_batch(
+def _create_lm_dataloader(
     model_path: str, batch_size: int, seed: int, config_kwargs: dict[str, Any] | None = None
-) -> BatchTensor:
-    """Load a batch for language model task."""
+) -> DataLoader[Any]:
+    """Create a dataloader for language model task."""
     spd_run = SPDRunInfo.from_path(model_path)
     cfg = spd_run.config
 
@@ -94,13 +93,11 @@ def _load_lm_batch(
         global_seed=seed,  # Use run-specific seed
     )
 
-    # Get first batch
-    batch = next(iter(dataloader))
-    return batch["input_ids"]
+    return dataloader
 
 
-def _load_resid_mlp_batch(model_path: str, batch_size: int, seed: int) -> BatchTensor:
-    """Load a batch for ResidMLP task."""
+def _create_resid_mlp_dataloader(model_path: str, batch_size: int, seed: int) -> DataLoader[Any]:
+    """Create a dataloader for ResidMLP task."""
     from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
     from spd.utils.data_utils import DatasetGeneratedDataLoader
 
@@ -128,7 +125,5 @@ def _load_resid_mlp_batch(model_path: str, batch_size: int, seed: int) -> BatchT
         data_generation_type=cfg.task_config.data_generation_type,
     )
 
-    # Generate batch
     dataloader = DatasetGeneratedDataLoader(dataset, batch_size=batch_size, shuffle=False)
-    batch, _ = next(iter(dataloader))
-    return batch
+    return dataloader
