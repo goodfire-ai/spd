@@ -18,7 +18,9 @@
 
     const graphInterpAvailable = $derived(runState.graphInterpAvailable);
 
-    let activeTab = $state<"prompts" | "components" | "dataset-search" | "model-graph" | "data-sources" | "investigations" | null>(null);
+    let activeTab = $state<
+        "prompts" | "components" | "dataset-search" | "model-graph" | "data-sources" | "investigations" | null
+    >(null);
 
     $effect(() => {
         if (runState.prompts.status === "loaded" && activeTab === null) {

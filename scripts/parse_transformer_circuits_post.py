@@ -12,13 +12,12 @@ from __future__ import annotations
 
 import argparse
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup, NavigableString, Tag
-
 
 DEFAULT_URL = "https://transformer-circuits.pub/2025/attribution-graphs/biology.html"
 USER_AGENT = "spd-biology-exporter/1.0"
@@ -37,13 +36,17 @@ def should_insert_space(left: str, right: str) -> bool:
         return False
     if left.endswith((" ", "\n", "\t", "/", "(", "[", "{", "-", "“", '"', "'")):
         return False
-    if right.startswith((" ", "\n", "\t", ".", ",", ":", ";", "!", "?", ")", "]", "}", "-", "”", '"', "'")):
+    if right.startswith(
+        (" ", "\n", "\t", ".", ",", ":", ";", "!", "?", ")", "]", "}", "-", "”", '"', "'")
+    ):
         return False
     if left.endswith("  "):
         return False
     left_char = left[-1]
     right_char = right[0]
-    return bool(re.match(r"[A-Za-z0-9\]\)]", left_char) and re.match(r"[A-Za-z0-9\[\(]", right_char))
+    return bool(
+        re.match(r"[A-Za-z0-9\]\)]", left_char) and re.match(r"[A-Za-z0-9\[\(]", right_char)
+    )
 
 
 class Exporter:

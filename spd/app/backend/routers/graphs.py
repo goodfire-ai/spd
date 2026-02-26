@@ -28,6 +28,7 @@ from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.optim_cis import (
     AdvPGDConfig,
     CELossConfig,
+    CISnapshot,
     KLLossConfig,
     LossConfig,
     MaskType,
@@ -262,8 +263,13 @@ def _build_out_probs(
     return out_probs
 
 
+CISnapshotCallback = Callable[[CISnapshot], None]
+
+
 def stream_computation(
-    work: Callable[[ProgressCallback], GraphData | GraphDataWithOptimization],
+    work: Callable[
+        [ProgressCallback, CISnapshotCallback | None], GraphData | GraphDataWithOptimization
+    ],
     gpu_lock: threading.Lock,
 ) -> StreamingResponse:
     """Run graph computation in a thread with SSE streaming for progress updates.
@@ -283,9 +289,12 @@ def stream_computation(
     def on_progress(current: int, total: int, stage: str) -> None:
         progress_queue.put({"type": "progress", "current": current, "total": total, "stage": stage})
 
+    def on_ci_snapshot(snapshot: CISnapshot) -> None:
+        progress_queue.put({"type": "ci_snapshot", **snapshot.model_dump()})
+
     def compute_thread() -> None:
         try:
-            result = work(on_progress)
+            result = work(on_progress, on_ci_snapshot)
             progress_queue.put({"type": "result", "result": result})
         except Exception as e:
             traceback.print_exc(file=sys.stderr)
@@ -304,7 +313,7 @@ def stream_computation(
                         break
                     continue
 
-                if msg["type"] == "progress":
+                if msg["type"] in ("progress", "ci_snapshot"):
                     yield f"data: {json.dumps(msg)}\n\n"
                 elif msg["type"] == "error":
                     yield f"data: {json.dumps(msg)}\n\n"
@@ -465,7 +474,9 @@ def compute_graph_stream(
     spans = loaded.tokenizer.get_spans(token_ids)
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
 
-    def work(on_progress: ProgressCallback) -> GraphData:
+    def work(
+        on_progress: ProgressCallback, _on_ci_snapshot: CISnapshotCallback | None
+    ) -> GraphData:
         t_total = time.perf_counter()
 
         result = compute_prompt_attributions(
@@ -665,7 +676,9 @@ def compute_graph_optimized_stream(
         else None,
     )
 
-    def work(on_progress: ProgressCallback) -> GraphDataWithOptimization:
+    def work(
+        on_progress: ProgressCallback, on_ci_snapshot: CISnapshotCallback | None
+    ) -> GraphDataWithOptimization:
         result = compute_prompt_attributions_optimized(
             model=loaded.model,
             topology=loaded.topology,
@@ -675,6 +688,7 @@ def compute_graph_optimized_stream(
             output_prob_threshold=0.01,
             device=DEVICE,
             on_progress=on_progress,
+            on_ci_snapshot=on_ci_snapshot,
         )
 
         ci_masked_out_logits = result.ci_masked_out_logits.cpu()

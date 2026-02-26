@@ -509,6 +509,7 @@
         graphCompute = {
             status: "computing",
             cardId,
+            ciSnapshot: null,
             progress: {
                 stages: [{ name: "Computing attribution graph from selection", progress: 0 }],
                 currentStage: 0,
@@ -601,7 +602,7 @@
                   currentStage: 0,
               };
 
-        graphCompute = { status: "computing", cardId, progress: initialProgress };
+        graphCompute = { status: "computing", cardId, ciSnapshot: null, progress: initialProgress };
 
         try {
             let data: GraphData;
@@ -633,15 +634,22 @@
                             : undefined,
                 };
 
-                data = await api.computeGraphOptimizedStream(params, (progress) => {
-                    if (graphCompute.status !== "computing") return;
-                    if (progress.stage === "graph") {
-                        graphCompute.progress.currentStage = 1;
-                        graphCompute.progress.stages[1].progress = progress.current / progress.total;
-                    } else {
-                        graphCompute.progress.stages[0].progress = progress.current / progress.total;
-                    }
-                });
+                data = await api.computeGraphOptimizedStream(
+                    params,
+                    (progress) => {
+                        if (graphCompute.status !== "computing") return;
+                        if (progress.stage === "graph") {
+                            graphCompute.progress.currentStage = 1;
+                            graphCompute.progress.stages[1].progress = progress.current / progress.total;
+                        } else {
+                            graphCompute.progress.stages[0].progress = progress.current / progress.total;
+                        }
+                    },
+                    (snapshot) => {
+                        if (graphCompute.status !== "computing") return;
+                        graphCompute.ciSnapshot = snapshot;
+                    },
+                );
             } else {
                 const params: api.ComputeGraphParams = {
                     promptId: cardId,
@@ -966,7 +974,10 @@
                             class:loading={graphCompute.status === "computing" && graphCompute.cardId === activeCard.id}
                         >
                             {#if graphCompute.status === "computing" && graphCompute.cardId === activeCard.id}
-                                <ComputeProgressOverlay state={graphCompute.progress} />
+                                <ComputeProgressOverlay
+                                    state={graphCompute.progress}
+                                    ciSnapshot={graphCompute.ciSnapshot}
+                                />
                             {:else}
                                 <div class="empty-state">
                                     <div class="compute-controls">

@@ -12,25 +12,22 @@
         items: EdgeAttribution[];
         onClick: (key: string) => void;
         pageSize: number;
-        direction: "positive" | "negative";
+        direction?: "positive" | "negative";
         title?: string;
     };
 
     let { items, onClick, pageSize, direction, title }: Props = $props();
 
-    // Extract component key (layer:cIdx) from either format
     function getComponentKey(key: string): string {
         const parts = key.split(":");
         if (parts.length === 3) {
-            return `${parts[0]}:${parts[2]}`; // layer:cIdx from layer:seq:cIdx
+            return `${parts[0]}:${parts[2]}`;
         }
-        return key; // already layer:cIdx
+        return key;
     }
 
-    // Extract just the aliased layer name from a key (e.g., "L0.attn.q" from "h.0.attn.q_proj:2:5")
     function getLayerLabel(key: string): string {
-        const layer = key.split(":")[0];
-        return layer;
+        return key.split(":")[0];
     }
 
     function getInterpretation(key: string): InterpretationBackendState {
@@ -40,7 +37,6 @@
         return { status: "none" };
     }
 
-    // Get the token type label for the right side (e.g., "Input token" or "Output token")
     function getTokenTypeLabel(key: string): string {
         const layer = key.split(":")[0];
         return layer === "embed" ? "Input token" : "Output token";
@@ -50,7 +46,6 @@
     const totalPages = $derived(Math.ceil(items.length / pageSize));
     const paginatedItems = $derived(items.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
 
-    // Track which pill is being hovered and its position
     let hoveredKey = $state<string | null>(null);
     let tooltipPosition = $state<{ top: number; left: number } | null>(null);
 
@@ -66,7 +61,6 @@
         tooltipPosition = null;
     }
 
-    // Reset page when items change
     $effect(() => {
         items; // eslint-disable-line @typescript-eslint/no-unused-expressions
         currentPage = 0;
@@ -74,8 +68,8 @@
 
     function getBgColor(normalizedMagnitude: number): string {
         const intensity = lerp(0, 0.8, normalizedMagnitude);
-        const { r, g, b } = direction === "negative" ? colors.negativeRgb : colors.positiveRgb;
-        return `rgba(${r}, ${g}, ${b}, ${intensity})`;
+        const rgb = direction === "negative" ? colors.negativeRgb : colors.positiveRgb;
+        return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${intensity})`;
     }
 
     async function copyToClipboard(text: string) {
@@ -104,8 +98,12 @@
             {@const isToken = isTokenNode(key)}
             {@const interp = isToken ? undefined : getInterpretation(key)}
             {@const hasInterpretation = interp?.status === "generated"}
+            {@const polarity = value >= 0 ? "+" : "\u2212"}
             <div class="pill-container" onmouseenter={(e) => handleMouseEnter(key, e)} onmouseleave={handleMouseLeave}>
                 <button class="edge-pill" style="background: {bgColor};" onclick={() => onClick(key)}>
+                    {#if !direction}
+                        <span class="polarity" style="color: {textColor};">{polarity}</span>
+                    {/if}
                     {#if hasInterpretation}
                         <span class="pill-content">
                             <span class="interp-label" style="color: {textColor};">{interp.data.label}</span>
@@ -168,7 +166,7 @@
         display: flex;
         align-items: center;
         gap: var(--space-2);
-        min-height: 1.25rem; /* Ensure consistent height even when empty */
+        min-height: 1.25rem;
     }
 
     .list-title {
@@ -226,7 +224,7 @@
     .edge-pill {
         display: inline-flex;
         align-items: flex-start;
-        gap: var(--space-2);
+        gap: var(--space-1);
         padding: var(--space-1) var(--space-1);
         border-radius: var(--radius-sm);
         cursor: default;
@@ -234,6 +232,14 @@
         font-family: inherit;
         font-size: inherit;
         max-width: 100%;
+    }
+
+    .polarity {
+        font-weight: 700;
+        font-size: 10px;
+        line-height: 1;
+        flex-shrink: 0;
+        opacity: 0.7;
     }
 
     .node-key {

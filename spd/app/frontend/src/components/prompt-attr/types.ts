@@ -1,5 +1,5 @@
 import type { Loadable } from "../../lib";
-import type { GraphData } from "../../lib/promptAttributionsTypes";
+import type { GraphData, CISnapshot } from "../../lib/promptAttributionsTypes";
 import type { InterventionRunSummary } from "../../lib/interventionTypes";
 import type { NormalizeType } from "../../lib/api";
 
@@ -156,7 +156,7 @@ export type TabViewState =
 /** State for graph computation - tracks which card is computing, progress, and errors */
 export type GraphComputeState =
     | { status: "idle" }
-    | { status: "computing"; cardId: number; progress: LoadingState }
+    | { status: "computing"; cardId: number; progress: LoadingState; ciSnapshot: CISnapshot | null }
     | { status: "error"; error: string };
 
 /** State for prompt generation - tracks progress and count */

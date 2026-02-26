@@ -2,7 +2,7 @@
  * API client for /api/graphs endpoints.
  */
 
-import type { GraphData, TokenizeResponse, TokenInfo } from "../promptAttributionsTypes";
+import type { GraphData, TokenizeResponse, TokenInfo, CISnapshot } from "../promptAttributionsTypes";
 import { buildEdgeIndexes } from "../promptAttributionsTypes";
 import { apiUrl, ApiError, fetchJson } from "./index";
 
@@ -29,6 +29,7 @@ export type ComputeGraphParams = {
 async function parseGraphSSEStream(
     response: Response,
     onProgress?: (progress: GraphProgress) => void,
+    onCISnapshot?: (snapshot: CISnapshot) => void,
 ): Promise<GraphData> {
     const reader = response.body?.getReader();
     if (!reader) {
@@ -55,6 +56,8 @@ async function parseGraphSSEStream(
 
             if (data.type === "progress" && onProgress) {
                 onProgress({ current: data.current, total: data.total, stage: data.stage });
+            } else if (data.type === "ci_snapshot" && onCISnapshot) {
+                onCISnapshot(data as CISnapshot);
             } else if (data.type === "error") {
                 throw new ApiError(data.error, 500);
             } else if (data.type === "complete") {
@@ -119,6 +122,7 @@ export type ComputeGraphOptimizedParams = {
 export async function computeGraphOptimizedStream(
     params: ComputeGraphOptimizedParams,
     onProgress?: (progress: GraphProgress) => void,
+    onCISnapshot?: (snapshot: CISnapshot) => void,
 ): Promise<GraphData> {
     const url = apiUrl("/api/graphs/optimized/stream");
     url.searchParams.set("prompt_id", String(params.promptId));
@@ -148,7 +152,7 @@ export async function computeGraphOptimizedStream(
         throw new ApiError(error.detail || `HTTP ${response.status}`, response.status);
     }
 
-    return parseGraphSSEStream(response, onProgress);
+    return parseGraphSSEStream(response, onProgress, onCISnapshot);
 }
 
 export async function getGraphs(promptId: number, normalize: NormalizeType, ciThreshold: number): Promise<GraphData[]> {

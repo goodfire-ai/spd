@@ -142,15 +142,8 @@
         return null;
     }
 
-    function getTopEdgeAttributions(
-        edges: EdgeData[],
-        isPositive: boolean,
-        getKey: (e: EdgeData) => string,
-    ): EdgeAttribution[] {
-        const filtered = edges.filter((e) => (isPositive ? e.val > 0 : e.val < 0));
-        const sorted = filtered
-            .sort((a, b) => (isPositive ? b.val - a.val : a.val - b.val))
-            .slice(0, N_EDGES_TO_DISPLAY);
+    function getTopEdgeAttributions(edges: EdgeData[], getKey: (e: EdgeData) => string): EdgeAttribution[] {
+        const sorted = [...edges].sort((a, b) => Math.abs(b.val) - Math.abs(a.val)).slice(0, N_EDGES_TO_DISPLAY);
         const maxAbsVal = Math.abs(sorted[0]?.val || 1);
         return sorted.map((e) => ({
             key: getKey(e),
@@ -160,28 +153,11 @@
         }));
     }
 
-    const incomingPositive = $derived(
-        getTopEdgeAttributions(edgesByTarget.get(currentNodeKey) ?? [], true, (e) => e.src),
-    );
+    const incoming = $derived(getTopEdgeAttributions(edgesByTarget.get(currentNodeKey) ?? [], (e) => e.src));
 
-    const incomingNegative = $derived(
-        getTopEdgeAttributions(edgesByTarget.get(currentNodeKey) ?? [], false, (e) => e.src),
-    );
+    const outgoing = $derived(getTopEdgeAttributions(edgesBySource.get(currentNodeKey) ?? [], (e) => e.tgt));
 
-    const outgoingPositive = $derived(
-        getTopEdgeAttributions(edgesBySource.get(currentNodeKey) ?? [], true, (e) => e.tgt),
-    );
-
-    const outgoingNegative = $derived(
-        getTopEdgeAttributions(edgesBySource.get(currentNodeKey) ?? [], false, (e) => e.tgt),
-    );
-
-    const hasAnyEdges = $derived(
-        incomingPositive.length > 0 ||
-            incomingNegative.length > 0 ||
-            outgoingPositive.length > 0 ||
-            outgoingNegative.length > 0,
-    );
+    const hasAnyEdges = $derived(incoming.length > 0 || outgoing.length > 0);
 
     // Handle clicking an edge node - parse key and pin it
     function handleEdgeNodeClick(nodeKey: string) {
@@ -261,10 +237,8 @@
             title="Prompt Attributions"
             incomingLabel="Incoming"
             outgoingLabel="Outgoing"
-            {incomingPositive}
-            {incomingNegative}
-            {outgoingPositive}
-            {outgoingNegative}
+            {incoming}
+            {outgoing}
             pageSize={COMPONENT_CARD_CONSTANTS.PROMPT_ATTRIBUTIONS_PAGE_SIZE}
             onClick={handleEdgeNodeClick}
         />

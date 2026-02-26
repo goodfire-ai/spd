@@ -33,6 +33,17 @@ export type OutputProbability = {
     token: string;
 };
 
+export type CISnapshot = {
+    step: number;
+    total_steps: number;
+    layers: string[];
+    seq_len: number;
+    initial_alive: number[][];
+    current_alive: number[][];
+    l0_total: number;
+    loss: number;
+};
+
 export type GraphType = "standard" | "optimized" | "manual";
 
 export type GraphData = {
