@@ -3,18 +3,19 @@
 Thin wrapper for fast --help. Heavy imports deferred to postprocess.py.
 
 Usage:
-    spd-postprocess <wandb_path>
-    spd-postprocess <wandb_path> --config my_config.yaml
+    spd-postprocess config.yaml
+    spd-postprocess config.yaml --dependency 311644_1
 """
 
 import fire
 
 
-def main(config: str, dry_run: bool = False) -> None:
+def main(config: str, dependency: str | None = None, dry_run: bool = False) -> None:
     """Submit all postprocessing jobs for an SPD run.
 
     Args:
         config: Path to PostprocessConfig YAML.
+        dependency: SLURM job ID to wait for before starting (e.g. a training job).
     """
     import yaml
 
@@ -29,7 +30,7 @@ def main(config: str, dry_run: bool = False) -> None:
         logger.info(yaml.dump(cfg.model_dump(), indent=2, sort_keys=False))
         return
 
-    manifest_path = postprocess(config=cfg)
+    manifest_path = postprocess(config=cfg, dependency_job_id=dependency)
     logger.info(f"Manifest: {manifest_path}")
 
 
