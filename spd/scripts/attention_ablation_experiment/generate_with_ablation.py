@@ -279,7 +279,11 @@ th{background:#f0f0f0;font-weight:600;text-align:center}
 .tok{white-space:pre;text-align:center;min-width:50px}
 .label{text-align:left;font-weight:600;background:#f5f5f5;min-width:230px;font-size:11px}
 .info{font-family:sans-serif;font-size:13px;color:#555;margin:4px 0}
-.prompt-inline{background:#e8e8e8;padding:2px 6px;border-radius:3px;font-family:'Menlo','Consolas',monospace}
+.prompt-tokens{margin:4px 0 8px 0;font-size:12px}
+.prompt-tok{background:#e8e8e8;padding:1px 4px;border-radius:2px;margin:0 1px}
+.prompt-tok-abl{background:#bbdefb;padding:1px 4px;border-radius:2px;margin:0 1px;font-weight:bold}
+.prompt-tok-prev{background:#fff9c4;padding:1px 4px;border-radius:2px;margin:0 1px}
+.prompt-sep{color:#bbb;font-size:10px;margin:0 1px}
 .logit-cell{text-align:left;white-space:nowrap;font-size:11px;padding:2px 4px;line-height:1.3;width:1px}
 .logit-pos{color:#2e7d32}
 .logit-neg{color:#c62828}
@@ -308,10 +312,15 @@ def _render_sample_html(
         return html.escape(tok).replace("\n", "\\n").replace(" ", "&nbsp;")
 
     h: list[str] = []
-    prompt_text = "".join(prompt_tokens)
+    token_spans = []
+    for i, tok in enumerate(prompt_tokens):
+        escaped = _fmt_tok(tok)
+        css = "prompt-tok-abl" if i == t else ("prompt-tok-prev" if i == t - 1 else "prompt-tok")
+        token_spans.append(f'<span class="{css}">{escaped}</span>')
+    prompt_html = '<span class="prompt-sep">|</span>'.join(token_spans)
     h.append(
-        f'<div class="sample"><h2>{html.escape(label)} | '
-        f'<span class="prompt-inline">{html.escape(prompt_text)}</span> | t={t}</h2>'
+        f'<div class="sample"><h2>{html.escape(label)} | t={t}</h2>'
+        f'<div class="prompt-tokens">{prompt_html}</div>'
     )
 
     h.append('<div style="overflow-x:auto"><table>')
