@@ -3,8 +3,9 @@ from functools import cached_property
 from typing import Literal, NamedTuple
 
 import torch
-from jaxtyping import Bool, Float, Float16, Int
+from jaxtyping import Bool, Float, Float16
 from torch import Tensor
+from torch.utils.data import DataLoader
 
 from spd.clustering.consts import (
     ActivationsTensor,
@@ -13,13 +14,14 @@ from spd.clustering.consts import (
     ComponentLabels,
 )
 from spd.clustering.util import ModuleFilterFunc
+from spd.log import logger
 from spd.models.component_model import ComponentModel, OutputWithCache
 
 
 def component_activations(
     model: ComponentModel,
     device: torch.device | str,
-    batch: Int[Tensor, "batch_size n_ctx"],
+    batch: Tensor,
 ) -> dict[str, ActivationsTensor]:
     """Get the component activations over a **single** batch."""
     causal_importances: dict[str, ActivationsTensor]
@@ -37,6 +39,61 @@ def component_activations(
         ).upper_leaky
 
     return causal_importances
+
+
+def collect_activations(
+    model: ComponentModel,
+    dataloader: DataLoader,  # pyright: ignore[reportMissingTypeArgument]
+    n_tokens: int,
+    device: torch.device | str,
+    seed: int,
+) -> dict[str, Float[Tensor, "n_tokens C"]]:
+    """Collect activation samples by picking one random token per sequence.
+
+    Iterates through batches from dataloader, runs component_activations on each,
+    then selects one random token position per sequence. Collects until n_tokens
+    samples are gathered.
+
+    Args:
+        model: ComponentModel to get activations from
+        dataloader: DataLoader yielding batches of sequences
+        n_tokens: Total number of token samples to collect
+        device: Device to run on
+        seed: Random seed for reproducible token position selection
+    """
+    rng = torch.Generator().manual_seed(seed)
+    collected: dict[str, list[Tensor]] = {}
+    n_collected = 0
+
+    for batch_data in dataloader:
+        input_ids = batch_data["input_ids"]
+        batch_size, n_ctx = input_ids.shape
+
+        activations = component_activations(model=model, batch=input_ids, device=device)
+
+        # Pick one random token position per sequence
+        positions = torch.randint(0, n_ctx, (batch_size,), generator=rng)
+        batch_indices = torch.arange(batch_size)
+
+        for key, act in activations.items():
+            # act shape: (batch_size, n_ctx, C)
+            sampled = act[batch_indices, positions]  # (batch_size, C)
+            if key not in collected:
+                collected[key] = []
+            collected[key].append(sampled.cpu())
+
+        n_collected += batch_size
+        if n_collected >= n_tokens:
+            break
+
+    assert n_collected >= n_tokens, (
+        f"Dataloader exhausted: collected {n_collected} tokens but needed {n_tokens}"
+    )
+
+    logger.info(f"Collected {n_collected} token activations (requested {n_tokens})")
+
+    # Concatenate and truncate to exactly n_tokens
+    return {key: torch.cat(tensors, dim=0)[:n_tokens] for key, tensors in collected.items()}
 
 
 def compute_coactivatons(
