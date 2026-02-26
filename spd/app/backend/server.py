@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 import fire
 import torch
 import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,6 +43,7 @@ from spd.app.backend.state import StateManager
 from spd.log import logger
 from spd.utils.distributed_utils import get_device
 
+load_dotenv()
 DEVICE = get_device()
 
 

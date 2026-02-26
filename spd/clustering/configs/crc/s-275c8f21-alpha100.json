@@ -1,0 +1,21 @@
+{
+  "model_path": "wandb:goodfire/spd/runs/s-275c8f21",
+  "batch_size": 256,
+  "merge_config": {
+    "activation_threshold": 0.1,
+    "alpha": 100.0,
+    "iters": 100000,
+    "merge_pair_sampling_method": "range",
+    "merge_pair_sampling_kwargs": {"threshold": 0.001},
+    "filter_dead_threshold": 0.1,
+    "module_name_filter": null
+  },
+  "logging_intervals": {
+    "stat": 10,
+    "tensor": 200,
+    "plot": 2000,
+    "artifact": 2000
+  },
+  "wandb_project": "spd",
+  "wandb_entity": "goodfire"
+}
