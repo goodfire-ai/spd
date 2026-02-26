@@ -9,6 +9,7 @@ Interpretations are stored separately at SPD_OUT_DIR/autointerp/<run_id>/.
 import hashlib
 import io
 import json
+import os
 import sqlite3
 from pathlib import Path
 from typing import Literal
@@ -24,7 +25,24 @@ GraphType = Literal["standard", "optimized", "manual"]
 
 # Persistent data directories
 _APP_DATA_DIR = REPO_ROOT / ".data" / "app"
-DEFAULT_DB_PATH = _APP_DATA_DIR / "prompt_attr.db"
+_DEFAULT_DB_PATH = _APP_DATA_DIR / "prompt_attr.db"
+
+
+def get_default_db_path() -> Path:
+    """Get the default database path.
+
+    Checks env vars in order:
+    1. SPD_INVESTIGATION_DIR - investigation mode, db at dir/app.db
+    2. SPD_APP_DB_PATH - explicit override
+    3. Default: .data/app/prompt_attr.db
+    """
+    investigation_dir = os.environ.get("SPD_INVESTIGATION_DIR")
+    if investigation_dir:
+        return Path(investigation_dir) / "app.db"
+    env_path = os.environ.get("SPD_APP_DB_PATH")
+    if env_path:
+        return Path(env_path)
+    return _DEFAULT_DB_PATH
 
 
 class Run(BaseModel):
@@ -111,7 +129,7 @@ class PromptAttrDB:
     """
 
     def __init__(self, db_path: Path | None = None, check_same_thread: bool = True):
-        self.db_path = db_path or DEFAULT_DB_PATH
+        self.db_path = db_path or get_default_db_path()
         self._check_same_thread = check_same_thread
         self._conn: sqlite3.Connection | None = None
 

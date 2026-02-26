@@ -4,7 +4,6 @@
 
 import type { GraphData, TokenizeResponse, TokenInfo } from "../promptAttributionsTypes";
 import { buildEdgeIndexes } from "../promptAttributionsTypes";
-import { setArchitecture } from "../layerAliasing";
 import { apiUrl, ApiError, fetchJson } from "./index";
 
 export type NormalizeType = "none" | "target" | "layer";
@@ -59,14 +58,6 @@ async function parseGraphSSEStream(
             } else if (data.type === "error") {
                 throw new ApiError(data.error, 500);
             } else if (data.type === "complete") {
-                // Extract all unique layer names from edges to detect architecture
-                const layerNames = new Set<string>();
-                for (const edge of data.data.edges) {
-                    layerNames.add(edge.src.split(":")[0]);
-                    layerNames.add(edge.tgt.split(":")[0]);
-                }
-                setArchitecture(Array.from(layerNames));
-
                 const { edgesBySource, edgesByTarget } = buildEdgeIndexes(data.data.edges);
                 result = { ...data.data, edgesBySource, edgesByTarget };
                 await reader.cancel();
@@ -166,14 +157,6 @@ export async function getGraphs(promptId: number, normalize: NormalizeType, ciTh
     url.searchParams.set("ci_threshold", String(ciThreshold));
     const graphs = await fetchJson<Omit<GraphData, "edgesBySource" | "edgesByTarget">[]>(url.toString());
     return graphs.map((g) => {
-        // Extract all unique layer names from edges to detect architecture
-        const layerNames = new Set<string>();
-        for (const edge of g.edges) {
-            layerNames.add(edge.src.split(":")[0]);
-            layerNames.add(edge.tgt.split(":")[0]);
-        }
-        setArchitecture(Array.from(layerNames));
-
         const { edgesBySource, edgesByTarget } = buildEdgeIndexes(g.edges);
         return { ...g, edgesBySource, edgesByTarget };
     });

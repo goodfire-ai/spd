@@ -269,6 +269,22 @@ class DatasetAttributionStorage:
             )
         return results
 
+    def get_attribution(self, source_key: str, target_key: str) -> float:
+        source_layer, source_idx = self._parse_key(source_key)
+        target_layer, target_idx = self._parse_key(target_key)
+
+        if target_layer == "output" and source_layer == "embed":
+            return (self._embed_unembed_attr[:, source_idx] @ self._w_unembed[:, target_idx]).item()
+        elif target_layer == "output" and source_layer != "embed":
+            return (
+                self._unembed_attr[source_layer][:, source_idx] @ self._w_unembed[:, target_idx]
+            ).item()
+        elif target_layer != "output" and source_layer == "embed":
+            return (self._embed_attr[target_layer][target_idx, source_idx]).item()
+        else:
+            assert target_layer != "output" and source_layer != "embed"
+            return (self._regular_attr[target_layer][source_layer][target_idx, source_idx]).item()
+
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(
