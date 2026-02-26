@@ -8,7 +8,7 @@
       "filter_dead_threshold": 0.1,
       "module_name_filter": null
     },
-    "model_path": "wandb:goodfire/spd/runs/itmexlj0",
+    "model_path": "wandb:goodfire/spd/runs/788ccb89",
     "batch_size": 64,
     "n_tokens": 4096,
     "wandb_project": null,
