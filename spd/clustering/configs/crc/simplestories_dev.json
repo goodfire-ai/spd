@@ -9,7 +9,8 @@
     "module_name_filter": null
   },
   "model_path": "wandb:goodfire/spd/runs/lxs77xye",
-  "batch_size": 32,
+  "batch_size": 64,
+  "n_tokens": 4096,
   "wandb_project": null,
   "logging_intervals": {
     "stat": 1,
