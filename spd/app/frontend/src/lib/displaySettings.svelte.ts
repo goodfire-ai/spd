@@ -37,17 +37,20 @@ export const CORRELATION_STAT_DESCRIPTIONS: Record<CorrelationStatType, string> 
 };
 
 export const displaySettings = $state({
-    showPmi: true,
-    showPrecision: true,
-    showRecall: true,
-    showJaccard: true,
+    showPmi: false,
+    showPrecision: false,
+    showRecall: false,
+    showJaccard: false,
     showSetOverlapVis: true,
     showEdgeAttributions: true,
     nodeColorMode: "ci" as NodeColorMode,
     exampleColorMode: "ci" as ExampleColorMode,
+    meanCiCutoff: 1e-7,
+    centerOnPeak: false,
+    showAutoInterpPromptButton: false,
 });
 
-export function hasAnyCorrelationStats() {
+export function anyCorrelationStatsEnabled() {
     return (
         displaySettings.showPmi ||
         displaySettings.showPrecision ||

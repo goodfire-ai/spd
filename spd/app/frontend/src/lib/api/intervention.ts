@@ -2,11 +2,14 @@
  * API client for /api/intervention endpoints.
  */
 
-import type { ForkedInterventionRun, InterventionRunSummary, RunInterventionRequest } from "../interventionTypes";
-import { API_URL } from "./index";
+import type {
+    ForkedInterventionRunSummary,
+    InterventionRunSummary,
+    RunInterventionRequest,
+} from "../interventionTypes";
 
 export async function runAndSaveIntervention(request: RunInterventionRequest): Promise<InterventionRunSummary> {
-    const response = await fetch(`${API_URL}/api/intervention/run`, {
+    const response = await fetch("/api/intervention/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(request),
@@ -19,7 +22,7 @@ export async function runAndSaveIntervention(request: RunInterventionRequest): P
 }
 
 export async function getInterventionRuns(graphId: number): Promise<InterventionRunSummary[]> {
-    const response = await fetch(`${API_URL}/api/intervention/runs/${graphId}`);
+    const response = await fetch(`/api/intervention/runs/${graphId}`);
     if (!response.ok) {
         const error = await response.json();
         throw new Error(error.detail || "Failed to get intervention runs");
@@ -28,7 +31,7 @@ export async function getInterventionRuns(graphId: number): Promise<Intervention
 }
 
 export async function deleteInterventionRun(runId: number): Promise<void> {
-    const response = await fetch(`${API_URL}/api/intervention/runs/${runId}`, {
+    const response = await fetch(`/api/intervention/runs/${runId}`, {
         method: "DELETE",
     });
     if (!response.ok) {
@@ -41,8 +44,8 @@ export async function forkInterventionRun(
     runId: number,
     tokenReplacements: [number, number][],
     topK: number = 10,
-): Promise<ForkedInterventionRun> {
-    const response = await fetch(`${API_URL}/api/intervention/runs/${runId}/fork`, {
+): Promise<ForkedInterventionRunSummary> {
+    const response = await fetch(`/api/intervention/runs/${runId}/fork`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token_replacements: tokenReplacements, top_k: topK }),
@@ -51,11 +54,11 @@ export async function forkInterventionRun(
         const error = await response.json();
         throw new Error(error.detail || "Failed to fork intervention run");
     }
-    return (await response.json()) as ForkedInterventionRun;
+    return (await response.json()) as ForkedInterventionRunSummary;
 }
 
 export async function deleteForkedInterventionRun(forkId: number): Promise<void> {
-    const response = await fetch(`${API_URL}/api/intervention/forks/${forkId}`, {
+    const response = await fetch(`/api/intervention/forks/${forkId}`, {
         method: "DELETE",
     });
     if (!response.ok) {

@@ -1,6 +1,3 @@
-# %%
-"""Optimize CI values for a single prompt while keeping component weights fixed."""
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,10 +7,11 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from jaxtyping import Bool, Float
+from pydantic import BaseModel
 from torch import Tensor
 from tqdm.auto import tqdm
 
-from spd.configs import ImportanceMinimalityLossConfig, SamplingType
+from spd.configs import ImportanceMinimalityLossConfig, PGDInitStrategy, SamplingType
 from spd.metrics import importance_minimality_loss
 from spd.models.component_model import CIOutputs, ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
@@ -25,19 +23,59 @@ from spd.utils.general_utils import bf16_autocast
 MaskType = Literal["stochastic", "ci"]
 
 
-@dataclass
-class OptimCELossConfig:
-    """Cross-entropy loss config for CI optimization. These losses apply to the final token only."""
+class AdvPGDConfig(BaseModel):
+    """PGD adversary config for robust CI optimization."""
 
+    n_steps: int
+    step_size: float
+    init: PGDInitStrategy
+
+
+class CELossConfig(BaseModel):
+    """Cross-entropy loss: optimize for a specific token at a position."""
+
+    type: Literal["ce"] = "ce"
     coeff: float
+    position: int
     label_token: int
 
 
-@dataclass
-class OptimKLLossConfig:
-    """KL divergence loss config for CI optimization. These losses apply to the final token only."""
+class KLLossConfig(BaseModel):
+    """KL divergence loss: match target model distribution at a position."""
 
+    type: Literal["kl"] = "kl"
     coeff: float
+    position: int
+
+
+LossConfig = CELossConfig | KLLossConfig
+
+
+def _compute_recon_loss(
+    logits: Tensor,
+    loss_config: LossConfig,
+    target_out: Tensor,
+    device: str,
+) -> Tensor:
+    """Compute recon loss (CE or KL) from model output logits at the configured position."""
+    match loss_config:
+        case CELossConfig(position=pos, label_token=label_token):
+            return F.cross_entropy(
+                logits[0, pos, :].unsqueeze(0),
+                torch.tensor([label_token], device=device),
+            )
+        case KLLossConfig(position=pos):
+            target_probs = F.softmax(target_out[0, pos, :], dim=-1)
+            pred_log_probs = F.log_softmax(logits[0, pos, :], dim=-1)
+            return F.kl_div(pred_log_probs, target_probs, reduction="sum")
+
+
+def _interpolate_masks(
+    ci: dict[str, Tensor],
+    sources: dict[str, Tensor],
+) -> dict[str, Tensor]:
+    """Compute PGD component masks: ci + (1 - ci) * source."""
+    return {layer: ci[layer] + (1 - ci[layer]) * sources[layer] for layer in ci}
 
 
 @dataclass
@@ -63,6 +101,17 @@ def compute_alive_info(
         alive_counts[layer_name] = counts_per_pos.tolist()
 
     return AliveComponentInfo(alive_masks=alive_masks, alive_counts=alive_counts)
+
+
+class OptimizationMetrics(BaseModel):
+    """Final loss metrics from CI optimization."""
+
+    ci_masked_label_prob: float | None = None  # Probability of label under CI mask (CE loss only)
+    stoch_masked_label_prob: float | None = (
+        None  # Probability of label under stochastic mask (CE loss only)
+    )
+    adv_pgd_label_prob: float | None = None  # Probability of label under adversarial mask (CE only)
+    l0_total: float  # Total L0 (active components)
 
 
 @dataclass
@@ -139,20 +188,6 @@ def create_optimizable_ci_params(
     )
 
 
-def compute_label_prob(
-    model: ComponentModel,
-    tokens: Tensor,
-    ci_lower_leaky: dict[str, Tensor],
-    label_token: int,
-) -> float:
-    """Compute probability of label_token at final position with CI mask."""
-    mask_infos = make_mask_infos(ci_lower_leaky, routing_masks="all")
-    with bf16_autocast():
-        logits = model(tokens, mask_infos=mask_infos)
-    probs = F.softmax(logits[0, -1, :], dim=-1)
-    return float(probs[label_token].item())
-
-
 def compute_l0_stats(
     ci_outputs: CIOutputs,
     ci_alive_threshold: float,
@@ -166,14 +201,15 @@ def compute_l0_stats(
     return stats
 
 
-def compute_final_token_ce_kl(
+def compute_specific_pos_ce_kl(
     model: ComponentModel,
     batch: Tensor,
     target_out: Tensor,
     ci: dict[str, Tensor],
     rounding_threshold: float,
+    loss_seq_pos: int,
 ) -> dict[str, float]:
-    """Compute CE and KL metrics for the final token only.
+    """Compute CE and KL metrics for a specific sequence position.
 
     Args:
         model: The ComponentModel.
@@ -181,29 +217,28 @@ def compute_final_token_ce_kl(
         target_out: Target model output logits of shape [1, seq_len, vocab].
         ci: Causal importance values (lower_leaky) per layer.
         rounding_threshold: Threshold for rounding CI values to binary masks.
+        loss_seq_pos: Sequence position to compute metrics for.
 
     Returns:
         Dict with kl and ce_difference metrics for ci_masked, unmasked, and rounded_masked.
     """
     assert batch.ndim == 2 and batch.shape[0] == 1, "Expected batch shape [1, seq_len]"
 
-    # Get the label for CE (next token prediction at final position)
-    # The label is the token at the final position for the second-to-last logit prediction
-    # But since we're optimizing for CI on a single prompt, we use the final logit position
-    final_target_logits = target_out[0, -1, :]  # [vocab]
+    # Get target logits at the specified position
+    target_logits = target_out[0, loss_seq_pos, :]  # [vocab]
 
     def kl_vs_target(logits: Tensor) -> float:
-        """KL divergence between predicted and target logits at final position."""
-        final_logits = logits[0, -1, :]  # [vocab]
-        target_probs = F.softmax(final_target_logits, dim=-1)
-        pred_log_probs = F.log_softmax(final_logits, dim=-1)
+        """KL divergence between predicted and target logits at target position."""
+        pos_logits = logits[0, loss_seq_pos, :]  # [vocab]
+        target_probs = F.softmax(target_logits, dim=-1)
+        pred_log_probs = F.log_softmax(pos_logits, dim=-1)
         return F.kl_div(pred_log_probs, target_probs, reduction="sum").item()
 
     def ce_vs_target(logits: Tensor) -> float:
-        """CE between predicted logits and target's argmax at final position."""
-        final_logits = logits[0, -1, :]  # [vocab]
-        target_token = final_target_logits.argmax()
-        return F.cross_entropy(final_logits.unsqueeze(0), target_token.unsqueeze(0)).item()
+        """CE between predicted logits and target's argmax at target position."""
+        pos_logits = logits[0, loss_seq_pos, :]  # [vocab]
+        target_token = target_logits.argmax()
+        return F.cross_entropy(pos_logits.unsqueeze(0), target_token.unsqueeze(0)).item()
 
     # Target model CE (baseline)
     target_ce = ce_vs_target(target_out)
@@ -257,18 +292,78 @@ class OptimCIConfig:
 
     log_freq: int
 
-    # Loss configs
+    # Loss config (exactly one of CE or KL)
     imp_min_config: ImportanceMinimalityLossConfig
-    ce_loss_config: OptimCELossConfig | None
-    kl_loss_config: OptimKLLossConfig | None
+    loss_config: LossConfig
 
     sampling: SamplingType
 
     ce_kl_rounding_threshold: float
-    mask_type: MaskType = "stochastic"
+    mask_type: MaskType
+    adv_pgd: AdvPGDConfig | None
 
 
 ProgressCallback = Callable[[int, int, str], None]  # (current, total, stage)
+
+
+@dataclass
+class OptimizeCIResult:
+    """Result from CI optimization including params and final metrics."""
+
+    params: OptimizableCIParams
+    metrics: OptimizationMetrics
+    adv_pgd_out_logits: Float[Tensor, "seq vocab"] | None = None
+
+
+def _run_adv_pgd(
+    model: ComponentModel,
+    tokens: Tensor,
+    ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
+    alive_masks: dict[str, Bool[Tensor, "1 seq C"]],
+    adv_config: AdvPGDConfig,
+    loss_config: LossConfig,
+    target_out: Tensor,
+    device: str,
+) -> dict[str, Float[Tensor, "1 seq C"]]:
+    """Run PGD to find adversarial sources maximizing reconstruction loss.
+
+    Sources are optimized via signed gradient ascent. Only alive positions are optimized.
+    Masks are computed as ci + (1 - ci) * source (same interpolation as training PGD).
+
+    Returns detached adversarial source tensors.
+    """
+    ci_detached = {k: v.detach() for k, v in ci_lower_leaky.items()}
+
+    adv_sources: dict[str, Tensor] = {}
+    for layer_name, ci in ci_detached.items():
+        match adv_config.init:
+            case "random":
+                source = torch.rand_like(ci)
+            case "ones":
+                source = torch.ones_like(ci)
+            case "zeroes":
+                source = torch.zeros_like(ci)
+        source[~alive_masks[layer_name]] = 0.0
+        source.requires_grad_(True)
+        adv_sources[layer_name] = source
+
+    source_list = list(adv_sources.values())
+
+    for _ in range(adv_config.n_steps):
+        mask_infos = make_mask_infos(_interpolate_masks(ci_detached, adv_sources))
+
+        with bf16_autocast():
+            out = model(tokens, mask_infos=mask_infos)
+
+        loss = _compute_recon_loss(out, loss_config, target_out, device)
+        grads = torch.autograd.grad(loss, source_list)
+        with torch.no_grad():
+            for (layer_name, source), grad in zip(adv_sources.items(), grads, strict=True):
+                source.add_(adv_config.step_size * grad.sign())
+                source.clamp_(0.0, 1.0)
+                source[~alive_masks[layer_name]] = 0.0
+
+    return {k: v.detach() for k, v in adv_sources.items()}
 
 
 def optimize_ci_values(
@@ -277,7 +372,7 @@ def optimize_ci_values(
     config: OptimCIConfig,
     device: str,
     on_progress: ProgressCallback | None = None,
-) -> OptimizableCIParams:
+) -> OptimizeCIResult:
     """Optimize CI values for a single prompt.
 
     Args:
@@ -287,15 +382,13 @@ def optimize_ci_values(
         device: Device to run on.
 
     Returns:
-        The OptimizableCIParams object.
+        OptimizeCIResult containing params and final metrics.
     """
     imp_min_coeff = config.imp_min_config.coeff
     assert imp_min_coeff is not None, "Importance minimality loss coefficient must be set"
 
-    # Freeze all model parameters
     model.requires_grad_(False)
 
-    # Get initial CI values from the model
     with torch.no_grad(), bf16_autocast():
         output_with_cache: OutputWithCache = model(tokens, cache_type="input")
         initial_ci_outputs = model.calc_causal_importances(
@@ -305,7 +398,6 @@ def optimize_ci_values(
         )
         target_out = output_with_cache.output.detach()
 
-    # Compute alive info and create optimizable parameters
     alive_info = compute_alive_info(initial_ci_outputs.lower_leaky)
     ci_params: OptimizableCIParams = create_optimizable_ci_params(
         alive_info=alive_info,
@@ -324,91 +416,89 @@ def optimize_ci_values(
 
         optimizer.zero_grad()
 
-        # Create CI outputs from current parameters
         ci_outputs = ci_params.create_ci_outputs(model, device)
 
+        # Recon forward pass (stochastic or CI masking)
         match config.mask_type:
             case "stochastic":
-                mask_infos = calc_stochastic_component_mask_info(
+                recon_mask_infos = calc_stochastic_component_mask_info(
                     causal_importances=ci_outputs.lower_leaky,
                     component_mask_sampling=config.sampling,
                     weight_deltas=weight_deltas,
                     router=AllLayersRouter(),
                 )
             case "ci":
-                mask_infos = make_mask_infos(component_masks=ci_outputs.lower_leaky)
+                recon_mask_infos = make_mask_infos(component_masks=ci_outputs.lower_leaky)
 
         with bf16_autocast():
-            out = model(tokens, mask_infos=mask_infos)
+            recon_out = model(tokens, mask_infos=recon_mask_infos)
 
-            imp_min_loss = importance_minimality_loss(
-                ci_upper_leaky=ci_outputs.upper_leaky,
-                current_frac_of_training=step / config.steps,
-                pnorm=config.imp_min_config.pnorm,
-                beta=config.imp_min_config.beta,
-                eps=config.imp_min_config.eps,
-                p_anneal_start_frac=config.imp_min_config.p_anneal_start_frac,
-                p_anneal_final_p=config.imp_min_config.p_anneal_final_p,
-                p_anneal_end_frac=config.imp_min_config.p_anneal_end_frac,
+        imp_min_loss = importance_minimality_loss(
+            ci_upper_leaky=ci_outputs.upper_leaky,
+            current_frac_of_training=step / config.steps,
+            pnorm=config.imp_min_config.pnorm,
+            beta=config.imp_min_config.beta,
+            eps=config.imp_min_config.eps,
+            p_anneal_start_frac=config.imp_min_config.p_anneal_start_frac,
+            p_anneal_final_p=config.imp_min_config.p_anneal_final_p,
+            p_anneal_end_frac=config.imp_min_config.p_anneal_end_frac,
+        )
+
+        recon_loss = _compute_recon_loss(recon_out, config.loss_config, target_out, device)
+        total_loss = config.loss_config.coeff * recon_loss + imp_min_coeff * imp_min_loss
+
+        # PGD adversarial loss (runs in tandem with recon)
+        if config.adv_pgd is not None:
+            adv_sources = _run_adv_pgd(
+                model=model,
+                tokens=tokens,
+                ci_lower_leaky=ci_outputs.lower_leaky,
+                alive_masks=alive_info.alive_masks,
+                adv_config=config.adv_pgd,
+                loss_config=config.loss_config,
+                target_out=target_out,
+                device=device,
+            )
+            pgd_mask_infos = make_mask_infos(
+                _interpolate_masks(ci_outputs.lower_leaky, adv_sources)
             )
 
-            # Compute faithfulness losses (CE and/or KL)
-            faithfulness_loss = torch.tensor(0.0, device=device)
-            ce_loss_val: float | None = None
-            kl_loss_val: float | None = None
+            with bf16_autocast():
+                pgd_out = model(tokens, mask_infos=pgd_mask_infos)
 
-            if config.ce_loss_config is not None:
-                ce_loss = F.cross_entropy(
-                    out[0, -1, :].unsqueeze(0),
-                    torch.tensor([config.ce_loss_config.label_token], device=device),
-                )
-                faithfulness_loss = faithfulness_loss + config.ce_loss_config.coeff * ce_loss
-                ce_loss_val = ce_loss.item()
-
-            if config.kl_loss_config is not None:
-                # KL divergence: encourage masked output to match target distribution
-                target_probs = F.softmax(target_out[0, -1, :], dim=-1)
-                pred_log_probs = F.log_softmax(out[0, -1, :], dim=-1)
-                kl_loss = F.kl_div(pred_log_probs, target_probs, reduction="sum")
-                faithfulness_loss = faithfulness_loss + config.kl_loss_config.coeff * kl_loss
-                kl_loss_val = kl_loss.item()
-
-            total_loss = faithfulness_loss + imp_min_coeff * imp_min_loss
+            pgd_loss = _compute_recon_loss(pgd_out, config.loss_config, target_out, device)
+            total_loss = total_loss + config.loss_config.coeff * pgd_loss
 
         if step % config.log_freq == 0 or step == config.steps - 1:
             l0_stats = compute_l0_stats(ci_outputs, ci_alive_threshold=0.0)
 
-            # Compute CE/KL metrics for final token only
             with torch.no_grad():
-                ce_kl_stats = compute_final_token_ce_kl(
+                ce_kl_stats = compute_specific_pos_ce_kl(
                     model=model,
                     batch=tokens,
                     target_out=target_out,
                     ci=ci_outputs.lower_leaky,
                     rounding_threshold=config.ce_kl_rounding_threshold,
+                    loss_seq_pos=config.loss_config.position,
                 )
 
             log_terms: dict[str, float] = {
                 "imp_min_loss": imp_min_loss.item(),
                 "total_loss": total_loss.item(),
+                "recon_loss": recon_loss.item(),
             }
-            if ce_loss_val is not None:
-                log_terms["ce_loss"] = ce_loss_val
-            if kl_loss_val is not None:
-                log_terms["kl_loss"] = kl_loss_val
 
-            # Log label probability if CE loss is used
-            if config.ce_loss_config is not None:
-                stoch_label_prob = F.softmax(out[0, -1, :], dim=-1)[
-                    config.ce_loss_config.label_token
-                ]
-                log_terms["stoch_masked_label_prob"] = stoch_label_prob.item()
+            if isinstance(config.loss_config, CELossConfig):
+                pos = config.loss_config.position
+                label_token = config.loss_config.label_token
+                recon_label_prob = F.softmax(recon_out[0, pos, :], dim=-1)[label_token]
+                log_terms["recon_masked_label_prob"] = recon_label_prob.item()
 
                 with torch.no_grad():
-                    ci_masked_label_prob = compute_label_prob(
-                        model, tokens, ci_outputs.lower_leaky, config.ce_loss_config.label_token
-                    )
-                    log_terms["ci_masked_label_prob"] = ci_masked_label_prob
+                    mask_infos = make_mask_infos(ci_outputs.lower_leaky, routing_masks="all")
+                    logits = model(tokens, mask_infos=mask_infos)
+                    probs = F.softmax(logits[0, pos, :], dim=-1)
+                    log_terms["ci_masked_label_prob"] = float(probs[label_token].item())
 
             tqdm.write(f"\n--- Step {step} ---")
             for name, value in log_terms.items():
@@ -421,7 +511,76 @@ def optimize_ci_values(
         total_loss.backward()
         optimizer.step()
 
-    return ci_params
+    # Compute final metrics after optimization
+    with torch.no_grad():
+        final_ci_outputs = ci_params.create_ci_outputs(model, device)
+        final_l0_stats = compute_l0_stats(final_ci_outputs, ci_alive_threshold=0.0)
+
+        final_ci_masked_label_prob: float | None = None
+        final_stoch_masked_label_prob: float | None = None
+
+        if isinstance(config.loss_config, CELossConfig):
+            pos = config.loss_config.position
+            label_token = config.loss_config.label_token
+
+            # CI-masked probability
+            ci_mask_infos = make_mask_infos(final_ci_outputs.lower_leaky, routing_masks="all")
+            ci_logits = model(tokens, mask_infos=ci_mask_infos)
+            ci_probs = F.softmax(ci_logits[0, pos, :], dim=-1)
+            final_ci_masked_label_prob = float(ci_probs[label_token].item())
+
+            # Stochastic-masked probability (sample once for final metric)
+            stoch_mask_infos = calc_stochastic_component_mask_info(
+                causal_importances=final_ci_outputs.lower_leaky,
+                component_mask_sampling=config.sampling,
+                weight_deltas=weight_deltas,
+                router=AllLayersRouter(),
+            )
+            stoch_logits = model(tokens, mask_infos=stoch_mask_infos)
+            stoch_probs = F.softmax(stoch_logits[0, pos, :], dim=-1)
+            final_stoch_masked_label_prob = float(stoch_probs[label_token].item())
+
+    # Adversarial PGD final evaluation (needs gradients for PGD, so outside no_grad block)
+    adv_pgd_out_logits: Float[Tensor, "seq vocab"] | None = None
+    final_adv_pgd_label_prob: float | None = None
+
+    if config.adv_pgd is not None:
+        final_adv_sources = _run_adv_pgd(
+            model=model,
+            tokens=tokens,
+            ci_lower_leaky=final_ci_outputs.lower_leaky,
+            alive_masks=alive_info.alive_masks,
+            adv_config=config.adv_pgd,
+            loss_config=config.loss_config,
+            target_out=target_out,
+            device=device,
+        )
+        with torch.no_grad():
+            adv_pgd_masks = make_mask_infos(
+                _interpolate_masks(final_ci_outputs.lower_leaky, final_adv_sources)
+            )
+            with bf16_autocast():
+                adv_logits = model(tokens, mask_infos=adv_pgd_masks)
+            adv_pgd_out_logits = adv_logits[0].detach()  # [seq, vocab]
+
+            if isinstance(config.loss_config, CELossConfig):
+                pos = config.loss_config.position
+                label_token = config.loss_config.label_token
+                adv_probs = F.softmax(adv_logits[0, pos, :], dim=-1)
+                final_adv_pgd_label_prob = float(adv_probs[label_token].item())
+
+    metrics = OptimizationMetrics(
+        ci_masked_label_prob=final_ci_masked_label_prob,
+        stoch_masked_label_prob=final_stoch_masked_label_prob,
+        adv_pgd_label_prob=final_adv_pgd_label_prob,
+        l0_total=final_l0_stats["l0/total"],
+    )
+
+    return OptimizeCIResult(
+        params=ci_params,
+        metrics=metrics,
+        adv_pgd_out_logits=adv_pgd_out_logits,
+    )
 
 
 def get_out_dir() -> Path:

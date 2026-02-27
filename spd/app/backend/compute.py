@@ -4,6 +4,7 @@ Copied and cleaned up from spd/scripts/calc_prompt_attributions.py and calc_data
 to avoid importing script files with global execution.
 """
 
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -12,13 +13,14 @@ from typing import Any, override
 import torch
 from jaxtyping import Bool, Float
 from torch import Tensor, nn
-from tqdm.auto import tqdm
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.optim_cis import OptimCIConfig, compute_label_prob, optimize_ci_values
+from spd.app.backend.app_tokenizer import AppTokenizer
+from spd.app.backend.optim_cis import OptimCIConfig, OptimizationMetrics, optimize_ci_values
 from spd.configs import SamplingType
+from spd.log import logger
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
+from spd.topology import TransformerTopology
 from spd.utils.general_utils import bf16_autocast
 
 
@@ -30,6 +32,9 @@ class LayerAliveInfo:
     alive_c_idxs: list[int]  # Components alive at any position
 
 
+MAX_OUTPUT_NODES_PER_POS = 15
+
+
 def compute_layer_alive_info(
     layer_name: str,
     ci_lower_leaky: dict[str, Tensor],
@@ -37,20 +42,36 @@ def compute_layer_alive_info(
     output_prob_threshold: float,
     n_seq: int,
     device: str,
+    topology: TransformerTopology,
 ) -> LayerAliveInfo:
-    """Compute alive info for a layer. Handles regular, wte, and output layers.
+    """Compute alive info for a layer. Handles regular, embedding, and unembed layers.
 
     For CI layers, all components with CI > 0 are considered alive.
     Filtering by CI threshold is done at display time, not computation time.
+
+    For unembed layer, caps at MAX_OUTPUT_NODES_PER_POS per position to keep
+    edge computation tractable with large vocabularies.
     """
-    if layer_name == "wte":
-        # WTE: single pseudo-component, always alive at all positions
+    embed_path = topology.path_schema.embedding_path
+    unembed_path = topology.path_schema.unembed_path
+
+    if layer_name == embed_path:
         alive_mask = torch.ones(n_seq, 1, device=device, dtype=torch.bool)
         alive_c_idxs = [0]
-    elif layer_name == "output":
+    elif layer_name == unembed_path:
         assert ci_masked_out_probs is not None
         assert ci_masked_out_probs.shape[0] == 1
-        alive_mask = ci_masked_out_probs[0] > output_prob_threshold
+        probs = ci_masked_out_probs[0]  # [seq, vocab]
+        alive_mask = probs > output_prob_threshold
+        # Cap per position: keep only top-k per seq pos
+        for s in range(n_seq):
+            pos_alive = torch.where(alive_mask[s])[0]
+            if len(pos_alive) > MAX_OUTPUT_NODES_PER_POS:
+                pos_probs = probs[s, pos_alive]
+                _, keep_local = torch.topk(pos_probs, MAX_OUTPUT_NODES_PER_POS)
+                keep_idxs = pos_alive[keep_local]
+                alive_mask[s] = False
+                alive_mask[s, keep_idxs] = True
         alive_c_idxs = torch.where(alive_mask.any(dim=0))[0].tolist()
     else:
         ci = ci_lower_leaky[layer_name]
@@ -70,6 +91,13 @@ class Node:
     @override
     def __str__(self) -> str:
         return f"{self.layer}:{self.seq_pos}:{self.component_idx}"
+
+
+def _get_seq_pos(node_key: str) -> int:
+    """Extract sequence position from node key format 'layer:seq:cIdx'."""
+    parts = node_key.split(":")
+    assert len(parts) == 3, f"Invalid node key format: {node_key}"
+    return int(parts[1])
 
 
 @dataclass
@@ -104,149 +132,32 @@ class OptimizedPromptAttributionResult:
     ci_masked_out_logits: Float[Tensor, "seq vocab"]  # CI-masked (SPD model) raw logits
     target_out_probs: Float[Tensor, "seq vocab"]  # Target model softmax probabilities
     target_out_logits: Float[Tensor, "seq vocab"]  # Target model raw logits
-    label_prob: float | None  # P(label_token) with optimized CI mask, None if KL-only
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
     node_subcomp_acts: dict[str, float]  # layer:seq:c_idx -> subcomponent activation (v_i^T @ a)
-
-
-def is_kv_to_o_pair(in_layer: str, out_layer: str) -> bool:
-    """Check if pair requires cross-sequence gradient computation.
-
-    For k/v → o_proj within the same attention block, output at s_out
-    has gradients w.r.t. inputs at all s_in ≤ s_out (causal attention).
-    """
-    in_is_kv = any(x in in_layer for x in ["k_proj", "v_proj"])
-    out_is_o = "o_proj" in out_layer
-    if not (in_is_kv and out_is_o):
-        return False
-
-    # Check same attention block: "h.{idx}.attn.{proj}"
-    in_block = in_layer.split(".")[1]
-    out_block = out_layer.split(".")[1]
-    return in_block == out_block
-
-
-def get_sources_by_target(
-    model: ComponentModel,
-    device: str,
-    sampling: SamplingType,
-) -> dict[str, list[str]]:
-    """Find valid gradient connections grouped by target layer.
-
-    Includes wte (input embeddings) as a source and output (logits) as a target.
-
-    Returns:
-        Dict mapping out_layer -> list of in_layers that have gradient flow to it.
-    """
-    # Use a small dummy batch - we only need to trace gradient connections
-    batch: Float[Tensor, "batch seq"] = torch.zeros(2, 3, dtype=torch.long, device=device)
-
-    with torch.no_grad(), bf16_autocast():
-        output_with_cache: OutputWithCache = model(batch, cache_type="input")
-
-        ci = model.calc_causal_importances(
-            pre_weight_acts=output_with_cache.cache,
-            sampling=sampling,
-            detach_inputs=False,
-        )
-
-    # Create masks so we can use all components
-    mask_infos = make_mask_infos(
-        component_masks={k: torch.ones_like(v) for k, v in ci.lower_leaky.items()},
-        routing_masks="all",
-    )
-
-    # Hook to capture wte output with gradients
-    wte_cache: dict[str, Tensor] = {}
-
-    def wte_hook(
-        _module: nn.Module, _args: tuple[Any, ...], _kwargs: dict[Any, Any], output: Tensor
-    ) -> Any:
-        output.requires_grad_(True)
-        wte_cache["wte_post_detach"] = output
-        return output
-
-    assert isinstance(model.target_model.wte, nn.Module), "wte is not a module"
-    wte_handle = model.target_model.wte.register_forward_hook(wte_hook, with_kwargs=True)
-
-    with torch.enable_grad(), bf16_autocast():
-        comp_output_with_cache: OutputWithCache = model(
-            batch,
-            mask_infos=mask_infos,
-            cache_type="component_acts",
-        )
-
-    wte_handle.remove()
-
-    cache = comp_output_with_cache.cache
-    cache["wte_post_detach"] = wte_cache["wte_post_detach"]
-    cache["output_pre_detach"] = comp_output_with_cache.output
-
-    # Build layer list: wte first, component layers, output last
-    layers = ["wte"]
-    component_layer_names = [
-        "attn.q_proj",
-        "attn.k_proj",
-        "attn.v_proj",
-        "attn.o_proj",
-        "mlp.c_fc",
-        "mlp.down_proj",
-    ]
-    n_blocks = get_model_n_blocks(model.target_model)
-    for i in range(n_blocks):
-        layers.extend([f"h.{i}.{layer_name}" for layer_name in component_layer_names])
-
-    # Add lm_head if it exists in target_module_paths (unembedding matrix)
-    if "lm_head" in model.target_module_paths:
-        layers.append("lm_head")
-
-    layers.append("output")
-
-    # Test all pairs: wte can feed into anything, anything can feed into output
-    test_pairs = []
-    for in_layer in layers[:-1]:  # Don't include "output" as source
-        for out_layer in layers[1:]:  # Don't include "wte" as target
-            if layers.index(in_layer) < layers.index(out_layer):
-                test_pairs.append((in_layer, out_layer))
-
-    sources_by_target: dict[str, list[str]] = defaultdict(list)
-    for in_layer, out_layer in test_pairs:
-        out_pre_detach = cache[f"{out_layer}_pre_detach"]
-        in_post_detach = cache[f"{in_layer}_post_detach"]
-        out_value = out_pre_detach[0, 0, 0]
-        grads = torch.autograd.grad(
-            outputs=out_value,
-            inputs=in_post_detach,
-            retain_graph=True,
-            allow_unused=True,
-        )
-        assert len(grads) == 1
-        grad = grads[0]
-        if grad is not None:  # pyright: ignore[reportUnnecessaryComparison]
-            sources_by_target[out_layer].append(in_layer)
-    return dict(sources_by_target)
+    metrics: OptimizationMetrics  # Final loss metrics from optimization
+    adv_pgd_out_logits: Float[Tensor, "seq vocab"] | None  # Adversarial PGD output logits
 
 
 ProgressCallback = Callable[[int, int, str], None]  # (current, total, stage)
 
 
-def _setup_wte_hook() -> tuple[Callable[..., Any], list[Tensor]]:
-    """Create hook to capture wte output with gradients.
+def _setup_embed_hook() -> tuple[Callable[..., Any], list[Tensor]]:
+    """Create hook to capture embedding output with gradients.
 
     Returns the hook function and a mutable container for the cached output.
     The container is a list to allow mutation from the hook closure.
     """
-    wte_cache: list[Tensor] = []
+    embed_cache: list[Tensor] = []
 
-    def wte_hook(
+    def embed_hook(
         _module: nn.Module, _args: tuple[Any, ...], _kwargs: dict[Any, Any], output: Tensor
     ) -> Any:
         output.requires_grad_(True)
-        assert len(wte_cache) == 0, "wte output should be cached only once"
-        wte_cache.append(output)
+        assert len(embed_cache) == 0, "embedding output should be cached only once"
+        embed_cache.append(output)
         return output
 
-    return wte_hook, wte_cache
+    return embed_hook, embed_cache
 
 
 def _compute_edges_for_target(
@@ -255,12 +166,17 @@ def _compute_edges_for_target(
     target_info: LayerAliveInfo,
     source_infos: list[LayerAliveInfo],
     cache: dict[str, Tensor],
-    n_seq: int,
+    loss_seq_pos: int,
+    topology: TransformerTopology,
 ) -> list[Edge]:
     """Compute all edges flowing into a single target layer.
 
     For each alive (s_out, c_out) in the target layer, computes gradient-based
     attribution strengths from all alive source components.
+
+    Args:
+        loss_seq_pos: Maximum sequence position to include (inclusive).
+                      Only compute edges for target positions <= loss_seq_pos.
     """
     edges: list[Edge] = []
     out_pre_detach: Float[Tensor, "1 s C"] = cache[f"{target}_pre_detach"]
@@ -268,7 +184,7 @@ def _compute_edges_for_target(
         cache[f"{source}_post_detach"] for source in sources
     ]
 
-    for s_out in range(n_seq):
+    for s_out in range(loss_seq_pos + 1):
         s_out_alive_c = [c for c in target_info.alive_c_idxs if target_info.alive_mask[s_out, c]]
         if not s_out_alive_c:
             continue
@@ -280,12 +196,14 @@ def _compute_edges_for_target(
                 retain_graph=True,
             )
             with torch.no_grad():
+                canonical_target = topology.target_to_canon(target)
                 for source, source_info, grad, in_post_detach in zip(
                     sources, source_infos, grads, in_post_detaches, strict=True
                 ):
-                    is_cross_seq = is_kv_to_o_pair(source, target)
+                    canonical_source = topology.target_to_canon(source)
+                    is_cross_seq = topology.is_cross_seq_pair(canonical_source, canonical_target)
                     weighted: Float[Tensor, "s C"] = (grad * in_post_detach)[0]
-                    if source == "wte":
+                    if canonical_source == "embed":
                         weighted = weighted.sum(dim=1, keepdim=True)
 
                     s_in_range = range(s_out + 1) if is_cross_seq else [s_out]
@@ -295,8 +213,12 @@ def _compute_edges_for_target(
                                 continue
                             edges.append(
                                 Edge(
-                                    source=Node(layer=source, seq_pos=s_in, component_idx=c_in),
-                                    target=Node(layer=target, seq_pos=s_out, component_idx=c_out),
+                                    source=Node(
+                                        layer=canonical_source, seq_pos=s_in, component_idx=c_in
+                                    ),
+                                    target=Node(
+                                        layer=canonical_target, seq_pos=s_out, component_idx=c_out
+                                    ),
                                     strength=weighted[s_in, c_in].item(),
                                     is_cross_seq=is_cross_seq,
                                 )
@@ -306,6 +228,7 @@ def _compute_edges_for_target(
 
 def compute_edges_from_ci(
     model: ComponentModel,
+    topology: TransformerTopology,
     tokens: Float[Tensor, "1 seq"],
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
     pre_weight_acts: dict[str, Float[Tensor, "1 seq d_in"]],
@@ -314,8 +237,8 @@ def compute_edges_from_ci(
     target_out_logits: Float[Tensor, "1 seq vocab"],
     output_prob_threshold: float,
     device: str,
-    show_progress: bool,
     on_progress: ProgressCallback | None = None,
+    loss_seq_pos: int | None = None,
 ) -> PromptAttributionResult:
     """Core edge computation from pre-computed CI values.
 
@@ -331,19 +254,30 @@ def compute_edges_from_ci(
 
     We compute CI-masked output probs separately (for display) before running the unmasked
     forward pass used for gradient computation.
+
+    Args:
+        loss_seq_pos: Maximum sequence position to include (inclusive).
+                      If None, includes all positions (default behavior).
     """
     n_seq = tokens.shape[1]
+    if loss_seq_pos is None:
+        loss_seq_pos = n_seq - 1
 
     # Compute CI-masked output probs (for display) before the gradient computation
+    t0 = time.perf_counter()
     with torch.no_grad(), bf16_autocast():
         ci_masks = make_mask_infos(component_masks=ci_lower_leaky)
         ci_masked_logits: Tensor = model(tokens, mask_infos=ci_masks)
         ci_masked_out_probs = torch.softmax(ci_masked_logits, dim=-1)
+    logger.info(f"[perf] CI-masked forward: {time.perf_counter() - t0:.2f}s")
 
-    # Setup wte hook and run forward pass for gradient computation
-    wte_hook, wte_cache = _setup_wte_hook()
-    assert isinstance(model.target_model.wte, nn.Module), "wte is not a module"
-    wte_handle = model.target_model.wte.register_forward_hook(wte_hook, with_kwargs=True)
+    embed_path = topology.path_schema.embedding_path
+    unembed_path = topology.path_schema.unembed_path
+
+    # Setup embedding hook and run forward pass for gradient computation
+    t0 = time.perf_counter()
+    embed_hook, embed_cache = _setup_embed_hook()
+    embed_handle = topology.embedding_module.register_forward_hook(embed_hook, with_kwargs=True)
 
     weight_deltas = model.calc_weight_deltas()
     weight_deltas_and_masks = {
@@ -358,14 +292,16 @@ def compute_edges_from_ci(
             tokens, mask_infos=unmasked_masks, cache_type="component_acts"
         )
 
-    wte_handle.remove()
-    assert len(wte_cache) == 1, "wte output should be cached"
+    embed_handle.remove()
+    assert len(embed_cache) == 1, "embedding output should be cached"
 
     cache = comp_output_with_cache.cache
-    cache["wte_post_detach"] = wte_cache[0]
-    cache["output_pre_detach"] = comp_output_with_cache.output
+    cache[f"{embed_path}_post_detach"] = embed_cache[0]
+    cache[f"{unembed_path}_pre_detach"] = comp_output_with_cache.output
+    logger.info(f"[perf] Gradient forward pass: {time.perf_counter() - t0:.2f}s")
 
     # Compute alive info for all layers upfront
+    t0 = time.perf_counter()
     all_layers: set[str] = set(sources_by_target.keys())
     for sources in sources_by_target.values():
         all_layers.update(sources)
@@ -378,55 +314,71 @@ def compute_edges_from_ci(
             output_prob_threshold=output_prob_threshold,
             n_seq=n_seq,
             device=device,
+            topology=topology,
         )
         for layer in all_layers
     }
+    total_alive = sum(len(info.alive_c_idxs) for info in alive_info.values())
+    unembed_alive = len(
+        alive_info.get(unembed_path, LayerAliveInfo(torch.tensor([]), [])).alive_c_idxs
+    )
+    logger.info(
+        f"[perf] Alive info: {time.perf_counter() - t0:.2f}s "
+        f"({total_alive} alive components, {unembed_alive} output nodes)"
+    )
 
     # Compute edges for each target layer
+    t0 = time.perf_counter()
     edges: list[Edge] = []
     total_source_layers = sum(len(sources) for sources in sources_by_target.values())
     progress_count = 0
-    pbar = (
-        tqdm(total=total_source_layers, desc="Source layers by target", leave=True)
-        if show_progress
-        else None
-    )
 
     for target, sources in sources_by_target.items():
-        if pbar is not None:
-            pbar.set_description(f"Source layers by target: {target}")
-
+        t_target = time.perf_counter()
         target_edges = _compute_edges_for_target(
             target=target,
             sources=sources,
             target_info=alive_info[target],
             source_infos=[alive_info[source] for source in sources],
             cache=cache,
-            n_seq=n_seq,
+            loss_seq_pos=loss_seq_pos,
+            topology=topology,
         )
         edges.extend(target_edges)
+        canonical_target = topology.target_to_canon(target)
+        logger.info(
+            f"[perf]   {canonical_target}: {time.perf_counter() - t_target:.2f}s, "
+            f"{len(target_edges)} edges"
+        )
 
         progress_count += len(sources)
-        if pbar is not None:
-            pbar.update(len(sources))
         if on_progress is not None:
             on_progress(progress_count, total_source_layers, target)
 
-    if pbar is not None:
-        pbar.close()
+    logger.info(
+        f"[perf] Edge computation total: {time.perf_counter() - t0:.2f}s ({len(edges)} edges)"
+    )
 
-    node_ci_vals = extract_node_ci_vals(ci_lower_leaky)
+    t0 = time.perf_counter()
+    node_ci_vals = extract_node_ci_vals(ci_lower_leaky, topology)
     component_acts = model.get_all_component_acts(pre_weight_acts)
     node_subcomp_acts = extract_node_subcomp_acts(
-        component_acts, ci_threshold=0.0, ci_lower_leaky=ci_lower_leaky
+        component_acts, ci_threshold=0.0, ci_lower_leaky=ci_lower_leaky, topology=topology
     )
+    logger.info(f"[perf] Node CI/subcomp extraction: {time.perf_counter() - t0:.2f}s")
+
+    # Filter nodes and output tensors to only include positions <= loss_seq_pos
+    node_ci_vals = {k: v for k, v in node_ci_vals.items() if _get_seq_pos(k) <= loss_seq_pos}
+    node_subcomp_acts = {
+        k: v for k, v in node_subcomp_acts.items() if _get_seq_pos(k) <= loss_seq_pos
+    }
 
     return PromptAttributionResult(
         edges=edges,
-        ci_masked_out_probs=ci_masked_out_probs[0],
-        ci_masked_out_logits=comp_output_with_cache.output[0],
-        target_out_probs=target_out_probs[0],
-        target_out_logits=target_out_logits[0],
+        ci_masked_out_probs=ci_masked_out_probs[0, : loss_seq_pos + 1],
+        ci_masked_out_logits=ci_masked_logits[0, : loss_seq_pos + 1],
+        target_out_probs=target_out_probs[0, : loss_seq_pos + 1],
+        target_out_logits=target_out_logits[0, : loss_seq_pos + 1],
         node_ci_vals=node_ci_vals,
         node_subcomp_acts=node_subcomp_acts,
     )
@@ -491,14 +443,15 @@ def filter_ci_to_included_nodes(
 
 def compute_prompt_attributions(
     model: ComponentModel,
+    topology: TransformerTopology,
     tokens: Float[Tensor, "1 seq"],
     sources_by_target: dict[str, list[str]],
     output_prob_threshold: float,
     sampling: SamplingType,
     device: str,
-    show_progress: bool,
     on_progress: ProgressCallback | None = None,
     included_nodes: set[str] | None = None,
+    loss_seq_pos: int | None = None,
 ) -> PromptAttributionResult:
     """Compute prompt attributions using the model's natural CI values.
 
@@ -508,7 +461,12 @@ def compute_prompt_attributions(
     If included_nodes is provided, CI values for non-included nodes are zeroed out
     before edge computation. This efficiently filters to only compute edges between
     the specified nodes (useful for generating graphs from a selection).
+
+    Args:
+        loss_seq_pos: Maximum sequence position to include (inclusive).
+                      If None, includes all positions (default behavior).
     """
+    t0 = time.perf_counter()
     with torch.no_grad(), bf16_autocast():
         output_with_cache = model(tokens, cache_type="input")
         pre_weight_acts = output_with_cache.cache
@@ -519,6 +477,7 @@ def compute_prompt_attributions(
             sampling=sampling,
             detach_inputs=False,
         )
+    logger.info(f"[perf] CI forward pass: {time.perf_counter() - t0:.2f}s")
 
     ci_lower_leaky = ci.lower_leaky
     if included_nodes is not None:
@@ -526,6 +485,7 @@ def compute_prompt_attributions(
 
     return compute_edges_from_ci(
         model=model,
+        topology=topology,
         tokens=tokens,
         ci_lower_leaky=ci_lower_leaky,
         pre_weight_acts=pre_weight_acts,
@@ -534,19 +494,19 @@ def compute_prompt_attributions(
         target_out_logits=target_out_logits,
         output_prob_threshold=output_prob_threshold,
         device=device,
-        show_progress=show_progress,
         on_progress=on_progress,
+        loss_seq_pos=loss_seq_pos,
     )
 
 
 def compute_prompt_attributions_optimized(
     model: ComponentModel,
+    topology: TransformerTopology,
     tokens: Float[Tensor, "1 seq"],
     sources_by_target: dict[str, list[str]],
     optim_config: OptimCIConfig,
     output_prob_threshold: float,
     device: str,
-    show_progress: bool,
     on_progress: ProgressCallback | None = None,
 ) -> OptimizedPromptAttributionResult:
     """Compute prompt attributions using optimized sparse CI values.
@@ -562,22 +522,14 @@ def compute_prompt_attributions_optimized(
         target_logits = model(tokens)
         target_out_probs = torch.softmax(target_logits, dim=-1)
 
-    ci_params = optimize_ci_values(
+    optim_result = optimize_ci_values(
         model=model,
         tokens=tokens,
         config=optim_config,
         device=device,
         on_progress=on_progress,
     )
-    ci_outputs = ci_params.create_ci_outputs(model, device)
-
-    # Get label probability with optimized CI mask (if CE loss is used)
-    label_prob: float | None = None
-    if optim_config.ce_loss_config is not None:
-        with torch.no_grad():
-            label_prob = compute_label_prob(
-                model, tokens, ci_outputs.lower_leaky, optim_config.ce_loss_config.label_token
-            )
+    ci_outputs = optim_result.params.create_ci_outputs(model, device)
 
     # Signal transition to graph computation stage
     if on_progress is not None:
@@ -587,8 +539,12 @@ def compute_prompt_attributions_optimized(
     with torch.no_grad(), bf16_autocast():
         pre_weight_acts = model(tokens, cache_type="input").cache
 
+    # Extract loss_seq_pos from optimization config
+    loss_seq_pos = optim_config.loss_config.position
+
     result = compute_edges_from_ci(
         model=model,
+        topology=topology,
         tokens=tokens,
         ci_lower_leaky=ci_outputs.lower_leaky,
         pre_weight_acts=pre_weight_acts,
@@ -597,9 +553,14 @@ def compute_prompt_attributions_optimized(
         target_out_logits=target_logits,
         output_prob_threshold=output_prob_threshold,
         device=device,
-        show_progress=show_progress,
         on_progress=on_progress,
+        loss_seq_pos=loss_seq_pos,
     )
+
+    # Slice adversarial logits to match the loss_seq_pos range
+    adv_pgd_out_logits: Float[Tensor, "seq vocab"] | None = None
+    if optim_result.adv_pgd_out_logits is not None:
+        adv_pgd_out_logits = optim_result.adv_pgd_out_logits[: loss_seq_pos + 1]
 
     return OptimizedPromptAttributionResult(
         edges=result.edges,
@@ -607,9 +568,10 @@ def compute_prompt_attributions_optimized(
         ci_masked_out_logits=result.ci_masked_out_logits,
         target_out_probs=result.target_out_probs,
         target_out_logits=result.target_out_logits,
-        label_prob=label_prob,
         node_ci_vals=result.node_ci_vals,
         node_subcomp_acts=result.node_subcomp_acts,
+        metrics=optim_result.metrics,
+        adv_pgd_out_logits=adv_pgd_out_logits,
     )
 
 
@@ -661,22 +623,20 @@ def compute_ci_only(
 
 def extract_node_ci_vals(
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq n_components"]],
+    topology: TransformerTopology,
 ) -> dict[str, float]:
     """Extract per-node CI values from CI tensors.
 
-    Args:
-        ci_lower_leaky: Dict mapping layer name to CI tensor [1, seq, n_components].
-
-    Returns:
-        Dict mapping "layer:seq:c_idx" to CI value.
+    Returns dict mapping canonical node key to CI value.
     """
     node_ci_vals: dict[str, float] = {}
     for layer_name, ci_tensor in ci_lower_leaky.items():
+        canonical = topology.target_to_canon(layer_name)
         n_seq = ci_tensor.shape[1]
         n_components = ci_tensor.shape[2]
         for seq_pos in range(n_seq):
             for c_idx in range(n_components):
-                key = f"{layer_name}:{seq_pos}:{c_idx}"
+                key = f"{canonical}:{seq_pos}:{c_idx}"
                 node_ci_vals[key] = float(ci_tensor[0, seq_pos, c_idx].item())
     return node_ci_vals
 
@@ -685,97 +645,25 @@ def extract_node_subcomp_acts(
     component_acts: dict[str, Float[Tensor, "1 seq C"]],
     ci_threshold: float,
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
+    topology: TransformerTopology,
 ) -> dict[str, float]:
     """Extract per-node subcomponent activations from pre-computed component acts.
 
-    Args:
-        component_acts: Dict mapping layer name to component activations [1, seq, C].
-        ci_threshold: Threshold for filtering nodes by CI value.
-        ci_lower_leaky: Dict mapping layer name to CI tensor [1, seq, C].
-
-    Returns:
-        Dict mapping "layer:seq:c_idx" to subcomponent activation value.
+    Returns dict mapping canonical node key to subcomponent activation value.
     """
     node_subcomp_acts: dict[str, float] = {}
     for layer_name, subcomp_acts in component_acts.items():
+        canonical = topology.target_to_canon(layer_name)
         ci = ci_lower_leaky[layer_name]
         alive_mask = ci[0] > ci_threshold  # [seq, C]
         alive_seq_indices, alive_c_indices = torch.where(alive_mask)
         for seq_pos, c_idx in zip(
             alive_seq_indices.tolist(), alive_c_indices.tolist(), strict=True
         ):
-            key = f"{layer_name}:{seq_pos}:{c_idx}"
+            key = f"{canonical}:{seq_pos}:{c_idx}"
             node_subcomp_acts[key] = float(subcomp_acts[0, seq_pos, c_idx].item())
 
     return node_subcomp_acts
-
-
-def extract_active_from_ci(
-    ci_lower_leaky: dict[str, Float[Tensor, "1 seq n_components"]],
-    target_out_probs: Float[Tensor, "1 seq vocab"],
-    ci_threshold: float,
-    output_prob_threshold: float,
-    n_seq: int,
-) -> dict[str, tuple[float, list[int]]]:
-    """Build inverted index data directly from CI values.
-
-    For regular component layers, a component is active at positions where CI > threshold.
-    For the output layer, a token is active at positions where prob > threshold.
-    For wte, a single pseudo-component (idx 0) is always active at all positions.
-
-    Args:
-        ci_lower_leaky: Dict mapping layer name to CI tensor [1, seq, n_components].
-        target_out_probs: Target model output probability tensor [1, seq, vocab].
-        ci_threshold: Threshold for component activation.
-        output_prob_threshold: Threshold for output token activation.
-        n_seq: Sequence length.
-
-    Returns:
-        Dict mapping component_key ("layer:c_idx") to (max_ci, positions).
-    """
-    active: dict[str, tuple[float, list[int]]] = {}
-
-    # Regular component layers
-    for layer, ci_tensor in ci_lower_leaky.items():
-        n_components = ci_tensor.shape[-1]
-        for c_idx in range(n_components):
-            ci_per_pos = ci_tensor[0, :, c_idx]
-            positions = torch.where(ci_per_pos > ci_threshold)[0].tolist()
-            if positions:
-                key = f"{layer}:{c_idx}"
-                max_ci = float(ci_per_pos.max().item())
-                active[key] = (max_ci, positions)
-
-    # Output layer - use probability threshold
-    for c_idx in range(target_out_probs.shape[-1]):
-        prob_per_pos = target_out_probs[0, :, c_idx]
-        positions = torch.where(prob_per_pos > output_prob_threshold)[0].tolist()
-        if positions:
-            key = f"output:{c_idx}"
-            max_prob = float(prob_per_pos.max().item())
-            active[key] = (max_prob, positions)
-
-    # WTE - single pseudo-component always active at all positions
-    active["wte:0"] = (1.0, list(range(n_seq)))
-
-    return active
-
-
-def get_model_n_blocks(model: nn.Module) -> int:
-    """Get the number of blocks in the model."""
-    from transformers.models.gpt2 import GPT2LMHeadModel
-
-    from spd.pretrain.models import GPT2, GPT2Simple, LlamaSimple, LlamaSimpleMLP
-
-    match model:
-        case GPT2LMHeadModel():
-            return len(model.transformer.h)
-        case GPT2() | GPT2Simple() | LlamaSimple() | LlamaSimpleMLP():
-            return len(model.h)
-        case _ if hasattr(model, "h"):
-            return len(model.h)  # pyright: ignore[reportArgumentType]
-        case _:
-            raise ValueError(f"Unsupported model: {type(model)}")
 
 
 @dataclass
@@ -793,7 +681,7 @@ def compute_intervention_forward(
     tokens: Float[Tensor, "1 seq"],
     active_nodes: list[tuple[str, int, int]],  # [(layer, seq_pos, component_idx)]
     top_k: int,
-    tokenizer: PreTrainedTokenizerBase,
+    tokenizer: AppTokenizer,
 ) -> InterventionResult:
     """Forward pass with only specified nodes active.
 
@@ -847,7 +735,7 @@ def compute_intervention_forward(
         pos_predictions: list[tuple[str, int, float, float, float, float]] = []
         for spd_prob, token_id in zip(top_probs, top_ids, strict=True):
             tid = int(token_id.item())
-            token_str = tokenizer.decode([tid])
+            token_str = tokenizer.get_tok_display(tid)
             target_prob = float(pos_target_out_probs[tid].item())
             target_logit = float(pos_target_logits[tid].item())
             pos_predictions.append(
@@ -863,7 +751,7 @@ def compute_intervention_forward(
         predictions_per_position.append(pos_predictions)
 
     # Decode input tokens
-    input_tokens = [tokenizer.decode([int(t.item())]) for t in tokens[0]]
+    input_tokens = tokenizer.get_spans([int(t.item()) for t in tokens[0]])
 
     return InterventionResult(
         input_tokens=input_tokens,

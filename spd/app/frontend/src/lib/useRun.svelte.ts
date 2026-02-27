@@ -7,8 +7,13 @@
 
 import type { Loadable } from ".";
 import * as api from "./api";
-import type { RunState as RunData, Interpretation } from "./api";
-import type { ActivationContextsSummary, ComponentDetail, PromptPreview, TokenInfo } from "./promptAttributionsTypes";
+import type { LoadedRun as RunData, InterpretationHeadline } from "./api";
+import type {
+    PromptPreview,
+    SubcomponentActivationContexts,
+    TokenInfo,
+    SubcomponentMetadata,
+} from "./promptAttributionsTypes";
 
 /** Maps component keys to cluster IDs. Singletons (unclustered components) have null values. */
 export type ClusterMappingData = Record<string, number | null>;
@@ -28,7 +33,7 @@ type ClusterMapping = {
 export type InterpretationBackendState =
     | { status: "none" }
     | { status: "generating" }
-    | { status: "generated"; data: Interpretation }
+    | { status: "generated"; data: InterpretationHeadline }
     | { status: "generation-error"; error: unknown };
 
 export function useRun() {
@@ -37,6 +42,9 @@ export function useRun() {
 
     /** Interpretation labels keyed by component key (layer:cIdx) */
     let interpretations = $state<Loadable<Record<string, InterpretationBackendState>>>({ status: "uninitialized" });
+
+    /** Intruder eval scores keyed by component key */
+    let intruderScores = $state<Loadable<Record<string, number>>>({ status: "uninitialized" });
 
     /** Cluster mapping for the current run */
     let clusterMapping = $state<ClusterMapping | null>(null);
@@ -47,17 +55,22 @@ export function useRun() {
     /** All tokens in the tokenizer for the current run */
     let allTokens = $state<Loadable<TokenInfo[]>>({ status: "uninitialized" });
 
-    /** Activation contexts summary */
-    let activationContextsSummary = $state<Loadable<ActivationContextsSummary>>({ status: "uninitialized" });
+    /** Model topology info for frontend layout */
 
-    /** Cached component details keyed by component key (layer:cIdx) - non-reactive */
-    let _componentDetailsCache: Record<string, ComponentDetail> = {};
+    /** Activation contexts summary (null = harvest not available) */
+    let activationContextsSummary = $state<Loadable<Record<string, SubcomponentMetadata[]> | null>>({
+        status: "uninitialized",
+    });
+
+    // Cached activation context detail keyed by component key (layer:cIdx) - non-reactive
+    let _componentDetailsCache: Record<string, SubcomponentActivationContexts> = {};
 
     /** Reset all run-scoped state */
     function resetRunScopedState() {
         prompts = { status: "uninitialized" };
         allTokens = { status: "uninitialized" };
         interpretations = { status: "uninitialized" };
+        intruderScores = { status: "uninitialized" };
         activationContextsSummary = { status: "uninitialized" };
         _componentDetailsCache = {};
         clusterMapping = null;
@@ -67,10 +80,14 @@ export function useRun() {
     function fetchRunScopedData() {
         prompts = { status: "loading" };
         interpretations = { status: "loading" };
+        intruderScores = { status: "loading" };
 
         api.listPrompts()
             .then((p) => (prompts = { status: "loaded", data: p }))
             .catch((error) => (prompts = { status: "error", error }));
+        api.getIntruderScores()
+            .then((data) => (intruderScores = { status: "loaded", data }))
+            .catch((error) => (intruderScores = { status: "error", error }));
         api.getAllInterpretations()
             .then((i) => {
                 interpretations = {
@@ -101,10 +118,12 @@ export function useRun() {
         run = { status: "loading" };
         try {
             await api.loadRun(wandbPath, contextLength);
-            const [status] = await Promise.all([api.getStatus(), fetchTokens()]);
+            const status = await api.getStatus();
             if (status) {
                 run = { status: "loaded", data: status };
                 fetchRunScopedData();
+                // Fetch tokens in background (no longer blocks UI - used only by token search)
+                fetchTokens();
             } else {
                 run = { status: "error", error: "Failed to load run" };
             }
@@ -123,7 +142,7 @@ export function useRun() {
         try {
             const status = await api.getStatus();
             if (status) {
-                // Fetch tokens if we don't have them (e.g., page refresh)
+                // Fetch tokens and model info if we don't have them (e.g., page refresh)
                 if (allTokens.status === "uninitialized") {
                     await fetchTokens();
                 }
@@ -163,6 +182,12 @@ export function useRun() {
         }
     }
 
+    /** Get intruder score for a component, if available */
+    function getIntruderScore(componentKey: string): number | null {
+        if (intruderScores.status !== "loaded") return null;
+        return intruderScores.data[componentKey] ?? null;
+    }
+
     /** Set interpretation for a component (updates cache without full reload) */
     function setInterpretation(componentKey: string, interpretation: InterpretationBackendState) {
         if (interpretations.status === "loaded") {
@@ -170,12 +195,12 @@ export function useRun() {
         }
     }
 
-    /** Get component detail (fetches once, then cached) */
-    async function getComponentDetail(layer: string, cIdx: number): Promise<ComponentDetail> {
+    /** Get activation context detail (fetches once, then cached) */
+    async function getActivationContextDetail(layer: string, cIdx: number): Promise<SubcomponentActivationContexts> {
         const cacheKey = `${layer}:${cIdx}`;
         if (cacheKey in _componentDetailsCache) return _componentDetailsCache[cacheKey];
 
-        const detail = await api.getComponentDetail(layer, cIdx);
+        const detail = await api.getActivationContextDetail(layer, cIdx);
         _componentDetailsCache[cacheKey] = detail;
         return detail;
     }
@@ -224,13 +249,17 @@ export function useRun() {
         get activationContextsSummary() {
             return activationContextsSummary;
         },
+        get datasetAttributionsAvailable() {
+            return run.status === "loaded" && run.data.dataset_attributions_available;
+        },
         loadRun,
         clearRun,
         syncStatus,
         refreshPrompts,
         getInterpretation,
         setInterpretation,
-        getComponentDetail,
+        getIntruderScore,
+        getActivationContextDetail,
         loadActivationContextsSummary,
         setClusterMapping,
         clearClusterMapping,

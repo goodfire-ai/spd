@@ -13,7 +13,6 @@ See CLAUDE.md in this directory for usage instructions.
 """
 
 import itertools
-from dataclasses import dataclass
 from pathlib import Path
 
 import torch
@@ -21,25 +20,17 @@ import tqdm
 from jaxtyping import Bool
 from torch import Tensor
 
-from spd.app.backend.compute import get_sources_by_target
 from spd.data import train_loader_and_tokenizer
+from spd.dataset_attributions.config import DatasetAttributionConfig
 from spd.dataset_attributions.harvester import AttributionHarvester
-from spd.dataset_attributions.loaders import get_attributions_dir
 from spd.dataset_attributions.storage import DatasetAttributionStorage
-from spd.harvest.loaders import load_activation_contexts_summary
+from spd.harvest.repo import HarvestRepo
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.topology import TransformerTopology, get_sources_by_target
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import extract_batch_data
 from spd.utils.wandb_utils import parse_wandb_run_path
-
-
-@dataclass
-class DatasetAttributionConfig:
-    wandb_path: str
-    n_batches: int | None
-    batch_size: int
-    ci_threshold: float
 
 
 def _build_component_layer_keys(model: ComponentModel) -> list[str]:
@@ -59,11 +50,11 @@ def _build_component_layer_keys(model: ComponentModel) -> list[str]:
 def _build_alive_masks(
     model: ComponentModel,
     run_id: str,
-    ci_threshold: float,
+    harvest_subrun_id: str | None,
     n_components: int,
     vocab_size: int,
 ) -> tuple[Bool[Tensor, " n_sources"], Bool[Tensor, " n_components"]]:
-    """Build masks of alive components (mean_ci > threshold) for sources and targets.
+    """Build masks of alive components (mean_activation > threshold) for sources and targets.
 
     Falls back to all-alive if harvest summary not available.
 
@@ -71,7 +62,6 @@ def _build_alive_masks(
     - Sources: [0, vocab_size) = wte tokens, [vocab_size, vocab_size + n_components) = component layers
     - Targets: [0, n_components) = component layers (output handled via out_residual)
     """
-    summary = load_activation_contexts_summary(run_id)
 
     n_sources = vocab_size + n_components
 
@@ -81,11 +71,13 @@ def _build_alive_masks(
     # All wte tokens are always alive (source indices [0, vocab_size))
     source_alive[:vocab_size] = True
 
-    if summary is None:
-        logger.warning("Harvest summary not available, using all components as alive")
-        source_alive.fill_(True)
-        target_alive.fill_(True)
-        return source_alive, target_alive
+    if harvest_subrun_id is not None:
+        harvest = HarvestRepo(decomposition_id=run_id, subrun_id=harvest_subrun_id, readonly=True)
+    else:
+        harvest = HarvestRepo.open_most_recent(run_id, readonly=True)
+        assert harvest is not None, f"No harvest data for {run_id}"
+    summary = harvest.get_summary()
+    assert summary is not None, "Harvest summary not available"
 
     # Build masks for component layers
     source_idx = vocab_size  # Start after wte tokens
@@ -95,7 +87,7 @@ def _build_alive_masks(
         n_layer_components = model.module_to_c[layer]
         for c_idx in range(n_layer_components):
             component_key = f"{layer}:{c_idx}"
-            is_alive = component_key in summary and summary[component_key].mean_ci > ci_threshold
+            is_alive = component_key in summary and summary[component_key].firing_density > 0.0
             source_alive[source_idx] = is_alive
             target_alive[target_idx] = is_alive
             source_idx += 1
@@ -105,28 +97,26 @@ def _build_alive_masks(
     n_target_alive = int(target_alive.sum().item())
     logger.info(
         f"Alive components: {n_source_alive}/{n_sources} sources, "
-        f"{n_target_alive}/{n_components} component targets (ci > {ci_threshold})"
+        f"{n_target_alive}/{n_components} component targets (firing density > 0.0)"
     )
     return source_alive, target_alive
 
 
-def _get_output_path(run_id: str, rank: int | None) -> Path:
-    """Get output path for attributions."""
-    output_dir = get_attributions_dir(run_id)
-    if rank is not None:
-        return output_dir / f"dataset_attributions_rank_{rank}.pt"
-    return output_dir / "dataset_attributions.pt"
-
-
 def harvest_attributions(
+    wandb_path: str,
     config: DatasetAttributionConfig,
+    output_dir: Path,
+    harvest_subrun_id: str | None = None,
     rank: int | None = None,
     world_size: int | None = None,
 ) -> None:
     """Compute dataset attributions over the training dataset.
 
     Args:
+        wandb_path: WandB run path for the target decomposition run.
         config: Configuration for attribution harvesting.
+        output_dir: Directory to write results into.
+        harvest_subrun_id: Harvest subrun to use for alive masks. If None, uses most recent.
         rank: Worker rank for parallel execution (0 to world_size-1).
         world_size: Total number of workers. If specified with rank, only processes
             batches where batch_idx % world_size == rank.
@@ -137,9 +127,9 @@ def harvest_attributions(
     device = torch.device(get_device())
     logger.info(f"Loading model on {device}")
 
-    _, _, run_id = parse_wandb_run_path(config.wandb_path)
+    _, _, run_id = parse_wandb_run_path(wandb_path)
 
-    run_info = SPDRunInfo.from_path(config.wandb_path)
+    run_info = SPDRunInfo.from_path(wandb_path)
     model = ComponentModel.from_run_info(run_info).to(device)
     model.eval()
 
@@ -153,7 +143,7 @@ def harvest_attributions(
     component_layer_keys = _build_component_layer_keys(model)
     n_components = len(component_layer_keys)
     source_alive, target_alive = _build_alive_masks(
-        model, run_id, config.ci_threshold, n_components, vocab_size
+        model, run_id, harvest_subrun_id, n_components, vocab_size
     )
     source_alive = source_alive.to(device)
     target_alive = target_alive.to(device)
@@ -163,7 +153,8 @@ def harvest_attributions(
 
     # Get gradient connectivity
     logger.info("Computing sources_by_target...")
-    sources_by_target_raw = get_sources_by_target(model, str(device), spd_config.sampling)
+    topology = TransformerTopology(model.target_model)
+    sources_by_target_raw = get_sources_by_target(model, topology, str(device), spd_config.sampling)
 
     # Filter sources_by_target:
     # - Valid targets: component layers + output
@@ -190,13 +181,19 @@ def harvest_attributions(
         source_alive=source_alive,
         target_alive=target_alive,
         sampling=spd_config.sampling,
+        embedding_module=topology.embedding_module,
+        unembed_module=topology.unembed_module,
         device=device,
         show_progress=True,
     )
 
     # Process batches
     train_iter = iter(train_loader)
-    batch_range = range(config.n_batches) if config.n_batches is not None else itertools.count()
+    match config.n_batches:
+        case int(n_batches):
+            batch_range = range(n_batches)
+        case "whole_dataset":
+            batch_range = itertools.count()
     for batch_idx in tqdm.tqdm(batch_range, desc="Attribution batches"):
         try:
             batch_data = next(train_iter)
@@ -229,25 +226,28 @@ def harvest_attributions(
         ci_threshold=config.ci_threshold,
     )
 
-    output_path = _get_output_path(run_id, rank)
+    if rank is not None:
+        worker_dir = output_dir / "worker_states"
+        worker_dir.mkdir(parents=True, exist_ok=True)
+        output_path = worker_dir / f"dataset_attributions_rank_{rank}.pt"
+    else:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "dataset_attributions.pt"
     storage.save(output_path)
     logger.info(f"Saved dataset attributions to {output_path}")
 
 
-def merge_attributions(wandb_path: str) -> None:
+def merge_attributions(output_dir: Path) -> None:
     """Merge partial attribution files from parallel workers.
 
-    Looks for dataset_attributions_rank_*.pt files and merges them into
-    dataset_attributions.pt.
+    Looks for worker_states/dataset_attributions_rank_*.pt files and merges them
+    into dataset_attributions.pt in the output_dir.
 
     Uses streaming merge to avoid OOM - loads one file at a time instead of all at once.
     """
-    _, _, run_id = parse_wandb_run_path(wandb_path)
-    output_dir = get_attributions_dir(run_id)
-
-    # Find all rank files
-    rank_files = sorted(output_dir.glob("dataset_attributions_rank_*.pt"))
-    assert rank_files, f"No rank files found in {output_dir}"
+    worker_dir = output_dir / "worker_states"
+    rank_files = sorted(worker_dir.glob("dataset_attributions_rank_*.pt"))
+    assert rank_files, f"No rank files found in {worker_dir}"
     logger.info(f"Found {len(rank_files)} rank files to merge")
 
     # Load first file to get metadata and initialize accumulators
@@ -295,10 +295,11 @@ def merge_attributions(wandb_path: str) -> None:
 
     output_path = output_dir / "dataset_attributions.pt"
     merged.save(output_path)
+    assert output_path.stat().st_size > 0, f"Merge output is empty: {output_path}"
     logger.info(f"Merged {len(rank_files)} files -> {output_path}")
     logger.info(f"Total: {total_batches} batches, {total_tokens:,} tokens")
 
-    # Clean up per-rank files after successful merge
     for rank_file in rank_files:
         rank_file.unlink()
-    logger.info(f"Deleted {len(rank_files)} per-rank files")
+    worker_dir.rmdir()
+    logger.info(f"Deleted {len(rank_files)} per-rank files and worker_states/")

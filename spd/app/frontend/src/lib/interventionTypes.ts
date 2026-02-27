@@ -21,7 +21,7 @@ export type InterventionResponse = {
 };
 
 /** A forked intervention run with modified tokens */
-export type ForkedInterventionRun = {
+export type ForkedInterventionRunSummary = {
     id: number;
     token_replacements: [number, number][]; // [(seq_pos, new_token_id), ...]
     result: InterventionResponse;
@@ -34,7 +34,7 @@ export type InterventionRunSummary = {
     selected_nodes: string[]; // node keys (layer:seq:cIdx)
     result: InterventionResponse;
     created_at: string;
-    forked_runs?: ForkedInterventionRun[]; // child runs with modified tokens
+    forked_runs?: ForkedInterventionRunSummary[]; // child runs with modified tokens
 };
 
 /** Request to run and save an intervention */

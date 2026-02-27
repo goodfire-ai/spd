@@ -1,30 +1,27 @@
 """CLI entry point for autointerp SLURM launcher.
 
 Thin wrapper for fast --help. Heavy imports deferred to run_slurm.py.
+
+Usage:
+    spd-autointerp <wandb_path>
+    spd-autointerp <wandb_path> --config autointerp_config.yaml
 """
 
 import fire
 
-from spd.settings import DEFAULT_PARTITION_NAME
 
+def main(decomposition_id: str, config: str) -> None:
+    """Submit autointerp pipeline (interpret + evals) to SLURM.
 
-def main(
-    wandb_path: str,
-    model: str = "google/gemini-3-flash-preview",
-    partition: str = DEFAULT_PARTITION_NAME,
-    time: str = "12:00:00",
-    limit: int | None = None,
-) -> None:
-    from spd.autointerp.interpret import OpenRouterModelName
-    from spd.autointerp.scripts.run_slurm import launch_interpret_job
+    Args:
+        decomposition_id: ID of the target decomposition run.
+        config: Path to AutointerpSlurmConfig YAML/JSON.
+    """
+    from spd.autointerp.config import AutointerpSlurmConfig
+    from spd.autointerp.scripts.run_slurm import submit_autointerp
 
-    launch_interpret_job(
-        wandb_path=wandb_path,
-        model=OpenRouterModelName(model),
-        partition=partition,
-        time=time,
-        limit=limit,
-    )
+    slurm_config = AutointerpSlurmConfig.from_file(config)
+    submit_autointerp(decomposition_id, slurm_config)
 
 
 def cli() -> None:

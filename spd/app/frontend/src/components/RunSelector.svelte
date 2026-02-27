@@ -1,5 +1,7 @@
 <script lang="ts">
+    import { onMount } from "svelte";
     import { CANONICAL_RUNS, formatRunIdForDisplay, type RegistryEntry } from "../lib/registry";
+    import { fetchPretrainInfo, type PretrainInfoResponse } from "../lib/api/pretrainInfo";
 
     type Props = {
         onSelect: (wandbPath: string, contextLength: number) => void;
@@ -11,6 +13,23 @@
 
     let customPath = $state("");
     let contextLength = $state(512);
+
+    // Architecture info fetched in real-time for each canonical run
+    let archInfo = $state<Record<string, PretrainInfoResponse | "loading" | "error">>({});
+
+    onMount(() => {
+        for (const entry of CANONICAL_RUNS) {
+            archInfo[entry.wandbRunId] = "loading";
+            fetchPretrainInfo(entry.wandbRunId).then(
+                (info) => {
+                    archInfo[entry.wandbRunId] = info;
+                },
+                () => {
+                    archInfo[entry.wandbRunId] = "error";
+                },
+            );
+        }
+    });
 
     function handleRegistrySelect(entry: RegistryEntry) {
         onSelect(entry.wandbRunId, contextLength);
@@ -40,25 +59,19 @@
             {/if}
         </h1>
 
-        <div class="context-length-section">
-            <label for="context-length">Context Length:</label>
-            <input
-                type="number"
-                id="context-length"
-                bind:value={contextLength}
-                disabled={isLoading}
-                min="1"
-                max="2048"
-            />
-        </div>
-
         <div class="runs-grid">
             {#each CANONICAL_RUNS as entry (entry.wandbRunId)}
+                {@const info = archInfo[entry.wandbRunId]}
                 <button class="run-card" onclick={() => handleRegistrySelect(entry)} disabled={isLoading}>
                     <span class="run-model">{entry.modelName}</span>
                     <span class="run-id">{formatRunIdForDisplay(entry.wandbRunId)}</span>
                     {#if entry.notes}
                         <span class="run-notes">{entry.notes}</span>
+                    {/if}
+                    {#if info && info !== "loading" && info !== "error"}
+                        <span class="run-arch">{info.summary}</span>
+                    {:else if info === "loading"}
+                        <span class="run-arch loading">loading arch...</span>
                     {/if}
                     {#if entry.clusterMappings}
                         <span class="run-cluster-mappings">{entry.clusterMappings.length} clustering runs</span>
@@ -133,7 +146,7 @@
     .selector-content {
         max-width: 720px;
         width: 100%;
-        transition: opacity 0.2s;
+        transition: opacity var(--transition-slow);
     }
 
     .selector-content.dimmed {
@@ -148,32 +161,6 @@
         margin: 0 0 var(--space-2) 0;
         text-align: center;
         font-family: var(--font-sans);
-    }
-
-    .context-length-section {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: var(--space-2);
-        margin-bottom: var(--space-4);
-    }
-
-    .context-length-section label {
-        font-size: var(--text-sm);
-        color: var(--text-secondary);
-        font-family: var(--font-sans);
-        font-weight: 500;
-    }
-
-    .context-length-section input {
-        width: 80px;
-        padding: var(--space-1) var(--space-2);
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius-sm);
-        background: var(--bg-elevated);
-        color: var(--text-primary);
-        font-size: var(--text-sm);
-        font-family: var(--font-mono);
     }
 
     .runs-grid {
@@ -195,8 +182,8 @@
         cursor: pointer;
         text-align: left;
         transition:
-            border-color 0.15s,
-            background 0.15s;
+            border-color var(--transition-normal),
+            background var(--transition-normal);
     }
 
     .run-card:hover:not(:disabled) {
@@ -226,6 +213,23 @@
         font-size: var(--text-xs);
         color: var(--text-muted);
         font-family: var(--font-sans);
+    }
+
+    .run-arch {
+        font-size: 10px;
+        font-family: var(--font-mono);
+        color: var(--text-secondary, var(--text-muted));
+        background: var(--bg-inset, var(--bg-base));
+        padding: 1px 4px;
+        border-radius: 3px;
+        line-height: 1.3;
+    }
+
+    .run-arch.loading {
+        opacity: 0.5;
+        font-style: italic;
+        font-family: var(--font-sans);
+        background: none;
     }
 
     .run-cluster-mappings {

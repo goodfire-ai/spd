@@ -1,16 +1,19 @@
 <script lang="ts">
     import { getContext } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
-    import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
+    import { colors, getEdgeColor, getOutputHeaderColor, rgbaToCss } from "../../lib/colors";
     import type { Loadable } from "../../lib/index";
     import type { NormalizeType } from "../../lib/api";
-    import {
-        isInterventableNode,
-        type LayerInfo,
-        type NodePosition,
-        type TokenInfo,
-    } from "../../lib/promptAttributionsTypes";
+    import { isInterventableNode, type NodePosition } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
+    import {
+        parseLayer,
+        getRowKey as _getRowKey,
+        getRowLabel as _getRowLabel,
+        sortRows,
+        getGroupProjections,
+        buildLayerAddress,
+    } from "../../lib/graphLayout";
 
     const runState = getContext<RunContext>(RUN_KEY);
     import {
@@ -21,6 +24,7 @@
         sortComponentsByCluster,
         sortComponentsByImportance,
         type ClusterSpan,
+        type TooltipPos,
     } from "./graphUtils";
     import NodeTooltip from "./NodeTooltip.svelte";
     import TokenDropdown from "./TokenDropdown.svelte";
@@ -34,8 +38,6 @@
     const HIT_AREA_PADDING = 4;
     const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
     const LABEL_WIDTH = 100;
-    const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "lm_head", "output"];
-    const QKV_SUBTYPES = ["q_proj", "k_proj", "v_proj"];
     const CLUSTER_BAR_HEIGHT = 3;
     const CLUSTER_BAR_GAP = 2;
     const LAYER_X_OFFSET = 3; // Horizontal offset per layer to avoid edge overlap
@@ -43,7 +45,7 @@
     // Logits display constants
     const MAX_PREDICTIONS = 5;
 
-    import type { ForkedInterventionRun } from "../../lib/interventionTypes";
+    import type { ForkedInterventionRunSummary } from "../../lib/interventionTypes";
 
     type Props = {
         graph: StoredGraph;
@@ -51,7 +53,6 @@
         activeRunId: number | null;
         tokens: string[];
         tokenIds: number[];
-        allTokens: TokenInfo[];
         // View settings (shared with main graph)
         topK: number;
         componentGap: number;
@@ -74,7 +75,7 @@
         onRunIntervention: () => void;
         onSelectRun: (runId: number) => void;
         onDeleteRun: (runId: number) => void;
-        onForkRun: (runId: number, tokenReplacements: [number, number][]) => Promise<ForkedInterventionRun>;
+        onForkRun: (runId: number, tokenReplacements: [number, number][]) => Promise<ForkedInterventionRunSummary>;
         onDeleteFork: (forkId: number) => void;
         onGenerateGraphFromSelection: () => void;
     };
@@ -85,7 +86,6 @@
         activeRunId,
         tokens,
         tokenIds,
-        allTokens,
         topK,
         componentGap,
         layerGap,
@@ -169,7 +169,7 @@
     let hoveredNode = $state<{ layer: string; seqIdx: number; cIdx: number } | null>(null);
     let hoveredBarClusterId = $state<number | null>(null);
     let isHoveringTooltip = $state(false);
-    let tooltipPos = $state({ x: 0, y: 0 });
+    let tooltipPos = $state<TooltipPos>({ left: 0, top: 0 });
     let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
 
     // Refs
@@ -209,20 +209,8 @@
     let dragCurrent = $state<{ x: number; y: number } | null>(null);
     let svgElement: SVGSVGElement | null = null;
 
-    // Parse layer name
-    function parseLayer(name: string): LayerInfo {
-        if (name === "wte") return { name, block: -1, type: "embed", subtype: "wte" };
-        if (name === "lm_head") return { name, block: Infinity - 1, type: "mlp", subtype: "lm_head" };
-        if (name === "output") return { name, block: Infinity, type: "output", subtype: "output" };
-        const m = name.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
-        if (!m) throw new Error(`parseLayer: unrecognized layer name: ${name}`);
-        return { name, block: +m[1], type: m[2] as "attn" | "mlp", subtype: m[3] };
-    }
-
     function getRowKey(layer: string): string {
-        const info = parseLayer(layer);
-        if (QKV_SUBTYPES.includes(info.subtype)) return `h.${info.block}.qkv`;
-        return layer;
+        return _getRowKey(layer);
     }
 
     // All nodes from the graph (for rendering)
@@ -237,14 +225,13 @@
         return nodes;
     });
 
-    // Filter edges for rendering (topK by magnitude, optionally hide edges not connected to selected nodes)
+    // Filter edges for rendering (topK by magnitude, optionally hide edges not connected to selected nodes).
+    // Edges arrive pre-sorted by abs(val) desc from backend, so filter preserves order and we just slice.
     const filteredEdges = $derived.by(() => {
-        let edges = [...graph.data.edges];
-        // If hideUnpinnedEdges is true and we have selected nodes, filter to only edges connected to them
+        let edges = graph.data.edges;
         if (hideUnpinnedEdges && composerSelection.size > 0) {
             edges = edges.filter((e) => composerSelection.has(e.src) || composerSelection.has(e.tgt));
         }
-        edges.sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
         return edges.slice(0, topK);
     });
 
@@ -267,23 +254,7 @@
         }
 
         // Sort rows
-        const parseRow = (r: string) => {
-            if (r === "wte") return { block: -1, subtype: "wte" };
-            if (r === "lm_head") return { block: Infinity - 1, subtype: "lm_head" };
-            if (r === "output") return { block: Infinity, subtype: "output" };
-            const mQkv = r.match(/h\.(\d+)\.qkv/);
-            if (mQkv) return { block: +mQkv[1], subtype: "qkv" };
-            const m = r.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
-            if (!m) return { block: 0, subtype: r };
-            return { block: +m[1], subtype: m[3] };
-        };
-
-        const rows: string[] = Array.from(allRows).sort((a, b) => {
-            const infoA = parseRow(a);
-            const infoB = parseRow(b);
-            if (infoA.block !== infoB.block) return infoA.block - infoB.block;
-            return ROW_ORDER.indexOf(infoA.subtype) - ROW_ORDER.indexOf(infoB.subtype);
-        });
+        const rows = sortRows(Array.from(allRows));
 
         const numTokens = tokens.length;
 
@@ -291,25 +262,21 @@
         const maxComponentsPerSeq = Array.from({ length: numTokens }, (_, seqIdx) => {
             let maxAtSeq = 1;
             for (const row of rows) {
-                if (row.endsWith(".qkv")) {
-                    const blockMatch = row.match(/h\.(\d+)/);
-                    if (blockMatch) {
-                        const block = blockMatch[1];
-                        let totalQkv = 0;
-                        for (const subtype of QKV_SUBTYPES) {
-                            const layer = `h.${block}.attn.${subtype}`;
-                            totalQkv += (nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? []).length;
-                        }
-                        totalQkv += 2;
-                        maxAtSeq = Math.max(maxAtSeq, totalQkv);
-                    }
-                } else {
-                    for (const layer of allLayers) {
-                        if (getRowKey(layer) === row) {
-                            maxAtSeq = Math.max(maxAtSeq, (nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? []).length);
-                        }
+                let totalInRow = 0;
+                for (const layer of allLayers) {
+                    if (getRowKey(layer) === row) {
+                        totalInRow += (nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? []).length;
                     }
                 }
+                const rowParts = row.split(".");
+                const isGroupedRow = rowParts.length >= 3 && rowParts[2].includes("_");
+                if (isGroupedRow) {
+                    const groupProjs = getGroupProjections(rowParts[1]);
+                    if (groupProjs && groupProjs.length > 1) {
+                        totalInRow += groupProjs.length - 1;
+                    }
+                }
+                maxAtSeq = Math.max(maxAtSeq, totalInRow);
             }
             return maxAtSeq;
         });
@@ -340,7 +307,7 @@
             layerYPositions[layer] = rowYPositions[rowKey];
             const rowIdx = rows.indexOf(rowKey);
             const distanceFromOutput = rows.length - 1 - rowIdx;
-            if (distanceFromOutput === 0 || layer === "wte") {
+            if (distanceFromOutput === 0 || layer === "embed") {
                 layerXOffsets[layer] = 0;
             } else {
                 layerXOffsets[layer] = distanceFromOutput % 2 === 1 ? LAYER_X_OFFSET : -LAYER_X_OFFSET;
@@ -352,7 +319,8 @@
         const allClusterSpans: ClusterSpan[] = [];
         for (const layer of allLayers) {
             const info = parseLayer(layer);
-            const isQkv = QKV_SUBTYPES.includes(info.subtype);
+            const groupProjs = info.sublayer ? getGroupProjections(info.sublayer) : null;
+            const isGrouped = groupProjs !== null && info.projection !== null && groupProjs.includes(info.projection);
 
             for (let seqIdx = 0; seqIdx < numTokens; seqIdx++) {
                 const layerNodes = nodesPerLayerSeq[`${layer}:${seqIdx}`];
@@ -361,10 +329,10 @@
                 let baseX = seqXStarts[seqIdx] + COL_PADDING + layerXOffsets[layer];
                 const baseY = layerYPositions[layer];
 
-                if (isQkv) {
-                    const subtypeIdx = QKV_SUBTYPES.indexOf(info.subtype);
-                    for (let i = 0; i < subtypeIdx; i++) {
-                        const prevLayer = `h.${info.block}.attn.${QKV_SUBTYPES[i]}`;
+                if (isGrouped && groupProjs && info.projection) {
+                    const projIdx = groupProjs.indexOf(info.projection);
+                    for (let i = 0; i < projIdx; i++) {
+                        const prevLayer = buildLayerAddress(info.block, info.sublayer, groupProjs[i]);
                         baseX +=
                             (nodesPerLayerSeq[`${prevLayer}:${seqIdx}`]?.length ?? 0) * (COMPONENT_SIZE + componentGap);
                         baseX += COMPONENT_SIZE + componentGap;
@@ -469,7 +437,8 @@
             hoverTimeout = null;
         }
         hoveredNode = { layer, seqIdx, cIdx };
-        tooltipPos = calcTooltipPos(event.clientX, event.clientY);
+        const size = layer === "embed" || layer === "output" ? "small" : "large";
+        tooltipPos = calcTooltipPos(event.clientX, event.clientY, size);
     }
 
     function handleNodeMouseLeave() {
@@ -626,12 +595,7 @@
     }
 
     function getRowLabel(layer: string): string {
-        const info = parseLayer(layer);
-        const rowKey = getRowKey(layer);
-        if (rowKey.endsWith(".qkv")) return `${info.block}.q/k/v`;
-        if (layer === "wte" || layer === "output") return layer;
-        if (layer === "lm_head") return "W_U";
-        return `${info.block}.${info.subtype}`;
+        return _getRowLabel(layer);
     }
 </script>
 
@@ -662,7 +626,7 @@
             <span class="node-count">{selectedCount} / {interventableCount} selected</span>
             <span
                 class="info-icon"
-                data-tooltip="NOTE: Biases in each layer that have them are always active, regardless of which nodes are selected"
+                data-tooltip="NOTE: Biases in each layer that have them are always active, regardless of which components are selected"
                 >?</span
             >
             <div class="button-group">
@@ -675,8 +639,8 @@
                         selectedCount === 0 ||
                         (interventableCount > 0 && selectedCount === interventableCount)}
                     title={selectedCount === 0
-                        ? "Select nodes to include in subgraph"
-                        : "Generate a subgraph showing only attributions between selected nodes"}
+                        ? "Select components to include in subgraph"
+                        : "Generate a subgraph showing only attributions between selected components"}
                 >
                     {generatingSubgraph ? "Generating..." : "Generate subgraph"}
                 </button>
@@ -837,7 +801,7 @@
                                 y={selectionRect.y}
                                 width={selectionRect.width}
                                 height={selectionRect.height}
-                                fill="rgba(99, 102, 241, 0.1)"
+                                fill={rgbaToCss(colors.positiveRgb, 0.1)}
                                 stroke={colors.accent}
                                 stroke-width="1"
                                 stroke-dasharray="4 2"
@@ -910,7 +874,7 @@
                     >
                         <div class="run-header">
                             <span class="run-time">{formatTime(run.created_at)}</span>
-                            <span class="run-nodes">{run.selected_nodes.length} nodes</span>
+                            <span class="run-nodes">{run.selected_nodes.length} components</span>
                             <button
                                 class="fork-btn"
                                 title="Fork with modified tokens"
@@ -933,6 +897,7 @@
                             <table>
                                 <thead>
                                     <tr>
+                                        <th class="rank-header">Input</th>
                                         {#each run.result.input_tokens as token, idx (idx)}
                                             <th title={token}>
                                                 <span class="token-text">"{token}"</span>
@@ -943,6 +908,7 @@
                                 <tbody>
                                     {#each Array(Math.min(3, MAX_PREDICTIONS)) as _, rank (rank)}
                                         <tr>
+                                            <td class="rank-label">rank {rank + 1}</td>
                                             {#each run.result.predictions_per_position as preds, idx (idx)}
                                                 {@const pred = preds[rank]}
                                                 <td
@@ -1004,6 +970,7 @@
                                             <table>
                                                 <thead>
                                                     <tr>
+                                                        <th class="rank-header">Input</th>
                                                         {#each fork.result.input_tokens as token, idx (idx)}
                                                             {@const isChanged = fork.token_replacements.some(
                                                                 (r) => r[0] === idx,
@@ -1017,6 +984,7 @@
                                                 <tbody>
                                                     {#each Array(Math.min(3, MAX_PREDICTIONS)) as _, rank (rank)}
                                                         <tr>
+                                                            <td class="rank-label">rank {rank + 1}</td>
                                                             {#each fork.result.predictions_per_position as preds, idx (idx)}
                                                                 {@const pred = preds[rank]}
                                                                 <td
@@ -1101,7 +1069,6 @@
                             <div class="token-slot" class:replaced={isReplaced}>
                                 <span class="token-label">pos {idx}: "{tokens[idx]}"</span>
                                 <TokenDropdown
-                                    tokens={allTokens}
                                     value={slot.value}
                                     selectedTokenId={slot.tokenId}
                                     onSelect={(tokenId, tokenString) => handleForkSlotSelect(idx, tokenId, tokenString)}
@@ -1257,9 +1224,9 @@
         transform-box: fill-box;
         transform-origin: center;
         transition:
-            opacity 0.1s,
-            fill 0.1s,
-            transform 0.15s ease-out;
+            opacity var(--transition-fast),
+            fill var(--transition-fast),
+            transform var(--transition-normal);
     }
 
     .node-group .node.cluster-hovered {
@@ -1288,8 +1255,8 @@
         opacity: 0.5;
         cursor: pointer;
         transition:
-            opacity 0.15s ease-out,
-            fill 0.15s ease-out;
+            opacity var(--transition-normal),
+            fill var(--transition-normal);
     }
 
     .cluster-bar:hover,
@@ -1363,7 +1330,7 @@
         border: 1px solid var(--border-default);
         padding: var(--space-2);
         cursor: pointer;
-        transition: border-color 0.1s;
+        transition: border-color var(--transition-fast);
     }
 
     .run-card:hover {
@@ -1439,8 +1406,22 @@
         color: var(--text-secondary);
     }
 
+    .logits-mini th.rank-header {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
     .logits-mini .token-text {
         font-size: 9px;
+    }
+
+    .logits-mini td.rank-label {
+        background: var(--bg-surface);
+        color: var(--text-secondary);
+        font-weight: 500;
+        font-size: 9px;
+        text-align: left;
+        padding-left: 6px;
     }
 
     .logits-mini td {

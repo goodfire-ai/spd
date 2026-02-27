@@ -24,9 +24,19 @@ const DEFAULT_ENTITY_PROJECT = "goodfire/spd";
  */
 export const CANONICAL_RUNS: RegistryEntry[] = [
     {
-        wandbRunId: "goodfire/spd/s-8dc8cf09",
+        wandbRunId: "goodfire/spd/s-275c8f21",
+        modelName: "???",
+        notes: "Lucius' pile run Feb 11",
+    },
+    {
+        wandbRunId: "goodfire/spd/s-eab2ace8",
         modelName: "ss_llama_simple_mlp-2L-wide",
-        notes: "Lucius run with beta=0.1, Jan 16",
+        notes: "Oli's PPGD run, great metrics",
+    },
+    {
+        wandbRunId: "goodfire/spd/s-892f140b",
+        modelName: "ss_llama_simple_mlp-2L-wide",
+        notes: "Lucius run, Jan 22",
     },
     {
         wandbRunId: "goodfire/spd/s-7884efcc",
@@ -37,12 +47,7 @@ export const CANONICAL_RUNS: RegistryEntry[] = [
         wandbRunId: "goodfire/spd/vjbol27n",
         modelName: "ss_llama_simple_mlp-1.25M (4L)",
         notes: "Lucius' run, Dec 8",
-        clusterMappings: [
-            {
-                path: "clustering/ensembles/e-c313e883/cluster_mapping_e-c313e883.json",
-                notes: "All layers, 80 iterations",
-            },
-        ],
+        clusterMappings: [],
     },
     {
         wandbRunId: "goodfire/spd/278we8gk",
@@ -56,16 +61,7 @@ export const CANONICAL_RUNS: RegistryEntry[] = [
     {
         wandbRunId: "goodfire/spd/5cr21lbs",
         modelName: "ss_llama_simple_mlp (1L)",
-        clusterMappings: [
-            {
-                path: "clustering/ensembles/e-04370c84/cluster_mapping_e-04370c84.json",
-                notes: "All layers, 200 iterations",
-            },
-            {
-                path: "clustering/ensembles/e-5f228e5f/cluster_mapping_e-5f228e5f.json",
-                notes: "Just down_proj, 80 iterations",
-            },
-        ],
+        clusterMappings: [],
     },
     {
         wandbRunId: "goodfire/spd/itmexlj0",

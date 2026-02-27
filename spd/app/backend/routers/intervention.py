@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from spd.app.backend.compute import compute_intervention_forward
 from spd.app.backend.dependencies import DepDB, DepLoadedRun, DepStateManager
 from spd.app.backend.utils import log_errors
+from spd.topology import TransformerTopology
 from spd.utils.distributed_utils import get_device
 
 # =============================================================================
@@ -88,16 +89,19 @@ router = APIRouter(prefix="/api/intervention", tags=["intervention"])
 DEVICE = get_device()
 
 
-def _parse_node_key(key: str) -> tuple[str, int, int]:
-    """Parse 'layer:seq:cIdx' into (layer, seq_pos, component_idx)."""
+def _parse_node_key(key: str, topology: TransformerTopology) -> tuple[str, int, int]:
+    """Parse canonical node key into (concrete_path, seq_pos, component_idx).
+
+    Translates canonical layer address back to concrete module path for ComponentModel.
+    """
     parts = key.split(":")
     assert len(parts) == 3, f"Invalid node key format: {key!r} (expected 'layer:seq:cIdx')"
-    layer, seq_str, cidx_str = parts
-    # wte and output are pseudo-layers for visualization only - not interventable
-    assert layer not in ("wte", "output"), (
-        f"Cannot intervene on {layer!r} nodes - only internal layers (attn/mlp) are interventable"
+    canonical_layer, seq_str, cidx_str = parts
+    assert canonical_layer not in ("embed", "output"), (
+        f"Cannot intervene on {canonical_layer!r} nodes - only internal layers are interventable"
     )
-    return layer, int(seq_str), int(cidx_str)
+    concrete_path = topology.canon_to_target(canonical_layer)
+    return concrete_path, int(seq_str), int(cidx_str)
 
 
 def _run_intervention_forward(
@@ -107,10 +111,10 @@ def _run_intervention_forward(
     loaded: DepLoadedRun,
 ) -> InterventionResponse:
     """Run intervention forward pass and return response."""
-    token_ids = loaded.tokenizer.encode(text, add_special_tokens=False)
+    token_ids = loaded.tokenizer.encode(text)
     tokens = torch.tensor([token_ids], dtype=torch.long, device=DEVICE)
 
-    active_nodes = [_parse_node_key(key) for key in selected_nodes]
+    active_nodes = [_parse_node_key(key, loaded.topology) for key in selected_nodes]
 
     seq_len = tokens.shape[1]
     for _, seq_pos, _ in active_nodes:
@@ -150,10 +154,17 @@ def _run_intervention_forward(
 @log_errors
 def run_intervention(request: InterventionRequest, loaded: DepLoadedRun) -> InterventionResponse:
     """Run intervention forward pass with specified nodes active (legacy endpoint)."""
-    token_ids = loaded.tokenizer.encode(request.text, add_special_tokens=False)
+    token_ids = loaded.tokenizer.encode(request.text)
     tokens = torch.tensor([token_ids], dtype=torch.long, device=DEVICE)
 
-    active_nodes = [(n.layer, n.seq_pos, n.component_idx) for n in request.nodes]
+    active_nodes = [
+        (
+            loaded.topology.canon_to_target(n.layer),
+            n.seq_pos,
+            n.component_idx,
+        )
+        for n in request.nodes
+    ]
 
     seq_len = tokens.shape[1]
     for _, seq_pos, _ in active_nodes:

@@ -52,7 +52,12 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "PGDReconLoss": "PGDRecon",
     "PGDReconSubsetLoss": "PGDReconSub",
     "PGDReconLayerwiseLoss": "PGDReconLayer",
-    "StochasticHiddenActsReconLoss": "StochHiddenRecon",
+    "PersistentPGDReconLoss": "PersistPGDRecon",
+    "PersistentPGDReconSubsetLoss": "PersistPGDReconSub",
+    "StochasticHiddenActsReconLoss": "StochHiddenActRecon",
+    "CIHiddenActsReconLoss": "CIHiddenActRecon",
+    "StochasticAttnPatternsReconLoss": "StochAttnRecon",
+    "CIMaskedAttnPatternsReconLoss": "CIAttnRecon",
     "UnmaskedReconLoss": "UnmaskedRecon",
     # Eval metrics
     "CEandKLLosses": "CEandKL",
@@ -66,6 +71,8 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "StochasticReconSubsetCEAndKL": "StochReconSubCEKL",
     "PGDMultiBatchReconLoss": "PGDMultiBatchRecon",
     "PGDMultiBatchReconSubsetLoss": "PGDMultiBatchReconSub",
+    "PersistentPGDReconEval": "PersistPGDReconEval",
+    "PersistentPGDReconSubsetEval": "PersistPGDReconSubEval",
 }
 
 
@@ -293,8 +300,8 @@ def download_wandb_file(run: Run, wandb_run_dir: Path, file_name: str) -> Path:
     """
     file_on_wandb = run.file(file_name)
     assert isinstance(file_on_wandb, File)
-    path = Path(file_on_wandb.download(exist_ok=True, replace=False, root=str(wandb_run_dir)).name)
-    return path
+    file_on_wandb.download(exist_ok=True, replace=False, root=str(wandb_run_dir))
+    return wandb_run_dir / file_name
 
 
 def init_wandb(

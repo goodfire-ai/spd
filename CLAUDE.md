@@ -104,6 +104,10 @@ This repository implements methods from two key research papers on parameter dec
 - `spd/metrics.py` - Metrics for logging to WandB (e.g. CI-L0, KL divergence, etc.)
 - `spd/figures.py` - Figures for logging to WandB (e.g. CI histograms, Identity plots, etc.)
 
+**Terminology: Sources vs Masks:**
+- **Sources** (`adv_sources`, `PPGDSources`, `self.sources`): The raw values that PGD optimizes adversarially. These are interpolated with CI to produce component masks: `mask = ci + (1 - ci) * source`. Used in both regular PGD (`spd/metrics/pgd_utils.py`) and persistent PGD (`spd/persistent_pgd.py`).
+- **Masks** (`component_masks`, `RoutingMasks`, `make_mask_infos`, `n_mask_samples`): The materialized per-component masks used during forward passes. These are produced from sources (in PGD) or from stochastic sampling, and are a general SPD concept across the whole codebase.
+
 **Experiment Structure:**
 
 Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
@@ -161,6 +165,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 │   ├── clustering/                  # Component clustering (see clustering/CLAUDE.md)
 │   ├── dataset_attributions/        # Dataset attributions (see dataset_attributions/CLAUDE.md)
 │   ├── harvest/                     # Statistics collection (see harvest/CLAUDE.md)
+│   ├── postprocess/                 # Unified postprocessing pipeline (harvest + attributions + autointerp)
 │   ├── pretrain/                    # Target model pretraining (see pretrain/CLAUDE.md)
 │   ├── experiments/                 # Experiment implementations
 │   │   ├── tms/                     # Toy Model of Superposition
@@ -193,8 +198,9 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 | `spd-run` | `spd/scripts/run.py` | SLURM-based experiment runner |
 | `spd-local` | `spd/scripts/run_local.py` | Local experiment runner |
 | `spd-harvest` | `spd/harvest/scripts/run_slurm_cli.py` | Submit harvest SLURM job |
-| `spd-autointerp` | `spd/autointerp/scripts/cli.py` | Submit autointerp SLURM job |
+| `spd-autointerp` | `spd/autointerp/scripts/run_slurm_cli.py` | Submit autointerp SLURM job |
 | `spd-attributions` | `spd/dataset_attributions/scripts/run_slurm_cli.py` | Submit dataset attribution SLURM job |
+| `spd-postprocess` | `spd/postprocess/cli.py` | Unified postprocessing pipeline (harvest + attributions + interpret + evals) |
 | `spd-clustering` | `spd/clustering/scripts/run_pipeline.py` | Clustering pipeline |
 | `spd-pretrain` | `spd/pretrain/scripts/run_slurm_cli.py` | Pretrain target models |
 
@@ -225,7 +231,7 @@ Use `spd/` as the search root (not repo root) to avoid noise.
 - `spd-harvest` → `spd/harvest/scripts/run_slurm_cli.py` → `spd/utils/slurm.py` → SLURM array → `spd/harvest/scripts/run.py` → `spd/harvest/harvest.py`
 
 **Autointerp Pipeline:**
-- `spd-autointerp` → `spd/autointerp/scripts/cli.py` → `spd/utils/slurm.py` → `spd/autointerp/interpret.py`
+- `spd-autointerp` → `spd/autointerp/scripts/run_slurm_cli.py` → `spd/utils/slurm.py` → `spd/autointerp/interpret.py`
 
 **Dataset Attributions Pipeline:**
 - `spd-attributions` → `spd/dataset_attributions/scripts/run_slurm_cli.py` → `spd/utils/slurm.py` → SLURM array → `spd/dataset_attributions/harvest.py`
@@ -278,6 +284,33 @@ spd-autointerp <wandb_path>            # Submit SLURM job to interpret component
 ```
 
 Requires `OPENROUTER_API_KEY` env var. See `spd/autointerp/CLAUDE.md` for details.
+
+### Unified Postprocessing (`spd-postprocess`)
+
+Run all postprocessing steps for a completed SPD run with a single command:
+
+```bash
+spd-postprocess <wandb_path>                              # Run everything with default config
+spd-postprocess <wandb_path> --config custom_config.yaml  # Use custom config
+```
+
+Defaults are defined in `PostprocessConfig` (`spd/postprocess/config.py`). Pass a custom YAML/JSON config to override. Set any section to `null` to skip it:
+- `attributions: null` — skip dataset attributions
+- `autointerp: null` — skip autointerp entirely (interpret + evals)
+- `autointerp.evals: null` — skip evals but still run interpret
+- `intruder: null` — skip intruder eval
+
+SLURM dependency graph:
+
+```
+harvest (GPU array → merge)
+├── intruder eval    (CPU, depends on harvest merge, label-free)
+└── autointerp       (depends on harvest merge)
+    ├── interpret    (CPU, LLM calls)
+    │   ├── detection (CPU, depends on interpret)
+    │   └── fuzzing   (CPU, depends on interpret)
+attributions (GPU array → merge, parallel with harvest)
+```
 
 ### Running on SLURM Cluster (`spd-run`)
 
@@ -389,7 +422,7 @@ Downloaded runs are cached in `SPD_OUT_DIR/runs/<project>-<run_id>/`.
 
 Core principles:
 - **Fail fast** - assert assumptions, crash on violations, don't silently recover
-- **No backwards compat** - delete unused code, don't deprecate or add migration shims
+- **No legacy support** - delete unused code, don't add fallbacks for old formats or migration shims
 - **Narrow types** - avoid `| None` unless null is semantically meaningful; use discriminated unions over bags of optional fields
 - **No try/except for control flow** - check preconditions explicitly, then trust them
 - **YAGNI** - don't add abstractions, config options, or flexibility for hypothetical futures
@@ -427,6 +460,7 @@ value = config.key
 - Do not write: `if everythingIsOk: continueHappyPath()`. Instead do `assert everythingIsOk`
 - You should have a VERY good reason to handle an error gracefully. If your program isn't working like it should then it shouldn't be running, you should be fixing it.
 - Do not write `try-catch` blocks unless it definitely makes sense
+- **Write for the golden path.** Never let edge cases bloat the code. Before handling them, just raise an exception. If an edge case becomes annoying enough, we'll handle it then — but write first and foremost for the common case.
 
 ### Control Flow
 - Keep I/O as high up as possible. Make as many functions as possible pure.
@@ -444,8 +478,9 @@ value = config.key
   - good: {<id>: <val>}
   - bad: {"tokens": …, "loss": …}
 - Default args are rarely a good idea. Avoid them unless necessary. You should have a very good reason for having a default value for an argument, especially if it's caller also defaults to the same thing
-- This repo uses basedpyright (not mypy) 
+- This repo uses basedpyright (not mypy)
 - Keep defaults high in the call stack.
+- Don't use `from __future__ import annotations` — use string quotes for forward references instead.
 
 ### Tensor Operations
 - Try to use einops by default for clarity.
@@ -476,7 +511,7 @@ value = config.key
 
 
 ### Other Important Software Development Practices
-- Backwards compatibility that adds complexity should be avoided.
+- Don't add legacy fallbacks or migration code - just change it and let old data be manually migrated if needed.
 - Delete unused code. 
 - If an argument is always x, strongly consider removing as an argument and just inlining
 - **Update CLAUDE.md files** when changing code structure, adding/removing files, or modifying key interfaces. Update the CLAUDE.md in the same directory (or nearest parent) as the changed files.

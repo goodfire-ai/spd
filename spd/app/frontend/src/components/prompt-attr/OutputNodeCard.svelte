@@ -1,10 +1,10 @@
 <script lang="ts">
-    import type { OutputProbEntry } from "../../lib/promptAttributionsTypes";
+    import type { OutputProbability } from "../../lib/promptAttributionsTypes";
     import { getOutputHeaderColor } from "../../lib/colors";
 
     type Props = {
         cIdx: number;
-        outputProbs: Record<string, OutputProbEntry>;
+        outputProbs: Record<string, OutputProbability>;
         seqIdx?: number; // When present: show single position. When absent: show all positions for this vocab id
     };
 
@@ -33,11 +33,19 @@
                 logit: entry.logit,
                 target_prob: entry.target_prob,
                 target_logit: entry.target_logit,
+                adv_pgd_prob: entry.adv_pgd_prob,
+                adv_pgd_logit: entry.adv_pgd_logit,
                 token: entry.token,
             }))
             .sort((a, b) => b.prob - a.prob);
         if (positions.length === 0) throw new Error(`OutputNodeCard: no positions for cIdx ${cIdx}`);
         return positions;
+    });
+
+    const hasAdvPgd = $derived.by(() => {
+        if (singlePosEntry) return singlePosEntry.adv_pgd_prob !== null;
+        if (allPositions) return allPositions.some((p) => p.adv_pgd_prob !== null);
+        return false;
     });
 </script>
 
@@ -53,12 +61,17 @@
                     2,
                 )})
             </div>
+            {#if singlePosEntry.adv_pgd_prob !== null && singlePosEntry.adv_pgd_logit !== null}
+                <div class="output-prob">
+                    Adversarial: {(singlePosEntry.adv_pgd_prob * 100).toFixed(1)}% (logit: {singlePosEntry.adv_pgd_logit.toFixed(
+                        2,
+                    )})
+                </div>
+            {/if}
         </div>
         <p class="stats">
             <strong>Position:</strong>
-            {seqIdx} |
-            <strong>Vocab ID:</strong>
-            {cIdx}
+            {seqIdx}
         </p>
     {:else if allPositions}
         <p><strong>"{allPositions[0].token}"</strong></p>
@@ -70,6 +83,10 @@
                     <th>Logit</th>
                     <th>Target</th>
                     <th>Logit</th>
+                    {#if hasAdvPgd}
+                        <th>Adv</th>
+                        <th>Logit</th>
+                    {/if}
                 </tr>
             </thead>
             <tbody>
@@ -80,6 +97,10 @@
                         <td>{pos.logit.toFixed(2)}</td>
                         <td>{(pos.target_prob * 100).toFixed(2)}%</td>
                         <td>{pos.target_logit.toFixed(2)}</td>
+                        {#if hasAdvPgd}
+                            <td>{pos.adv_pgd_prob !== null ? (pos.adv_pgd_prob * 100).toFixed(2) + "%" : "—"}</td>
+                            <td>{pos.adv_pgd_logit !== null ? pos.adv_pgd_logit.toFixed(2) : "—"}</td>
+                        {/if}
                     </tr>
                 {/each}
             </tbody>
@@ -112,6 +133,7 @@
         color: var(--text-secondary);
         font-family: var(--font-mono);
     }
+
 
     .stats {
         margin: var(--space-1) 0;

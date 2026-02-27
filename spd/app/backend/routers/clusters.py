@@ -26,11 +26,10 @@ class ClusterMapping(BaseConfig):
 class ClusterMappingFile(BaseConfig):
     """Schema for the on-disk cluster mapping JSON file."""
 
-    ensemble_id: str
+    clustering_run_id: str
     notes: str
     spd_run: str
-    n_iterations: int
-    run_idx: int
+    iteration: int
     clusters: dict[str, int | None]
 
 
@@ -42,7 +41,7 @@ def load_cluster_mapping(file_path: str) -> ClusterMapping:
     Paths are resolved relative to SPD_OUT_DIR unless they are absolute.
 
     The file should contain a JSON object with:
-    - ensemble_id: string
+    - clustering_run_id: string
     - notes: string
     - spd_run: wandb path (must match currently loaded run)
     - clusters: dict mapping component keys to cluster IDs

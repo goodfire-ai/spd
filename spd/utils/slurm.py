@@ -40,6 +40,7 @@ class SlurmConfig:
     n_gpus: int = 1
     n_nodes: int = 1
     time: str = "72:00:00"
+    mem: str | None = None  # Memory limit (e.g., "64G", "128G")
     cpus_per_task: int | None = None
     snapshot_branch: str | None = None
     dependency_job_id: str | None = None
@@ -278,6 +279,9 @@ def _sbatch_header(
 
     if config.cpus_per_task is not None:
         lines.append(f"#SBATCH --cpus-per-task={config.cpus_per_task}")
+
+    if config.mem is not None:
+        lines.append(f"#SBATCH --mem={config.mem}")
 
     if is_array and array_range:
         lines.append(f"#SBATCH --array={array_range}")

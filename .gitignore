@@ -1,6 +1,10 @@
 spd/scripts/sweep_params.yaml
 docs/coverage/**
 notebooks/**
+scratch/
+
+# Script outputs (generated files, often large)
+scripts/outputs/
 
 **/out/
 neuronpedia_outputs/

@@ -1,45 +1,38 @@
 <script lang="ts">
     import type { TokenInfo } from "../../lib/promptAttributionsTypes";
+    import * as api from "../../lib/api";
 
     type Props = {
-        tokens: TokenInfo[];
         value: string;
         selectedTokenId: number | null;
         onSelect: (tokenId: number | null, tokenString: string) => void;
         placeholder?: string;
     };
 
-    let { tokens, value, selectedTokenId, onSelect, placeholder = "Search tokens..." }: Props = $props();
+    let { value, onSelect, placeholder = "Search tokens..." }: Props = $props();
 
-    /** Format token for display: strip leading space, add ## prefix if no leading space */
-    function formatTokenDisplay(tokenString: string): string {
-        if (tokenString.startsWith(" ")) {
-            return tokenString.slice(1);
-        }
-        return "##" + tokenString;
-    }
-
-    // Only format when a token is actually selected; otherwise show raw user input
-    let inputValue = $derived(selectedTokenId !== null && value ? formatTokenDisplay(value) : value);
+    let inputValue = $derived(value);
     let isOpen = $state(false);
     let highlightedIndex = $state(0);
     let inputElement: HTMLInputElement | null = $state(null);
     let dropdownPos = $state({ top: 0, left: 0 });
+    let searchResults = $state<TokenInfo[]>([]);
+    let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const filteredTokens = $derived.by(() => {
-        if (!inputValue.trim()) return [];
-        const search = inputValue.toLowerCase();
-        const matches: TokenInfo[] = [];
-        for (const t of tokens) {
-            // Search on formatted display string so "##art" matches continuation tokens
-            const displayStr = formatTokenDisplay(t.string).toLowerCase();
-            if (displayStr.includes(search)) {
-                matches.push(t);
-                if (matches.length >= 10) break;
-            }
+    function doSearch(query: string) {
+        if (searchTimer) clearTimeout(searchTimer);
+        if (!query.trim()) {
+            searchResults = [];
+            return;
         }
-        return matches;
-    });
+        searchTimer = setTimeout(async () => {
+            try {
+                searchResults = await api.searchTokens(query, 10);
+            } catch {
+                searchResults = [];
+            }
+        }, 100);
+    }
 
     function updateDropdownPosition() {
         if (!inputElement) return;
@@ -48,13 +41,12 @@
     }
 
     function handleSelect(token: TokenInfo) {
-        inputValue = formatTokenDisplay(token.string);
         onSelect(token.id, token.string);
         isOpen = false;
     }
 
     function handleKeydown(e: KeyboardEvent) {
-        if (!isOpen || filteredTokens.length === 0) {
+        if (!isOpen || searchResults.length === 0) {
             if (e.key === "ArrowDown" && inputValue.trim()) {
                 e.preventDefault();
                 updateDropdownPosition();
@@ -66,7 +58,7 @@
         switch (e.key) {
             case "ArrowDown":
                 e.preventDefault();
-                highlightedIndex = Math.min(highlightedIndex + 1, filteredTokens.length - 1);
+                highlightedIndex = Math.min(highlightedIndex + 1, searchResults.length - 1);
                 break;
             case "ArrowUp":
                 e.preventDefault();
@@ -74,8 +66,8 @@
                 break;
             case "Enter":
                 e.preventDefault();
-                if (filteredTokens[highlightedIndex]) {
-                    handleSelect(filteredTokens[highlightedIndex]);
+                if (searchResults[highlightedIndex]) {
+                    handleSelect(searchResults[highlightedIndex]);
                 }
                 break;
             case "Escape":
@@ -89,15 +81,16 @@
         updateDropdownPosition();
         isOpen = true;
         highlightedIndex = 0;
-        // When user types, clear the selected token ID so they must pick again
         const target = e.target as HTMLInputElement;
         onSelect(null, target.value);
+        doSearch(target.value);
     }
 
     function handleFocus() {
         if (inputValue.trim()) {
             updateDropdownPosition();
             isOpen = true;
+            doSearch(inputValue);
         }
     }
 
@@ -122,9 +115,9 @@
         class="dropdown-input"
     />
 
-    {#if isOpen && filteredTokens.length > 0}
+    {#if isOpen && searchResults.length > 0}
         <ul class="dropdown-list" style="top: {dropdownPos.top}px; left: {dropdownPos.left}px;">
-            {#each filteredTokens as token, i (token.id)}
+            {#each searchResults as token, i (token.id)}
                 <li>
                     <button
                         type="button"
@@ -133,13 +126,13 @@
                         onmousedown={() => handleSelect(token)}
                         onmouseenter={() => (highlightedIndex = i)}
                     >
-                        <span class="token-string">{formatTokenDisplay(token.string)}</span>
+                        <span class="token-string">{token.string}</span>
                         <span class="token-id">#{token.id}</span>
                     </button>
                 </li>
             {/each}
         </ul>
-    {:else if isOpen && inputValue.trim() && filteredTokens.length === 0}
+    {:else if isOpen && inputValue.trim() && searchResults.length === 0}
         <div class="dropdown-empty" style="top: {dropdownPos.top}px; left: {dropdownPos.left}px;">
             No matching tokens
         </div>
@@ -182,7 +175,7 @@
         background: var(--bg-elevated);
         border: 1px solid var(--border-strong);
         border-radius: var(--radius-sm);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        box-shadow: var(--shadow-md);
         z-index: 10000;
     }
 

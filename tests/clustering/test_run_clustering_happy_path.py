@@ -19,7 +19,7 @@ def test_run_clustering_happy_path(monkeypatch: Any):
         monkeypatch.setattr("spd.utils.run_utils.SPD_OUT_DIR", temp_path)
 
         config = ClusteringRunConfig(
-            model_path="wandb:goodfire/spd/runs/zxbu57pt",  # An ss_llama run
+            model_path="wandb:goodfire/spd/runs/s-a9ad193d",  # A resid_mlp2 run
             batch_size=4,
             dataset_seed=0,
             ensemble_id=None,
@@ -38,6 +38,5 @@ def test_run_clustering_happy_path(monkeypatch: Any):
                 plot=100,
                 artifact=100,
             ),
-            dataset_streaming=True,  # tests in CI very slow without this, see https://github.com/goodfire-ai/spd/pull/199
         )
         main(config)
