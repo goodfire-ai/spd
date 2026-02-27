@@ -697,6 +697,10 @@ def compute_graph_optimized_stream(
             result.adv_pgd_out_logits.cpu() if result.adv_pgd_out_logits is not None else None
         )
 
+        opt_params.ci_masked_label_prob = result.metrics.ci_masked_label_prob
+        opt_params.stoch_masked_label_prob = result.metrics.stoch_masked_label_prob
+        opt_params.adv_pgd_label_prob = result.metrics.adv_pgd_label_prob
+
         graph_id = db.save_graph(
             prompt_id=prompt_id,
             graph=StoredGraph(
@@ -921,8 +925,12 @@ def stored_graph_to_response(
             beta=opt.beta,
             mask_type=opt.mask_type,
             loss=loss_result,
-            # Metrics not stored in DB for cached graphs - use l0_total from graph
-            metrics=OptimizationMetricsResult(l0_total=float(fg.l0_total)),
+            metrics=OptimizationMetricsResult(
+                l0_total=float(fg.l0_total),
+                ci_masked_label_prob=opt.ci_masked_label_prob,
+                stoch_masked_label_prob=opt.stoch_masked_label_prob,
+                adv_pgd_label_prob=opt.adv_pgd_label_prob,
+            ),
             adv_pgd_n_steps=opt.adv_pgd_n_steps,
             adv_pgd_step_size=opt.adv_pgd_step_size,
         ),

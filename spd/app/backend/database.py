@@ -72,6 +72,10 @@ class OptimizationParams(BaseModel):
     loss: LossConfig
     adv_pgd_n_steps: int | None = None
     adv_pgd_step_size: float | None = None
+    # Computed metrics (persisted for display on reload)
+    ci_masked_label_prob: float | None = None
+    stoch_masked_label_prob: float | None = None
+    adv_pgd_label_prob: float | None = None
 
 
 class StoredGraph(BaseModel):
@@ -195,6 +199,11 @@ class PromptAttrDB:
                 loss_config_hash TEXT,  -- SHA256 hash for uniqueness indexing
                 adv_pgd_n_steps INTEGER,
                 adv_pgd_step_size REAL,
+
+                -- Optimization metrics (NULL for non-optimized graphs)
+                ci_masked_label_prob REAL,
+                stoch_masked_label_prob REAL,
+                adv_pgd_label_prob REAL,
 
                 -- Manual graph params (NULL for non-manual graphs)
                 included_nodes TEXT,  -- JSON array of node keys in this graph
@@ -435,6 +444,9 @@ class PromptAttrDB:
         loss_config_hash: str | None = None
         adv_pgd_n_steps = None
         adv_pgd_step_size = None
+        ci_masked_label_prob = None
+        stoch_masked_label_prob = None
+        adv_pgd_label_prob = None
 
         if graph.optimization_params:
             imp_min_coeff = graph.optimization_params.imp_min_coeff
@@ -446,6 +458,9 @@ class PromptAttrDB:
             loss_config_hash = hashlib.sha256(loss_config_json.encode()).hexdigest()
             adv_pgd_n_steps = graph.optimization_params.adv_pgd_n_steps
             adv_pgd_step_size = graph.optimization_params.adv_pgd_step_size
+            ci_masked_label_prob = graph.optimization_params.ci_masked_label_prob
+            stoch_masked_label_prob = graph.optimization_params.stoch_masked_label_prob
+            adv_pgd_label_prob = graph.optimization_params.adv_pgd_label_prob
 
         # Extract manual-specific values (NULL for non-manual graphs)
         # Sort included_nodes and compute hash for reliable uniqueness
@@ -462,9 +477,10 @@ class PromptAttrDB:
                     imp_min_coeff, steps, pnorm, beta, mask_type,
                     loss_config, loss_config_hash,
                     adv_pgd_n_steps, adv_pgd_step_size,
+                    ci_masked_label_prob, stoch_masked_label_prob, adv_pgd_label_prob,
                     included_nodes, included_nodes_hash,
                     edges_data, output_logits, node_ci_vals, node_subcomp_acts)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     graph.graph_type,
@@ -477,6 +493,9 @@ class PromptAttrDB:
                     loss_config_hash,
                     adv_pgd_n_steps,
                     adv_pgd_step_size,
+                    ci_masked_label_prob,
+                    stoch_masked_label_prob,
+                    adv_pgd_label_prob,
                     included_nodes_json,
                     included_nodes_hash,
                     edges_json,
@@ -559,6 +578,9 @@ class PromptAttrDB:
                 loss=loss_config,
                 adv_pgd_n_steps=row["adv_pgd_n_steps"],
                 adv_pgd_step_size=row["adv_pgd_step_size"],
+                ci_masked_label_prob=row["ci_masked_label_prob"],
+                stoch_masked_label_prob=row["stoch_masked_label_prob"],
+                adv_pgd_label_prob=row["adv_pgd_label_prob"],
             )
 
         # Parse manual-specific fields

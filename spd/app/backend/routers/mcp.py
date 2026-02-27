@@ -729,6 +729,9 @@ def _tool_optimize_graph(params: dict[str, Any]) -> Generator[dict[str, Any]]:
         beta=0.0,
         mask_type="ci",
         loss=loss_config,
+        ci_masked_label_prob=result.metrics.ci_masked_label_prob,
+        stoch_masked_label_prob=result.metrics.stoch_masked_label_prob,
+        adv_pgd_label_prob=result.metrics.adv_pgd_label_prob,
     )
     graph_id = manager.db.save_graph(
         prompt_id=prompt_id,
