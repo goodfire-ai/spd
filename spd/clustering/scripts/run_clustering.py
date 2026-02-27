@@ -340,7 +340,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
         )
 
     # Extract what we need, then free the model and temporary objects
-    activations: ActivationsTensor = processed_activations.activations
+    activations: ActivationsTensor = processed_activations.activations.to(device)
     component_labels: ComponentLabels = ComponentLabels(processed_activations.labels.copy())
     del processed_activations
     del activations_dict
