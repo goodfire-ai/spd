@@ -164,7 +164,9 @@ class TestAttnPatternsReconLoss:
             c_attn_path=None,
         )
         weight_deltas = model.calc_weight_deltas()
-        metric.update(batch=batch, pre_weight_acts=pre_weight_acts, ci=ci, weight_deltas=weight_deltas)
+        metric.update(
+            batch=batch, pre_weight_acts=pre_weight_acts, ci=ci, weight_deltas=weight_deltas
+        )
         loss = metric.compute()
 
         assert loss.item() < 1e-4, f"Expected KL ≈ 0 with identity decomposition, got {loss.item()}"
@@ -195,7 +197,9 @@ class TestAttnPatternsReconLoss:
             c_attn_path=None,
         )
         weight_deltas = model.calc_weight_deltas()
-        metric.update(batch=batch, pre_weight_acts=pre_weight_acts, ci=ci, weight_deltas=weight_deltas)
+        metric.update(
+            batch=batch, pre_weight_acts=pre_weight_acts, ci=ci, weight_deltas=weight_deltas
+        )
         loss = metric.compute()
 
         assert loss.item() > 0.01, f"Expected KL > 0 with random init, got {loss.item()}"
