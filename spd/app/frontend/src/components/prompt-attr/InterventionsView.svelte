@@ -111,6 +111,22 @@
         onGenerateGraphFromSelection,
     }: Props = $props();
 
+    // Track newly-added run for flash animation
+    let knownRunIds = new Set(graph.interventionRuns.map((r) => r.id));
+    let flashRunId = $state<number | null>(null);
+
+    $effect(() => {
+        const currentIds = new Set(graph.interventionRuns.map((r) => r.id));
+        for (const id of currentIds) {
+            if (!knownRunIds.has(id)) {
+                flashRunId = id;
+                setTimeout(() => (flashRunId = null), 1500);
+                break;
+            }
+        }
+        knownRunIds = currentIds;
+    });
+
     // Fork modal state
     // Per-position state: { value: display string, tokenId: selected token ID or null }
     type ForkSlotState = { value: string; tokenId: number | null };
@@ -867,6 +883,7 @@
                     <div
                         class="run-card"
                         class:active={isActive}
+                        class:flash={flashRunId === run.id}
                         role="button"
                         tabindex="0"
                         onclick={() => onSelectRun(run.id)}
@@ -1340,6 +1357,32 @@
     .run-card.active {
         border-color: var(--accent-primary);
         background: var(--bg-inset);
+    }
+
+    .run-card.flash {
+        animation: flash-new 1.5s ease-out;
+    }
+
+    @keyframes flash-new {
+        0% {
+            background: var(--accent-primary);
+        }
+        100% {
+            background: var(--bg-elevated);
+        }
+    }
+
+    .run-card.active.flash {
+        animation: flash-new-active 1.5s ease-out;
+    }
+
+    @keyframes flash-new-active {
+        0% {
+            background: var(--accent-primary);
+        }
+        100% {
+            background: var(--bg-inset);
+        }
     }
 
     .run-header {

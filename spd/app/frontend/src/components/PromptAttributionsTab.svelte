@@ -277,8 +277,7 @@
     }
 
     function handleDraftKeydown(e: KeyboardEvent) {
-        // Enter without shift = add prompt, Shift+Enter = newline
-        if (e.key === "Enter" && !e.shiftKey) {
+        if (e.key === "Enter" && e.metaKey) {
             e.preventDefault();
             handleAddFromDraft();
         }
@@ -509,6 +508,7 @@
         graphCompute = {
             status: "computing",
             cardId,
+            ciSnapshot: null,
             progress: {
                 stages: [{ name: "Computing attribution graph from selection", progress: 0 }],
                 currentStage: 0,
@@ -601,7 +601,7 @@
                   currentStage: 0,
               };
 
-        graphCompute = { status: "computing", cardId, progress: initialProgress };
+        graphCompute = { status: "computing", cardId, ciSnapshot: null, progress: initialProgress };
 
         try {
             let data: GraphData;
@@ -633,15 +633,22 @@
                             : undefined,
                 };
 
-                data = await api.computeGraphOptimizedStream(params, (progress) => {
-                    if (graphCompute.status !== "computing") return;
-                    if (progress.stage === "graph") {
-                        graphCompute.progress.currentStage = 1;
-                        graphCompute.progress.stages[1].progress = progress.current / progress.total;
-                    } else {
-                        graphCompute.progress.stages[0].progress = progress.current / progress.total;
-                    }
-                });
+                data = await api.computeGraphOptimizedStream(
+                    params,
+                    (progress) => {
+                        if (graphCompute.status !== "computing") return;
+                        if (progress.stage === "graph") {
+                            graphCompute.progress.currentStage = 1;
+                            graphCompute.progress.stages[1].progress = progress.current / progress.total;
+                        } else {
+                            graphCompute.progress.stages[0].progress = progress.current / progress.total;
+                        }
+                    },
+                    (snapshot) => {
+                        if (graphCompute.status !== "computing") return;
+                        graphCompute.ciSnapshot = snapshot;
+                    },
+                );
             } else {
                 const params: api.ComputeGraphParams = {
                     promptId: cardId,
@@ -787,7 +794,7 @@
                                 <label class="draft-label">Enter prompt text</label>
                                 <textarea
                                     class="draft-textarea"
-                                    placeholder="Type your prompt here... (Enter to add)"
+                                    placeholder="Type your prompt here... (Cmd+Enter to add)"
                                     value={draft.text}
                                     oninput={(e) => handleDraftTextChange(e.currentTarget.value)}
                                     onkeydown={handleDraftKeydown}
@@ -966,7 +973,10 @@
                             class:loading={graphCompute.status === "computing" && graphCompute.cardId === activeCard.id}
                         >
                             {#if graphCompute.status === "computing" && graphCompute.cardId === activeCard.id}
-                                <ComputeProgressOverlay state={graphCompute.progress} />
+                                <ComputeProgressOverlay
+                                    state={graphCompute.progress}
+                                    ciSnapshot={graphCompute.ciSnapshot}
+                                />
                             {:else}
                                 <div class="empty-state">
                                     <div class="compute-controls">

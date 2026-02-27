@@ -5,8 +5,6 @@
 export type RegistryEntry = {
     /** Full wandb run id (e.g., "goodfire/spd/jyo9duz5") */
     wandbRunId: string;
-    /** Human-readable model name */
-    modelName: string;
     /** Optional notes about the run */
     notes?: string;
     /** Optional cluster mappings for the run */
@@ -24,52 +22,52 @@ const DEFAULT_ENTITY_PROJECT = "goodfire/spd";
  */
 export const CANONICAL_RUNS: RegistryEntry[] = [
     {
+        wandbRunId: "goodfire/spd/s-55ea3f9b",
+        notes: "Jose. pile_llama_simple_mlp-4L",
+        clusterMappings: [
+            {
+                path: "/mnt/polished-lake/artifacts/mechanisms/spd/clustering/runs/c-70b28465/cluster_mapping.json",
+                notes: "All layers, 9100 iterations",
+            },
+        ],
+    },
+    {
         wandbRunId: "goodfire/spd/s-275c8f21",
-        modelName: "???",
         notes: "Lucius' pile run Feb 11",
     },
     {
         wandbRunId: "goodfire/spd/s-eab2ace8",
-        modelName: "ss_llama_simple_mlp-2L-wide",
         notes: "Oli's PPGD run, great metrics",
     },
     {
         wandbRunId: "goodfire/spd/s-892f140b",
-        modelName: "ss_llama_simple_mlp-2L-wide",
         notes: "Lucius run, Jan 22",
     },
     {
         wandbRunId: "goodfire/spd/s-7884efcc",
-        modelName: "ss_llama_simple_mlp-1.25M (4L)",
         notes: "Lucius' new run, Jan 8",
     },
     {
         wandbRunId: "goodfire/spd/vjbol27n",
-        modelName: "ss_llama_simple_mlp-1.25M (4L)",
         notes: "Lucius' run, Dec 8",
         clusterMappings: [],
     },
     {
         wandbRunId: "goodfire/spd/278we8gk",
-        modelName: "ss_llama_simple_mlp-1.25M (4L)",
         notes: "Dan's initial run, Dec 6",
     },
     {
         wandbRunId: "goodfire/spd/jyo9duz5",
-        modelName: "ss_gpt2_simple-1.25M (4L)",
     },
     {
         wandbRunId: "goodfire/spd/5cr21lbs",
-        modelName: "ss_llama_simple_mlp (1L)",
         clusterMappings: [],
     },
     {
         wandbRunId: "goodfire/spd/itmexlj0",
-        modelName: "ss_llama_simple_mlp (2L)",
     },
     {
         wandbRunId: "goodfire/spd/33n6xjjt",
-        modelName: "ss_gpt2_simple (1L)",
     },
 ];
 

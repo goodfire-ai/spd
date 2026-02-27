@@ -15,7 +15,12 @@ from jaxtyping import Bool, Float
 from torch import Tensor, nn
 
 from spd.app.backend.app_tokenizer import AppTokenizer
-from spd.app.backend.optim_cis import OptimCIConfig, OptimizationMetrics, optimize_ci_values
+from spd.app.backend.optim_cis import (
+    CISnapshotCallback,
+    OptimCIConfig,
+    OptimizationMetrics,
+    optimize_ci_values,
+)
 from spd.configs import SamplingType
 from spd.log import logger
 from spd.models.component_model import ComponentModel, OutputWithCache
@@ -508,6 +513,7 @@ def compute_prompt_attributions_optimized(
     output_prob_threshold: float,
     device: str,
     on_progress: ProgressCallback | None = None,
+    on_ci_snapshot: CISnapshotCallback | None = None,
 ) -> OptimizedPromptAttributionResult:
     """Compute prompt attributions using optimized sparse CI values.
 
@@ -528,6 +534,7 @@ def compute_prompt_attributions_optimized(
         config=optim_config,
         device=device,
         on_progress=on_progress,
+        on_ci_snapshot=on_ci_snapshot,
     )
     ci_outputs = optim_result.params.create_ci_outputs(model, device)
 

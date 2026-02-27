@@ -152,52 +152,55 @@ def _run_intervention_forward(
 
 @router.post("")
 @log_errors
-def run_intervention(request: InterventionRequest, loaded: DepLoadedRun) -> InterventionResponse:
+def run_intervention(
+    request: InterventionRequest, loaded: DepLoadedRun, manager: DepStateManager
+) -> InterventionResponse:
     """Run intervention forward pass with specified nodes active (legacy endpoint)."""
-    token_ids = loaded.tokenizer.encode(request.text)
-    tokens = torch.tensor([token_ids], dtype=torch.long, device=DEVICE)
+    with manager.gpu_lock():
+        token_ids = loaded.tokenizer.encode(request.text)
+        tokens = torch.tensor([token_ids], dtype=torch.long, device=DEVICE)
 
-    active_nodes = [
-        (
-            loaded.topology.canon_to_target(n.layer),
-            n.seq_pos,
-            n.component_idx,
-        )
-        for n in request.nodes
-    ]
-
-    seq_len = tokens.shape[1]
-    for _, seq_pos, _ in active_nodes:
-        if seq_pos >= seq_len:
-            raise ValueError(f"seq_pos {seq_pos} out of bounds for text with {seq_len} tokens")
-
-    result = compute_intervention_forward(
-        model=loaded.model,
-        tokens=tokens,
-        active_nodes=active_nodes,
-        top_k=request.top_k,
-        tokenizer=loaded.tokenizer,
-    )
-
-    predictions_per_position = [
-        [
-            TokenPrediction(
-                token=token,
-                token_id=token_id,
-                spd_prob=spd_prob,
-                target_prob=target_prob,
-                logit=logit,
-                target_logit=target_logit,
+        active_nodes = [
+            (
+                loaded.topology.canon_to_target(n.layer),
+                n.seq_pos,
+                n.component_idx,
             )
-            for token, token_id, spd_prob, logit, target_prob, target_logit in pos_predictions
+            for n in request.nodes
         ]
-        for pos_predictions in result.predictions_per_position
-    ]
 
-    return InterventionResponse(
-        input_tokens=result.input_tokens,
-        predictions_per_position=predictions_per_position,
-    )
+        seq_len = tokens.shape[1]
+        for _, seq_pos, _ in active_nodes:
+            if seq_pos >= seq_len:
+                raise ValueError(f"seq_pos {seq_pos} out of bounds for text with {seq_len} tokens")
+
+        result = compute_intervention_forward(
+            model=loaded.model,
+            tokens=tokens,
+            active_nodes=active_nodes,
+            top_k=request.top_k,
+            tokenizer=loaded.tokenizer,
+        )
+
+        predictions_per_position = [
+            [
+                TokenPrediction(
+                    token=token,
+                    token_id=token_id,
+                    spd_prob=spd_prob,
+                    target_prob=target_prob,
+                    logit=logit,
+                    target_logit=target_logit,
+                )
+                for token, token_id, spd_prob, logit, target_prob, target_logit in pos_predictions
+            ]
+            for pos_predictions in result.predictions_per_position
+        ]
+
+        return InterventionResponse(
+            input_tokens=result.input_tokens,
+            predictions_per_position=predictions_per_position,
+        )
 
 
 @router.post("/run")
@@ -206,14 +209,16 @@ def run_and_save_intervention(
     request: RunInterventionRequest,
     loaded: DepLoadedRun,
     db: DepDB,
+    manager: DepStateManager,
 ) -> InterventionRunSummary:
     """Run an intervention and save the result."""
-    response = _run_intervention_forward(
-        text=request.text,
-        selected_nodes=request.selected_nodes,
-        top_k=request.top_k,
-        loaded=loaded,
-    )
+    with manager.gpu_lock():
+        response = _run_intervention_forward(
+            text=request.text,
+            selected_nodes=request.selected_nodes,
+            top_k=request.top_k,
+            loaded=loaded,
+        )
 
     run_id = db.save_intervention_run(
         graph_id=request.graph_id,
@@ -321,12 +326,13 @@ def fork_intervention_run(
     modified_text = loaded.tokenizer.decode(modified_token_ids)
 
     # Run the intervention forward pass with modified tokens but same selected nodes
-    response = _run_intervention_forward(
-        text=modified_text,
-        selected_nodes=parent_run.selected_nodes,
-        top_k=request.top_k,
-        loaded=loaded,
-    )
+    with manager.gpu_lock():
+        response = _run_intervention_forward(
+            text=modified_text,
+            selected_nodes=parent_run.selected_nodes,
+            top_k=request.top_k,
+            loaded=loaded,
+        )
 
     # Save the forked run
     fork_id = db.save_forked_intervention_run(

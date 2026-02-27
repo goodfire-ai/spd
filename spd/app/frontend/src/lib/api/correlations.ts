@@ -47,10 +47,18 @@ export async function getIntruderScores(): Promise<Record<string, number>> {
     return fetchJson<Record<string, number>>("/api/correlations/intruder_scores");
 }
 
-export async function getInterpretationDetail(layer: string, componentIdx: number): Promise<InterpretationDetail> {
-    return fetchJson<InterpretationDetail>(
-        `/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}`,
-    );
+export async function getInterpretationDetail(
+    layer: string,
+    componentIdx: number,
+): Promise<InterpretationDetail | null> {
+    try {
+        return await fetchJson<InterpretationDetail>(
+            `/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}`,
+        );
+    } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+    }
 }
 
 export async function requestComponentInterpretation(

@@ -30,9 +30,12 @@
         <span class="key">{optimization.loss.type}</span>{optimization.loss.coeff}
     </span>
     <span class="param">
-        <span class="key">pos</span>{optimization.loss.position}{#if tokenAtPos !== null}
-            (<span class="token">{tokenAtPos}</span>){/if}
-    </span>
+        <span class="key">pos</span>
+        {optimization.loss.position}
+        {#if tokenAtPos !== null}
+            (<span class="token">{tokenAtPos}</span>)
+        {/if}
+        </span>
     {#if optimization.loss.type === "ce"}
         <span class="param">
             <span class="key">label</span>(<span class="token">{optimization.loss.label_str}</span>)
@@ -56,6 +59,9 @@
         </span>
         <span class="param metric">
             <span class="key">stoch prob</span>{formatProb(optimization.metrics.stoch_masked_label_prob)}
+        </span>
+        <span class="param metric">
+            <span class="key">adv prob</span>{formatProb(optimization.metrics.adv_pgd_label_prob)}
         </span>
     {/if}
 </div>

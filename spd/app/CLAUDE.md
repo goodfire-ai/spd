@@ -15,6 +15,7 @@ This is a **rapidly iterated research tool**. Key implications:
 - **Database is disposable**: Delete `.data/app/prompt_attr.db` if schema changes break things
 - **Prefer simplicity**: Avoid over-engineering for hypothetical future needs
 - **Fail loud and fast**: The users are a small team of highly technical people. Errors are good. We want to know immediately if something is wrong. No soft failing, assert, assert, assert
+- **Token display**: Always ship token strings rendered server-side via `AppTokenizer`, never raw token IDs. For embed/output layers, `component_idx` is a token ID — resolve it to a display string in the backend response.
 
 ## Running the App
 
@@ -50,6 +51,9 @@ backend/
     ├── intervention.py    # Selective component activation
     ├── correlations.py    # Component correlations + token stats + interpretations
     ├── clusters.py        # Component clustering
+    ├── dataset_search.py  # SimpleStories dataset search
+    ├── agents.py          # Various useful endpoints that AI agents should look at when helping
+    ├── mcp.py             # MCP (Model Context Protocol) endpoint for Claude Code 
     ├── dataset_search.py  # Dataset search (reads dataset from run config)
     └── agents.py          # Various useful endpoints that AI agents should look at when helping
 ```

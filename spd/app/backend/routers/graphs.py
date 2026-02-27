@@ -28,6 +28,7 @@ from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.optim_cis import (
     AdvPGDConfig,
     CELossConfig,
+    CISnapshot,
     KLLossConfig,
     LossConfig,
     MaskType,
@@ -262,46 +263,69 @@ def _build_out_probs(
     return out_probs
 
 
+CISnapshotCallback = Callable[[CISnapshot], None]
+
+
 def stream_computation(
-    work: Callable[[ProgressCallback], GraphData | GraphDataWithOptimization],
+    work: Callable[
+        [ProgressCallback, CISnapshotCallback | None], GraphData | GraphDataWithOptimization
+    ],
+    gpu_lock: threading.Lock,
 ) -> StreamingResponse:
-    """Run graph computation in a thread with SSE streaming for progress updates."""
+    """Run graph computation in a thread with SSE streaming for progress updates.
+
+    Acquires gpu_lock before starting and holds it until computation completes.
+    Raises 503 if the lock is already held by another operation.
+    """
+    # Try to acquire lock non-blocking - fail fast if GPU is busy
+    if not gpu_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=503,
+            detail="GPU operation already in progress. Please wait and retry.",
+        )
+
     progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
 
     def on_progress(current: int, total: int, stage: str) -> None:
         progress_queue.put({"type": "progress", "current": current, "total": total, "stage": stage})
 
+    def on_ci_snapshot(snapshot: CISnapshot) -> None:
+        progress_queue.put({"type": "ci_snapshot", **snapshot.model_dump()})
+
     def compute_thread() -> None:
         try:
-            result = work(on_progress)
+            result = work(on_progress, on_ci_snapshot)
             progress_queue.put({"type": "result", "result": result})
         except Exception as e:
             traceback.print_exc(file=sys.stderr)
             progress_queue.put({"type": "error", "error": str(e)})
 
     def generate() -> Generator[str]:
-        thread = threading.Thread(target=compute_thread)
-        thread.start()
+        try:
+            thread = threading.Thread(target=compute_thread)
+            thread.start()
 
-        while True:
-            try:
-                msg = progress_queue.get(timeout=0.1)
-            except queue.Empty:
-                if not thread.is_alive():
+            while True:
+                try:
+                    msg = progress_queue.get(timeout=0.1)
+                except queue.Empty:
+                    if not thread.is_alive():
+                        break
+                    continue
+
+                if msg["type"] in ("progress", "ci_snapshot"):
+                    yield f"data: {json.dumps(msg)}\n\n"
+                elif msg["type"] == "error":
+                    yield f"data: {json.dumps(msg)}\n\n"
                     break
-                continue
+                elif msg["type"] == "result":
+                    complete_data = {"type": "complete", "data": msg["result"].model_dump()}
+                    yield f"data: {json.dumps(complete_data)}\n\n"
+                    break
 
-            if msg["type"] == "progress":
-                yield f"data: {json.dumps(msg)}\n\n"
-            elif msg["type"] == "error":
-                yield f"data: {json.dumps(msg)}\n\n"
-                break
-            elif msg["type"] == "result":
-                complete_data = {"type": "complete", "data": msg["result"].model_dump()}
-                yield f"data: {json.dumps(complete_data)}\n\n"
-                break
-
-        thread.join()
+            thread.join()
+        finally:
+            gpu_lock.release()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -450,7 +474,9 @@ def compute_graph_stream(
     spans = loaded.tokenizer.get_spans(token_ids)
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
 
-    def work(on_progress: ProgressCallback) -> GraphData:
+    def work(
+        on_progress: ProgressCallback, _on_ci_snapshot: CISnapshotCallback | None
+    ) -> GraphData:
         t_total = time.perf_counter()
 
         result = compute_prompt_attributions(
@@ -513,7 +539,7 @@ def compute_graph_stream(
             l0_total=fg.l0_total,
         )
 
-    return stream_computation(work)
+    return stream_computation(work, manager._gpu_lock)
 
 
 def _edge_to_edge_data(edge: Edge) -> EdgeData:
@@ -650,7 +676,9 @@ def compute_graph_optimized_stream(
         else None,
     )
 
-    def work(on_progress: ProgressCallback) -> GraphDataWithOptimization:
+    def work(
+        on_progress: ProgressCallback, on_ci_snapshot: CISnapshotCallback | None
+    ) -> GraphDataWithOptimization:
         result = compute_prompt_attributions_optimized(
             model=loaded.model,
             topology=loaded.topology,
@@ -660,6 +688,7 @@ def compute_graph_optimized_stream(
             output_prob_threshold=0.01,
             device=DEVICE,
             on_progress=on_progress,
+            on_ci_snapshot=on_ci_snapshot,
         )
 
         ci_masked_out_logits = result.ci_masked_out_logits.cpu()
@@ -667,6 +696,10 @@ def compute_graph_optimized_stream(
         adv_pgd_out_logits = (
             result.adv_pgd_out_logits.cpu() if result.adv_pgd_out_logits is not None else None
         )
+
+        opt_params.ci_masked_label_prob = result.metrics.ci_masked_label_prob
+        opt_params.stoch_masked_label_prob = result.metrics.stoch_masked_label_prob
+        opt_params.adv_pgd_label_prob = result.metrics.adv_pgd_label_prob
 
         graph_id = db.save_graph(
             prompt_id=prompt_id,
@@ -738,7 +771,7 @@ def compute_graph_optimized_stream(
             ),
         )
 
-    return stream_computation(work)
+    return stream_computation(work, manager._gpu_lock)
 
 
 @dataclass
@@ -892,8 +925,12 @@ def stored_graph_to_response(
             beta=opt.beta,
             mask_type=opt.mask_type,
             loss=loss_result,
-            # Metrics not stored in DB for cached graphs - use l0_total from graph
-            metrics=OptimizationMetricsResult(l0_total=float(fg.l0_total)),
+            metrics=OptimizationMetricsResult(
+                l0_total=float(fg.l0_total),
+                ci_masked_label_prob=opt.ci_masked_label_prob,
+                stoch_masked_label_prob=opt.stoch_masked_label_prob,
+                adv_pgd_label_prob=opt.adv_pgd_label_prob,
+            ),
             adv_pgd_n_steps=opt.adv_pgd_n_steps,
             adv_pgd_step_size=opt.adv_pgd_step_size,
         ),

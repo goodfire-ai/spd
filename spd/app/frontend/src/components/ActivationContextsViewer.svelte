@@ -3,13 +3,13 @@
     import { computeMaxAbsComponentAct } from "../lib/colors";
     import { COMPONENT_CARD_CONSTANTS } from "../lib/componentCardConstants";
     import { anyCorrelationStatsEnabled, displaySettings } from "../lib/displaySettings.svelte";
-    import { getLayerAlias } from "../lib/layerAliasing";
     import type { ActivationContextsSummary, SubcomponentMetadata } from "../lib/promptAttributionsTypes";
     import { useComponentData } from "../lib/useComponentData.svelte";
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "./ui/ComponentCorrelationMetrics.svelte";
+    import GraphInterpBadge from "./ui/GraphInterpBadge.svelte";
     import InterpretationBadge from "./ui/InterpretationBadge.svelte";
     import SectionHeader from "./ui/SectionHeader.svelte";
     import StatusText from "./ui/StatusText.svelte";
@@ -37,6 +37,9 @@
     let currentMetadata = $derived<SubcomponentMetadata>(currentLayerMetadata[currentPage]);
     let currentIntruderScore = $derived(
         currentMetadata ? runState.getIntruderScore(`${selectedLayer}:${currentMetadata.subcomponent_idx}`) : null,
+    );
+    let currentGraphInterpLabel = $derived(
+        currentMetadata ? runState.getGraphInterpLabel(`${selectedLayer}:${currentMetadata.subcomponent_idx}`) : null,
     );
 
     // Component data hook - call load() explicitly when component changes
@@ -288,7 +291,7 @@
             <label for="layer-select">Layer:</label>
             <select id="layer-select" value={selectedLayer} onchange={handleLayerChange}>
                 {#each availableLayers as layer (layer)}
-                    <option value={layer}>{getLayerAlias(layer)}</option>
+                    <option value={layer}>{layer}</option>
                 {/each}
             </select>
         </div>
@@ -412,11 +415,16 @@
             {/if}
         </SectionHeader>
 
-        <InterpretationBadge
-            interpretation={componentData.interpretation}
-            interpretationDetail={componentData.interpretationDetail}
-            onGenerate={componentData.generateInterpretation}
-        />
+        <div class="interpretation-badges">
+            <InterpretationBadge
+                interpretation={componentData.interpretation}
+                interpretationDetail={componentData.interpretationDetail}
+                onGenerate={componentData.generateInterpretation}
+            />
+            {#if currentGraphInterpLabel && componentData.graphInterpDetail.status === "loaded" && componentData.graphInterpDetail.data}
+                <GraphInterpBadge headline={currentGraphInterpLabel} detail={componentData.graphInterpDetail.data} />
+            {/if}
+        </div>
 
         <!-- Activation examples -->
         {#if componentData.componentDetail.status === "loading"}
@@ -696,6 +704,12 @@
     }
 
     .correlations-section {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+
+    .interpretation-badges {
         display: flex;
         flex-direction: column;
         gap: var(--space-2);

@@ -20,6 +20,7 @@ export type EdgeAttribution = {
     key: string; // "layer:seq:cIdx" for prompt or "layer:cIdx" for dataset
     value: number; // raw attribution value (positive or negative)
     normalizedMagnitude: number; // |value| / maxAbsValue, for color intensity (0-1)
+    tokenStr: string | null; // resolved token string for embed/output layers
 };
 
 export type OutputProbability = {
@@ -30,6 +31,17 @@ export type OutputProbability = {
     adv_pgd_prob: number | null; // Adversarial PGD probability
     adv_pgd_logit: number | null; // Adversarial PGD raw logit
     token: string;
+};
+
+export type CISnapshot = {
+    step: number;
+    total_steps: number;
+    layers: string[];
+    seq_len: number;
+    initial_alive: number[][];
+    current_alive: number[][];
+    l0_total: number;
+    loss: number;
 };
 
 export type GraphType = "standard" | "optimized" | "manual";
@@ -233,7 +245,7 @@ export function formatNodeKeyForDisplay(nodeKey: string, displayNames: Record<st
 // "embed" and "output" are pseudo-layers used for visualization but are not part of the
 // decomposed model. They cannot be intervened on - only the internal layers (attn/mlp)
 // can have their components selectively activated.
-const NON_INTERVENTABLE_LAYERS = new Set(["embed", "output"]);
+const NON_INTERVENTABLE_LAYERS = new Set(["embed", "wte", "output"]);
 
 export function isInterventableNode(nodeKey: string): boolean {
     const layer = nodeKey.split(":")[0];

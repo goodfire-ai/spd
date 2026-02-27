@@ -2,9 +2,8 @@
  * API client for /api/graphs endpoints.
  */
 
-import type { GraphData, TokenizeResponse, TokenInfo } from "../promptAttributionsTypes";
+import type { GraphData, TokenizeResponse, TokenInfo, CISnapshot } from "../promptAttributionsTypes";
 import { buildEdgeIndexes } from "../promptAttributionsTypes";
-import { setArchitecture } from "../layerAliasing";
 import { apiUrl, ApiError, fetchJson } from "./index";
 
 export type NormalizeType = "none" | "target" | "layer";
@@ -30,6 +29,7 @@ export type ComputeGraphParams = {
 async function parseGraphSSEStream(
     response: Response,
     onProgress?: (progress: GraphProgress) => void,
+    onCISnapshot?: (snapshot: CISnapshot) => void,
 ): Promise<GraphData> {
     const reader = response.body?.getReader();
     if (!reader) {
@@ -56,17 +56,11 @@ async function parseGraphSSEStream(
 
             if (data.type === "progress" && onProgress) {
                 onProgress({ current: data.current, total: data.total, stage: data.stage });
+            } else if (data.type === "ci_snapshot" && onCISnapshot) {
+                onCISnapshot(data as CISnapshot);
             } else if (data.type === "error") {
                 throw new ApiError(data.error, 500);
             } else if (data.type === "complete") {
-                // Extract all unique layer names from edges to detect architecture
-                const layerNames = new Set<string>();
-                for (const edge of data.data.edges) {
-                    layerNames.add(edge.src.split(":")[0]);
-                    layerNames.add(edge.tgt.split(":")[0]);
-                }
-                setArchitecture(Array.from(layerNames));
-
                 const { edgesBySource, edgesByTarget } = buildEdgeIndexes(data.data.edges);
                 result = { ...data.data, edgesBySource, edgesByTarget };
                 await reader.cancel();
@@ -128,6 +122,7 @@ export type ComputeGraphOptimizedParams = {
 export async function computeGraphOptimizedStream(
     params: ComputeGraphOptimizedParams,
     onProgress?: (progress: GraphProgress) => void,
+    onCISnapshot?: (snapshot: CISnapshot) => void,
 ): Promise<GraphData> {
     const url = apiUrl("/api/graphs/optimized/stream");
     url.searchParams.set("prompt_id", String(params.promptId));
@@ -157,7 +152,7 @@ export async function computeGraphOptimizedStream(
         throw new ApiError(error.detail || `HTTP ${response.status}`, response.status);
     }
 
-    return parseGraphSSEStream(response, onProgress);
+    return parseGraphSSEStream(response, onProgress, onCISnapshot);
 }
 
 export async function getGraphs(promptId: number, normalize: NormalizeType, ciThreshold: number): Promise<GraphData[]> {
@@ -166,14 +161,6 @@ export async function getGraphs(promptId: number, normalize: NormalizeType, ciTh
     url.searchParams.set("ci_threshold", String(ciThreshold));
     const graphs = await fetchJson<Omit<GraphData, "edgesBySource" | "edgesByTarget">[]>(url.toString());
     return graphs.map((g) => {
-        // Extract all unique layer names from edges to detect architecture
-        const layerNames = new Set<string>();
-        for (const edge of g.edges) {
-            layerNames.add(edge.src.split(":")[0]);
-            layerNames.add(edge.tgt.split(":")[0]);
-        }
-        setArchitecture(Array.from(layerNames));
-
         const { edgesBySource, edgesByTarget } = buildEdgeIndexes(g.edges);
         return { ...g, edgesBySource, edgesByTarget };
     });
