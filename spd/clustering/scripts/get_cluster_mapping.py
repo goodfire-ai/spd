@@ -1,9 +1,9 @@
 """Extract cluster mapping from an ensemble at a specific iteration.
 
 Usage:
-    python -m spd.clustering.scripts.get_cluster_mapping /path/to/ensemble --iteration 299
-    python -m spd.clustering.scripts.get_cluster_mapping /path/to/ensemble --iteration 299 --run-idx 0
-    python -m spd.clustering.scripts.get_cluster_mapping /path/to/ensemble --iteration 299 --notes "some notes"
+    python -m spd.clustering.scripts.get_cluster_mapping /path/to/ensemble --n_iterations 299
+    python -m spd.clustering.scripts.get_cluster_mapping /path/to/ensemble --n_iterations 299 --run_idx 0
+    python -m spd.clustering.scripts.get_cluster_mapping /path/to/ensemble --n_iterations 299 --notes "some notes"
 
 Output format:
     {
