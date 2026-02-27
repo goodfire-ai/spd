@@ -10,6 +10,8 @@
   },
   "model_path": "wandb:goodfire/spd/runs/lxs77xye",
   "batch_size": 1,
+  "n_tokens": 4,
+  "n_tokens_per_seq": 2,
   "wandb_project": null,
   "logging_intervals": {
     "stat": 1,
