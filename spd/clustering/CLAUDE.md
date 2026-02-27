@@ -52,7 +52,9 @@ Entry point via `spd-clustering`. Submits clustering runs as SLURM job array, th
 
 Performs one clustering run:
 1. Load decomposed model from WandB
-2. Compute component activations on dataset batch
+2. Compute component activations:
+   - **LM tasks**: Uses `n_tokens` and `n_tokens_per_seq` parameters. Iterates through batches of size `batch_size`, picks `n_tokens_per_seq` random token positions per sequence, collects CI values until `n_tokens` samples gathered. Result: `(n_tokens, C)` per layer.
+   - **resid_mlp tasks**: Single batch of size `batch_size`, no sequence dimension. Uses `component_activations()` directly.
 3. Run merge iteration (greedy MDL-based clustering)
 4. Save `MergeHistory` with group assignments per iteration
 
@@ -77,7 +79,7 @@ Computes pairwise distances between clustering runs in an ensemble:
 
 ```python
 ClusteringPipelineConfig  # Pipeline settings (n_runs, distances_methods, SLURM config)
-ClusteringRunConfig       # Single run settings (model_path, batch_size, merge_config)
+ClusteringRunConfig       # Single run settings (model_path, batch_size, n_tokens, merge_config)
 MergeConfig               # Merge algorithm params (alpha, iters, activation_threshold)
 ```
 
