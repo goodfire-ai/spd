@@ -1,14 +1,15 @@
 <script lang="ts">
     import { getContext } from "svelte";
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
+    import ActivationContextsTab from "./ActivationContextsTab.svelte";
     import ClusterPathInput from "./ClusterPathInput.svelte";
+    import ClustersTab from "./ClustersTab.svelte";
     import DatasetExplorerTab from "./DatasetExplorerTab.svelte";
     import InvestigationsTab from "./InvestigationsTab.svelte";
     import DataSourcesTab from "./DataSourcesTab.svelte";
     import ModelGraphTab from "./ModelGraphTab.svelte";
     import PromptAttributionsTab from "./PromptAttributionsTab.svelte";
     import DisplaySettingsDropdown from "./ui/DisplaySettingsDropdown.svelte";
-    import ActivationContextsTab from "./ActivationContextsTab.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
 
@@ -19,11 +20,17 @@
     const graphInterpAvailable = $derived(runState.graphInterpAvailable);
 
     let activeTab = $state<
-        "prompts" | "components" | "dataset-search" | "model-graph" | "data-sources" | "investigations" | null
+        "prompts" | "components" | "dataset-search" | "model-graph" | "data-sources" | "investigations" | "clusters" | null
     >(null);
 
     $effect(() => {
         if (runState.prompts.status === "loaded" && activeTab === null) {
+            activeTab = "prompts";
+        }
+    });
+
+    $effect(() => {
+        if (activeTab === "clusters" && !runState.clusterMapping) {
             activeTab = "prompts";
         }
     });
@@ -107,6 +114,16 @@
                 >
                     Data Sources
                 </button>
+                {#if runState.clusterMapping}
+                    <button
+                        type="button"
+                        class="tab-button"
+                        class:active={activeTab === "clusters"}
+                        onclick={() => (activeTab = "clusters")}
+                    >
+                        Clusters
+                    </button>
+                {/if}
             {/if}
         </nav>
 
@@ -150,6 +167,11 @@
             <div class="tab-content" class:hidden={activeTab !== "data-sources"}>
                 <DataSourcesTab />
             </div>
+            {#if runState.clusterMapping}
+                <div class="tab-content" class:hidden={activeTab !== "clusters"}>
+                    <ClustersTab />
+                </div>
+            {/if}
         {:else if runState.run.status === "loading" || runState.prompts.status === "loading"}
             <div class="empty-state">
                 <p>Loading run...</p>
