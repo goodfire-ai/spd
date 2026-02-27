@@ -1,4 +1,4 @@
-import { getContext } from "svelte";
+import { getContext, untrack } from "svelte";
 import type { Loadable } from ".";
 import {
     ApiError,
@@ -134,20 +134,20 @@ export function useComponentData() {
             datasetAttributions = { status: "loaded", data: null };
         }
 
-        // Fetch interpretation detail (404 = no interpretation for this component)
-        getInterpretationDetail(layer, cIdx)
-            .then((data) => {
-                if (isStale()) return;
-                interpretationDetail = { status: "loaded", data };
-            })
-            .catch((error) => {
-                if (isStale()) return;
-                if (error instanceof ApiError && error.status === 404) {
-                    interpretationDetail = { status: "loaded", data: null };
-                } else {
+        const interpState = untrack(() => runState.getInterpretation(`${layer}:${cIdx}`));
+        if (interpState.status === "loaded" && interpState.data.status !== "none") {
+            getInterpretationDetail(layer, cIdx)
+                .then((data) => {
+                    if (isStale()) return;
+                    interpretationDetail = { status: "loaded", data };
+                })
+                .catch((error) => {
+                    if (isStale()) return;
                     interpretationDetail = { status: "error", error };
-                }
-            });
+                });
+        } else {
+            interpretationDetail = { status: "loaded", data: null };
+        }
 
         // Fetch graph interp detail (skip if not available for this run)
         if (runState.graphInterpAvailable) {

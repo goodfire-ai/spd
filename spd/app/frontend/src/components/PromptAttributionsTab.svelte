@@ -277,8 +277,7 @@
     }
 
     function handleDraftKeydown(e: KeyboardEvent) {
-        // Enter without shift = add prompt, Shift+Enter = newline
-        if (e.key === "Enter" && !e.shiftKey) {
+        if (e.key === "Enter" && e.metaKey) {
             e.preventDefault();
             handleAddFromDraft();
         }
@@ -795,7 +794,7 @@
                                 <label class="draft-label">Enter prompt text</label>
                                 <textarea
                                     class="draft-textarea"
-                                    placeholder="Type your prompt here... (Enter to add)"
+                                    placeholder="Type your prompt here... (Cmd+Enter to add)"
                                     value={draft.text}
                                     oninput={(e) => handleDraftTextChange(e.currentTarget.value)}
                                     onkeydown={handleDraftKeydown}

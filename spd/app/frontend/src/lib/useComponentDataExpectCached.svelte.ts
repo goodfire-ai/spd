@@ -6,7 +6,7 @@
  * examples (200). Dataset attributions and interpretation detail are on-demand.
  */
 
-import { getContext } from "svelte";
+import { getContext, untrack } from "svelte";
 import type { Loadable } from ".";
 import {
     ApiError,
@@ -89,21 +89,21 @@ export function useComponentDataExpectCached() {
             datasetAttributions = { status: "loaded", data: null };
         }
 
-        // Fetch interpretation detail on-demand (not cached)
-        interpretationDetail = { status: "loading" };
-        getInterpretationDetail(layer, cIdx)
-            .then((data) => {
-                if (isStale()) return;
-                interpretationDetail = { status: "loaded", data };
-            })
-            .catch((error) => {
-                if (isStale()) return;
-                if (error instanceof ApiError && error.status === 404) {
-                    interpretationDetail = { status: "loaded", data: null };
-                } else {
+        const interpState = untrack(() => runState.getInterpretation(`${layer}:${cIdx}`));
+        if (interpState.status === "loaded" && interpState.data.status !== "none") {
+            interpretationDetail = { status: "loading" };
+            getInterpretationDetail(layer, cIdx)
+                .then((data) => {
+                    if (isStale()) return;
+                    interpretationDetail = { status: "loaded", data };
+                })
+                .catch((error) => {
+                    if (isStale()) return;
                     interpretationDetail = { status: "error", error };
-                }
-            });
+                });
+        } else {
+            interpretationDetail = { status: "loaded", data: null };
+        }
 
         // Fetch graph interp detail
         if (runState.graphInterpAvailable) {

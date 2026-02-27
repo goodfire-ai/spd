@@ -112,7 +112,7 @@
     }: Props = $props();
 
     // Track newly-added run for flash animation
-    let knownRunIds = $state(new Set(graph.interventionRuns.map((r) => r.id)));
+    let knownRunIds = new Set(graph.interventionRuns.map((r) => r.id));
     let flashRunId = $state<number | null>(null);
 
     $effect(() => {
