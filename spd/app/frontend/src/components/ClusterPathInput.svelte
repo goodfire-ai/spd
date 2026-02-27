@@ -77,7 +77,7 @@
         >
             <span class="cluster-label">Clusters:</span>
             <span class="cluster-path">
-                {runState.clusterMapping.filePath.split("_").pop()?.replace(".json", "")}
+                {runState.clusterMapping.filePath.split("/").at(-2) ?? runState.clusterMapping.filePath}
             </span>
             <button type="button" class="clear-button" onclick={handleClear} title="Clear cluster mapping"> x </button>
             {#if showLoadedTooltip}
@@ -94,7 +94,7 @@
             <div class="input-with-dropdown">
                 <input
                     type="text"
-                    placeholder="path/to/cluster_mapping_<id>.json"
+                    placeholder="path/to/clustering_run/cluster_mapping.json"
                     bind:value={inputPath}
                     onkeydown={handleKeydown}
                     disabled={loading}
@@ -120,7 +120,7 @@
                                         title={mapping.path}
                                     >
                                         <span class="entry-id">
-                                            {mapping.path.split("_").pop()?.replace(".json", "")}
+                                            {mapping.path.split("/").at(-2) ?? mapping.path}
                                         </span>
                                         <span class="entry-notes">{mapping.notes}</span>
                                     </button>
