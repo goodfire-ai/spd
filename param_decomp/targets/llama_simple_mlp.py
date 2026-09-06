@@ -5,7 +5,9 @@ Torch reference (read-only, ground truth):
 pretrain run `goodfire/spd/runs/t-9d2b8f02`. Llama-style pre-RMSNorm blocks under a
 GPT2-style module tree `h.{i}.`: rotary GQA attention (`rotary_dim == head_dim`,
 plain base-`rotary_base` rotate-half RoPE — NOT llama3-rescaled) and a GELU(tanh) MLP
-`c_fc -> gelu -> down_proj`. `wte` and `lm_head` are tied; no biases anywhere.
+`c_fc -> gelu -> down_proj`. The original checkpoint ties `wte` and `lm_head`; newer
+configs may use an untied head and one learned zero-value attention-sink logit per head.
+There are no biases.
 
 The torch RoPE construction (`freq = base**(i/(rd/2))` tiled `.repeat(2)`,
 `rotate_every_two` with `rotary_adjacent_pairs=False`) is exactly the rotate-half RoPE
@@ -13,8 +15,8 @@ of `param_decomp.vendored_jax.llama.rope_cos_sin`/`apply_rope` with `inv_freq = 
 pinned by the torch-fixture equivalence test (`param_decomp/tests/targets/simple_mlp_equivalence/`).
 
 This module is the family DECLARATION: the site vocabulary (`SIMPLE_MLP_ANATOMY` binds
-`q_proj`/…/`c_fc`/`down_proj` to the engine's structural roles, `PlainMLP` + `TiedHead`
-select its anatomical arms), the torch config parser, and the checkpoint loaders. All
+`q_proj`/…/`c_fc`/`down_proj` to the engine's structural roles and `PlainMLP` selects
+its MLP arm), the torch config parser, and the checkpoint loaders. All
 forwards run on `glu_transformer.GLUDecomposedModel`.
 
 Decomposed sites are torch-module-path named: `h.{i}.attn.{q,k,v,o}_proj`,
@@ -29,19 +31,26 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, cast, get_args
+from typing import Literal, cast, get_args, override
 
+import equinox as eqx
+import jax
 import jax.numpy as jnp
 import numpy as np
 import yaml
+from jax.sharding import NamedSharding
+from jax.sharding import PartitionSpec as P
 from jax.typing import DTypeLike
 from jaxtyping import Array, Float
 from safetensors import safe_open
 
 from param_decomp.core import family
+from param_decomp.core.axes import Axes
 from param_decomp.core.components import SiteC, SiteDims, SiteSpec
 from param_decomp.core.family import ArchFamily
 from param_decomp.core.nonlinearity import NonlinearityPartition
+from param_decomp.core.placement import PlacementRules
+from param_decomp.target_ports.llama import causal_sink_sdpa
 from param_decomp.targets.glu_transformer import (
     Anatomy,
     FrozenAttn,
@@ -83,6 +92,8 @@ class LlamaSimpleMLPConfig:
     rotary_base: float
     rms_norm_eps: float
     n_ctx: int
+    tie_word_embeddings: bool = True
+    attention_sinks: bool = False
 
     @property
     def head_dim(self) -> int:
@@ -102,6 +113,10 @@ def config_from_model_config_dict(raw: dict[str, object]) -> LlamaSimpleMLPConfi
     assert raw["use_grouped_query_attention"] is True, "merged-qkv (c_attn) unsupported"
     assert raw["attn_bias"] is False and raw["mlp_bias"] is False, "biases unsupported"
     assert raw["rotary_adjacent_pairs"] is False, "adjacent-pair rotary unsupported"
+    tie_word_embeddings = raw.get("tie_word_embeddings", True)
+    attention_sinks = raw.get("attention_sinks", False)
+    assert isinstance(tie_word_embeddings, bool), tie_word_embeddings
+    assert isinstance(attention_sinks, bool), attention_sinks
     cfg = LlamaSimpleMLPConfig(
         vocab_size=int(raw["vocab_size"]),  # pyright: ignore[reportArgumentType]
         n_layer=int(raw["n_layer"]),  # pyright: ignore[reportArgumentType]
@@ -112,6 +127,8 @@ def config_from_model_config_dict(raw: dict[str, object]) -> LlamaSimpleMLPConfi
         rotary_base=float(raw["rotary_base"]),  # pyright: ignore[reportArgumentType]
         rms_norm_eps=float(raw["rms_norm_eps"]),  # pyright: ignore[reportArgumentType]
         n_ctx=int(raw["n_ctx"]),  # pyright: ignore[reportArgumentType]
+        tie_word_embeddings=tie_word_embeddings,
+        attention_sinks=attention_sinks,
     )
     assert cfg.n_embd % cfg.n_head == 0 and cfg.n_head % cfg.n_kv_head == 0, cfg
     # the torch class forces rotary_dim = head_dim regardless of config; insist the
@@ -204,8 +221,7 @@ def checkpoint_safetensors_path(cache_dir: Path) -> Path:
 
 
 WeightGetter = Callable[[str], Array]
-"""Checkpoint key -> array, e.g. `h.0.attn.q_proj.weight`. `lm_head.weight` is NOT a
-key — the head is tied to `wte.weight`."""
+"""Checkpoint key -> array, e.g. `h.0.attn.q_proj.weight`."""
 
 
 def _checkpoint_weight_getter(cache_dir: Path, dtype: DTypeLike) -> WeightGetter:
@@ -218,21 +234,71 @@ def _checkpoint_weight_getter(cache_dir: Path, dtype: DTypeLike) -> WeightGetter
     return get
 
 
-def _layer_from_weights(get: WeightGetter, layer_idx: int, cfg: LlamaSimpleMLPConfig) -> GLULayer:
-    return GLULayer(
-        ln1=get(f"h.{layer_idx}.rms_1.weight"),
-        ln2=get(f"h.{layer_idx}.rms_2.weight"),
-        attn=FrozenAttn(
+class AttentionSinkFrozenAttn(FrozenAttn):
+    """Plain GQA whose softmax has one learned zero-value sink slot per query head."""
+
+    sinks: Float[Array, " h"]
+
+    @override
+    def _sdpa(
+        self,
+        q: Float[Array, "b h t hd"],
+        k: Float[Array, "b kvh t hd"],
+        v: Float[Array, "b kvh t hd"],
+        qkv_sharding: jax.sharding.Sharding | None,
+    ) -> Array:
+        return causal_sink_sdpa(q, k, v, self.sinks, qkv_sharding)
+
+    @override
+    def _pattern_softmax(self, masked_scores: Float[Array, "b h t t"]) -> Array:
+        b, h, t, _ = masked_scores.shape
+        assert self.sinks.shape == (h,), (self.sinks.shape, h)
+        sink_logits = jnp.broadcast_to(self.sinks[None, :, None, None], (b, h, t, 1))
+        return jax.nn.softmax(jnp.concatenate((masked_scores, sink_logits), axis=-1), axis=-1)[
+            ..., :-1
+        ]
+
+    @override
+    def shardings(self, placement: PlacementRules, axes: Axes) -> "AttentionSinkFrozenAttn":
+        placed = super().shardings(placement, axes)
+        assert isinstance(placed, AttentionSinkFrozenAttn)
+        expected = (*self.wq.shape[:-2], self.n_head)
+        assert self.sinks.shape == expected, (self.sinks.shape, expected)
+        return eqx.tree_at(lambda attn: attn.sinks, placed, NamedSharding(placement.mesh, P()))
+
+
+def _attn_from_weights(get: WeightGetter, layer_idx: int, cfg: LlamaSimpleMLPConfig) -> FrozenAttn:
+    if cfg.attention_sinks:
+        return AttentionSinkFrozenAttn(
             wq=get(f"h.{layer_idx}.attn.q_proj.weight"),
             wk=get(f"h.{layer_idx}.attn.k_proj.weight"),
             wv=get(f"h.{layer_idx}.attn.v_proj.weight"),
             wo=get(f"h.{layer_idx}.attn.o_proj.weight"),
+            sinks=get(f"h.{layer_idx}.attn.sinks"),
             n_head=cfg.n_head,
             n_kv_head=cfg.n_kv_head,
             head_dim=cfg.head_dim,
             n_rep=cfg.n_rep,
             implementation="auto",
-        ),
+        )
+    return FrozenAttn(
+        wq=get(f"h.{layer_idx}.attn.q_proj.weight"),
+        wk=get(f"h.{layer_idx}.attn.k_proj.weight"),
+        wv=get(f"h.{layer_idx}.attn.v_proj.weight"),
+        wo=get(f"h.{layer_idx}.attn.o_proj.weight"),
+        n_head=cfg.n_head,
+        n_kv_head=cfg.n_kv_head,
+        head_dim=cfg.head_dim,
+        n_rep=cfg.n_rep,
+        implementation="auto",
+    )
+
+
+def _layer_from_weights(get: WeightGetter, layer_idx: int, cfg: LlamaSimpleMLPConfig) -> GLULayer:
+    return GLULayer(
+        ln1=get(f"h.{layer_idx}.rms_1.weight"),
+        ln2=get(f"h.{layer_idx}.rms_2.weight"),
+        attn=_attn_from_weights(get, layer_idx, cfg),
         mlp=PlainMLP(
             Wfc=get(f"h.{layer_idx}.mlp.c_fc.weight"),
             Wdown=get(f"h.{layer_idx}.mlp.down_proj.weight"),
@@ -244,16 +310,19 @@ def build_decomposed_simple_mlp(
     embed: Array,
     layers: list[GLULayer],
     norm: Array,
+    lm_head: Array | TiedHead,
     cfg: LlamaSimpleMLPConfig,
     sites: tuple[SiteSpec, ...],
 ) -> GLUDecomposedModel:
-    """`build_engine_model` at the SimpleMLP anatomy — plain-GELU MLP arm, TIED output
-    head. `sites` must be canonical-ordered with dims matching `cfg`."""
+    """Build the SimpleMLP anatomy with its authored tied or untied output head.
+
+    `sites` must be canonical-ordered with dims matching `cfg`.
+    """
     return build_engine_model(
         embed=embed,
         layers=layers,
         norm=norm,
-        lm_head=TiedHead(),
+        lm_head=lm_head,
         inv_freq=plain_rope_inv_freq(cfg),
         cfg=cfg,
         sites=sites,
@@ -278,6 +347,7 @@ def target_from_weights(get: WeightGetter, cfg: LlamaSimpleMLPConfig) -> GLUDeco
         embed=get("wte.weight"),
         layers=[_layer_from_weights(get, i, cfg) for i in range(cfg.n_layer)],
         norm=get("ln_f.weight"),
+        lm_head=TiedHead() if cfg.tie_word_embeddings else get("lm_head.weight"),
         cfg=cfg,
         sites=all_site_specs(cfg),
     )
@@ -295,13 +365,13 @@ def load_target_from_pretrain_cache(
 def load_decomposed_lm_from_pretrain_cache(
     cache_dir: Path, cfg: LlamaSimpleMLPConfig, sites: tuple[SiteSpec, ...], dtype: DTypeLike
 ) -> GLUDecomposedModel:
-    """Load the `SimpleMLP` `DecomposedModel`: the full frozen model (tied embedding, all
-    blocks, final norm) as fields plus the static decomposition `sites`."""
+    """Load the full frozen model plus the static decomposition `sites`."""
     get = _checkpoint_weight_getter(cache_dir, dtype)
     return build_decomposed_simple_mlp(
         embed=get("wte.weight"),
         layers=[_layer_from_weights(get, i, cfg) for i in range(cfg.n_layer)],
         norm=get("ln_f.weight"),
+        lm_head=TiedHead() if cfg.tie_word_embeddings else get("lm_head.weight"),
         cfg=cfg,
         sites=sites,
     )

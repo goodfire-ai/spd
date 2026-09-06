@@ -17,6 +17,7 @@ v1 scope for the parity spike: routing == "all", no weight-delta term (both opti
 the clean + stochastic paths). RoPE uses the llama3 frequency rescaling.
 """
 
+import math
 from dataclasses import dataclass
 from typing import Literal, NamedTuple
 
@@ -166,6 +167,46 @@ def causal_sdpa(
         ),
     )
     return out.transpose(0, 2, 1, 3)
+
+
+def causal_sink_sdpa(
+    q: Array,
+    k: Array,
+    v: Array,
+    sinks: Float[Array, " h"],
+    qkv_sharding: jax.sharding.Sharding | None,
+) -> Array:
+    """Causal GQA with one learned zero-value softmax slot per query head.
+
+    This is the eager GPT-OSS sink equation: append each head's scalar to every query's
+    real-key logits, softmax over keys plus that scalar, discard the sink probability,
+    then mix values. The missing probability mass is exactly attention paid to zero.
+    """
+    assert q.ndim == k.ndim == v.ndim == 4, (q.shape, k.shape, v.shape)
+    b, h, t, hd = q.shape
+    assert sinks.shape == (h,), (sinks.shape, h)
+    assert k.shape == v.shape and k.shape[0] == b and k.shape[2:] == (t, hd), (
+        q.shape,
+        k.shape,
+        v.shape,
+    )
+    kv_heads = k.shape[1]
+    assert h % kv_heads == 0, (h, kv_heads)
+    qt, kt, vt = (a.transpose(0, 2, 1, 3) for a in (q, k, v))
+    if qkv_sharding is not None:
+        qt, kt, vt = (jax.sharding.reshard(a, qkv_sharding) for a in (qt, kt, vt))
+    q = qt.transpose(0, 2, 1, 3)
+    k = repeat_kv(kt.transpose(0, 2, 1, 3), h // kv_heads)
+    v = repeat_kv(vt.transpose(0, 2, 1, 3), h // kv_heads)
+
+    scores = jnp.einsum(
+        "bhqd,bhkd->bhqk", q.astype(jnp.float32), k.astype(jnp.float32)
+    ) / math.sqrt(hd)
+    causal = jnp.triu(jnp.ones((t, t), dtype=bool), k=1)
+    scores = jnp.where(causal, -jnp.inf, scores)
+    sink_logits = jnp.broadcast_to(sinks.astype(jnp.float32)[None, :, None, None], (b, h, t, 1))
+    probs = jax.nn.softmax(jnp.concatenate((scores, sink_logits), axis=-1), axis=-1)
+    return jnp.einsum("bhqk,bhkd->bhqd", probs[..., :-1].astype(v.dtype), v)
 
 
 # ----------------------------- component leaf (mirror ComponentLinear) -----------------------------

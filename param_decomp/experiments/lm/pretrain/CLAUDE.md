@@ -35,8 +35,9 @@ The trainer is a library subpackage under `param_decomp/pretrain/`:
 A freshly-pretrained target is decomposable with NO conversion. `pretrain.train` writes
 `<data_root>/pretrain_cache/<project>-<run_id>/model_step_<N>.safetensors` keyed
 `h.{i}.attn.{q,k,v,o}_proj.weight`, `h.{i}.mlp.{c_fc,down_proj}.weight`,
-`h.{i}.rms_{1,2}.weight`, `wte.weight`, `ln_f.weight` (NO `lm_head.weight` — tied), every
-weight `(d_out, d_in)` — exactly what `param_decomp.targets.llama_simple_mlp` reads. A
+`h.{i}.rms_{1,2}.weight`, `wte.weight`, `ln_f.weight`, and (when configured)
+`lm_head.weight` plus `h.{i}.attn.sinks`. Every matrix is `(d_out, d_in)` — exactly what
+`param_decomp.targets.llama_simple_mlp` reads. A
 decomposition config points at it via `target.spec`:
 
 ```yaml

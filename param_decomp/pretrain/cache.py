@@ -60,15 +60,25 @@ def torch_model_config_dict(cfg: PretrainConfig) -> dict[str, object]:
     match model.model_type:
         case "GPT2Simple":
             return base
-        case "LlamaSimple" | "LlamaSimpleMLP":
-            return base | {
-                "rotary_base": model.rotary_base,
-                "n_ctx": model.n_ctx,
-                "n_key_value_heads": model.n_key_value_heads,
-                "rms_norm_eps": model.rms_norm_eps,
-                "mlp_bias": False,
-                "attn_bias": False,
-                "use_grouped_query_attention": True,
-                "rotary_adjacent_pairs": False,
-                "rotary_dim": model.head_dim,
+        case "LlamaSimple":
+            extras = {"tie_word_embeddings": True, "attention_sinks": False}
+        case "LlamaSimpleMLP":
+            extras = {
+                "tie_word_embeddings": model.tie_word_embeddings,
+                "attention_sinks": model.attention_sinks,
             }
+    return (
+        base
+        | {
+            "rotary_base": model.rotary_base,
+            "n_ctx": model.n_ctx,
+            "n_key_value_heads": model.n_key_value_heads,
+            "rms_norm_eps": model.rms_norm_eps,
+            "mlp_bias": False,
+            "attn_bias": False,
+            "use_grouped_query_attention": True,
+            "rotary_adjacent_pairs": False,
+            "rotary_dim": model.head_dim,
+        }
+        | extras
+    )

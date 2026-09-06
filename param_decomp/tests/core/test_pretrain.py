@@ -23,6 +23,7 @@ from param_decomp.pretrain.models import (
     model_logits,
 )
 from param_decomp.pretrain.train import train
+from param_decomp.target_ports.llama import causal_sink_sdpa
 from param_decomp.targets.testing import run_clean
 
 
@@ -67,11 +68,32 @@ def test_all_archs_forward():
         assert bool(jnp.isfinite(out).all())
 
 
-def test_cache_round_trip_matches_decomposition_loader():
+def test_attention_sink_is_an_extra_zero_value_softmax_slot():
+    q = jnp.zeros((1, 1, 2, 1), dtype=jnp.float32)
+    k = jnp.zeros((1, 1, 2, 1), dtype=jnp.float32)
+    v = jnp.array([[[[2.0], [4.0]]]])
+    out = causal_sink_sdpa(q, k, v, jnp.zeros((1,)), None)
+    # Query 0 splits mass between key 0 and the sink; query 1 splits it across two
+    # real keys and the sink. The sink's value is zero and therefore absent below.
+    assert jnp.allclose(out, jnp.array([[[[1.0], [2.0]]]]))
+
+
+@pytest.mark.parametrize("tie_word_embeddings,attention_sinks", [(True, False), (False, True)])
+def test_cache_round_trip_matches_decomposition_loader(
+    tie_word_embeddings: bool, attention_sinks: bool
+):
     """The written cache, read back through the decomposition trainer's loader, forwards
     bit-identically to the pretrain model — the cache-compatibility guarantee."""
-    mc = _tiny_mlp_cfg()
+    mc = _tiny_mlp_cfg().model_copy(
+        update={
+            "tie_word_embeddings": tie_word_embeddings,
+            "attention_sinks": attention_sinks,
+        }
+    )
     model = init_model(mc, jax.random.PRNGKey(1))
+    state = model.state_dict()
+    assert ("lm_head.weight" in state) is not tie_word_embeddings
+    assert ("h.0.attn.sinks" in state) is attention_sinks
     cfg = PretrainConfig(
         model=mc,
         data=NamedDataset(name="unused"),
