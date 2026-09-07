@@ -18,6 +18,7 @@ def _product_record(dataset_name: str = "train-v1") -> dict[str, Any]:
                 "model_name": "meta-llama/Llama-3.1-8B",
             },
             "weights_dtype": "bfloat16",
+            "output_edge": {"kind": "materialized"},
             "attention_implementation": "auto",
         },
         "decomposition": {

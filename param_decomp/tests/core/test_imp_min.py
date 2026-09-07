@@ -56,7 +56,7 @@ def test_terms_match_manual_per_site_structure():
     gamma = 0.1
     n_positions = 2  # both sites have 2 rows; a' = B·T reproduces the old `log2(1 + sum)`
     activity, freq = importance_minimality_terms(
-        ci, jnp.asarray(gamma), reference_datapoint_count=n_positions
+        ci, jnp.asarray(gamma), reference_datapoint_count=n_positions, normalize_at_one=False
     )
 
     expected_activity = jnp.zeros(())
@@ -68,6 +68,36 @@ def test_terms_match_manual_per_site_structure():
         exp_freq = exp_freq + (means * jnp.log2(1.0 + n_positions * means)).sum()
     assert jnp.allclose(activity, expected_activity)
     assert jnp.allclose(freq, exp_freq)
+
+
+def test_normalize_at_one_fixes_saturated_contribution():
+    ci = {"a": jnp.array([[1.0, 1.0]])}
+    for gamma in (jnp.asarray(1.0), jnp.asarray(0.1)):
+        normalized, _ = importance_minimality_terms(ci, gamma, None, normalize_at_one=True)
+        raw, _ = importance_minimality_terms(ci, gamma, None, normalize_at_one=False)
+        assert jnp.allclose(normalized, 2.0)
+        assert jnp.allclose(normalized, raw * (1.0 + gamma**2))
+
+
+def test_normalize_at_one_dispatches_from_config():
+    cfg = ImportanceMinimalityLossConfig(
+        coeff=2e-4,
+        gamma=ScheduleConfig.constant(1.0),
+        normalize_at_one=True,
+    )
+    activity, _ = imp_min_terms({"a": jnp.array([[1.0]])}, cfg, jnp.asarray(1.0))
+    assert jnp.allclose(activity, 1.0)
+
+
+def test_normalize_at_one_reaches_frequency_term():
+    activity, frequency = importance_minimality_terms(
+        {"a": jnp.ones((3, 2))},
+        jnp.asarray(1.0),
+        reference_datapoint_count=8,
+        normalize_at_one=True,
+    )
+    assert jnp.allclose(activity, 2.0)
+    assert jnp.allclose(frequency, 2.0 * jnp.log2(9.0))
 
 
 def test_anneal_and_dispatch():
@@ -88,6 +118,8 @@ def test_anneal_and_dispatch():
     ci = {"a": jnp.array([[0.0, 0.5, 1.0], [0.2, 0.0, 0.9]])}
     param = scheduled_value_at(jnp.asarray(last / (total - 1), jnp.float32), cfg.gamma)
     via_dispatch = imp_min_terms(ci, cfg, param)
-    direct = importance_minimality_terms(ci, param, reference_datapoint_count=64)
+    direct = importance_minimality_terms(
+        ci, param, reference_datapoint_count=64, normalize_at_one=False
+    )
     assert jnp.allclose(via_dispatch[0], direct[0])
     assert jnp.allclose(via_dispatch[1], direct[1])

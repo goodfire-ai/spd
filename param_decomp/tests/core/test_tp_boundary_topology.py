@@ -17,8 +17,9 @@ from param_decomp.core.ci_fn import (
     evaluate_ci,
     evaluate_compute_ci,
     materialize_ci_compute_weights,
+    resolve_ci_placement,
 )
-from param_decomp.core.components import SiteSpec
+from param_decomp.core.components import Dense, SiteSpec, require_full_emission
 from param_decomp.core.decomposed_linear import (
     PlannedComponentLinear,
     constrain_component_activation,
@@ -45,7 +46,7 @@ def test_ci_ffn_operand_gather_preserves_the_semantic_bias_basis():
         ("replicate", "fsdp", "tp"),
         axis_types=(AxisType.Explicit,) * 3,
     )
-    rules = from_config("zero1", mesh, (SiteSpec("site", 4, 4, 2, "group"),))
+    rules = from_config("zero1", mesh, (SiteSpec("site", Dense(d_in=4, d_out=4, C=2), "group"),))
     plan = rules.ci_fn.linear_plan(
         "ffn",
         ("d_model", "ffn_hidden"),
@@ -73,7 +74,7 @@ def test_ci_tap_rms_precedes_the_local_tp_input_slice():
         ("replicate", "fsdp", "tp"),
         axis_types=(AxisType.Explicit,) * 3,
     )
-    site = SiteSpec("layers.0.site", 8, 8, 8, "site")
+    site = SiteSpec("layers.0.site", Dense(d_in=8, d_out=8, C=8), "site")
     rules = from_config("zero1", mesh, (site,))
     arch = ChunkwiseTransformerCIArch(
         chunks=(Chunk(input_taps=("tap",), output_sites=(site.name,)),),
@@ -93,8 +94,12 @@ def test_ci_tap_rms_precedes_the_local_tp_input_slice():
 
     @jax.jit
     def lower(cf: ChunkwiseTransformerCIFn, value: jax.Array) -> jax.Array:
-        ci = evaluate_ci(PlacedCIFn(fn=cf, placement=rules.ci_fn), {"tap": value}, remat=False)
-        return constrain_component_activation(ci.lower[site.name], rules)
+        ci = evaluate_ci(
+            PlacedCIFn(fn=cf, placement=resolve_ci_placement(arch, rules)),
+            {"tap": value},
+            remat=False,
+        )
+        return require_full_emission(constrain_component_activation(ci.lower[site.name], rules))
 
     compiled = lower.lower(ci_fn, tap).compile()
     output = compiled(ci_fn, tap)
@@ -128,7 +133,9 @@ def test_ci_operand_gathers_slice_the_scanned_stack_first():
         ("replicate", "fsdp", "tp"),
         axis_types=(AxisType.Explicit,) * 3,
     )
-    sites = tuple(SiteSpec(f"layers.{i}.site", 8, 8, 8, "site") for i in range(2))
+    sites = tuple(
+        SiteSpec(f"layers.{i}.site", Dense(d_in=8, d_out=8, C=8), "site") for i in range(2)
+    )
     rules = from_config("zero1", mesh, sites)
     arch = ChunkwiseTransformerCIArch(
         chunks=tuple(Chunk(input_taps=("tap",), output_sites=(site.name,)) for site in sites),
@@ -147,8 +154,14 @@ def test_ci_operand_gathers_slice_the_scanned_stack_first():
     )
 
     def loss(value: ChunkwiseTransformerCIFn) -> jax.Array:
-        ci = evaluate_ci(PlacedCIFn(fn=value, placement=rules.ci_fn), {"tap": tap}, remat=False)
-        return jnp.stack([jnp.sum(ci.lower[site.name]) for site in sites]).sum()
+        ci = evaluate_ci(
+            PlacedCIFn(fn=value, placement=resolve_ci_placement(arch, rules)),
+            {"tap": tap},
+            remat=False,
+        )
+        return jnp.stack(
+            [jnp.sum(require_full_emission(ci.lower[site.name])) for site in sites]
+        ).sum()
 
     hlo = jax.jit(jax.grad(loss)).lower(ci_fn).compile().as_text()
     assert hlo is not None
@@ -167,7 +180,9 @@ def test_ci_replica_residency_bounds_cross_replica_collectives_outside_the_scan(
         ("replicate", "fsdp", "tp"),
         axis_types=(AxisType.Explicit,) * 3,
     )
-    sites = tuple(SiteSpec(f"layers.{i}.site", 8, 8, 8, "site") for i in range(2))
+    sites = tuple(
+        SiteSpec(f"layers.{i}.site", Dense(d_in=8, d_out=8, C=8), "site") for i in range(2)
+    )
     rules = from_config("zero1", mesh, sites)
     arch = ChunkwiseTransformerCIArch(
         chunks=tuple(Chunk(input_taps=("tap",), output_sites=(site.name,)) for site in sites),
@@ -188,10 +203,13 @@ def test_ci_replica_residency_bounds_cross_replica_collectives_outside_the_scan(
     def loss(value: ChunkwiseTransformerCIFn) -> jax.Array:
         # The step's CI lifecycle: the masters->residents gather (cross-replica) runs
         # once in entry via materialize; only per-chunk fsdp gathers ride the scan.
-        compute = materialize_ci_compute_weights(PlacedCIFn(fn=value, placement=rules.ci_fn))
+        compute = materialize_ci_compute_weights(
+            PlacedCIFn(fn=value, placement=resolve_ci_placement(arch, rules))
+        )
         ci = evaluate_compute_ci(compute, {"tap": tap}, remat=False)
         return sum(
-            (jnp.sum(ci.lower[site.name]) for site in sites), jnp.zeros((), jnp.bfloat16)
+            (jnp.sum(require_full_emission(ci.lower[site.name])) for site in sites),
+            jnp.zeros((), jnp.bfloat16),
         ).astype(jnp.float32)
 
     with jax.set_mesh(mesh):
@@ -222,7 +240,7 @@ def test_ci_vector_state_starts_at_its_declared_tp_layout():
         ("replicate", "fsdp", "tp"),
         axis_types=(AxisType.Explicit,) * 3,
     )
-    site = SiteSpec("layers.0.site", 8, 8, 8, "site")
+    site = SiteSpec("layers.0.site", Dense(d_in=8, d_out=8, C=8), "site")
     rules = from_config("zero1", mesh, (site,))
     arch = ChunkwiseTransformerCIArch(
         chunks=(Chunk(input_taps=("tap",), output_sites=(site.name,)),),
@@ -266,7 +284,7 @@ def test_structured_source_materializes_masks_without_tp_redistribution():
     )
 
     @jax.jit
-    def lower(ci_value: jax.Array, source_value: SiteSource[jax.Array]):
+    def lower(ci_value: jax.Array, source_value: SiteSource):
         masks, deltas = masks_from_sources({"site": ci_value}, {"site": source_value})
         return masks["site"], deltas["site"]
 
@@ -294,7 +312,7 @@ def test_component_delta_path_uses_one_u_and_preserves_value_and_gradients():
         ("replicate", "fsdp", "tp"),
         axis_types=(AxisType.Explicit,) * 3,
     )
-    site = SiteSpec("layers.0.mlp.gate_proj", 8, 16, 8, "gate")
+    site = SiteSpec("layers.0.mlp.gate_proj", Dense(d_in=8, d_out=16, C=8), "gate")
     rules = from_config("zero1", mesh, (site,))
     batch = P(("replicate", "fsdp"), None, None)
     x_host = jnp.arange(2 * 4 * 8, dtype=jnp.float32).reshape(2, 4, 8) / 64
@@ -377,8 +395,8 @@ def test_target_native_component_linears_match_megatron_column_and_row_waists():
         axis_types=(AxisType.Explicit,) * 3,
     )
     sites = (
-        SiteSpec("layers.0.mlp.gate_proj", 8, 16, 8, "gate"),
-        SiteSpec("layers.0.mlp.down_proj", 16, 8, 8, "down"),
+        SiteSpec("layers.0.mlp.gate_proj", Dense(d_in=8, d_out=16, C=8), "gate"),
+        SiteSpec("layers.0.mlp.down_proj", Dense(d_in=16, d_out=8, C=8), "down"),
     )
     rules = from_config("zero1", mesh, sites)
     batch = P(("replicate", "fsdp"), None, None)

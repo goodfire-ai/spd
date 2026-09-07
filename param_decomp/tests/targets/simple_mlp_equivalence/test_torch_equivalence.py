@@ -28,7 +28,7 @@ from param_decomp.targets.llama_simple_mlp import (
     load_target_from_pretrain_cache,
     target_from_weights,
 )
-from param_decomp.targets.testing import run_clean
+from param_decomp.targets.testing import materialized_logits, run_clean
 
 FIXTURE_DIR = Path(__file__).parent
 _DATA_ROOT = Path(env) if (env := os.environ.get("PD_TEST_DATA_ROOT")) else None
@@ -50,7 +50,7 @@ def test_tiny_random_model_matches_torch_logits():
     target = target_from_weights(get, cfg)
     idx = jnp.asarray(fixture["idx"])
 
-    logits = run_clean(target, idx)
+    logits = materialized_logits(run_clean(target, idx))
     assert logits.shape == fixture["logits"].shape
     assert _max_abs_diff(logits, fixture["logits"]) < 1e-5
 
@@ -62,7 +62,7 @@ def test_real_t9d2b8f02_weights_match_torch_logits():
     cfg = load_model_config(REAL_CACHE_DIR)
     target = load_target_from_pretrain_cache(REAL_CACHE_DIR, cfg, jnp.float32)
 
-    logits = run_clean(target, jnp.asarray(fixture["idx"]))
+    logits = materialized_logits(run_clean(target, jnp.asarray(fixture["idx"])))
 
     assert logits.shape == fixture["logits"].shape
     # fp32 end to end; |logits| ~ 15, observed max abs diff ~1e-4 (matmul reassociation)

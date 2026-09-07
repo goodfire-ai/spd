@@ -12,6 +12,7 @@ from param_decomp.core.ci_fn import (
     TapSpec,
     build_ci_fn,
 )
+from param_decomp.core.components import require_full_emission
 from param_decomp.experiments.lm.config import (
     ChunkwiseTransformerCiConfig,
     GlobalMlpCiConfig,
@@ -21,11 +22,11 @@ from param_decomp.experiments.lm.config import (
     resolve_lm_ci_arch,
     resolve_site_tree,
 )
+from param_decomp.target_ports.llama import LlamaConfig
 from param_decomp.targets import glu_transformer
 from param_decomp.targets.glu_transformer import glu_site_specs
 from param_decomp.targets.testing import tiny_glu_cfg
 from param_decomp.targets.transformer_taps import TransformerTapGrammar
-from param_decomp.vendored_jax.llama import LlamaConfig
 
 
 def _grammar(cfg: LlamaConfig) -> TransformerTapGrammar:
@@ -127,7 +128,7 @@ def test_built_ci_fn_gives_per_site_ci_per_position():
     ci = ci_fn(taps, remat=False, placement=None)
     assert set(ci.lower) == {s.name for s in sites}
     for site in sites:
-        assert ci.lower[site.name].shape == (b, t, site.C), site.name
+        assert require_full_emission(ci.lower[site.name]).shape == (b, t, site.C), site.name
 
     # Pointwise per token: perturbing one position moves no other position's CI.
     perturbed = dict(taps)
@@ -135,7 +136,8 @@ def test_built_ci_fn_gives_per_site_ci_per_position():
     perturbed[first_key] = taps[first_key].at[:, 3, :].add(1.0)
     moved = ci_fn(perturbed, remat=False, placement=None)
     for site in sites:
-        base, new = ci.preactivations[site.name], moved.preactivations[site.name]
+        base = require_full_emission(ci.preactivations[site.name])
+        new = require_full_emission(moved.preactivations[site.name])
         others = jnp.delete(new - base, 3, axis=1)
         assert not jnp.allclose(new[:, 3], base[:, 3]), site.name
         assert jnp.array_equal(others, jnp.zeros_like(others)), site.name

@@ -30,6 +30,7 @@ from param_decomp.experiments.lm.eval_context import (
     prepared_batch_from_context,
 )
 from param_decomp.experiments.lm.eval_keys import EvalKeyStream
+from param_decomp.targets.lm_output import LMOutput
 
 type AnyScalarMetricConfig = CEandKLLossesConfig | CI_L0Config | PGDReconLossConfig
 
@@ -44,28 +45,36 @@ def fresh_pgd_probe(metric: PGDReconLossConfig) -> FreshPGDReconEval:
     )
 
 
+def _ci_l0_groups(metric: CI_L0Config) -> dict[str, tuple[str, ...]] | None:
+    return (
+        {name: tuple(patterns) for name, patterns in metric.groups.items()}
+        if metric.groups is not None
+        else None
+    )
+
+
 def scalar_step_for(
     metric: AnyScalarMetricConfig,
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     ci_capture_keys: CaptureKeys,
     mesh: Mesh,
     compiler_options: dict[str, bool | int | str] | None,
 ) -> ScalarStep:
-    """THE config→kernel binding for the scalar tier — the operations below and the AOT
-    eval fit check compile the identical step from one spelling."""
+    """The scalar tier's STANDALONE step (own clean forward) — what the AOT eval fit check
+    compiles; the operations below score the pass's shared context via `scalar_scorer_for`."""
     match metric:
         case CEandKLLossesConfig():
             return make_ce_kl_step(
                 model, ci_capture_keys, metric.rounding_threshold, mesh, compiler_options
             )
         case CI_L0Config():
-            groups = (
-                {name: tuple(patterns) for name, patterns in metric.groups.items()}
-                if metric.groups is not None
-                else None
-            )
             return make_ci_l0_step(
-                model, ci_capture_keys, metric.ci_alive_threshold, groups, mesh, compiler_options
+                model,
+                ci_capture_keys,
+                metric.ci_alive_threshold,
+                _ci_l0_groups(metric),
+                mesh,
+                compiler_options,
             )
         case PGDReconLossConfig():
             return make_fresh_pgd_step(
@@ -73,11 +82,25 @@ def scalar_step_for(
             )
 
 
+def scalar_scorer_for(
+    metric: AnyScalarMetricConfig, model: PlacedModel[LMOutput], mesh: Mesh
+) -> ScalarScorer:
+    """THE config→scorer binding for the scalar tier: the pure scorer each operation jits
+    over the pass's shared batch context, and what the trace gate lowers."""
+    match metric:
+        case CEandKLLossesConfig():
+            return make_ce_kl_scorer(model, metric.rounding_threshold, mesh)
+        case CI_L0Config():
+            return make_ci_l0_scorer(model, metric.ci_alive_threshold, _ci_l0_groups(metric))
+        case PGDReconLossConfig():
+            return make_fresh_pgd_scorer(model, fresh_pgd_probe(metric), mesh)
+
+
 def _make_scalar_operation(
     schedule: EvalSchedule,
     scorer: ScalarScorer,
     prefixes: tuple[str, ...],
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     run_key: PRNGKeyArray,
     train_steps: int,
     eval_steps: int,
@@ -115,7 +138,7 @@ def _make_scalar_operation(
 def make_ce_kl_operation(
     metric: CEandKLLossesConfig,
     schedule: EvalSchedule,
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     run_key: PRNGKeyArray,
     train_steps: int,
     eval_steps: int,
@@ -124,7 +147,7 @@ def make_ce_kl_operation(
 ) -> BatchedOperation[LMEvalPass, LMBatchContext]:
     return _make_scalar_operation(
         schedule,
-        make_ce_kl_scorer(model, metric.rounding_threshold, mesh),
+        scalar_scorer_for(metric, model, mesh),
         ("ce_kl/",),
         model,
         run_key,
@@ -137,20 +160,16 @@ def make_ce_kl_operation(
 def make_ci_l0_operation(
     metric: CI_L0Config,
     schedule: EvalSchedule,
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     run_key: PRNGKeyArray,
     train_steps: int,
     eval_steps: int,
+    mesh: Mesh,
     compiler_options: dict[str, bool | int | str],
 ) -> BatchedOperation[LMEvalPass, LMBatchContext]:
-    groups = (
-        {name: tuple(patterns) for name, patterns in metric.groups.items()}
-        if metric.groups is not None
-        else None
-    )
     scalars = _make_scalar_operation(
         schedule,
-        make_ci_l0_scorer(model, metric.ci_alive_threshold, groups),
+        scalar_scorer_for(metric, model, mesh),
         ("l0/",),
         model,
         run_key,
@@ -180,7 +199,7 @@ def make_ci_l0_operation(
 def make_fresh_pgd_operation(
     metric: PGDReconLossConfig,
     schedule: EvalSchedule,
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     run_key: PRNGKeyArray,
     train_steps: int,
     eval_steps: int,
@@ -190,7 +209,7 @@ def make_fresh_pgd_operation(
     probe = fresh_pgd_probe(metric)
     return _make_scalar_operation(
         schedule,
-        make_fresh_pgd_scorer(model, probe, mesh),
+        scalar_scorer_for(metric, model, mesh),
         (f"loss/{probe.name}",),
         model,
         run_key,

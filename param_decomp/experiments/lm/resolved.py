@@ -10,7 +10,8 @@ from jax.typing import DTypeLike
 from param_decomp.core.built_run import BuiltRun
 from param_decomp.core.components import SiteC
 from param_decomp.core.configs import PDConfig, TargetedPDConfig
-from param_decomp.vendored_jax.llama import AttentionImplementation
+from param_decomp.target_ports.llama import AttentionImplementation
+from param_decomp.targets.qwen36_moe import ExpertsExecution, OutputEdge
 
 WeightsDtype = Literal["float32", "bfloat16"]
 ComponentInitialization = Literal["random", "neuron_aligned"]
@@ -74,7 +75,33 @@ class LlamaSimpleMLPTargetConfig:
     every safetensor on read. See `TargetConfig.supported_weights_dtypes`."""
 
 
-AnyLMTargetConfig = TargetConfig | LlamaSimpleMLPTargetConfig
+@dataclass(frozen=True)
+class Qwen36MoeTargetConfig:
+    """The Qwen3.6-35B-A3B MoE target (`param_decomp.targets.qwen36_moe`): the one
+    registered MoE checkpoint. Expert sites decompose expert-locally, the hybrid
+    DeltaNet/attention mixers stay frozen, and only random V/U init exists."""
+
+    model_name: str
+    sites: tuple[SiteC, ...]
+    """Decomposed sites with per-site C, in canonical order (whole-grid per kind)."""
+    weights_dtype: WeightsDtype
+    attention_implementation: AttentionImplementation
+    """The full-attention SDPA lowering. The maintained 35B configs author `xla` because
+    cuDNN rejects this family's head-dimension-256 training graph; the choice remains
+    explicit rather than silently falling back."""
+    experts_execution: ExpertsExecution
+    """Which decomposed-expert execution the masked forwards run
+    (`targets.qwen36_moe.ExpertsExecution`) — a seat-authored pricing/arch choice."""
+    output_edge: OutputEdge
+    """The model-output edge (`targets.qwen36_moe.OutputEdge`): materialized logits, or
+    the factored streamed package whose comparisons chunk the 248k vocab axis."""
+    component_initialization: Literal["random"]
+
+    supported_weights_dtypes: ClassVar[frozenset[WeightsDtype]] = frozenset({"bfloat16", "float32"})
+    """See `TargetConfig.supported_weights_dtypes`; `HFWeights` casts every tensor on read."""
+
+
+AnyLMTargetConfig = TargetConfig | LlamaSimpleMLPTargetConfig | Qwen36MoeTargetConfig
 """The closed set of LM target configs — what every LM `BuiltRun` carries and every LM
 consumer (`build_target`, `run_metadata`, the targeted tokenizer route) dispatches on.
 Non-LM targets (the toys) satisfy only the core `TargetSites` protocol and never enter

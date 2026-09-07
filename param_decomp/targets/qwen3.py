@@ -19,6 +19,7 @@ from jaxtyping import Array, Float
 from param_decomp.core.axes import Axes
 from param_decomp.core.components import SiteSpec
 from param_decomp.core.placement import PlacementRules
+from param_decomp.target_ports.llama import rms_norm
 from param_decomp.targets.glu_transformer import (
     FrozenAttn,
     GLUConfig,
@@ -27,7 +28,6 @@ from param_decomp.targets.glu_transformer import (
     default_inv_freq,
     load_decomposed_glu_from_hf,
 )
-from param_decomp.vendored_jax.llama import rms_norm
 
 
 def _qwen3_config(

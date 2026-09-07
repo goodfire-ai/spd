@@ -62,17 +62,13 @@ def test_init_from_parent_loads_components_resets_schedule(tmp_path: Path):
     # optimizer states + sources are the FRESH reference's (not the parent's). The fresh
     # sources are RNG-drawn from seed 7; the parent's from seed 1 — they must differ.
     for state_key, fresh_adv in fresh.training.adversaries.items():
-        for site, arr in fresh_adv.sources.items():
-            got = finetuned.training.adversaries[state_key].sources[site]
-            parent = parent_state.training.adversaries[state_key].sources[site]
-            assert all(
-                jnp.array_equal(a, b)
-                for a, b in zip(jax.tree.leaves(got), jax.tree.leaves(arr), strict=True)
-            )
-            assert any(
-                not jnp.array_equal(a, b)
-                for a, b in zip(jax.tree.leaves(got), jax.tree.leaves(parent), strict=True)
-            )
+        got = jax.tree.leaves(finetuned.training.adversaries[state_key].sources)
+        parent = jax.tree.leaves(parent_state.training.adversaries[state_key].sources)
+        assert all(
+            jnp.array_equal(a, b)
+            for a, b in zip(got, jax.tree.leaves(fresh_adv.sources), strict=True)
+        )
+        assert any(not jnp.array_equal(a, b) for a, b in zip(got, parent, strict=True))
     for a, b in zip(
         jax.tree.leaves(finetuned.training.components_opt_state),
         jax.tree.leaves(fresh.training.components_opt_state),

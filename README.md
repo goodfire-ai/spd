@@ -14,7 +14,7 @@ guide for target implementation, sweep design, convergence, selection, and analy
 
 - **VPD paper (April 2026):** https://www.goodfire.ai/research/interpreting-lm-parameters. [VPD Code Release](https://github.com/goodfire-ai/param-decomp/releases/tag/vpd-paper)
   Published 4L-Pile decomposition: https://wandb.ai/goodfire/spd/runs/s-55ea3f9b.
-  Current JAX reference config: [`param_decomp/experiments/lm/configs/pile_llama_simple_mlp-4L.yaml`](param_decomp/experiments/lm/configs/pile_llama_simple_mlp-4L.yaml), validated by https://wandb.ai/goodfire/param-decomp/runs/p-76082aa1.
+  Current JAX reference config: [`param_decomp/experiments/lm/configs/pile_llama_simple_mlp-4L.yaml`](param_decomp/experiments/lm/configs/pile_llama_simple_mlp-4L.yaml), validated by https://wandb.ai/goodfire/param-decomp/runs/p-8383f5e5.
 - **SPD paper (June 2025):** https://arxiv.org/abs/2506.20790. [SPD Code Release](https://github.com/goodfire-ai/param-decomp/releases/tag/v1).
 
 ## Install
@@ -45,11 +45,11 @@ uv run python -m param_decomp.experiments.lm.run <config.yaml> \
   --data-root <data-root> --local-device-count <devices-per-process>
 ```
 
-`runtime.replicate * runtime.fsdp * runtime.tp` must equal the allocation's total GPU
-count. Process-local allocation size is a launch argument, not a logical mesh axis. The
+The `runtime.mesh` axes' product must equal the allocation's total GPU count.
+Process-local allocation size is a launch argument, not a logical mesh axis. The
 command does not submit a job or choose a cluster. For example, the current JAX reference config
 [`param_decomp/experiments/lm/configs/pile_llama_simple_mlp-4L.yaml`](param_decomp/experiments/lm/configs/pile_llama_simple_mlp-4L.yaml)
-sets `replicate: 1`, `fsdp: 8`, and `tp: 1`, and therefore needs 8 GPUs.
+sets `mesh: {replicate: 1, fsdp: 8, tp: 1}`, and therefore needs 8 GPUs.
 
 ### Datasets
 

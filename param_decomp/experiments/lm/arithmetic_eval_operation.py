@@ -9,11 +9,13 @@ from jax.sharding import Mesh, NamedSharding
 from jax.sharding import PartitionSpec as P
 from jaxtyping import PRNGKeyArray
 
+from param_decomp.core.base_config import Probability
 from param_decomp.core.built_run import TargetSites
 from param_decomp.core.ci_fn import PlacedCIFn
 from param_decomp.core.eval_schedule import EvalSchedule
 from param_decomp.core.metrics import LogRecord
-from param_decomp.core.model import BATCH_AXES, CaptureKeys, PlacedModel
+from param_decomp.core.model import CaptureKeys, PlacedModel
+from param_decomp.core.placement import batch_axes
 from param_decomp.core.recon import resolve_reconstruction_spec
 from param_decomp.core.recon_eval import FreshPGDReconEval
 from param_decomp.core.run import (
@@ -40,6 +42,7 @@ from param_decomp.experiments.lm.eval_context import LMEvalPass
 from param_decomp.experiments.lm.eval_keys import EvalKeyStream
 from param_decomp.experiments.lm.resolved import TargetConfig
 from param_decomp.targets.glu_transformer import hf_snapshot_dir
+from param_decomp.targets.lm_output import LMOutput
 
 
 def global_arithmetic_probe(tokens: np.ndarray, mesh: Mesh, n_proc: int) -> jax.Array:
@@ -54,7 +57,7 @@ def global_arithmetic_probe(tokens: np.ndarray, mesh: Mesh, n_proc: int) -> jax.
     assert per_process % local_data == 0, (per_process, local_data)
     proc = jax.process_index()
     local = tokens[proc * per_process : (proc + 1) * per_process]
-    sharding = NamedSharding(mesh, P(BATCH_AXES))
+    sharding = NamedSharding(mesh, P(batch_axes(mesh)))
     return jax.make_array_from_process_local_data(sharding, local, (n_pad, t))
 
 
@@ -75,11 +78,11 @@ def _render(
 class ArithmeticOperation:
     step: ArithmeticGridStep
     probe_eval_step: ScalarStep
-    model: PlacedModel
+    model: PlacedModel[LMOutput]
     tokens: jax.Array
     grid: ArithmeticGrid
     n_prompts: int
-    thresholds: tuple[float, ...]
+    thresholds: tuple[Probability, ...]
     top_k: int
     renderer: BackgroundRenderer
 
@@ -117,7 +120,7 @@ def make_arithmetic_operation(
     config: ArithmeticCIGridConfig,
     schedule: EvalSchedule,
     target: TargetSites,
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     ci_capture_keys: CaptureKeys,
     mesh: Mesh,
     n_proc: int,

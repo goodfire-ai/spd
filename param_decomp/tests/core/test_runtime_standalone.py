@@ -19,7 +19,8 @@ The load-bearing directions:
     composition-shaped built on top.
   * `targets` implements the engine's protocol per architecture — engine + vendored
     numerics only.
-  * `vendored_jax` is a leaf (verbatim numeric mirrors).
+  * `target_ports` (verbatim numeric mirrors of the target architectures) and `routed`
+    (the expert-parallel routed-compute machinery) are leaves.
 
 The runtime is every `.py` that ships in a wheel — i.e. not the per-layer `tests/` and
 `tools/` dirs. Test suites are exempt on purpose: engine tests may use a concrete target
@@ -39,21 +40,26 @@ _ANY = ("param_decomp",)
 Tightening these to real per-layer sets is deliberate follow-up work."""
 
 _LAYER_ALLOWED: dict[str, tuple[str, ...]] = {
-    "vendored_jax": ("param_decomp.vendored_jax",),
-    "core": ("param_decomp.core", "param_decomp.vendored_jax"),
+    "routed": ("param_decomp.routed",),
+    "target_ports": ("param_decomp.target_ports",),
+    "core": ("param_decomp.core", "param_decomp.routed", "param_decomp.target_ports"),
     # `pretrain/train.py` is a composition root with its own `__main__`, so it reads the
     # two pure contracts every composition root reads: the dataset store's layout + ref
     # schema, and the data-root default. Named module by module — the rest of `infra`
-    # (wandb, run files, submission) stays firmly above this layer.
+    # (wandb and run files) stays firmly above this layer.
     "pretrain": (
         "param_decomp.core",
         "param_decomp.infra.dataset_store",
         "param_decomp.infra.paths",
         "param_decomp.pretrain",
-        "param_decomp.vendored_jax",
+        "param_decomp.target_ports",
     ),
-    "targets": ("param_decomp.core", "param_decomp.targets", "param_decomp.vendored_jax"),
-    "clustering": _ANY,
+    "targets": (
+        "param_decomp.core",
+        "param_decomp.routed",
+        "param_decomp.target_ports",
+        "param_decomp.targets",
+    ),
     "experiments": _ANY,
     "infra": _ANY,
     "migrations": _ANY,

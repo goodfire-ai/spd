@@ -6,13 +6,13 @@ envelope, and the masked-forward metrics (attention patterns) run only
 their masked side — the clean side comes from the context.
 """
 
-from collections.abc import Mapping
 from functools import partial
 
 import jax
 import numpy as np
 from jaxtyping import PRNGKeyArray
 
+from param_decomp.core.components import SiteSpec, nonlinearity_partitions
 from param_decomp.core.configs import (
     CIHistogramsConfig,
     CIMeanPerComponentConfig,
@@ -24,10 +24,10 @@ from param_decomp.core.configs import (
 from param_decomp.core.eval_schedule import EvalSchedule
 from param_decomp.core.metrics import LogRecord
 from param_decomp.core.model import PlacedModel
-from param_decomp.core.nonlinearity import NonlinearityPartition
 from param_decomp.core.nonlinearity_eval import (
     make_nonlinearity_eval_step,
     nonlinearity_log_entries,
+    site_nonlinearity_stats,
 )
 from param_decomp.core.run import (
     BackgroundRenderer,
@@ -38,6 +38,7 @@ from param_decomp.core.run import (
 from param_decomp.core.slow_eval import (
     IDENTITY_CI_ERROR_TOLERANCE,
     VALUE_HISTOGRAM_N_BINS,
+    CIReductionStep,
     PermutationMetricSpec,
     PositionCI,
     PositionCIAccumulation,
@@ -57,6 +58,7 @@ from param_decomp.core.slow_eval import (
     site_reductions,
 )
 from param_decomp.experiments.lm.attn_patterns_eval import (
+    AttnPatternsStep,
     LayerKLReduction,
     attn_output_key_by_site,
     attn_patterns_log_entries,
@@ -70,12 +72,16 @@ from param_decomp.experiments.lm.eval_config import (
 )
 from param_decomp.experiments.lm.eval_context import LMBatchContext, LMEvalPass
 from param_decomp.experiments.lm.eval_keys import EvalKeyStream
+from param_decomp.targets.lm_output import LMOutput
 
 
 def _render_selected_figures(
-    reductions: dict[str, SiteReduction], wanted: set[str], now_step: int
+    reductions: dict[str, SiteReduction],
+    group_counts: dict[str, int],
+    wanted: set[str],
+    now_step: int,
 ) -> DeferredMediaRecord:
-    figures = render_slow_eval_figures(reductions)
+    figures = render_slow_eval_figures(reductions, group_counts)
     return DeferredMediaRecord(
         step_key="slow_eval/figure_step",
         step=now_step,
@@ -102,11 +108,12 @@ def _render_permutation(
 
 def make_nonlinearity_operation(
     schedule: EvalSchedule,
-    partitions: Mapping[str, NonlinearityPartition],
+    sites: tuple[SiteSpec, ...],
     compiler_options: dict[str, bool | int | str],
 ) -> BatchedOperation[LMEvalPass, LMBatchContext]:
+    partitions = nonlinearity_partitions(sites)
     reduction_step = make_ci_reduction_step(0.0, None, None, compiler_options)
-    nonlinearity_step = make_nonlinearity_eval_step(partitions, compiler_options)
+    nonlinearity_step = make_nonlinearity_eval_step(sites, compiler_options)
 
     def update(
         accumulation: SiteReductionAccumulation, context: LMBatchContext
@@ -117,27 +124,49 @@ def make_nonlinearity_operation(
         reductions = site_reductions(accumulation)
         ci_means = {name: value.ci_sums / value.n_positions for name, value in reductions.items()}
         return nonlinearity_log_entries(
-            nonlinearity_step(eval_pass.state.decomposition.components), ci_means, partitions
+            site_nonlinearity_stats(
+                nonlinearity_step(eval_pass.state.decomposition.components), sites
+            ),
+            ci_means,
+            partitions,
         )
 
     return batched_operation(schedule, empty_site_reduction_accumulation, update, finish)
 
 
+type AnyAttnPatternsMetricConfig = (
+    CIMaskedAttnPatternsReconLossConfig | StochasticAttnPatternsReconLossConfig
+)
+type AnySiteFiguresMetricConfig = (
+    CIHistogramsConfig | ComponentActivationDensityConfig | CIMeanPerComponentConfig
+)
+
+
+def attn_patterns_step_for(
+    metric: AnyAttnPatternsMetricConfig,
+    model: PlacedModel[LMOutput],
+    compiler_options: dict[str, bool | int | str] | None,
+) -> AttnPatternsStep:
+    """THE config→kernel binding for the attention-patterns metrics — the operation and
+    the trace gate build the identical masked-side step from one spelling."""
+    match metric:
+        case CIMaskedAttnPatternsReconLossConfig():
+            return make_ci_attn_patterns_step(model, compiler_options)
+        case StochasticAttnPatternsReconLossConfig():
+            return make_stochastic_attn_patterns_step(
+                model, metric.n_mask_samples, compiler_options
+            )
+
+
 def make_attention_operation(
-    metric: CIMaskedAttnPatternsReconLossConfig | StochasticAttnPatternsReconLossConfig,
+    metric: AnyAttnPatternsMetricConfig,
     schedule: EvalSchedule,
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     run_key: PRNGKeyArray,
     train_steps: int,
     compiler_options: dict[str, bool | int | str],
 ) -> BatchedOperation[LMEvalPass, LMBatchContext]:
-    match metric:
-        case CIMaskedAttnPatternsReconLossConfig():
-            step = make_ci_attn_patterns_step(model, compiler_options)
-        case StochasticAttnPatternsReconLossConfig():
-            step = make_stochastic_attn_patterns_step(
-                model, metric.n_mask_samples, compiler_options
-            )
+    step = attn_patterns_step_for(metric, model, compiler_options)
     output_key_by_site = attn_output_key_by_site(model)
 
     def init() -> dict[str, LayerKLReduction]:
@@ -169,12 +198,11 @@ def make_attention_operation(
     return batched_operation(schedule, init, update, finish)
 
 
-def make_site_figures_operation(
-    metric: CIHistogramsConfig | ComponentActivationDensityConfig | CIMeanPerComponentConfig,
-    schedule: EvalSchedule,
-    compiler_options: dict[str, bool | int | str],
-    renderer: BackgroundRenderer,
-) -> BatchedOperation[LMEvalPass, LMBatchContext]:
+def site_figures_reduction_step(
+    metric: AnySiteFiguresMetricConfig, compiler_options: dict[str, bool | int | str] | None
+) -> CIReductionStep:
+    """THE config→kernel binding for the CI-reduction figure metrics — the operation and
+    the trace gate build the identical per-batch reduction from one spelling."""
     match metric:
         case CIHistogramsConfig():
             assert metric.n_batches_accum in (None, 1), (
@@ -182,26 +210,45 @@ def make_site_figures_operation(
                 f"different batches sit on different edges), so n_batches_accum="
                 f"{metric.n_batches_accum} cannot be honoured"
             )
-            bins = metric.density_heatmap_n_bins
+            return make_ci_reduction_step(
+                0.0, metric.density_heatmap_n_bins, VALUE_HISTOGRAM_N_BINS, compiler_options
+            )
+        case ComponentActivationDensityConfig():
+            return make_ci_reduction_step(metric.ci_alive_threshold, None, None, compiler_options)
+        case CIMeanPerComponentConfig():
+            return make_ci_reduction_step(0.0, None, None, compiler_options)
+
+
+def make_site_figures_operation(
+    metric: AnySiteFiguresMetricConfig,
+    schedule: EvalSchedule,
+    group_counts: dict[str, int],
+    compiler_options: dict[str, bool | int | str],
+    renderer: BackgroundRenderer,
+) -> BatchedOperation[LMEvalPass, LMBatchContext]:
+    reduction_step = site_figures_reduction_step(metric, compiler_options)
+    match metric:
+        case CIHistogramsConfig():
             wanted = {
                 "figures/causal_importance_values",
                 "figures/causal_importance_values_pre_sigmoid",
-                *({"figures/ci_density_heatmap"} if bins is not None else set()),
+                *(
+                    {"figures/ci_density_heatmap"}
+                    if metric.density_heatmap_n_bins is not None
+                    else set()
+                ),
             }
-            reduction_step = make_ci_reduction_step(
-                0.0, bins, VALUE_HISTOGRAM_N_BINS, compiler_options
-            )
         case ComponentActivationDensityConfig():
-            wanted = {"figures/component_activation_density"}
-            reduction_step = make_ci_reduction_step(
-                metric.ci_alive_threshold, None, None, compiler_options
-            )
+            wanted = {
+                "figures/component_activation_density",
+                *({"figures/component_activation_density_groups"} if group_counts else set()),
+            }
         case CIMeanPerComponentConfig():
             wanted = {
                 "figures/ci_mean_per_component",
                 "figures/ci_mean_per_component_log",
+                *({"figures/ci_mean_per_component_groups"} if group_counts else set()),
             }
-            reduction_step = make_ci_reduction_step(0.0, None, None, compiler_options)
 
     def update(
         accumulation: SiteReductionAccumulation, context: LMBatchContext
@@ -211,7 +258,11 @@ def make_site_figures_operation(
     def finish(eval_pass: LMEvalPass, accumulation: SiteReductionAccumulation) -> LogRecord:
         renderer.submit(
             partial(
-                _render_selected_figures, site_reductions(accumulation), wanted, eval_pass.now_step
+                _render_selected_figures,
+                site_reductions(accumulation),
+                group_counts,
+                wanted,
+                eval_pass.now_step,
             )
         )
         return {}
@@ -222,7 +273,7 @@ def make_site_figures_operation(
 def make_permutation_operation(
     metric: PermutedCIPlotsConfig | UVPlotsConfig | IdentityCIErrorConfig,
     schedule: EvalSchedule,
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     compiler_options: dict[str, bool | int | str],
     renderer: BackgroundRenderer,
 ) -> BatchedOperation[LMEvalPass, LMBatchContext]:
@@ -244,11 +295,16 @@ def make_permutation_operation(
                 return {f"eval/slow/{name}": value for name, value in errors.items()}
             case UVPlotsConfig():
                 include_ci_heatmaps = False
+                # The naive whole-stack host gather; the per-site read is a HOST slice,
+                # because the stack axis is sharded under the owner presets.
+                stacks = eval_pass.state.decomposition.components
+                host = {
+                    group: (np.asarray(vs), np.asarray(us))
+                    for group, (vs, us) in stacks.stacks.items()
+                }
                 components = {
-                    name: (np.asarray(site_components.V), np.asarray(site_components.U))
-                    for name, site_components in (
-                        eval_pass.state.decomposition.components.sites_items()
-                    )
+                    name: (host[group][0][slot], host[group][1][slot])
+                    for name, group, slot in stacks.site_slots
                 }
             case PermutedCIPlotsConfig():
                 include_ci_heatmaps = True

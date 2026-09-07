@@ -1,9 +1,11 @@
 """Restore a finished JAX language-model decomposition for read-only analysis.
 
-`open_jax_run` checks the saved deliverable and checkpoint step, reconstructs the target,
-restores component weights and the CI function, and returns a `LoadedJaxRun` ready for
-harvesting without any training state or optimizer."""
+`open_jax_run` checks the saved deliverable and checkpoint step, reconstructs the target
+on the layout the CALLER names (`ConsumerLayout` — never derived from the run), restores
+component weights and the CI function, and returns a `LoadedJaxRun` ready for harvesting
+without any training state or optimizer."""
 
+import dataclasses
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
@@ -14,35 +16,43 @@ from jax.sharding import NamedSharding
 from jaxtyping import Array
 
 from param_decomp.core import placement
+from param_decomp.core.base_config import BaseConfig
 from param_decomp.core.checkpoint import make_read_only_checkpoint_manager, restore_decomposition
 from param_decomp.core.ci_fn import (
     ChunkwiseTransformerCIFn,
     GlobalMLPCIFn,
+    MoEChunkwiseTransformerCIFn,
     PlacedCIFn,
     resolve_ci_placement,
 )
 from param_decomp.core.components import ComponentStacks
-from param_decomp.core.configs import PlacementTableConfig
-from param_decomp.core.init_placed import ComponentInitializer, random_component_initializer
+from param_decomp.core.configs import MeshShape, PlacementSpec, ResidentMeshShape, SequenceSharding
+from param_decomp.core.init_placed import (
+    ComponentInitializer,
+    ci_fn_shardings,
+    random_component_initializer,
+)
 from param_decomp.core.model import PlacedModel, prepare_compute_weights
 from param_decomp.core.precision import COMPUTE_DT, cast_floating
 from param_decomp.core.run_state import init_decomposition
-from param_decomp.core.sharding import hsdp_mesh, place_target
+from param_decomp.core.sharding import mesh_for_shape, place_target
 from param_decomp.core.train import Decomposition
 from param_decomp.experiments.lm.config import LMCIFnArch, hf_model_variant
 from param_decomp.experiments.lm.deliverable import ResolvedDeliverable, load_deliverable
 from param_decomp.experiments.lm.resolved import (
     AnyLMTargetConfig,
     LlamaSimpleMLPTargetConfig,
+    Qwen36MoeTargetConfig,
     TargetConfig,
     weights_jnp_dtype,
 )
 from param_decomp.infra import pretrain_cache
-from param_decomp.targets import glu_transformer, llama_simple_mlp
+from param_decomp.target_ports.llama import AttentionImplementation
+from param_decomp.targets import glu_transformer, llama_simple_mlp, qwen36_moe
 from param_decomp.targets.glu_transformer import GLUDecomposedModel, glu_site_specs
-from param_decomp.vendored_jax.llama import AttentionImplementation
+from param_decomp.targets.lm_output import LMOutput
 
-LMCIFn = ChunkwiseTransformerCIFn | GlobalMLPCIFn
+LMCIFn = ChunkwiseTransformerCIFn | GlobalMLPCIFn | MoEChunkwiseTransformerCIFn
 
 
 def _with_attention_implementation(
@@ -53,7 +63,9 @@ def _with_attention_implementation(
     return replace(model, stacked=replace(model.stacked, attn=attn))
 
 
-def load_target(target: AnyLMTargetConfig, data_root: Path) -> GLUDecomposedModel:
+def load_target(
+    target: AnyLMTargetConfig, data_root: Path
+) -> GLUDecomposedModel | qwen36_moe.Qwen36MoeDecomposedModel:
     """The unplaced frozen target for one target config — the load half of `build_target`,
     for consumers that never place onto a real mesh (the AOT fit check abstracts the
     leaves onto compile-only devices instead).
@@ -79,45 +91,71 @@ def load_target(target: AnyLMTargetConfig, data_root: Path) -> GLUDecomposedMode
                 sites,
                 weights_jnp_dtype(target.weights_dtype),
             )
+        case Qwen36MoeTargetConfig():
+            moe_cfg = qwen36_moe.qwen36_35b_a3b_config()
+            moe_sites = qwen36_moe.qwen36_moe_site_specs(moe_cfg, target.sites)
+            # The hybrid mixers have no attention-implementation knob; return directly.
+            # The authored experts_execution and output_edge apply HERE, the one
+            # resolved boundary — the builders construct the production defaults.
+            return dataclasses.replace(
+                qwen36_moe.load_decomposed_qwen36_moe_from_hf(
+                    target.model_name,
+                    moe_cfg,
+                    moe_sites,
+                    weights_jnp_dtype(target.weights_dtype),
+                    target.attention_implementation,
+                ),
+                experts_execution=target.experts_execution,
+                output_edge=target.output_edge,
+            )
     return _with_attention_implementation(loaded_model, target.attention_implementation)
 
 
-def component_initializer_for(target: AnyLMTargetConfig) -> ComponentInitializer:
+def component_initializer_for(target: AnyLMTargetConfig) -> ComponentInitializer[LMOutput, Any]:
     """Resolve the one run-start V/U initializer from the authored target family config."""
-    match target:
-        case (
-            TargetConfig(component_initialization="random")
-            | LlamaSimpleMLPTargetConfig(component_initialization="random")
-        ):
+    match target.component_initialization:
+        case "random":
             return random_component_initializer
-        case (
-            TargetConfig(component_initialization="neuron_aligned")
-            | LlamaSimpleMLPTargetConfig(component_initialization="neuron_aligned")
-        ):
-            return cast(ComponentInitializer, glu_transformer.neuron_aligned_component_initializer)
-        case _:
-            raise AssertionError(target)
+        case "neuron_aligned":
+            match target:
+                case TargetConfig() | LlamaSimpleMLPTargetConfig():
+                    return cast(
+                        ComponentInitializer[LMOutput, Any],
+                        glu_transformer.neuron_aligned_component_initializer,
+                    )
+
+
+def target_vocab_size(placed: PlacedModel[LMOutput]) -> int:
+    """The vocabulary a placed LM target's token ids index — its embedding's row count."""
+    match placed.model:
+        case GLUDecomposedModel(embed=embed) | qwen36_moe.Qwen36MoeDecomposedModel(embed=embed):
+            return embed.shape[0]
+        case other:
+            raise AssertionError(f"not an LM target: {type(other).__name__}")
 
 
 def build_target(
     target: AnyLMTargetConfig,
     mesh: jax.sharding.Mesh,
     data_root: Path,
-    sharding: str | PlacementTableConfig,
-) -> PlacedModel:
+    sharding: PlacementSpec,
+    sequence_sharding: SequenceSharding,
+) -> PlacedModel[LMOutput]:
     """Build and place the frozen target shared by training and every offline consumer.
 
     The bundle's `.model` (an `eqx.Module`) IS the frozen target — it carries the full
     model weights (embedding included) as fields and embeds its token input internally;
-    `.placement` is the resolved rules for `sharding`."""
+    `.placement` is the resolved rules for `sharding` and `sequence_sharding`."""
     loaded_model = load_target(target, data_root)
-    placement_rules = placement.from_config(sharding, mesh, loaded_model.sites)
+    placement_rules = placement.from_config(
+        sharding, mesh, loaded_model.sites, sequence_sharding=sequence_sharding
+    )
     return place_target(loaded_model, placement_rules)
 
 
 @eqx.filter_jit
 def _prepare_read_only_consumer(
-    placed: PlacedModel,
+    placed: PlacedModel[LMOutput],
     components: ComponentStacks,
     ci_fn: LMCIFn,
 ) -> tuple[dict[str, dict[str, Array]], LMCIFn]:
@@ -137,35 +175,57 @@ class LoadedJaxRun:
 
     run_id: str
     step: int
-    placed: PlacedModel
+    placed: PlacedModel[LMOutput]
     deliverable: ResolvedDeliverable
     prepared_weights: dict[str, dict[str, Array]]
     ci_fn: PlacedCIFn
     mesh: jax.sharding.Mesh
 
     @property
-    def model(self) -> GLUDecomposedModel:
-        return cast(GLUDecomposedModel, self.placed.model)
+    def model(self) -> GLUDecomposedModel | qwen36_moe.Qwen36MoeDecomposedModel:
+        model = self.placed.model
+        assert isinstance(model, GLUDecomposedModel | qwen36_moe.Qwen36MoeDecomposedModel), type(
+            model
+        )
+        return model
+
+
+class ConsumerLayout(BaseConfig):
+    """The layout a read-only consumer restores a run onto — `open_jax_run`'s parameter
+    contract. A consumer re-places the frozen target and the restored decomposition on
+    ITS OWN topology, never the run's, spelled the way a training run spells
+    `runtime.mesh` / `runtime.sharding` and bundled so neither half can be named without
+    the other."""
+
+    mesh: MeshShape
+    """The consumer's logical mesh; its world size must equal the process's device count."""
+    sharding: PlacementSpec
+    """The placement the consumer binds on that mesh — a preset name or an explicit table.
+    Binding refuses a preset whose rows the run's site set cannot consume (the `-moe`
+    presets on a run without routed-expert sites), so a run is opened only under a layout
+    that fits it."""
+
+
+SINGLE_DEVICE_RESIDENT_LAYOUT = ConsumerLayout(
+    mesh=ResidentMeshShape(data=1, tp=1), sharding="zero1-replicated-resident"
+)
+"""The layout a consumer takes when its caller names none: the whole run on *the*
+device, weights resident. `open_jax_run` never reads it — it is the value the launching
+edges (CLI flags, submission and deploy configs) default to, kept here only because this
+module is the one every such edge may import."""
 
 
 def _consumer_decomposition_abstract(
     ci_fn: LMCIFnArch,
-    placed: PlacedModel,
+    placed: PlacedModel[LMOutput],
     mesh: jax.sharding.Mesh,
 ) -> Decomposition:
     rules = placed.placement
     assert rules is not None, "the consumer restore requires the bundle's resolved rules"
     shape_dtype = jax.eval_shape(lambda: init_decomposition(placed, ci_fn, jax.random.PRNGKey(0)))
-    match shape_dtype.ci_fn:
-        case ChunkwiseTransformerCIFn():
-            ci_fn_shardings = shape_dtype.ci_fn.shardings(mesh, rules.ci_fn)
-        case GlobalMLPCIFn():
-            ci_fn_shardings = shape_dtype.ci_fn.shardings(mesh)
-        case _:
-            raise AssertionError(f"unknown LM CI fn {type(shape_dtype.ci_fn)}")
     shardings = Decomposition(
         components=cast(Any, placement.component_stacks_shardings(shape_dtype.components, rules)),
-        ci_fn=ci_fn_shardings,
+        ci_fn=ci_fn_shardings(shape_dtype.ci_fn, mesh, resolve_ci_placement(ci_fn, rules)),
     )
 
     def with_sharding(shape: jax.ShapeDtypeStruct, sharding: NamedSharding):
@@ -182,7 +242,7 @@ def _consumer_decomposition_abstract(
 
 def _restore_decomposition(
     ci_fn: LMCIFnArch,
-    placed: PlacedModel,
+    placed: PlacedModel[LMOutput],
     mesh: jax.sharding.Mesh,
     run_dir: Path,
     step: int | None,
@@ -195,19 +255,31 @@ def _restore_decomposition(
     return restore_decomposition(manager, resolved_step, abstract), resolved_step
 
 
-def open_jax_run(run_dir: Path, step: int | None = None, *, data_root: Path) -> LoadedJaxRun:
+def open_jax_run(
+    run_dir: Path, step: int | None, *, data_root: Path, layout: ConsumerLayout
+) -> LoadedJaxRun:
     """Restore one decomposition and prepare its immutable offline compute state.
 
     Args:
         run_dir: Run directory containing the product description and `ckpts`.
         step: Checkpoint step, or `None` for the latest complete step.
         data_root: Explicit root used to resolve named datasets and target caches.
+        layout: The mesh and placement THIS consumer runs under, spanning exactly the
+            process's devices. Placement binding refuses a layout the run's site set
+            cannot consume.
     """
+    assert layout.mesh.world_size == jax.device_count(), (
+        f"consumer layout {layout.mesh} spans {layout.mesh.world_size} devices; "
+        f"this process has {jax.device_count()}"
+    )
+    mesh = mesh_for_shape(layout.mesh)
     deliverable = load_deliverable(run_dir, data_root)
-    mesh = hsdp_mesh(1, jax.device_count(), 1)
-    # `zero1` rests every master intra-matrix, so any device count tiles; `ddp` is the
-    # single-device degenerate of the same choice.
-    placed = build_target(deliverable.target, mesh, data_root, "ddp" if mesh.size == 1 else "zero1")
+    # Consumers re-place with the replicated residual: sequence parallelism is a
+    # training-step layout, and consumer masked forwards (eval probes) are not the
+    # surface it exists for.
+    placed = build_target(
+        deliverable.target, mesh, data_root, layout.sharding, sequence_sharding="replicate"
+    )
     decomposition, resolved_step = _restore_decomposition(
         deliverable.ci_fn, placed, mesh, run_dir, step
     )
@@ -268,5 +340,13 @@ def run_metadata(run_dir: Path, *, data_root: Path) -> RunMetadata:
                 model_type=variant.model_type,
                 n_blocks=arch_cfg.n_layer,
                 vocab_size=arch_cfg.vocab_size,
+                layer_activation_sizes=[(site.name, site.C) for site in target.sites],
+            )
+        case Qwen36MoeTargetConfig():
+            moe_cfg = qwen36_moe.qwen36_35b_a3b_config()
+            return RunMetadata(
+                model_type="Qwen3_5Moe",
+                n_blocks=moe_cfg.n_layer,
+                vocab_size=moe_cfg.vocab_size,
                 layer_activation_sizes=[(site.name, site.C) for site in target.sites],
             )

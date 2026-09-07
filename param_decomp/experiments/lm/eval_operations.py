@@ -1,7 +1,7 @@
 """LM evaluation operation binding and execution.
 
 Binding is two closed passes over the authored metrics: first each metric declares its
-clean-capture demand on the shared batch context (`_clean_capture_demand`), then each
+clean-capture demand on the shared batch context (`clean_capture_demand`), then each
 binds its operation. The pass's one context step captures the union of those demands, so
 every batched operation reads one clean forward + CI envelope per batch.
 """
@@ -22,9 +22,9 @@ from param_decomp.core.configs import (
     PermutedCIPlotsConfig,
     PGDReconLossConfig,
     UVPlotsConfig,
-    WellTemperednessConfig,
 )
-from param_decomp.core.model import BATCH_AXES, EMPTY_CAPTURE_KEYS, CaptureKeys, PlacedModel
+from param_decomp.core.model import EMPTY_CAPTURE_KEYS, CaptureKeys, PlacedModel
+from param_decomp.core.placement import batch_axes
 from param_decomp.core.run import (
     BackgroundRenderer,
     EvalInvocation,
@@ -33,7 +33,7 @@ from param_decomp.core.run import (
     MetricsSink,
 )
 from param_decomp.core.sharding import local_data_parallel_size
-from param_decomp.core.well_temperedness_eval import make_well_temperedness_operation
+from param_decomp.core.slow_eval import component_group_counts
 from param_decomp.experiments.eval_config import (
     AnyEvalMetricConfig,
     EvalConfig,
@@ -53,6 +53,7 @@ from param_decomp.experiments.lm.eval_config import (
     CEandKLLossesConfig,
     CIMaskedAttnPatternsReconLossConfig,
     StochasticAttnPatternsReconLossConfig,
+    WellTemperednessConfig,
 )
 from param_decomp.experiments.lm.eval_context import (
     LMBatchContext,
@@ -61,6 +62,7 @@ from param_decomp.experiments.lm.eval_context import (
     make_lm_batch_contexts,
 )
 from param_decomp.experiments.lm.eval_keys import EvalKeyStream
+from param_decomp.experiments.lm.load_run import target_vocab_size
 from param_decomp.experiments.lm.resolved import LMAnyRun
 from param_decomp.experiments.lm.scalar_eval_operations import (
     fresh_pgd_probe,
@@ -68,19 +70,55 @@ from param_decomp.experiments.lm.scalar_eval_operations import (
     make_ci_l0_operation,
     make_fresh_pgd_operation,
 )
+from param_decomp.experiments.lm.well_temperedness_eval import make_well_temperedness_operation
 from param_decomp.infra.dataset_store import read_dataset_meta
 from param_decomp.pretrain.batch_data import BatchSchedule, ShardServer, scan_shards
+from param_decomp.targets.lm_output import LMOutput
 
 
-def global_token_batch(local: np.ndarray, mesh: Mesh, global_batch: int) -> jax.Array:
-    sharding = NamedSharding(mesh, P(BATCH_AXES))
+def global_token_batch(
+    local: np.ndarray, mesh: Mesh, global_batch: int, vocab_size: int
+) -> jax.Array:
+    """This process's token rows onto the batch axes of the global `[global_batch, T]`.
+
+    The ONE host boundary every LM token stream crosses (train, eval, the targeted
+    pools), so it is where token ids are asserted inside `[0, vocab_size)`: past it they
+    are labels under jit, where an out-of-range id is a NaN CE at best (the materialized
+    edge's fill) and no assertion idiom exists."""
+    assert local.size == 0 or (local.min() >= 0 and local.max() < vocab_size), (
+        f"token ids outside [0, {vocab_size}): min {local.min()}, max {local.max()} — the "
+        "dataset was tokenized for a different vocabulary than the target's"
+    )
+    sharding = NamedSharding(mesh, P(batch_axes(mesh)))
     return jax.make_array_from_process_local_data(sharding, local, (global_batch, local.shape[1]))
+
+
+def clean_capture_demand(metric: AnyEvalMetricConfig, model: PlacedModel[LMOutput]) -> CaptureKeys:
+    """What this metric reads off the shared clean forward beyond the CI taps."""
+    match metric:
+        case CIMaskedAttnPatternsReconLossConfig() | StochasticAttnPatternsReconLossConfig():
+            return frozenset(attn_output_key_by_site(model).values())
+        case PGDReconLossConfig():
+            return fresh_pgd_probe(metric).hidden_acts_capture_keys
+        case (
+            CEandKLLossesConfig()
+            | CI_L0Config()
+            | CIHistogramsConfig()
+            | ComponentActivationDensityConfig()
+            | CIMeanPerComponentConfig()
+            | PermutedCIPlotsConfig()
+            | UVPlotsConfig()
+            | IdentityCIErrorConfig()
+            | WellTemperednessConfig()
+            | ArithmeticCIGridConfig()
+        ):
+            return EMPTY_CAPTURE_KEYS
 
 
 def make_lm_evaluation(
     built: LMAnyRun,
     eval: EvalConfig,
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     run_key: PRNGKeyArray,
     mesh: Mesh,
     n_proc: int,
@@ -95,12 +133,16 @@ def make_lm_evaluation(
     seq_len = read_dataset_meta(data.eval_dir).seq_len
     server = ShardServer(schedule, seq_len, jax.process_index(), n_proc)
     assert server.per_process % local_data_parallel_size(mesh) == 0
+    vocab_size = target_vocab_size(model)
     renderer = BackgroundRenderer(sink)
 
     def batches(pass_index: int) -> list[jax.Array]:
         return [
             global_token_batch(
-                server.local_batch(pass_index * eval.n_steps + j), mesh, eval.batch_size
+                server.local_batch(pass_index * eval.n_steps + j),
+                mesh,
+                eval.batch_size,
+                vocab_size,
             )
             for j in range(eval.n_steps)
         ]
@@ -111,16 +153,6 @@ def make_lm_evaluation(
         return eval_pass.batches[0], jax.random.fold_in(
             run_key, EvalKeyStream.WELL_TEMPEREDNESS * pd.steps + eval_pass.pass_index
         )
-
-    def _clean_capture_demand(metric: AnyEvalMetricConfig) -> CaptureKeys:
-        """What this metric reads off the shared clean forward beyond the CI taps."""
-        match metric:
-            case CIMaskedAttnPatternsReconLossConfig() | StochasticAttnPatternsReconLossConfig():
-                return frozenset(attn_output_key_by_site(model).values())
-            case PGDReconLossConfig():
-                return fresh_pgd_probe(metric).hidden_acts_capture_keys
-            case _:
-                return EMPTY_CAPTURE_KEYS
 
     def make_operation(metric: AnyEvalMetricConfig) -> EvalOperation[LMEvalPass, LMBatchContext]:
         schedule = schedule_for(metric, eval)
@@ -144,6 +176,7 @@ def make_lm_evaluation(
                     run_key,
                     pd.steps,
                     eval.n_steps,
+                    mesh,
                     compiler_options,
                 )
             case PGDReconLossConfig():
@@ -167,7 +200,13 @@ def make_lm_evaluation(
                 | ComponentActivationDensityConfig()
                 | CIMeanPerComponentConfig()
             ):
-                return make_site_figures_operation(metric, schedule, compiler_options, renderer)
+                return make_site_figures_operation(
+                    metric,
+                    schedule,
+                    component_group_counts(model.sites),
+                    compiler_options,
+                    renderer,
+                )
             case PermutedCIPlotsConfig() | UVPlotsConfig() | IdentityCIErrorConfig():
                 return make_permutation_operation(
                     metric, schedule, model, compiler_options, renderer
@@ -200,16 +239,15 @@ def make_lm_evaluation(
                     compiler_options,
                 )
 
-    partitions = nonlinearity_partitions(model.sites)
     standing_operations = (
-        (make_nonlinearity_operation(slow_schedule(eval), partitions, compiler_options),)
-        if partitions
+        (make_nonlinearity_operation(slow_schedule(eval), model.sites, compiler_options),)
+        if nonlinearity_partitions(model.sites)
         else ()
     )
     operations = tuple(make_operation(metric) for metric in eval.metrics) + standing_operations
 
     operation_capture_keys = frozenset().union(
-        *(_clean_capture_demand(metric) for metric in eval.metrics), EMPTY_CAPTURE_KEYS
+        *(clean_capture_demand(metric, model) for metric in eval.metrics), EMPTY_CAPTURE_KEYS
     )
     context_step = make_lm_batch_context_step(
         model, capture_inputs, operation_capture_keys, mesh, compiler_options

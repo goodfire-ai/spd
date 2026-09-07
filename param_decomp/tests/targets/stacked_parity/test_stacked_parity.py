@@ -27,6 +27,7 @@ import pytest
 
 from param_decomp.core.components import ComponentStacks, component_stacks_from_sites
 from param_decomp.core.model import site_weight_delta
+from param_decomp.target_ports.llama import llama3_inv_freq
 from param_decomp.targets.glu_transformer import (
     FrozenAttn,
     GatedMLP,
@@ -37,14 +38,19 @@ from param_decomp.targets.glu_transformer import (
     mlp_family_site_cs,
     parse_site_name,
 )
-from param_decomp.targets.testing import capture_clean, run_clean, run_masked, tiny_glu_cfg
+from param_decomp.targets.testing import (
+    capture_clean,
+    materialized_logits,
+    run_clean,
+    run_masked,
+    tiny_glu_cfg,
+)
 from param_decomp.targets.transformer_taps import (
     attention_input_tap_key,
     attention_output_tap_key,
     mlp_hidden_tap_key,
     mlp_input_tap_key,
 )
-from param_decomp.vendored_jax.llama import llama3_inv_freq
 
 FIXTURES = Path(__file__).resolve().parent / "stacked_fixtures.npz"
 RTOL = 1e-4
@@ -117,7 +123,7 @@ def _assert_close(got: jnp.ndarray, want: np.ndarray, what: str) -> None:
 @_PENDING_REGEN
 def test_clean_output_matches():
     f, model, _vu, resid = _load()
-    clean = run_clean(model, resid)
+    clean = materialized_logits(run_clean(model, resid))
     _assert_close(clean, f["out::clean"], "clean logits")
 
 
@@ -156,14 +162,16 @@ def test_masked_output_match():
     masks = {s: jnp.asarray(f[f"mask::{s}"]) for s in model.site_names}
     delta_masks = {s: jnp.asarray(f[f"delta_mask::{s}"]) for s in model.site_names}
     prepared_weights = model.prepare_compute_weights(vu, None)
-    masked_all = run_masked(
-        model,
-        prepared_weights,
-        resid,
-        masks,
-        delta_masks,
-        None,
-        True,
-        remat=False,
+    masked_all = materialized_logits(
+        run_masked(
+            model,
+            prepared_weights,
+            resid,
+            masks,
+            delta_masks,
+            None,
+            True,
+            remat=False,
+        )
     )
     _assert_close(masked_all, f["out::masked_all"], "masked_output (all live)")

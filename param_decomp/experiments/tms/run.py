@@ -27,15 +27,16 @@ from jax.sharding import PartitionSpec as P
 from param_decomp.core import placement
 from param_decomp.core.built_run import BuiltRun
 from param_decomp.core.ci_fn import CIFn
-from param_decomp.core.components import SiteC, nonlinearity_partitions
+from param_decomp.core.components import SiteC, nonlinearity_partitions, require_full_emission
 from param_decomp.core.configs import Checkpointing
 from param_decomp.core.eval_schedule import Every
 from param_decomp.core.log import setup_logger
 from param_decomp.core.metrics import LogRecord, MetricValue
-from param_decomp.core.model import BATCH_AXES, PlacedModel, Positionless
+from param_decomp.core.model import PlacedModel, Positionless
 from param_decomp.core.nonlinearity_eval import (
     make_nonlinearity_eval_step,
     nonlinearity_log_entries,
+    site_nonlinearity_stats,
 )
 from param_decomp.core.objective import build_objective
 from param_decomp.core.run import (
@@ -155,7 +156,7 @@ def sparse_feature_sampler(
         x = tms.sample_sparse_features(
             step_key, batch_size, n_features, feature_probability, generation_type
         )
-        return jax.sharding.reshard(x, NamedSharding(mesh, P(BATCH_AXES)))
+        return jax.sharding.reshard(x, NamedSharding(mesh, P(placement.batch_axes(mesh))))
 
     return sample
 
@@ -172,7 +173,9 @@ def single_feature_ci(
         remat=False,
         placement=None,
     )
-    return ci.lower, ci.upper
+    lower = {site: require_full_emission(v) for site, v in ci.lower.items()}
+    upper = {site: require_full_emission(v) for site, v in ci.upper.items()}
+    return lower, upper
 
 
 def tms_ground_truth_operation(
@@ -195,7 +198,7 @@ def tms_ground_truth_operation(
     }
 
     partitions = nonlinearity_partitions(model.sites)
-    nonlinearity_eval_step = make_nonlinearity_eval_step(partitions, {})
+    nonlinearity_eval_step = make_nonlinearity_eval_step(model.sites, {})
 
     def ground_truth_eval(context: EvalInvocation) -> LogRecord:
         state, now_step = context.state, context.now_step
@@ -218,7 +221,11 @@ def tms_ground_truth_operation(
         ci_means = {name: np.asarray(value).mean(0) for name, value in ci_lower.items()}
         metrics.update(
             nonlinearity_log_entries(
-                nonlinearity_eval_step(state.decomposition.components), ci_means, partitions
+                site_nonlinearity_stats(
+                    nonlinearity_eval_step(state.decomposition.components), model.sites
+                ),
+                ci_means,
+                partitions,
             )
         )
         return metrics

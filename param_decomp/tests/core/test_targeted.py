@@ -9,6 +9,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
+from param_decomp.core.components import require_full_emission
 from param_decomp.core.configs import (
     FaithfulnessLossConfig,
     FrequencyMinimalityConfig,
@@ -256,7 +257,7 @@ def test_unmasked_no_delta_masks_are_ones_and_zeros():
     }
     masks, deltas = unmasked_no_delta_masks(ci_lower)
     for site in ("a", "b"):
-        assert jnp.array_equal(masks[site], jnp.ones_like(ci_lower[site]))
+        assert jnp.array_equal(require_full_emission(masks[site]), jnp.ones_like(ci_lower[site]))
         assert jnp.array_equal(deltas[site], jnp.zeros((4,)))
 
 
@@ -312,5 +313,50 @@ def test_delta_pinned_masks_pin_every_delta_to_one():
         assert jnp.array_equal(stoch_deltas[site], jnp.ones((4,)))
         assert jnp.array_equal(const_deltas[site], jnp.ones((4,)))
         # S1 interpolation: masks lie in [ci, 1] for stochastic, equal ci at value 0.
-        assert bool(jnp.all(stoch_masks[site] >= ci_lower[site]))
-        assert jnp.array_equal(const_masks[site], ci_lower[site])
+        assert bool(jnp.all(require_full_emission(stoch_masks[site]) >= ci_lower[site]))
+        assert jnp.array_equal(require_full_emission(const_masks[site]), ci_lower[site])
+
+
+def test_ci_scaled_weight_decay_scales_expert_blocked_stacks_expert_major():
+    """T11 addresses an expert-blocked group's `[g, E, d, c]` leaves through the flat
+    expert-major `C = E·c` component ordering — component `(e, k)` scales exactly expert
+    `e`'s block, dense groups keep the `[g, d_in, C]` broadcast."""
+    from param_decomp.core.components import ComponentStacks, Dense, ExpertBlocked
+    from param_decomp.core.train import _scale_subcomponents
+
+    g, E, d_in, d_out, c = 2, 3, 4, 5, 2
+    expert = ExpertBlocked(n_experts=E, d_in=d_in, d_out=d_out, c_per_expert=c)
+    dense = Dense(d_in=d_in, d_out=d_out, C=4)
+    stacks = ComponentStacks(
+        stacks={
+            "experts": (jnp.ones((g, E, d_in, c)), jnp.ones((g, E, c, d_out))),
+            "shared": (jnp.ones((g, d_in, dense.C)), jnp.ones((g, dense.C, d_out))),
+        },
+        site_slots=(
+            ("experts.0", "experts", 0),
+            ("experts.1", "experts", 1),
+            ("shared.0", "shared", 0),
+            ("shared.1", "shared", 1),
+        ),
+    )
+    # Zero exactly component (e=1, k=0) of site experts.0: flat index e*c + k = 2.
+    expert_scale = jnp.ones((E * c,)).at[2].set(0.0)
+    scale = {
+        "experts.0": expert_scale,
+        "experts.1": jnp.ones((E * c,)),
+        "shared.0": jnp.full((dense.C,), 0.5),
+        "shared.1": jnp.ones((dense.C,)),
+    }
+    scaled = _scale_subcomponents(stacks, scale, {"experts": expert, "shared": dense})
+
+    vs, us = scaled.stacks["experts"]
+    assert vs.shape == (g, E, d_in, c) and us.shape == (g, E, c, d_out)
+    assert jnp.array_equal(vs[0, 1, :, 0], jnp.zeros((d_in,)))
+    assert jnp.array_equal(us[0, 1, 0, :], jnp.zeros((d_out,)))
+    # Everything else in the expert group is untouched (slot 1 entirely).
+    assert bool(jnp.all(vs[1] == 1.0)) and bool(jnp.all(us[1] == 1.0))
+    assert bool(jnp.all(vs[0, 1, :, 1] == 1.0)) and bool(jnp.all(vs[0, 0] == 1.0))
+
+    dvs, dus = scaled.stacks["shared"]
+    assert bool(jnp.all(dvs[0] == 0.5)) and bool(jnp.all(dus[0] == 0.5))
+    assert bool(jnp.all(dvs[1] == 1.0)) and bool(jnp.all(dus[1] == 1.0))

@@ -46,10 +46,11 @@ at production C BY DESIGN: no special handling, the gather is the cost.
 import fnmatch
 import io
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array
@@ -57,9 +58,22 @@ from matplotlib import colormaps
 from matplotlib.colors import Normalize
 from matplotlib.figure import Figure
 
+from param_decomp.core.base_config import Probability
 from param_decomp.core.ci_fn import (
     lower_leaky_hard_sigmoid,
     upper_leaky_hard_sigmoid,
+)
+from param_decomp.core.components import (
+    ExpertBlocked,
+    NarrowCI,
+    SiteCI,
+    SiteSpec,
+    map_site_ci,
+    narrow_component_sums,
+    narrow_routed_counts,
+    require_full_emission,
+    site_ci_leading,
+    site_ci_values,
 )
 from param_decomp.core.configs import (
     DenseCITargetSpec,
@@ -124,7 +138,7 @@ BinnedValues = tuple[Array, Array, Array]
 
 
 CIReductionStep = Callable[
-    [dict[str, Array]],
+    [Mapping[str, SiteCI]],
     tuple[
         dict[str, Array],
         dict[str, Array],
@@ -159,8 +173,9 @@ def _count_ge(values: Array, edges: Array) -> Array:
 def _binned_values(values: Array, n_bins: int) -> BinnedValues:
     """`ax.hist(values, bins=n_bins)` as a device reduction, the data's own min/max as the
     outer edges. fp32 throughout: the values are bf16, and matplotlib would have upcast
-    them before binning."""
-    v = values.astype(jnp.float32).reshape(-1, values.shape[-1])
+    them before binning. No reshape: `_count_ge` reduces over every axis, and a flatten
+    of the (possibly dp-sharded) leading axes has no explicit-sharding rule to lean on."""
+    v = values.astype(jnp.float32)
     lo, hi = v.min(), v.max()
     edges = jnp.linspace(lo, hi, n_bins + 1)
     # Bin b is [e_b, e_{b+1}), the last closed at hi (numpy's convention): every value
@@ -178,29 +193,66 @@ def _to_value_histogram(binned: BinnedValues) -> ValueHistogram:
     return ValueHistogram(counts=np.asarray(counts), lo=float(lo), hi=float(hi))
 
 
+def _per_component_alive_counts(value: SiteCI, threshold: Probability) -> Array:
+    """Per-component counts of positions whose CI is strictly above `threshold`, over
+    every leading axis — exact for EVERY threshold on both emissions: a narrow site's
+    unrouted (position, component) pairs have CI exactly 0.0 by definition, so each
+    contributes the analytic `[threshold < 0.0]` (the `psi(0)` move of the narrow loss
+    spellings); a component of expert `e` has `n_positions − routed_positions(e)` of
+    them. The same term `ci_l0_eval.alive_component_counts` adds per position, so the
+    two L0 readouts agree at every threshold."""
+
+    def alive(v: Array) -> Array:
+        return (v > threshold).astype(jnp.float32)
+
+    match value:
+        case NarrowCI():
+            routed = narrow_component_sums(value, alive(value.values.astype(jnp.float32)))
+            n_positions = math.prod(site_ci_leading(value))
+            unrouted_positions = jnp.repeat(
+                n_positions - narrow_routed_counts(value), value.c_per_expert
+            )
+            return routed + unrouted_positions * float(threshold < 0.0)
+        case jax.Array():
+            return _per_component_sums(value, alive)
+
+
+def _per_component_sums(value: SiteCI, pointwise: Callable[[Array], Array]) -> Array:
+    """One site's per-component fp32 sums of a pointwise readout, over every leading
+    axis — the full arm sums the leading axes in place (no flatten: the dp-sharded lead
+    keeps its spec); the narrow arm scatter-sums the routed values (exact wherever
+    `pointwise(0) == 0`, which both callers satisfy)."""
+    match value:
+        case NarrowCI():
+            return narrow_component_sums(value, pointwise(value.values.astype(jnp.float32)))
+        case jax.Array():
+            v = pointwise(value.astype(jnp.float32))
+            return v.sum(axis=tuple(range(v.ndim - 1)))
+
+
 def _per_component_ci_hist(lower: Array, n_bins: int) -> Array:
     """Per-component per-token CI histogram `(C, n_bins + 1)` from `lower (*, C)`: column 0
     counts underflow tokens (CI < `CI_DENSITY_HEATMAP_FLOOR`, including exact-zero inactive
     ones), columns `1..n_bins` the `n_bins` log-spaced bands over `[FLOOR, 1]` (the top band
     includes CI = 1). Band membership as cumulative `>=`-edge counts differenced per band
     (`bincount`'s scatter has no explicit-sharding rule — see `_count_ge`), reduced over
-    tokens only so the counts keep the C axis (and its sharding)."""
-    c = lower.shape[-1]
-    v = lower.astype(jnp.float32).reshape(-1, c)
+    the leading axes in place (no flatten: the dp-sharded lead keeps its spec) so the
+    counts keep the C axis (and its sharding)."""
+    v = lower.astype(jnp.float32)
     edges = jnp.logspace(math.log10(CI_DENSITY_HEATMAP_FLOOR), 0.0, n_bins + 1)
-    # count_ge[t, c, k] summed over tokens: (C, n_bins + 1) with count_ge[:, 0] = #tokens
+    # count_ge summed over the token axes: (C, n_bins + 1) with count_ge[:, 0] = #tokens
     # at or above the floor; band j >= 1 is [e_{j-1}, e_j) except the top band, closed at
     # 1 (every CI <= 1, so the final subtrahend is 0); column 0 is the underflow
     # complement.
-    count_ge = (v[:, :, None] >= edges[:-1]).sum(0)
-    n_tokens = jnp.asarray(v.shape[0], count_ge.dtype)
+    count_ge = (v[..., None] >= edges[:-1]).sum(tuple(range(v.ndim - 1)))
+    n_tokens = jnp.asarray(math.prod(v.shape[:-1]), count_ge.dtype)
     bands = count_ge - jnp.concatenate([count_ge[:, 1:], jnp.zeros_like(count_ge[:, :1])], axis=1)
     underflow = n_tokens - count_ge[:, 0]
     return jnp.concatenate([underflow[:, None], bands], axis=1)
 
 
 def make_ci_reduction_step(
-    ci_alive_threshold: float,
+    ci_alive_threshold: Probability,
     density_heatmap_n_bins: int | None,
     value_histogram_n_bins: int | None,
     compiler_options: dict[str, bool | int | str] | None = None,
@@ -216,7 +268,7 @@ def make_ci_reduction_step(
     when None); it adds only an on-device bincount."""
 
     def ci_reduction_step(
-        compute_preactivations: dict[str, Array],
+        compute_preactivations: Mapping[str, SiteCI],
     ) -> tuple[
         dict[str, Array],
         dict[str, Array],
@@ -229,32 +281,43 @@ def make_ci_reduction_step(
         # fp32 squash of the compute-precision preactivations — these reductions have
         # always read the fp32 view (`ci_preactivations`), not the envelope's bf16 lower.
         preactivations = {
-            s: value.astype(jnp.float32) for s, value in compute_preactivations.items()
+            s: map_site_ci(lambda v: v.astype(jnp.float32), value)
+            for s, value in compute_preactivations.items()
         }
-        lower = {s: lower_leaky_hard_sigmoid(preactivations[s]) for s in site_names}
+        lower = {s: map_site_ci(lower_leaky_hard_sigmoid, preactivations[s]) for s in site_names}
 
+        # Per-component accumulators stay FULL [C] (they feed cross-batch means aligned
+        # against V/U): a narrow site scatters its routed values and prices its unrouted
+        # pairs analytically (CI exactly 0: a 0 summand, `[threshold < 0]` alive each).
         density_counts = {
-            s: (lower[s] > ci_alive_threshold)
-            .astype(jnp.float32)
-            .reshape(-1, lower[s].shape[-1])
-            .sum(0)
-            for s in site_names
+            s: _per_component_alive_counts(lower[s], ci_alive_threshold) for s in site_names
         }
-        ci_sums = {s: lower[s].reshape(-1, lower[s].shape[-1]).sum(0) for s in site_names}
-        first = lower[site_names[0]]
-        n_positions = jnp.asarray(math.prod(first.shape[:-1]), jnp.int32)
+        ci_sums = {s: _per_component_sums(lower[s], lambda v: v) for s in site_names}
+        n_positions = jnp.asarray(math.prod(site_ci_leading(lower[site_names[0]])), jnp.int32)
+        # Value histograms bin the ROUTED values on a narrow site — the unrouted head
+        # outputs a full-width fn would histogram don't exist. Interpretation shift, no
+        # breakage.
         binned_lower = (
             {}
             if value_histogram_n_bins is None
-            else {s: _binned_values(lower[s], value_histogram_n_bins) for s in site_names}
+            else {
+                s: _binned_values(site_ci_values(lower[s]), value_histogram_n_bins)
+                for s in site_names
+            }
         )
         binned_preactivations = (
             {}
             if value_histogram_n_bins is None
-            else {s: _binned_values(preactivations[s], value_histogram_n_bins) for s in site_names}
+            else {
+                s: _binned_values(site_ci_values(preactivations[s]), value_histogram_n_bins)
+                for s in site_names
+            }
         )
         density_hist = (
-            {s: _per_component_ci_hist(lower[s], density_heatmap_n_bins) for s in site_names}
+            {
+                s: _per_component_ci_hist(require_full_emission(lower[s]), density_heatmap_n_bins)
+                for s in site_names
+            }
             if density_heatmap_n_bins is not None
             else {}
         )
@@ -347,7 +410,7 @@ def site_reductions(accumulation: SiteReductionAccumulation) -> dict[str, SiteRe
 
 
 PositionCIStep = Callable[
-    [dict[str, Array]],
+    [Mapping[str, SiteCI]],
     tuple[dict[str, Array], dict[str, Array], Array],
 ]
 """`(ci_preactivations) -> ({site: lower (T, C)}, {site: upper (T, C)}, n_batch)` —
@@ -363,12 +426,16 @@ def make_position_ci_step(
     shared context's compute-precision CI preactivations. LM-only: CI is `(B, T, C)`."""
 
     def position_ci_step(
-        compute_preactivations: dict[str, Array],
+        compute_preactivations: Mapping[str, SiteCI],
     ) -> tuple[dict[str, Array], dict[str, Array], Array]:
         site_names = tuple(compute_preactivations)
         # fp32 squash of the compute-precision preactivations — see make_ci_reduction_step.
+        # `(T, 131k)` per site is out of reach regardless of emission, and the narrow slot
+        # axis means a different component at every (b, t): the opt-in position-CI metrics
+        # refuse narrow sites (enumerated arm).
         preactivations = {
-            s: value.astype(jnp.float32) for s, value in compute_preactivations.items()
+            s: require_full_emission(compute_preactivations[s]).astype(jnp.float32)
+            for s in site_names
         }
         lower = {s: lower_leaky_hard_sigmoid(preactivations[s]) for s in site_names}
         upper = {s: upper_leaky_hard_sigmoid(preactivations[s]) for s in site_names}
@@ -634,6 +701,64 @@ def plot_component_activation_density(densities: dict[str, np.ndarray], bins: in
     return _render_figure(fig)
 
 
+def component_group_counts(sites: tuple[SiteSpec, ...]) -> dict[str, int]:
+    """Sites whose components come in GROUPS (an expert-blocked factorization), as
+    `{site: n_groups}`. Flat C is group-major, so a per-component `(C,)` vector
+    reshapes `(n_groups, C // n_groups)` losslessly — the figure layer's one source
+    for group structure; analysis code never does index arithmetic."""
+    return {
+        site.name: site.factorization.n_experts
+        for site in sites
+        if isinstance(site.factorization, ExpertBlocked)
+    }
+
+
+def plot_grouped_mean_cis(mean_cis: dict[str, np.ndarray], group_counts: dict[str, int]) -> bytes:
+    """Per grouped site, the mean-CI spectrum in its group structure: an
+    `(n_groups, c)` heatmap — rows are component groups in their stored order (the
+    group index IS the identity the reader wants), columns the components within a
+    group, unsorted."""
+    grouped = {name: mean_cis[name] for name in group_counts}
+    n_rows, n_cols = _grid_dims(len(grouped))
+    fig = Figure(figsize=(6 * n_cols, 4 * n_rows))
+    axs = fig.subplots(n_rows, n_cols, squeeze=False)
+    flat_axes = axs.T.ravel()
+    for ax in flat_axes[len(grouped) :]:
+        ax.set_visible(False)
+    for ax, (name, mean_ci) in zip(flat_axes, grouped.items(), strict=False):
+        n_groups = group_counts[name]
+        image = ax.imshow(mean_ci.reshape(n_groups, -1), aspect="auto", interpolation="nearest")
+        fig.colorbar(image, ax=ax)
+        ax.set_title(name)
+        ax.set_xlabel("Component within group")
+        ax.set_ylabel("Component group")
+    fig.tight_layout()
+    return _render_figure(fig)
+
+
+def plot_grouped_dead_components(
+    densities: dict[str, np.ndarray], group_counts: dict[str, int]
+) -> bytes:
+    """Per grouped site, the DEAD-component count per group (activation density exactly
+    zero across the eval pass) — the direct read of which groups hold dead components."""
+    grouped = {name: densities[name] for name in group_counts}
+    n_rows, n_cols = _grid_dims(len(grouped))
+    fig = Figure(figsize=(6 * n_cols, 4 * n_rows))
+    axs = fig.subplots(n_rows, n_cols, squeeze=False)
+    flat_axes = axs.T.ravel()
+    for ax in flat_axes[len(grouped) :]:
+        ax.set_visible(False)
+    for ax, (name, density) in zip(flat_axes, grouped.items(), strict=False):
+        n_groups = group_counts[name]
+        dead = (density.reshape(n_groups, -1) == 0.0).sum(axis=1)
+        ax.bar(np.arange(n_groups), dead)
+        ax.set_title(name)
+        ax.set_xlabel("Component group")
+        ax.set_ylabel("Dead components")
+    fig.tight_layout()
+    return _render_figure(fig)
+
+
 def plot_mean_component_cis_both_scales(
     mean_cis: dict[str, np.ndarray],
 ) -> tuple[bytes, bytes]:
@@ -888,13 +1013,17 @@ def plot_ci_density_heatmap(
 
 def render_slow_eval_figures(
     reductions: dict[str, SiteReduction],
+    group_counts: dict[str, int],
 ) -> dict[str, bytes]:
     """The slow plot metrics as `{log_key: png_bytes}`, keyed exactly as torch logs them
     under `slow_eval/` (`figures/<key>` from each metric's `compute()`). The two value
     histograms appear only when the reductions carry one; a metric that renders neither
     bins nothing. When the run opts
     into the per-token CI density heatmap (`density_hist` present), it is added under
-    `figures/ci_density_heatmap`."""
+    `figures/ci_density_heatmap`. `group_counts` (`component_group_counts`) selects the
+    sites whose components come in groups: those additionally render the group-shaped
+    views (`*_groups`) — the mean-CI spectrum `(n_groups, c)` and per-group dead
+    counts."""
     assert all(r.n_positions > 0 for r in reductions.values())
     densities = {s: r.density_counts / r.n_positions for s, r in reductions.items()}
     mean_cis = {s: r.ci_sums / r.n_positions for s, r in reductions.items()}
@@ -912,6 +1041,14 @@ def render_slow_eval_figures(
     figures["figures/component_activation_density"] = plot_component_activation_density(densities)
     figures["figures/ci_mean_per_component"] = mean_linear
     figures["figures/ci_mean_per_component_log"] = mean_log
+    if group_counts:
+        assert set(group_counts) <= set(reductions), (sorted(group_counts), sorted(reductions))
+        figures["figures/ci_mean_per_component_groups"] = plot_grouped_mean_cis(
+            mean_cis, group_counts
+        )
+        figures["figures/component_activation_density_groups"] = plot_grouped_dead_components(
+            densities, group_counts
+        )
     density_hists = {s: r.density_hist for s, r in reductions.items() if r.density_hist is not None}
     if density_hists:
         assert len(density_hists) == len(reductions), "density_hist must be all-sites or none"

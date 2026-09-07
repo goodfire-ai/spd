@@ -11,6 +11,7 @@ from collections.abc import Callable
 from typing import Literal
 
 import equinox as eqx
+import jax
 
 DonateMode = Literal["all", "all-except-first", "warn", "warn-except-first", "none"]
 
@@ -25,3 +26,14 @@ def filter_jit[**P, T](
     to `jax.jit` (XLA compiler flags, native + in the compile-cache key). `None` or an
     empty dict means no options. CPU backends accept and ignore GPU flags."""
     return eqx.filter_jit(fn, donate=donate, compiler_options=compiler_options or {})  # pyright: ignore[reportCallIssue]
+
+
+def aot_compile[**P, T](
+    jitted: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs
+) -> jax.stages.Compiled:
+    """Compile one call signature of a `filter_jit`ted fn ahead of time and hand back the
+    underlying `jax.stages.Compiled` (for its post-optimization cost analysis). jax shares
+    the executable with the normal dispatch path, so the later first call does not
+    recompile. Lowering only traces: donation-marked args are not consumed."""
+    lowered = jitted.lower(*args, **kwargs)  # pyright: ignore[reportFunctionMemberAccess]
+    return lowered.compile().compiled

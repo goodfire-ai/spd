@@ -28,7 +28,12 @@ from param_decomp.core.ci_fn import (
     build_ci_fn,
     evaluate_ci,
 )
-from param_decomp.core.components import SiteSpec, component_stacks_from_sites
+from param_decomp.core.components import (
+    Dense,
+    SiteSpec,
+    component_stacks_from_sites,
+    require_full_emission,
+)
 from param_decomp.core.configs import (
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
@@ -50,7 +55,7 @@ from param_decomp.tests.core.test_generic_model_io import SyntheticDecomposedMod
 
 SITE = "block.0.proj"
 B, T, D, C = 2, 5, 8, 4
-SITES = (SiteSpec(name=SITE, d_in=D, d_out=D, C=C, group=SITE),)
+SITES = (SiteSpec(name=SITE, factorization=Dense(d_in=D, d_out=D, C=C), group=SITE),)
 
 
 def _positioned_mlp_ci_fn() -> LayerwiseMLPCIFn:
@@ -93,19 +98,24 @@ def test_mlp_arch_serves_a_positioned_target():
     assert ci_fn.has_position_axis is True
 
     ci = ci_fn(_taps(), remat=False, placement=None)
-    assert ci.preactivations[SITE].shape == (B, T, C)
-    assert bool(jnp.isfinite(ci.lower[SITE]).all())
+    assert require_full_emission(ci.preactivations[SITE]).shape == (B, T, C)
+    assert bool(jnp.isfinite(require_full_emission(ci.lower[SITE])).all())
 
 
 def test_evaluate_ci_casts_fp32_taps_to_compute_precision():
     ci_fn = _positioned_mlp_ci_fn()
     taps = _taps()
     assert taps[SITE].dtype == jnp.float32
-    assert ci_fn(taps, remat=False, placement=None).preactivations[SITE].dtype == jnp.float32
     assert (
-        evaluate_ci(PlacedCIFn(fn=ci_fn, placement=None), taps, remat=False)
-        .preactivations[SITE]
-        .dtype
+        require_full_emission(ci_fn(taps, remat=False, placement=None).preactivations[SITE]).dtype
+        == jnp.float32
+    )
+    assert (
+        require_full_emission(
+            evaluate_ci(PlacedCIFn(fn=ci_fn, placement=None), taps, remat=False).preactivations[
+                SITE
+            ]
+        ).dtype
         == COMPUTE_DT
     )
 
@@ -118,8 +128,8 @@ def test_positioned_mlp_is_position_local():
     perturbed = {SITE: taps[SITE].at[:, 2, :].add(100.0)}
 
     moved = jnp.abs(
-        ci_fn(taps, remat=False, placement=None).preactivations[SITE]
-        - ci_fn(perturbed, remat=False, placement=None).preactivations[SITE]
+        require_full_emission(ci_fn(taps, remat=False, placement=None).preactivations[SITE])
+        - require_full_emission(ci_fn(perturbed, remat=False, placement=None).preactivations[SITE])
     ).max(axis=(0, 2))
 
     assert float(moved[2]) > 0.0, "the perturbed position must move at all"
@@ -138,7 +148,9 @@ def test_positioned_mlp_reads_tap_magnitude_where_the_blockless_chunk_cannot():
 
     def scale_gap(ci_fn: CIFn) -> float:
         x = _taps(1)[SITE]
-        f = lambda t: ci_fn({SITE: t}, remat=False, placement=None).preactivations[SITE]  # noqa: E731
+        f = lambda t: require_full_emission(  # noqa: E731
+            ci_fn({SITE: t}, remat=False, placement=None).preactivations[SITE]
+        )
         return float(jnp.abs(f(x) - f(x * 7.0)).max())
 
     assert scale_gap(_positioned_mlp_ci_fn()) > 1.0, "the MLP CI fn ignored tap magnitude"
@@ -212,7 +224,7 @@ def test_positioned_mlp_trains_a_positioned_target():
         components_optimizer=opt_vu,
         ci_fn_optimizer=opt_ci,
         total_steps=10,
-        faithfulness=faithfulness_loss_for(model),
+        faithfulness=faithfulness_loss_for(placed),
     )
 
     first_before = jax.device_get(ci_fn.site_mlps[SITE].weights[0])  # survives step donation

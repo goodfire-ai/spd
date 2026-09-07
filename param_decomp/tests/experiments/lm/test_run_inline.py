@@ -12,6 +12,7 @@ The multi-device tests need `--runmultidevice`; the frozen-target dtype test run
 dp=1 so the default suite keeps covering it.
 """
 
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -142,14 +143,12 @@ def _write_run_config(path: Path, shards_dir: Path, dp: int, tp: int, weights_dt
             ],
         },
         "runtime": {
-            "replicate": 1,
-            "fsdp": dp // tp,
-            "tp": tp,
+            "mesh": {"replicate": 1, "fsdp": dp // tp, "tp": tp},
             "sharding": "zero1",
             "compilation_cache_dir": str(shards_dir.parent / "xla_compilation_cache"),
             # The production preset, resolved by the trainer; its GPU flags are ignored
             # on this suite's CPU backend.
-            "compiler_options": "tuned-v1",
+            "compiler_options": "tuned-v2",
         },
         "cadence": {
             "train_log_every": 1,
@@ -162,6 +161,7 @@ def _write_run_config(path: Path, shards_dir: Path, dp: int, tp: int, weights_dt
         "target": {
             "attention_implementation": "auto",
             "weights_dtype": weights_dtype,
+            "output_edge": {"kind": "materialized"},
             "spec": {
                 "kind": "pretrained",
                 "model_class": (
@@ -180,7 +180,7 @@ def _write_run_config(path: Path, shards_dir: Path, dp: int, tp: int, weights_dt
 
 def _run_module(config: Path, data_root: Path) -> None:
     runtime = yaml.safe_load(config.read_text())["runtime"]
-    local_device_count = runtime["replicate"] * runtime["fsdp"] * runtime["tp"]
+    local_device_count = math.prod(runtime["mesh"].values())
     subprocess.run(
         [
             sys.executable,

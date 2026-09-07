@@ -24,12 +24,19 @@ from pydantic import (
     PositiveFloat,
     PositiveInt,
     field_validator,
+    model_validator,
 )
 
 from param_decomp.core.base_config import BaseConfig
-from param_decomp.core.configs import PlacementTableConfig
+from param_decomp.core.configs import (
+    HsdpMeshShape,
+    MeshShape,
+    PlacementSpec,
+    ResidentMeshShape,
+    SequenceSharding,
+)
 
-TUNED_V1_COMPILER_OPTIONS: Mapping[str, bool | int | str] = MappingProxyType(
+TUNED_V2_COMPILER_OPTIONS: Mapping[str, bool | int | str] = MappingProxyType(
     {
         "xla_gpu_enable_latency_hiding_scheduler": True,
         "xla_gpu_enable_triton_gemm": False,
@@ -38,27 +45,77 @@ TUNED_V1_COMPILER_OPTIONS: Mapping[str, bool | int | str] = MappingProxyType(
         "xla_gpu_all_reduce_combine_threshold_bytes": 1073741824,
         "xla_gpu_all_gather_combine_threshold_bytes": 1073741824,
         "xla_gpu_reduce_scatter_combine_threshold_bytes": 134217728,
-        "xla_gpu_enable_pipelined_all_gather": True,
-        "xla_gpu_enable_pipelined_reduce_scatter": True,
-        "xla_gpu_enable_pipelined_all_reduce": True,
-        "xla_gpu_enable_while_loop_double_buffering": True,
+        "xla_gpu_enable_while_loop_double_buffering": False,
         "xla_gpu_enable_all_gather_combine_by_dim": False,
         "xla_gpu_enable_reduce_scatter_combine_by_dim": False,
     }
 )
-"""What `compiler_options: tuned-v1` resolves to — the ONE copy of the tuned set, frozen.
-It is MaxText's H100 recipe: latency-hiding scheduler + 1 GiB collective-combine
-thresholds + pipelined collectives + while-loop double-buffering;
-`xla_gpu_enable_command_buffer: ''` disables CUDA-graph capture, a correctness guard.
-A change to the tuned set is a NEW preset name (`tuned-v2`), never an edit here — pinned
-configs authoring `tuned-v1` must keep meaning these exact flags."""
+"""What `compiler_options: tuned-v2` resolves to — the ONE copy of the tuned set, frozen.
+The core of MaxText's H100 recipe: latency-hiding scheduler + 1 GiB collective-combine
+thresholds; `xla_gpu_enable_command_buffer: ''` disables CUDA-graph capture, a
+correctness guard. The recipe's pipelined-collective arm is not expressible on this
+substrate — jaxlib 0.11 removed the three
+`xla_gpu_enable_pipelined_{all_gather,reduce_scatter,all_reduce}` compile options (they
+survive only as `XLA_FLAGS` env flags), which is what retired the tuned-v1 preset family.
+While-loop double-buffering is OFF: it keeps O(1) extra copies of a while loop's operand
+tuple — pennies when the xs are per-layer weight shards, fatal when they carry
+whole-depth resident stacks — so the one set is safe for every placement, resident
+included. A change to the tuned set is a NEW preset name (`tuned-v3`), never an edit
+here — pinned configs authoring `tuned-v2` must keep meaning these exact flags."""
+
+TUNED_V2_AUTOTUNE1_COMPILER_OPTIONS: Mapping[str, bool | int | str] = MappingProxyType(
+    {**TUNED_V2_COMPILER_OPTIONS, "xla_gpu_autotune_level": 1}
+)
+"""What `compiler_options: tuned-v2-autotune1` resolves to — tuned-v2 with GEMM/conv
+autotuning dialed to level 1: the fast-iteration preset, trading
+kernel-pick quality for a shorter first compile. Autotune picks can shift fusion choices
+and therefore the arena, so a fit verdict or step time measured under this preset does
+not transfer to `tuned-v2` (and vice versa). Equally frozen: a change is a new preset
+name."""
+
+
+def _merged_xla_flags(config_flags: str, inherited: str | None) -> str:
+    """Compose the config's `XLA_FLAGS` with flags the process environment already
+    carries, keyed by flag name (the token before `=`): disjoint flags compose (the
+    config's first, the environment's extras appended), an identical duplicate dedupes,
+    and the SAME flag with a DIFFERENT value refuses — a reviewed config value
+    conflicting with ambient env is a confused state, and env flags are not in the
+    compile-cache key, so resolving it silently in either direction is refused."""
+    merged = {token.split("=", 1)[0]: token for token in config_flags.split()}
+    for token in (inherited or "").split():
+        key = token.split("=", 1)[0]
+        if key not in merged:
+            merged[key] = token
+            continue
+        assert merged[key] == token, (
+            f"XLA_FLAGS conflict on {key}: the config's launch_env.xla_flags carries "
+            f"{merged[key]!r}, the process environment carries {token!r} — align the "
+            "config or the environment; a silent resolution is refused"
+        )
+    return " ".join(merged.values())
+
+
+TYPED_ENV_VARS: Mapping[str, str] = MappingProxyType(
+    {
+        "NCCL_DEBUG": "nccl_debug",
+        "MALLOC_ARENA_MAX": "malloc_arena_max",
+        "XLA_PYTHON_CLIENT_MEM_FRACTION": "xla_python_client_mem_fraction",
+        "XLA_PJRT_GPU_HOST_MEMORY_LIMIT_GB": "xla_pjrt_gpu_host_memory_limit_gb",
+        "XLA_FLAGS": "xla_flags",
+        "XLA_PYTHON_CLIENT_ALLOCATOR": "xla_python_client_allocator",
+    }
+)
+"""Every environment variable a typed `LaunchEnv` field renders, keyed to its field: the
+closed set the free-form `env` block may NOT name (`_env_block_is_disjoint_from_typed_fields`).
+`as_env` renders exactly these keys (plus nothing), so ownership and rendering cannot drift."""
 
 
 class LaunchEnv(BaseConfig):
     """The process-environment surface a rank runs with — the XLA *client* knobs (mem
-    fraction / allocator / host-memory limit), NCCL/glibc tuning, and a free-form env escape
-    hatch — lifted into the run config so a run's `launch_config.yaml` fully captures its
-    environment (tracking + repro), and A/B-ing a knob is a config edit, not a launcher edit.
+    fraction / allocator / host-memory limit), NCCL/glibc tuning, and a free-form env block
+    for variables WITHOUT a typed field — lifted into the run config so a run's
+    `launch_config.yaml` fully captures its environment (tracking + repro), and A/B-ing a
+    knob is a config edit, not a process-wrapper edit.
 
     XLA *compiler* flags are NOT here — they go through `RuntimeConfig.compiler_options`
     (passed natively to each jit, no env round-trip; see that field). This class is only the
@@ -68,11 +125,23 @@ class LaunchEnv(BaseConfig):
     ranks renders the same map into their environment. `LD_LIBRARY_PATH` is NOT here (it is
     machine-specific — resolved against the local CUDA install by whoever starts the
     process — not a tracked decision). These defaults are the single source of truth: a
-    submitter renders them, it does not carry its own set.
+    rank spawner renders them; it does not carry its own set.
     """
 
     xla_python_client_mem_fraction: PositiveFloat = 0.92
     """`XLA_PYTHON_CLIENT_MEM_FRACTION` — the BFC pool cap as a fraction of HBM."""
+    xla_flags: str = "--xla_gpu_nccl_termination_timeout_seconds=600"
+    """`XLA_FLAGS` — XLA *runtime* env knobs; compiler flags go through
+    `RuntimeConfig.compiler_options` instead. The default bounds the collective-clique
+    acquisition rendezvous, which XLA otherwise waits on FOREVER (upstream terminate
+    default -1): a device thread that dies before joining — e.g. a per-device OOM at
+    executable launch — parks every sibling thread at 0% GPU with no error, wedging the
+    whole world. Local device threads dispatch together, so 600s outlasts any legitimate
+    join skew; on expiry XLA dumps all thread stacks and aborts, making the true failure
+    loud and attributed. The trainer appends its HLO-dump flags to this value. Flags the
+    process environment already carries compose with these rather than being replaced
+    (`as_env` + `_merged_xla_flags`: disjoint flags compose, an identical duplicate
+    dedupes, a conflicting value refuses)."""
     xla_python_client_allocator: str | None = None
     """`XLA_PYTHON_CLIENT_ALLOCATOR` — e.g. `platform` for the on-demand cudaMalloc allocator
     (avoids BFC fragmentation OOMs near the HBM cap, at some per-alloc cost). `None` leaves
@@ -88,28 +157,52 @@ class LaunchEnv(BaseConfig):
     env: dict[str, str] = Field(
         default_factory=dict,
         description=(
-            "Arbitrary extra exports merged into the rank env LAST (after the typed knobs), "
-            "so it can override any of them. The escape hatch for a one-off var without a "
-            "schema field."
+            "Extra exports for one-off variables WITHOUT a typed field, rendered alongside "
+            "the typed knobs. A key a typed field owns (`TYPED_ENV_VARS`, `XLA_FLAGS` "
+            "included) refuses at config load naming that field: the typed spelling carries "
+            "the field's defaults and composition rules, which a raw override would silently "
+            "discard."
         ),
     )
 
-    def as_env(self) -> dict[str, str]:
+    @field_validator("env")
+    @classmethod
+    def _env_block_is_disjoint_from_typed_fields(cls, env: dict[str, str]) -> dict[str, str]:
+        owned = sorted(key for key in env if key in TYPED_ENV_VARS)
+        if owned:
+            remedies = ", ".join(f"{key} -> launch_env.{TYPED_ENV_VARS[key]}" for key in owned)
+            raise ValueError(
+                f"launch_env.env names variables typed fields own: {owned}. Author the "
+                f"typed field instead ({remedies}); an env-block override would silently "
+                "replace the field's defaults and composition rules"
+            )
+        return env
+
+    def as_env(self, inherited_xla_flags: str | None) -> dict[str, str]:
         """Render the ordered `{VAR: value}` map a rank's environment must carry (sans
         `LD_LIBRARY_PATH`, which is machine-specific). Only the env that must exist before
         backend/NCCL init — XLA *compiler* flags are passed natively via
-        `RuntimeConfig.compiler_options`, not here. Later keys override earlier, so the
-        free-form `env` block wins last."""
+        `RuntimeConfig.compiler_options`, not here. The typed knobs render the
+        `TYPED_ENV_VARS` keys; the free-form `env` block is disjoint from them by
+        validation, so no key is written twice.
+
+        `inherited_xla_flags` is the `XLA_FLAGS` the environment already carries: a
+        bootstrap applying this map in-process passes `os.environ.get("XLA_FLAGS")` so a
+        wrapper's exports compose with the config's flags — additively, with a
+        conflicting value refused (`_merged_xla_flags`); a rank spawner rendering the map
+        into a fresh process passes `None` — the parent machine's env is not the
+        rank's."""
         rendered: dict[str, str] = {
             "NCCL_DEBUG": self.nccl_debug,
             "MALLOC_ARENA_MAX": str(self.malloc_arena_max),
             "XLA_PYTHON_CLIENT_MEM_FRACTION": str(self.xla_python_client_mem_fraction),
             "XLA_PJRT_GPU_HOST_MEMORY_LIMIT_GB": str(self.xla_pjrt_gpu_host_memory_limit_gb),
+            "XLA_FLAGS": _merged_xla_flags(self.xla_flags, inherited_xla_flags),
         }
         if self.xla_python_client_allocator is not None:
             rendered["XLA_PYTHON_CLIENT_ALLOCATOR"] = self.xla_python_client_allocator
-        rendered |= self.env
-        return rendered
+        assert rendered.keys() <= TYPED_ENV_VARS.keys(), rendered.keys() - TYPED_ENV_VARS.keys()
+        return rendered | self.env
 
 
 class ProfilingDisabled(BaseConfig):
@@ -145,16 +238,16 @@ class RuntimeConfig(BaseConfig):
     Perturbs numerics but doesn't change the algorithm.
     """
 
-    replicate: PositiveInt = Field(
-        description="Logical model-replication and cross-replica ownership axis.",
-    )
-    fsdp: PositiveInt = Field(
-        description="Logical parameter-sharding axis; also shards the data batch.",
-    )
-    tp: PositiveInt = Field(
-        description="Logical Megatron tensor-parallel axis; batch activations replicate over it.",
-    )
-    sharding: Literal["owner", "zero1", "ddp"] | PlacementTableConfig = Field(
+    mesh: MeshShape
+    """The logical mesh: `{replicate: R, fsdp: F, tp: T}` or, for the
+    `*-replicated-resident` placements (which have NO fsdp axis — the working copy is
+    resident whole), `{data: D, tp: T}`. The union discriminates structurally (disjoint
+    required keys, extra keys refuse). Which shape a `sharding` runs on is the placement
+    table's own knowledge — the mesh axes its rows name — checked once at placement
+    construction (`placement.from_config`, at config build) for presets and explicit
+    tables alike."""
+
+    sharding: PlacementSpec = Field(
         description=(
             "Placement policy for the trainable state (placement.py). REQUIRED, no "
             "default — a layout this consequential is written down per config. Presets: "
@@ -164,8 +257,25 @@ class RuntimeConfig(BaseConfig):
             "ownership (stack ÷replicate, d ÷fsdp, C ÷tp) — the muon-motivated layout "
             "(Newton-Schulz stays node-local); a semantic group whose stack does not "
             "tile ÷replicate refuses at config build (placement.from_config, "
-            "pre-submission for a submitted run) — there is no fallback; `ddp` = fully "
-            "replicated. Or an explicit `PlacementTableConfig` table (`components: "
+            "pre-submission for a submitted run) — there is no fallback; "
+            "`zero1-replicated-resident` = `zero1` masters with the bf16 working copy "
+            "RESIDENT whole (÷tp only — classic ZeRO-1: the resident rows equal the "
+            "operand rows, so the once-per-step entry gather is the only weight "
+            "collective and no while body gathers weights); `owner-replicated-resident` "
+            "= `owner` masters (stack-cut — the faithfulness transition is the "
+            "identity) with the same replicated resident; strict like `owner` (stacks "
+            "must tile ÷data); `zero1-replicated-resident-moe` / "
+            "`owner-replicated-resident-moe` = the resident twins plus the "
+            "expert-blocked component rows a MoE family needs (V/U expert blocks "
+            "co-located with their frozen experts on tp; zero1 masters `C_block` "
+            "÷data place any stack length, owner masters `{stack: data, expert: tp}` "
+            "rest whole blocks per device — the stacked-muon pairing, faithfulness "
+            "fully rank-local; stacks must tile ÷data) — binding only site sets that "
+            "hold expert-blocked groups. "
+            "The `*-replicated-resident*` presets run on the "
+            "two-axis (data, tp) mesh — residency leaves fsdp nothing to shard, so the "
+            "axis does not exist and the run spells `mesh: {data: D, tp: T}`; "
+            "`ddp` = fully replicated. Or an explicit `PlacementTableConfig` table (`components: "
             "{optimizer_state, compute_weights, faithfulness_weights, "
             "faithfulness_deltas, operands}`, per-CI-weight-family "
             "`{optimizer_state, compute_weights, operands}` rows, `activations: "
@@ -173,6 +283,21 @@ class RuntimeConfig(BaseConfig):
             "semantic-axis -> mesh-axes rule; list order is "
             "semantics). Same math under every value — layouts differ only by float "
             "reassociation (SPEC D4)."
+        ),
+    )
+    sequence_sharding: SequenceSharding = Field(
+        default="replicate",
+        description=(
+            "How masked forwards place the between-blocks residual over tp "
+            "(placement.py, `activations/masked_external`). `replicate` = the standing "
+            "spelling. `sequence_parallel` shards the position axis over tp between the "
+            "blocks of masked forwards; block interiors run at full width, so each block "
+            "boundary's tp-axis activation reduction becomes a reduce-scatter + "
+            "all-gather pair and the saved between-blocks residuals rest at 1/tp. Clean "
+            "forwards, CI-fn taps and the output edge keep the replicated residual. "
+            "Sequence length must tile tp; only targets implementing it accept it "
+            "(qwen36_moe). Same math either way — a resharding, so layouts differ only "
+            "by float reassociation (SPEC D4)."
         ),
     )
     remat_recon_forwards: bool = Field(
@@ -195,14 +320,19 @@ class RuntimeConfig(BaseConfig):
             "batch on big targets. Compute substrate knob, no algorithm effect."
         ),
     )
-    compiler_options: Literal["tuned-v1", "bare"] | dict[str, bool | int | str] = Field(
+    compiler_options: (
+        Literal["tuned-v2", "tuned-v2-autotune1", "bare"] | dict[str, bool | int | str]
+    ) = Field(
         description=(
             "XLA compiler flags passed NATIVELY to every jit's `compiler_options` — no "
             "`XLA_FLAGS` env round-trip, and (unlike env) they ARE in the compile-cache key, "
             "so changing one actually recompiles. REQUIRED, no default and no merge: every "
-            "run's flags trace to a visible authored token. `tuned-v1` = the frozen "
-            "production set (`TUNED_V1_COMPILER_OPTIONS`); `bare` = {} (true XLA defaults — "
-            "the debugging baseline); or an explicit dict, used VERBATIM as the complete "
+            "run's flags trace to a visible authored token. `tuned-v2` = the frozen "
+            "production set (`TUNED_V2_COMPILER_OPTIONS`), safe for every placement, "
+            "resident included; `tuned-v2-autotune1` = tuned-v2 plus "
+            "`xla_gpu_autotune_level: 1` — the fast-iteration set (shorter first "
+            "compile; kernel picks and arena may differ from tuned-v2); `bare` = {} (true XLA "
+            "defaults — the debugging baseline); or an explicit dict, used VERBATIM as the complete "
             "flag set the run compiles with. Explicit dicts: full `xla_*` flag names, typed "
             "values (True/int/str, not 'true'); keys outside `xla_*` refuse. "
             "`xla_disable_hlo_passes: rematerialization` opts into the disable-XLA-remat "
@@ -211,10 +341,28 @@ class RuntimeConfig(BaseConfig):
             "spends memory for overlap): a percent scaling of the scheduler's memory "
             "budget, so it moves the COMPILED arena — the fit check's DEMANDED — not the "
             "runtime BFC pool. Memory-tight cells author it per cell in an explicit "
-            "dict; measured per-cell tradeoffs live in PERF_NOTES.md. On CPU "
-            "(toys/tests) the GPU flags are ignored."
+            "dict. On CPU (toys/tests) the GPU flags are ignored."
         ),
     )
+
+    @field_validator("compiler_options", mode="before")
+    @classmethod
+    def _dead_preset_spellings_refuse_with_the_successor(cls, options: object) -> object:
+        """jaxlib 0.11 removed the pipelined-collective trio the tuned-v1 presets froze,
+        so those tokens can never again mean their exact flag sets; each refuses naming
+        its successor rather than silently resolving to different flags."""
+        successor_of_retired = {
+            "tuned-v1": "tuned-v2",
+            "tuned-v1-resident": "tuned-v2",
+            "tuned-v1-resident-autotune1": "tuned-v2-autotune1",
+        }
+        if isinstance(options, str) and options in successor_of_retired:
+            raise ValueError(
+                f"compiler_options {options!r} is retired: jaxlib 0.11 removed the "
+                f"pipelined-collective compile options it froze. Author "
+                f"{successor_of_retired[options]!r}"
+            )
+        return options
 
     @field_validator("compiler_options")
     @classmethod
@@ -229,12 +377,30 @@ class RuntimeConfig(BaseConfig):
                 )
         return options
 
+    @model_validator(mode="before")
+    @classmethod
+    def _flat_mesh_keys_refuse_with_the_nested_spelling(cls, data: object) -> object:
+        """`extra="forbid"` already rejects the retired flat axis keys; this exists only
+        to say the nested spelling in the refusal."""
+        if isinstance(data, dict):
+            flat = [key for key in ("replicate", "fsdp", "data", "tp") if key in data]
+            if flat:
+                raise ValueError(
+                    f"mesh axes are nested under `runtime.mesh:` — spell "
+                    f"`mesh: {{replicate: R, fsdp: F, tp: T}}` (or, for a "
+                    f"`*-replicated-resident` run, `mesh: {{data: D, tp: T}}`); "
+                    f"got flat keys {flat}"
+                )
+        return data
+
     @property
     def resolved_compiler_options(self) -> dict[str, bool | int | str]:
         """The concrete flag map every jit receives — the presets resolve here, nowhere else."""
         match self.compiler_options:
-            case "tuned-v1":
-                return dict(TUNED_V1_COMPILER_OPTIONS)
+            case "tuned-v2":
+                return dict(TUNED_V2_COMPILER_OPTIONS)
+            case "tuned-v2-autotune1":
+                return dict(TUNED_V2_AUTOTUNE1_COMPILER_OPTIONS)
             case "bare":
                 return {}
             case explicit:
@@ -260,14 +426,18 @@ class RuntimeConfig(BaseConfig):
     profiling: ProfilingConfig = Field(default_factory=ProfilingDisabled)
     """The run's profiler, authored — the trainer receives it as typed data, never via env.
     `ad_hoc` is the in-process `jax.profiler` trace; `nsight_systems` attaches an external
-    `nsys` (machine-specific executable resolution stays in the launcher; the profiler and
-    its version remain pinned here)."""
+    `nsys` (machine-specific executable resolution stays outside the library; the profiler
+    and its version remain pinned here)."""
 
     @property
     def world_size(self) -> int:
-        return self.replicate * self.fsdp * self.tp
+        return self.mesh.world_size
 
     @property
     def data_parallel_size(self) -> int:
-        """Effective data-parallel degree after carving TP groups from the device world."""
-        return self.replicate * self.fsdp
+        """Distinct batch shards after carving TP groups from the device world."""
+        match self.mesh:
+            case HsdpMeshShape(replicate=replicate, fsdp=fsdp):
+                return replicate * fsdp
+            case ResidentMeshShape(data=data):
+                return data

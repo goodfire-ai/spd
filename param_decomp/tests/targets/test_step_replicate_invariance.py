@@ -6,6 +6,7 @@ defer to entry; in-loop cross-replicate collectives bounded to the sanctioned sm
 import jax
 import pytest
 
+from param_decomp.core.configs import PlacementPresetName
 from param_decomp.targets.invariance_check import check_device_count_invariance
 
 pytestmark = [
@@ -18,7 +19,7 @@ pytestmark = [
 
 
 @pytest.mark.parametrize("sharding", ("owner", "ddp"))
-def test_owner_and_ddp_steps_match_single_device_trajectories(sharding: str):
+def test_owner_and_ddp_steps_match_single_device_trajectories(sharding: PlacementPresetName):
     # rel widened one reassociation-growth step past the (1, n, 1) arm's envelope:
     # replicate>1 reduces in more orders, and drift grows ~5-10x per executed step.
     check_device_count_invariance(2, (2, 2, 2), sharding, census=True, rel=2e-3)

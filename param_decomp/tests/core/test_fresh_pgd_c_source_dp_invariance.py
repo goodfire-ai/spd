@@ -29,8 +29,13 @@ import jax
 import jax.numpy as jnp
 from jax import random
 
-from param_decomp.core.adversary import Sources, init_fresh_pgd_sources
-from param_decomp.core.components import ComponentStacks, SiteSpec, init_component_stacks
+from param_decomp.core.adversary import Sources, full_source_components, init_fresh_pgd_sources
+from param_decomp.core.components import (
+    ComponentStacks,
+    SiteSpec,
+    init_component_stacks,
+    require_full_emission,
+)
 from param_decomp.core.masking import masks_from_sources
 from param_decomp.core.model import DecomposedModel
 from param_decomp.core.sharding import hsdp_mesh, shard_batch
@@ -38,6 +43,7 @@ from param_decomp.targets.glu_transformer import (
     glu_site_specs,
     mlp_family_site_cs,
 )
+from param_decomp.targets.lm_output import LMOutput
 from param_decomp.targets.losses import kl_per_position
 from param_decomp.targets.testing import run_clean, run_masked, tiny_glu_cfg, tiny_glu_decomposed_lm
 
@@ -80,7 +86,7 @@ def _ascend_c_source(
 
 def _ascend(
     sites: tuple[SiteSpec, ...],
-    model: DecomposedModel,
+    model: DecomposedModel[LMOutput],
     components: ComponentStacks,
     residual: jax.Array,
     n_steps: int,
@@ -88,6 +94,7 @@ def _ascend(
 ) -> tuple[Sources, dict[str, jax.Array]]:
     gbatch, seq = residual.shape
     clean_output = jax.lax.stop_gradient(run_clean(model, residual))
+    assert isinstance(clean_output, jax.Array)
     # ci_lower = 0 so the mask is just the `c` source — the cleanest probe of the
     # sign-ascent. Shapes match the masked forward's per-site (B, T, C) expectation.
     ci_lower = {s.name: jnp.zeros((gbatch, seq, s.C), jnp.float32) for s in sites}
@@ -106,6 +113,7 @@ def _ascend(
             True,
             remat=False,
         )
+        assert isinstance(masked, jax.Array)
         return kl_per_position(masked, clean_output)
 
     def sign_ascend_body(sources: Sources, _: None) -> tuple[Sources, None]:
@@ -118,7 +126,7 @@ def _ascend(
 
     ascended, _ = jax.lax.scan(sign_ascend_body, init, None, length=n_steps)
     masks, _ = masks_from_sources(ci_lower, ascended)
-    return ascended, masks
+    return ascended, {site: require_full_emission(mask) for site, mask in masks.items()}
 
 
 def test_fresh_pgd_c_source_sign_ascent_is_device_count_invariant():
@@ -132,7 +140,7 @@ def test_fresh_pgd_c_source_sign_ascent_is_device_count_invariant():
     src_sharded, mask_sharded = _ascend_c_source(True, n_steps, step_size)
 
     for name in src_single:
-        assert src_single[name].components.shape == (1, 1, 8)
+        assert full_source_components(src_single[name].components).shape == (1, 1, 8)
         assert src_single[name].delta.shape == (1, 1)
         assert all(
             jnp.array_equal(a, b)

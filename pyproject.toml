@@ -1,7 +1,7 @@
 [project]
 name = "param-decomp"
 version = "0.0.1"
-description = "Parameter decomposition: the generic VPD library (core engine, targets, pretraining, vendored archs)"
+description = "Parameter decomposition: the generic VPD library (core engine, targets, and pretraining)"
 requires-python = ">=3.12,<3.14"
 urls = { "Homepage" = "https://github.com/goodfire-ai/param-decomp" }
 license = { text = "MIT" }
@@ -12,7 +12,8 @@ dependencies = [
     # leaf deps directly (was the dissolved `param-decomp-config` package).
     "pydantic<2.12", # https://github.com/goodfire-ai/param-decomp/pull/232 , issues/221
     "annotated-types",
-    "jax==0.10.1",
+    "jax==0.11.1",
+    "tokamax==0.0.13",
     "equinox==0.13.8",
     "optax==0.2.8",
     "jaxtyping==0.3.10",
@@ -32,18 +33,9 @@ dependencies = [
     # Composition / consumer-layer deps (absorbed from the dissolved param-decomp-lab
     # distribution when the lab merged into the library).
     "fire",
-    "wandb-workspaces==0.1.12", # See https://github.com/wandb/wandb-workspaces/issues/65
-    "sympy",
-    "streamlit",
-    "streamlit-antd-components",
     "scipy>=1.14.1",
-    "zstandard", # For streaming datasets
-    "kaleido==0.2.1",
-    "numba>=0.64.0",
     "nvtx==0.2.15",
-    "requests",
     "python-dotenv",
-    "tqdm",
     "transformers",
     # `datasets` less than 2.21.0 causes issues due to incompatibility with numpy>=2.0
     "datasets>=2.21.0",
@@ -53,7 +45,7 @@ dependencies = [
 # Pre-r580 driver arm. Keep the exact NVIDIA pins on one coherent CUDA 12.8.1
 # release train: component versions do not encode the toolkit minor.
 cuda = [
-    "jax[cuda12]==0.10.1",
+    "jax[cuda12]==0.11.1",
     "nvidia-cublas-cu12==12.8.4.1",
     "nvidia-cuda-cccl-cu12==12.8.90",
     "nvidia-cuda-cupti-cu12==12.8.90",
@@ -69,11 +61,11 @@ cuda = [
     "nvidia-nvshmem-cu12==3.2.5",
 ]
 # r580+ driver arm. cuBLAS >= 13.2 avoids a Blackwell TMEM double-free.
-cuda13 = ["jax[cuda13]==0.10.1", "nvidia-cublas>=13.2.0.9"]
+cuda13 = ["jax[cuda13]==0.11.1", "nvidia-cublas>=13.2.0.9"]
 
 # No [project.scripts]: this library ships no console commands. Every runnable surface is
-# a module main (`python -m param_decomp.experiments.<family>.run`,
-# `-m param_decomp.pretrain.train`, and the clustering worker modules).
+# a module main (`python -m param_decomp.experiments.<family>.run` or
+# `python -m param_decomp.pretrain.train`).
 
 [dependency-groups]
 dev = [
@@ -84,7 +76,6 @@ dev = [
     "ruff",
     "basedpyright<1.32.0", # pyright and wandb issues, see https://github.com/goodfire-ai/param-decomp/pull/232
     "pre-commit",
-    "scikit-learn",
     "ipykernel",
 ]
 
@@ -144,7 +135,7 @@ known-third-party = ["wandb"]
 # nano_param_decomp/ is the standalone torch single-file VPD reference impl for paper
 # readers (see README); it is the one torch island left in the repo and is type-checked
 # in a torch env, not this JAX-only one.
-# `vendored_jax` is a verbatim numeric mirror of the torch vendored Llama — kept out of
+# `target_ports` is a verbatim numeric mirror of the torch vendored Llama — kept out of
 # type-checking (its correctness contract is the parity tests, not types).
 include = ["param_decomp"]
 exclude = [
@@ -155,8 +146,10 @@ exclude = [
     "**/*_pb2.py",
     "**/*_pb2.pyi",
     "nano_param_decomp",
-    "param_decomp/vendored_jax",
+    "param_decomp/routed/experts.py",
+    "param_decomp/target_ports",
     "param_decomp/tests/targets/qwen3_hf_parity/gen_hf_fixtures.py",  # torch-env script
+    "param_decomp/tests/targets/qwen36_moe_hf_parity/gen_hf_fixtures.py",  # torch-env script
     "param_decomp/tests/targets/stacked_parity/gen_stacked_fixtures.py",  # base-branch-only script (pre-restructure API)
 ]
 stubPath = "typings" # Having type stubs for transformers shaves 10 seconds off basedpyright calls
@@ -200,6 +193,4 @@ addopts = ["--import-mode=importlib"]
 filterwarnings = [
     # https://github.com/google/python-fire/pull/447
     "ignore::DeprecationWarning:fire:59",
-    # Ignore Pydantic V1 deprecation warnings from wandb_workspaces
-    "ignore:Pydantic V1 style.*:DeprecationWarning:wandb_workspaces",
 ]

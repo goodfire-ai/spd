@@ -3,13 +3,6 @@ notebooks/**
 scratch/
 .scratch_*
 
-# Script outputs (generated files, often large)
-scripts/outputs/
-scripts/standalone_repros/*.json
-scripts/standalone_repros/*.txt
-scripts/profile_ci_fn_*.json
-scripts/profile_ci_fn_*.txt
-
 **/out/
 neuronpedia_outputs/
 .env
@@ -184,12 +177,6 @@ cython_debug/
 **/*.db
 **/*.db*
 *.schema.json
-
-# `.claude/` is project config and is tracked — skills, agents, commands, settings.
-# Only the ephemeral and per-person parts are ignored. (The public scrub deletes
-# `.claude/` and `.agents/`; a tracked skill would otherwise ship in the release.)
-.claude/worktrees
-.claude/settings.local.json
 
 .venv-cuda/
 **/.venv-cuda/

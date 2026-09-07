@@ -25,6 +25,13 @@ if _MAX_ISA_FLAG not in os.environ.get("XLA_FLAGS", ""):
 
 import jax  # noqa: E402
 
+# tokamax must load before pyarrow anywhere in the process: its xprof dependency's
+# C++ static initializer self-deadlocks (absl mutex spin inside protobuf's
+# InitProtobufDefaults) when pyarrow's bundled protobuf registered first, and the
+# `datasets` tests pull pyarrow in. Importing it here — the earliest point of every
+# test process, workers included — is the only placement that guarantees the order.
+import tokamax  # noqa: E402, F401
+
 # Compiles are keyed by HLO + backend + jax/xla version, so this only ever serves a bit-exact
 # rerun of the same compile; a threshold of 1s skips caching the hundreds of sub-second
 # internal jits (which would otherwise bloat the dir and spam load-time log lines) while

@@ -45,7 +45,7 @@ def test_imp_min_global_reduction_invariant_to_device_count():
     n_positions = sample.shape[0] * sample.shape[1]
 
     activity_single, freq_single = importance_minimality_terms(
-        ci_upper, gamma, reference_datapoint_count=n_positions
+        ci_upper, gamma, reference_datapoint_count=n_positions, normalize_at_one=False
     )
 
     mesh = hsdp_mesh(1, jax.device_count(), 1)
@@ -56,7 +56,9 @@ def test_imp_min_global_reduction_invariant_to_device_count():
             site: jax.sharding.reshard(v, NamedSharding(mesh, P(("replicate", "fsdp"), None, None)))
             for site, v in ci.items()
         }
-        return importance_minimality_terms(ci, gamma, reference_datapoint_count=n_positions)
+        return importance_minimality_terms(
+            ci, gamma, reference_datapoint_count=n_positions, normalize_at_one=False
+        )
 
     ci_sharded = {site: shard_batch(v, mesh, batch_axis=0) for site, v in ci_upper.items()}
     activity_sharded, freq_sharded = sharded_terms(ci_sharded)

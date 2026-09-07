@@ -10,12 +10,12 @@ from param_decomp.core.ci_fn import (
     MHACIAttention,
     init_chunkwise_transformer_ci_fn,
 )
-from param_decomp.core.components import SiteSpec
+from param_decomp.core.components import Dense, SiteSpec, require_full_emission
 
 D, NH, FFN = 16, 4, 32
 SITES = (
-    SiteSpec("layers.0.q_proj", 12, 12, 3, "q_proj"),
-    SiteSpec("layers.0.mlp", 12, 12, 5, "mlp"),
+    SiteSpec("layers.0.q_proj", Dense(d_in=12, d_out=12, C=3), "q_proj"),
+    SiteSpec("layers.0.mlp", Dense(d_in=12, d_out=12, C=5), "mlp"),
 )
 
 
@@ -64,8 +64,12 @@ def test_learned_norm_scale_inits_to_ones_so_step_zero_is_unchanged():
         for s in b.norm_scales:
             assert jnp.array_equal(s, jnp.ones_like(s))
     assert jnp.allclose(
-        scaled(_taps(), remat=False, placement=None).preactivations[SITES[0].name],
-        weightless(_taps(), remat=False, placement=None).preactivations[SITES[0].name],
+        require_full_emission(
+            scaled(_taps(), remat=False, placement=None).preactivations[SITES[0].name]
+        ),
+        require_full_emission(
+            weightless(_taps(), remat=False, placement=None).preactivations[SITES[0].name]
+        ),
         rtol=1e-6,
         atol=1e-6,
     )
@@ -91,7 +95,9 @@ def test_swiglu_is_the_gated_product_not_a_gelu():
     import equinox as eqx
 
     swiglu = _build("swiglu", False)
-    base = swiglu(_taps(), remat=False, placement=None).preactivations[SITES[0].name]
+    base = require_full_emission(
+        swiglu(_taps(), remat=False, placement=None).preactivations[SITES[0].name]
+    )
     blocks = swiglu.chunks.blocks
     assert blocks[0].gate is not None
     scrambled = eqx.tree_at(
@@ -100,12 +106,16 @@ def test_swiglu_is_the_gated_product_not_a_gelu():
         jnp.full_like(blocks[0].gate[0], 5.0),
     )
     scrambled_ci = scrambled(_taps(), remat=False, placement=None)
-    assert not jnp.allclose(base, scrambled_ci.preactivations[SITES[0].name])
+    assert not jnp.allclose(base, require_full_emission(scrambled_ci.preactivations[SITES[0].name]))
 
 
 def test_swiglu_and_gelu_differ():
-    a = _build("gelu", False)(_taps(), remat=False, placement=None).preactivations[SITES[0].name]
-    b = _build("swiglu", False)(_taps(), remat=False, placement=None).preactivations[SITES[0].name]
+    a = require_full_emission(
+        _build("gelu", False)(_taps(), remat=False, placement=None).preactivations[SITES[0].name]
+    )
+    b = require_full_emission(
+        _build("swiglu", False)(_taps(), remat=False, placement=None).preactivations[SITES[0].name]
+    )
     assert not jnp.allclose(a, b)
 
 
@@ -114,8 +124,9 @@ def test_swiglu_and_gelu_differ():
 def test_every_combination_runs_end_to_end(ffn_kind: str, learned_norm_scale: bool):
     ci = _build(ffn_kind, learned_norm_scale)(_taps(), remat=True, placement=None)
     for site in SITES:
-        assert ci.lower[site.name].shape == (2, 6, site.C)
-        assert jnp.isfinite(ci.lower[site.name]).all()
+        lower = require_full_emission(ci.lower[site.name])
+        assert lower.shape == (2, 6, site.C)
+        assert jnp.isfinite(lower).all()
 
 
 # The authored-schema parse tests (`ChunkwiseTransformerCiConfig.ffn` arms) live with the

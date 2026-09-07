@@ -9,6 +9,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import optax
 from jax import random
+from jax.core import AbstractValue, ShapedArray
 
 from param_decomp.core.ci_fn import (
     Chunk,
@@ -16,7 +17,7 @@ from param_decomp.core.ci_fn import (
     MHACIAttention,
     build_ci_fn,
 )
-from param_decomp.core.components import SiteSpec, component_stacks_from_sites
+from param_decomp.core.components import Dense, SiteSpec, component_stacks_from_sites
 from param_decomp.core.configs import (
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
@@ -48,7 +49,7 @@ def _build_step_and_args():
         W=random.normal(random.fold_in(key, 0), (D, D)),
         read_coords=random.normal(random.fold_in(key, 1), (K_COORDS, D)),
         read_aux=random.normal(random.fold_in(key, 2), (M_AUX, D)),
-        sites=(SiteSpec(name=SITE, d_in=D, d_out=D, C=C, group=SITE),),
+        sites=(SiteSpec(name=SITE, factorization=Dense(d_in=D, d_out=D, C=C), group=SITE),),
         has_position_axis=True,
     )
     assert model.W.size == FROZEN_W_SIZE
@@ -113,7 +114,7 @@ def _build_step_and_args():
         components_optimizer=opt_vu,
         ci_fn_optimizer=opt_ci,
         total_steps=10,
-        faithfulness=faithfulness_loss_for(model),
+        faithfulness=faithfulness_loss_for(placed),
     )
     return step_fn, placed, state, inputs
 
@@ -127,7 +128,11 @@ def test_frozen_weights_are_jaxpr_args_not_baked_consts():
     inner_step = inspect.unwrap(step_fn)
     closed_jaxpr = eqx.filter_make_jaxpr(inner_step)(model, state, inputs, random.PRNGKey(3))[0]
 
-    invar_sizes = {v.aval.size for v in closed_jaxpr.jaxpr.invars}
+    def shaped_size(aval: AbstractValue) -> int:
+        assert isinstance(aval, ShapedArray), aval
+        return aval.size
+
+    invar_sizes = {shaped_size(v.aval) for v in closed_jaxpr.jaxpr.invars}
     assert FROZEN_W_SIZE in invar_sizes, (
         "frozen W not traced as an argument — it must appear among jaxpr.invars"
     )

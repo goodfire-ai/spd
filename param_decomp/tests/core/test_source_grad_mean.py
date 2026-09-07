@@ -37,7 +37,7 @@ from jax import random
 from jax.sharding import NamedSharding
 from jax.sharding import PartitionSpec as P
 
-from param_decomp.core.adversary import Sources, init_persistent_sources
+from param_decomp.core.adversary import SourceStacks, init_persistent_sources
 from param_decomp.core.ci_fn import (
     Chunk,
     ChunkwiseTransformerCIArch,
@@ -64,10 +64,10 @@ from param_decomp.targets.testing import (
 )
 
 
-def _source_grad(sharded: bool) -> Sources:
+def _source_grad(sharded: bool) -> SourceStacks:
     """Grad of the route-all adversarial KL objective w.r.t. the persistent `sc`-scope
-    sources, with components/CI frozen (SPEC §4.5) — the leaf whose cross-device
-    reduction we are pinning. Returns one fp32 grad array per site."""
+    source stacks, with components/CI frozen (SPEC §4.5) — the leaves whose cross-device
+    reduction we are pinning. Returns the fp32 grad mirroring the stacks."""
     cfg = tiny_glu_cfg()
     C, seq, gbatch = 8, 16, 8
     sites = glu_site_specs(cfg, mlp_family_site_cs(3, 6, C))
@@ -85,9 +85,7 @@ def _source_grad(sharded: bool) -> Sources:
         learned_norm_scale=False,
     )
     ci_fn = build_ci_fn(ci_arch, model.sites, random.PRNGKey(2))
-    src = init_persistent_sources(
-        model.site_names, tuple(s.C for s in model.sites), (1, seq), jnp.float32, random.PRNGKey(3)
-    )
+    src = init_persistent_sources(model.sites, (1, seq), jnp.float32, random.PRNGKey(3))
     resid = random.randint(random.PRNGKey(4), (gbatch, seq), 0, cfg.vocab_size)
 
     mesh = hsdp_mesh(1, jax.device_count(), 1) if sharded else None
@@ -101,9 +99,10 @@ def _source_grad(sharded: bool) -> Sources:
     taps = capture_clean(model, resid, ci_fn.capture_keys)
     ci_lower = evaluate_ci(PlacedCIFn(fn=ci_fn, placement=None), taps, remat=False).lower
     clean_output = jax.lax.stop_gradient(run_clean(model, resid))
+    assert isinstance(clean_output, jax.Array)
 
-    def source_loss(sources: Sources) -> jax.Array:
-        masks, delta_masks = masks_from_sources(ci_lower, sources)
+    def source_loss(sources: SourceStacks) -> jax.Array:
+        masks, delta_masks = masks_from_sources(ci_lower, sources.per_site())
         masked = run_masked(
             model,
             model.prepare_compute_weights(components_bf16, None),
@@ -114,12 +113,13 @@ def _source_grad(sharded: bool) -> Sources:
             True,
             remat=False,
         )
+        assert isinstance(masked, jax.Array)
         return kl_per_position(masked, clean_output)
 
     grad_fn = jax.jit(jax.grad(source_loss))
     if mesh is not None:
         repl = NamedSharding(mesh, P())
-        grad_fn = jax.jit(jax.grad(source_loss), out_shardings={name: repl for name in src})
+        grad_fn = jax.jit(jax.grad(source_loss), out_shardings=jax.tree.map(lambda _: repl, src))
     return grad_fn(src)
 
 

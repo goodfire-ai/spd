@@ -37,6 +37,7 @@ from param_decomp.targets.glu_transformer import (
     site_name,
     validate_neuron_aligned_capacity,
 )
+from param_decomp.targets.lm_output import LMOutput
 from param_decomp.targets.qwen3 import (
     Qwen3FrozenAttn,
     qwen3_0_6b_base_config,
@@ -50,7 +51,12 @@ from param_decomp.targets.qwen3 import (
     qwen3_14b_base_config,
     qwen3_14b_config,
 )
-from param_decomp.targets.testing import capture_clean, run_clean, run_masked
+from param_decomp.targets.testing import (
+    capture_clean,
+    materialized_logits,
+    run_clean,
+    run_masked,
+)
 from param_decomp.targets.transformer_taps import (
     attention_input_tap_key,
     attention_output_tap_key,
@@ -123,7 +129,10 @@ def test_neuron_aligned_init_runs_directly_into_placed_stacks():
             placed,
             jax.random.PRNGKey(1),
             rules,
-            cast(ComponentInitializer, neuron_aligned_component_initializer),
+            cast(
+                ComponentInitializer[LMOutput, dict[str, dict[str, jax.Array]]],
+                neuron_aligned_component_initializer,
+            ),
         )
 
     for delta in placed.model.weight_deltas(components).values():
@@ -218,22 +227,24 @@ def test_clean_path_and_masked_identity():
     b, t = 2, 16
     tokens = jax.random.randint(jax.random.PRNGKey(2), (b, t), 0, cfg.vocab_size)
 
-    clean = run_clean(model, tokens)
+    clean = materialized_logits(run_clean(model, tokens))
     assert clean.shape == (b, t, cfg.vocab_size)
 
     # mask=1 identity through the QK-norm (V@U + (W − V@U); exact only in exact math).
     names = model.site_names
     ones_masks = {s.name: jnp.ones((b, t, s.C)) for s in model.sites}
     ones_delta = {s: jnp.ones((b, t)) for s in names}
-    full = run_masked(
-        model,
-        model.prepare_compute_weights(vu, None),
-        tokens,
-        ones_masks,
-        ones_delta,
-        None,
-        True,
-        remat=False,
+    full = materialized_logits(
+        run_masked(
+            model,
+            model.prepare_compute_weights(vu, None),
+            tokens,
+            ones_masks,
+            ones_delta,
+            None,
+            True,
+            remat=False,
+        )
     )
     assert jnp.allclose(clean, full, atol=1e-4), "mask=1 identity drifted"
 
@@ -241,15 +252,17 @@ def test_clean_path_and_masked_identity():
     # live on the attention path ahead of QK-norm/RoPE/SDPA).
     zero_mask = {s.name: jnp.zeros((b, t, s.C)) for s in model.sites}
     zero_delta = {s: jnp.zeros((b, t)) for s in names}
-    ablated = run_masked(
-        model,
-        model.prepare_compute_weights(vu, None),
-        tokens,
-        zero_mask,
-        zero_delta,
-        None,
-        True,
-        remat=False,
+    ablated = materialized_logits(
+        run_masked(
+            model,
+            model.prepare_compute_weights(vu, None),
+            tokens,
+            zero_mask,
+            zero_delta,
+            None,
+            True,
+            remat=False,
+        )
     )
     assert not jnp.allclose(clean, ablated, atol=1e-4), "ablating layer 4 did nothing"
 
@@ -269,7 +282,11 @@ def test_qk_norm_is_load_bearing():
     assert attn.q_norm.shape == (cfg.n_layer, cfg.head_dim)
     # scale ONLY layer 4's q_norm so the residual ENTERING layer 4 stays untouched
     scaled = eqx.tree_at(lambda m: m.stacked.attn.q_norm, model, attn.q_norm.at[4].mul(2.0))
-    assert not jnp.allclose(run_clean(model, tokens), run_clean(scaled, tokens), atol=1e-4)
+    assert not jnp.allclose(
+        materialized_logits(run_clean(model, tokens)),
+        materialized_logits(run_clean(scaled, tokens)),
+        atol=1e-4,
+    )
 
     qkv_input = attention_input_tap_key(4)
     taps = capture_clean(model, tokens, (qkv_input,))
@@ -378,7 +395,7 @@ def test_step_trains():
         components_optimizer=opt_vu,
         ci_fn_optimizer=opt_ci,
         total_steps=100,
-        faithfulness=faithfulness_loss_for(model),
+        faithfulness=faithfulness_loss_for(placed),
     )
     tokens = jax.random.randint(jax.random.PRNGKey(4), (2, 16), 0, cfg.vocab_size)
     state, metrics = step(placed, state, tokens, jax.random.PRNGKey(100))

@@ -21,11 +21,18 @@ MeshAxis = Literal["replicate", "fsdp", "tp", "data"]
 two-axis `(data, tp)` mesh."""
 
 SemanticAxis = Literal[
-    # component V/U stacks and their faithfulness deltas
+    # Axes of the component V/U stacks and their faithfulness deltas. A dense stack
+    # uses `stack`, `d_in`, `d_out`, and `C`. An expert-blocked stack
+    # (`components.ExpertBlocked`) adds `expert` for its per-expert block axis and
+    # `C_block` for the components within one expert, and its `d_in`/`d_out` name the
+    # dimensions of one expert's block. `C` stays the flat per-site component axis the
+    # mask/CI boundary sees (expert-major, of size `n_experts * C_block`).
     "stack",
     "d_in",
     "d_out",
     "C",
+    "expert",
+    "C_block",
     # the CI transformer's weights; attention keeps DISTINCT query and K/V head axes
     # (GQA: q/o carry n_head, k/v carry n_kv_head — one generic "head" would let a mesh
     # tile one count and silently not the other)
@@ -34,6 +41,10 @@ SemanticAxis = Literal[
     "kv_head",
     "ffn_hidden",
     "input",
+    # the narrow CI emission's token-major routed-slot axis (k·c_per_expert wide). NOT
+    # `C`: its slots are routed-order, carry no expert co-location, and replicate at the
+    # activation waist rather than sharding over tp.
+    "routed_c",
     # activation waists (`components.activation_axes`) and the attention head-split view
     "batch",
     "position",
@@ -47,6 +58,8 @@ SemanticAxis = Literal[
 
 Axes = tuple[SemanticAxis, ...]
 
-# A semantic dim name -> the mesh axes it shards over (one, an ordered tuple, or None =
-# replicated).
-MeshAssignment = MeshAxis | tuple[MeshAxis, ...] | None
+MeshAssignment = tuple[MeshAxis, ...]
+"""The ordered mesh axes one semantic dim shards over; `()` = replicated. The ONE in-code
+spelling of a rule value: the config schema's `str` / `list` / `null` forms are authoring
+sugar that the placement parse boundary folds into this tuple, so no consumer ever
+branches on a value's shape."""

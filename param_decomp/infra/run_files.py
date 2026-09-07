@@ -18,17 +18,9 @@ from param_decomp.infra.wandb import (
     parse_wandb_run_path,
 )
 
-RunType = Literal[
-    "param_decomp", "train", "clustering/runs", "clustering/ensembles", "clustering/harvests"
-]
+RunType = Literal["param_decomp", "train"]
 
-RUN_TYPE_ABBREVIATIONS: Final[dict[RunType, str]] = {
-    "param_decomp": "p",
-    "train": "t",
-    "clustering/runs": "c",
-    "clustering/ensembles": "e",
-    "clustering/harvests": "ch",
-}
+RUN_TYPE_ABBREVIATIONS: Final[dict[RunType, str]] = {"param_decomp": "p", "train": "t"}
 
 
 def generate_run_id(run_type: RunType) -> str:

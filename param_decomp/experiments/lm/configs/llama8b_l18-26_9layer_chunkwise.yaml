@@ -156,16 +156,19 @@ pd:
 runtime:
   compilation_cache_dir: ~/.cache/param-decomp/xla
   remat_recon_forwards: true
-  replicate: 8
-  fsdp: 8
-  tp: 1
+  mesh:
+    replicate: 8
+    fsdp: 8
+    tp: 1
   # 9 layers: gate/up stack of 18 and down stack of 9 can't tile ÷replicate=8, so
   # `owner` refuses; zero1 shards no stack axis (every master rests intra-matrix).
   sharding: zero1
-  compiler_options: tuned-v1
+  compiler_options: tuned-v2
 target:
   attention_implementation: auto
   weights_dtype: bfloat16
+  output_edge:
+    kind: materialized
   spec:
     kind: hf
     model_class: transformers.LlamaForCausalLM

@@ -20,6 +20,7 @@ dense decomposition target (torch's `-id` configs); they are initialized to iden
 frozen-random per `TMSConfig.hidden_layer_init` and never trained.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -29,14 +30,16 @@ import jax.numpy as jnp
 import numpy as np
 from jax.sharding import Mesh, NamedSharding
 from jax.sharding import PartitionSpec as P
-from jaxtyping import Array, Float
+from jaxtyping import Array, Bool, Float
 
 from param_decomp.core.ci_fn import CI
 from param_decomp.core.components import (
     ComponentStacks,
     SiteC,
+    SiteCI,
     SiteDims,
     SiteSpec,
+    require_full_emission,
     site_slots_for,
 )
 from param_decomp.core.decomposed_linear import site_out
@@ -49,6 +52,7 @@ from param_decomp.core.model import (
 )
 from param_decomp.core.nonlinearity import Neurons
 from param_decomp.core.placement import CIFnPlacement, PlacementRules
+from param_decomp.core.sharding import batch_shard_leading
 from param_decomp.targets.linear_site_capture import site_output_key
 
 LINEAR1 = "linear1"
@@ -225,9 +229,7 @@ def site_specs(cfg: TMSConfig, site_cs: tuple[SiteC, ...]) -> tuple[SiteSpec, ..
         specs.append(
             SiteSpec(
                 name=site.name,
-                d_in=dims.d_in,
-                d_out=dims.d_out,
-                C=site.C,
+                factorization=dims.dense(site.C),
                 group=site.name,
                 nonlinearity_partition=Neurons() if site.name == LINEAR2 else None,
             )
@@ -277,7 +279,7 @@ def clean_forward(
     resid: Float[Array, "B n_features"],
     capture_keys: tuple[str, ...],
     capture_sources: TMSCaptureSources,
-) -> ForwardResult:
+) -> ForwardResult[Array]:
     if not capture_keys:
         return ForwardResult.from_producer(
             output=clean_output(target, resid), capture_keys=(), capture_values=()
@@ -305,13 +307,13 @@ def _run_masked(
     target: TMSTarget,
     components: ComponentStacks,
     resid: Float[Array, "B n_features"],
-    component_masks: dict[str, Array],
-    weight_delta_masks: dict[str, Array] | None,
-    routes: dict[str, Array] | None,
+    component_masks: Mapping[str, Array],
+    weight_delta_masks: Mapping[str, Array] | None,
+    routes: Mapping[str, Bool[Array, "*leading"]] | None,
     capture_keys: tuple[str, ...],
     capture_sources: TMSCaptureSources,
     placement: PlacementRules | None,
-) -> ForwardResult:
+) -> ForwardResult[Array]:
     """Masked forward plus requested captures; every downstream site sees prior changes.
 
     Every site the forward visits is decomposed (`canonical_site_cs` pins the site set to
@@ -403,10 +405,12 @@ class TMSDecomposedModel(eqx.Module):
         return jax.tree.map(lambda _a: repl, self)
 
     @staticmethod
-    def recon_loss_fn(
-        masked_output: Float[Array, "B n_features"], clean_output: Float[Array, "B n_features"]
-    ) -> Array:
+    def recon_loss_fn(masked_output: Array, clean_output: Array) -> Float[Array, ""]:
         return tms_mse(masked_output, clean_output)
+
+    @staticmethod
+    def pin_output_batch(output: Array, mesh: Mesh | None) -> Array:
+        return batch_shard_leading(output, mesh)
 
     def site_output_keys(self, sites: tuple[str, ...]) -> tuple[str, ...]:
         assert set(sites) <= set(self.site_names), (sites, self.site_names)
@@ -421,7 +425,7 @@ class TMSDecomposedModel(eqx.Module):
         capture_keys: CaptureKeys = EMPTY_CAPTURE_KEYS,
         *,
         placement: PlacementRules | None,
-    ) -> ForwardResult:
+    ) -> ForwardResult[Array]:
         del placement
         ordered_capture_keys = tuple(sorted(capture_keys))
         capture_sources = _resolve_capture(self.site_names, ordered_capture_keys)
@@ -440,16 +444,18 @@ class TMSDecomposedModel(eqx.Module):
         inputs: Array,
         /,
         *,
+        sites: tuple[str, ...],
         capture_keys: CaptureKeys,
         placement: PlacementRules | None,
-    ) -> tuple[ForwardResult, dict[str, Array]]:
-        del prepared_weights, inputs, capture_keys, placement
+    ) -> tuple[ForwardResult[Array], dict[str, SiteCI]]:
+        del prepared_weights, inputs, sites, capture_keys, placement
         raise NotImplementedError(
             f"{type(self).__name__} does not support component-activation harvest"
         )
 
-    def stack_ci(self, ci_lower: dict[str, Array]) -> dict[str, Array]:
-        return ci_lower
+    def stack_ci(self, ci_lower: Mapping[str, SiteCI]) -> dict[str, Array]:
+        # this target's sites are dense-only; a narrow CI has no arm here
+        return {name: require_full_emission(value) for name, value in ci_lower.items()}
 
     def masked_forward(
         self,
@@ -461,7 +467,7 @@ class TMSDecomposedModel(eqx.Module):
         placement: PlacementRules | None,
         capture_keys: CaptureKeys = EMPTY_CAPTURE_KEYS,
         remat: bool,
-    ) -> ForwardResult:
+    ) -> ForwardResult[Array]:
         ordered_capture_keys = tuple(sorted(capture_keys))
         capture_sources = _resolve_capture(self.site_names, ordered_capture_keys)
         explicit_masking = materialize_masking(masking)
@@ -469,10 +475,10 @@ class TMSDecomposedModel(eqx.Module):
         def forward(
             vu: ComponentStacks,
             resid: Array,
-            component_masks: dict[str, Array],
-            weight_delta_masks: dict[str, Array] | None,
-            routes: dict[str, Array] | None,
-        ) -> ForwardResult:
+            component_masks: Mapping[str, Array],
+            weight_delta_masks: Mapping[str, Array] | None,
+            routes: Mapping[str, Bool[Array, "*leading"]] | None,
+        ) -> ForwardResult[Array]:
             return _run_masked(
                 self.target,
                 vu,
@@ -489,7 +495,11 @@ class TMSDecomposedModel(eqx.Module):
         return forward(
             prepared_weights,
             resid,
-            explicit_masking.component_masks,
+            # this target's sites are dense-only; a narrow mask has no arm here
+            {
+                name: require_full_emission(m)
+                for name, m in explicit_masking.component_masks.items()
+            },
             explicit_masking.weight_delta_masks,
             explicit_masking.routes,
         )
@@ -741,11 +751,12 @@ def single_feature_ci(
     """Feed the single-feature probe and read the `lower_leaky` CI per site,
     `{site: [n_features, C]}`."""
     probe = single_feature_probe(n_features)
-    return ci_fn(
+    lower = ci_fn(
         model.clean_forward(probe, ci_fn.capture_keys, placement=None).captures,
         remat=False,
         placement=None,
     ).lower
+    return {site: require_full_emission(value) for site, value in lower.items()}
 
 
 # ----------------------------- visualizations -----------------------------

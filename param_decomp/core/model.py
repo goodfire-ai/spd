@@ -19,8 +19,12 @@ semantics-free (the data/shard axis); CI is always independent over every leadin
 Masking, routing, source scopes, imp-min, and normalization all operate over the opaque
 leading prefix. The three EDGES are generic too — the model INPUT consumed by
 `clean_forward` / `masked_forward` (tokens for an LM, a dict for a bio target), the model
-OUTPUT carried by `ForwardResult.output` (`Any` — logits, a tuple of heads, coords), and
-the recon comparison (`recon_loss_fn`, `kl_per_position` for an LM). Activation identity
+OUTPUT (`ForwardResult[Out]` — logits, a tuple of heads, coords, or an LM's factored
+streamed package; `Out` is the target's declared type, named at every seam), and the recon
+comparison (`recon_loss_fn`, `kl_per_position` for an LM). Core never inspects an output:
+the two operations it needs on one — comparing two, batch-pinning one — are the target's
+own protocol methods on `Out`, and everything else core knows about outputs (a
+well-temperedness ablation's damage, say) is derived from those. Activation identity
 and capture lowering are target-owned. Core passes immutable canonical names into the
 forward and receives a strict one-key-to-one-array capture dictionary back.
 
@@ -30,27 +34,26 @@ frozen 8B target captured as a constant bakes multi-GB weights into the HLO.
 """
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, Generic, Protocol, runtime_checkable
 
 import equinox as eqx
 import jax
+from jax.sharding import Mesh
 from jax.sharding import PartitionSpec as P
 from jaxtyping import Array, Bool, Float
 from typing_extensions import TypeVar
 
-from param_decomp.core.axes import MeshAxis
-from param_decomp.core.components import ComponentStacks, SiteSpec
+from param_decomp.core.components import ComponentStacks, SiteCI, SiteSpec
 from param_decomp.core.placement import (
     PlacementRules,
+    batch_axes,
     component_stacks_to_faithfulness_weights,
     constrain_faithfulness_deltas,
 )
 from param_decomp.core.precision import COMPUTE_DT, cast_floating
-
-BATCH_AXES: tuple[MeshAxis, ...] = ("replicate", "fsdp")
-"""Mesh axes that jointly shard the always-leading batch dimension."""
 
 
 @dataclass(frozen=True)
@@ -72,8 +75,10 @@ PositionAxis = Positionless | Positioned
 shapes are built. Must agree with the model's `has_position_axis`."""
 
 
-SiteMasks = dict[str, Float[Array, "*leading C"]]
-"""Per-site component masks. `*leading` always has the WAIST's RANK, but ANY leading axis
+SiteMasks = Mapping[str, SiteCI]
+"""Per-site component masks: full `[*leading, C]` arrays for dense sites, `NarrowCI`
+bundles (mask values + the router indices that key them, one object) for narrow-emitting
+expert-blocked sites. `*leading` always has the WAIST's RANK, but ANY leading axis
 may arrive size 1: an adversarial mask is materialized from a source stored per
 `source_shape` (`configs.SourceShape`), and every axis that spelling omits is a size-1
 broadcast axis — on a positioned target `c` gives `[1, 1, C]`, `bc` `[B, 1, C]`, `sc`
@@ -82,11 +87,11 @@ build their masks at the full waist shape (from the CI). A target must therefore
 waist, never reshape them: a reshape survives every stochastic step and dies on the first
 adversarial one, long after the run looks healthy."""
 
-SiteDeltaMasks = dict[str, Float[Array, "*leading"]]
+SiteDeltaMasks = Mapping[str, Float[Array, "*leading"]]
 """The weight-delta counterpart of `SiteMasks` — same leading axes and broadcast rule,
 with no C axis."""
 
-SiteRoutes = dict[str, Bool[Array, "*leading"]] | None
+SiteRoutes = Mapping[str, Bool[Array, "*leading"]] | None
 """Per-site per-position routing; `None` routes every position to the decomposition
 (SPEC §1.3). Positions routing False take the frozen `x @ W` path."""
 
@@ -135,8 +140,29 @@ class StochasticMasking:
     routes: SiteRoutes
 
 
-Masking = MaterializedMasking | StochasticMasking
-"""The two complete, non-contradictory descriptions of a masked forward."""
+@dataclass(frozen=True, kw_only=True)
+class SourceMasking:
+    """A recipe for rebuilding adversarial-source masks inside checkpointed blocks.
+
+    The persistent analogue of `StochasticMasking`: instead of a draw key, the recipe
+    carries the sources' per-site VALUES in the CI's own emission geometry
+    (`masking.source_value_cis`), threaded through the target's `stack_ci` layout like
+    the CI itself. Scan targets compose `mask = ci + (1 - ci) * source` inside each
+    checkpointed block and recompose it during backward recomputation, so no
+    layer-by-layer mask stack outlives its block. All three stacked trees cover every
+    one of the model's sites; routes, when present, must cover them all — the target
+    asserts this when the forward is first traced. The delta channel is always live:
+    a persistent source bundle carries its weight-delta source by construction.
+    """
+
+    ci_stacked: Any
+    source_values_stacked: Any
+    delta_values_stacked: Any
+    routes: SiteRoutes
+
+
+Masking = MaterializedMasking | StochasticMasking | SourceMasking
+"""The complete, non-contradictory descriptions of a masked forward."""
 
 
 type CaptureKeys = frozenset[str]
@@ -150,6 +176,12 @@ def select_captures(captures: dict[str, Array], capture_keys: CaptureKeys) -> di
     return {key: captures[key] for key in sorted(capture_keys)}
 
 
+Out = TypeVar("Out")
+"""A target's model-output type — `Array` logits for a materialized LM, the factored
+streamed package for a streamed one, `[B, n_features]` for a toy, a tuple of heads for a
+multi-output target. Invariant and defaultless: every seam that carries an output names
+it, and only the target that declared it operates on it."""
+
 PreparedT = TypeVar("PreparedT", default=Any)
 
 
@@ -159,20 +191,25 @@ PreparedT = TypeVar("PreparedT", default=Any)
     meta_fields=(),
 )
 @dataclass(frozen=True)
-class ForwardResult:
-    """A target output and its captured activations, keyed one-to-one."""
+class ForwardResult[Out]:
+    """A target output and its captured activations, keyed one-to-one.
 
-    output: Any
+    Core carries `output` without ever looking inside it: the trainer, the recon terms,
+    and the eval tiers act on an output only through the target's own `recon_loss_fn`
+    and `pin_output_batch` — which is what makes the engine arbitrary over both output
+    types and reconstruction metrics."""
+
+    output: Out
     captures: dict[str, Array]
 
     @classmethod
     def from_producer(
         cls,
         *,
-        output: Any,
+        output: Out,
         capture_keys: tuple[str, ...],
         capture_values: tuple[Array, ...],
-    ) -> "ForwardResult":
+    ) -> "ForwardResult[Out]":
         """Label a target's private capture slots and pin their shared device layout.
 
         A target resolves public activation names into a private slot layout while tracing,
@@ -198,11 +235,12 @@ class ForwardResult:
         captures = dict(zip(capture_keys, capture_values, strict=True))
         mesh = jax.sharding.get_abstract_mesh()
         if captures and not mesh.empty:
-            data_size = math.prod(mesh.shape[axis] for axis in BATCH_AXES)
+            data_axes = batch_axes(mesh)
+            data_size = math.prod(mesh.shape[axis] for axis in data_axes)
 
             def pin(value: Array) -> Array:
                 if value.shape[0] % data_size == 0:
-                    return jax.sharding.reshard(value, P(BATCH_AXES, *((None,) * (value.ndim - 1))))
+                    return jax.sharding.reshard(value, P(data_axes, *((None,) * (value.ndim - 1))))
                 # Ragged eval micro-batch: the pin would refuse the split, and the
                 # value's explicit typing is already definite — but only on THIS mesh.
                 assert jax.typeof(value).sharding.mesh == mesh, (
@@ -216,13 +254,19 @@ class ForwardResult:
 
 
 @runtime_checkable
-class DecomposedModel(Protocol[PreparedT]):
+class DecomposedModel(Protocol[Out, PreparedT]):
     """The target interface consumed by the generic trainer.
 
     Core passes an immutable set of canonical activation names into each forward. The target
     validates, orders, and lowers those names into its private capture layout when JAX first
     traces that forward; no plan representation crosses this protocol. An empty set must take
     the target's untouched no-capture computation.
+
+    The target that declares `Out` declares the operations on `Out`, and core touches the
+    output only through them: `recon_loss_fn` (every output is scored) and
+    `pin_output_batch` (every output is placed). They are `@staticmethod`s — pure,
+    array-free — so a step factory may close over them off the static model (the
+    HLO-baking rule) while every array reaches them through the traced output value.
     """
 
     sites: tuple[SiteSpec, ...]
@@ -231,9 +275,17 @@ class DecomposedModel(Protocol[PreparedT]):
     @property
     def site_names(self) -> tuple[str, ...]: ...
 
-    def shardings(self, placement: PlacementRules) -> "DecomposedModel[PreparedT]": ...
+    def shardings(self, placement: PlacementRules) -> "DecomposedModel[Out, PreparedT]": ...
 
-    def recon_loss_fn(self, masked_output: Any, clean_output: Any) -> Float[Array, ""]: ...
+    def recon_loss_fn(self, masked_output: Out, clean_output: Out) -> Float[Array, ""]:
+        """The end-to-end reconstruction error between a masked and the clean output,
+        reduced to one scalar over the whole batch."""
+        ...
+
+    def pin_output_batch(self, output: Out, mesh: Mesh | None) -> Out:
+        """Pin the output's batch axis over the data mesh (`sharding.batch_shard_leading`
+        on each batch-bearing array of the output); `mesh is None` is the identity."""
+        ...
 
     def site_output_keys(self, sites: tuple[str, ...]) -> tuple[str, ...]:
         """Return each site's canonical linear-output key in request order."""
@@ -250,7 +302,7 @@ class DecomposedModel(Protocol[PreparedT]):
         capture_keys: CaptureKeys = EMPTY_CAPTURE_KEYS,
         *,
         placement: PlacementRules | None,
-    ) -> ForwardResult:
+    ) -> ForwardResult[Out]:
         """All-frozen forward plus exactly `capture_keys`. The same key has the same meaning
         here and in `masked_forward`."""
         ...
@@ -267,17 +319,21 @@ class DecomposedModel(Protocol[PreparedT]):
         inputs: Any,
         /,
         *,
+        sites: tuple[str, ...],
         capture_keys: CaptureKeys,
         placement: PlacementRules | None,
-    ) -> tuple[ForwardResult, dict[str, Array]]:
-        """Run the frozen target once, returning requested captures and each site's ``x @ V``.
+    ) -> tuple[ForwardResult[Out], dict[str, SiteCI]]:
+        """Run the frozen target once, returning requested captures and each requested
+        site's ``x @ V`` — a full `[.., C]` array for a dense site, a `NarrowCI` bundle
+        (routed slots' values + the router indices that key them) for a narrow-emitting
+        expert-blocked site.
 
         Targets that do not support offline component-activation harvest must raise
         ``NotImplementedError`` explicitly.
         """
         ...
 
-    def stack_ci(self, ci_lower: dict[str, Array]) -> Any:
+    def stack_ci(self, ci_lower: Mapping[str, SiteCI]) -> Any:
         """Build the target-private CI form shared by stochastic masked forwards."""
         ...
 
@@ -291,7 +347,7 @@ class DecomposedModel(Protocol[PreparedT]):
         placement: PlacementRules | None,
         capture_keys: CaptureKeys = EMPTY_CAPTURE_KEYS,
         remat: bool,
-    ) -> ForwardResult:
+    ) -> ForwardResult[Out]:
         """Masked decomposed forward plus exactly `capture_keys`.
 
         `masking` carries the complete masking policy: explicit masks, or shared CI plus
@@ -306,8 +362,17 @@ class DecomposedModel(Protocol[PreparedT]):
         bind the S17 relative-error scales."""
         ...
 
-    def weight_deltas(self, vu: ComponentStacks) -> dict[str, Float[Array, "g d_out d_in"]]:
+    def weight_deltas(self, vu: ComponentStacks) -> dict[str, Float[Array, "g ..."]]:
         """fp32 `W − V@U` per persistence STACK, slot-aligned with `vu.stacks` (SPEC N2).
+        A dense group's stack is `[g, d_out, d_in]`. An expert-blocked group's is
+        `[g, expert, d_out, d_in]` with per-expert block dimensions; every entry of
+        the site's weight matrix belongs to exactly one expert's block, so summing
+        squared error over the blocks equals the site-level Frobenius reduction.
+
+        `vu` arrives on the faithfulness lane and may carry persist-stack PADS
+        (`vu.stack_pads` — enumerated, never shape-inferred): a target with a stacked
+        frozen weight extends it by `vu.pad_of(group)` all-zero slots so pad deltas are
+        exactly zero, and the returned stacks keep the padded extent.
 
         Stacked, not per-site: the only trainer consumer is the S17 faithfulness
         loss (per-slot reductions of the stacks), and slicing per-site V/U out of a
@@ -317,7 +382,7 @@ class DecomposedModel(Protocol[PreparedT]):
         ...
 
 
-class PlacedModel(eqx.Module, Generic[PreparedT]):
+class PlacedModel(eqx.Module, Generic[Out, PreparedT]):
     """A decomposed model paired with ITS placement — resolved exactly once, at run
     assembly (`place_target`, or a literal construction for an unplaced execution), so no
     downstream code ever holds an unresolved (model, rules) combination. `placement is
@@ -331,7 +396,7 @@ class PlacedModel(eqx.Module, Generic[PreparedT]):
     (e.g. attention-pattern probes) narrow via `.model` and receive `.placement`
     explicitly."""
 
-    model: DecomposedModel[PreparedT]
+    model: DecomposedModel[Out, PreparedT]
     placement: PlacementRules | None = eqx.field(static=True)
 
     @property
@@ -346,8 +411,11 @@ class PlacedModel(eqx.Module, Generic[PreparedT]):
     def has_position_axis(self) -> bool:
         return self.model.has_position_axis
 
-    def recon_loss_fn(self, masked_output: Any, clean_output: Any) -> Float[Array, ""]:
+    def recon_loss_fn(self, masked_output: Out, clean_output: Out) -> Float[Array, ""]:
         return self.model.recon_loss_fn(masked_output, clean_output)
+
+    def pin_output_batch(self, output: Out, mesh: Mesh | None) -> Out:
+        return self.model.pin_output_batch(output, mesh)
 
     def site_output_keys(self, sites: tuple[str, ...]) -> tuple[str, ...]:
         return self.model.site_output_keys(sites)
@@ -355,19 +423,29 @@ class PlacedModel(eqx.Module, Generic[PreparedT]):
     def assert_hidden_acts_reconstruction_points(self, keys: tuple[str, ...]) -> None:
         self.model.assert_hidden_acts_reconstruction_points(keys)
 
-    def stack_ci(self, ci_lower: dict[str, Array]) -> Any:
+    def stack_ci(self, ci_lower: Mapping[str, SiteCI]) -> Any:
         return self.model.stack_ci(ci_lower)
 
     def clean_forward(
         self, inputs: Any, /, capture_keys: CaptureKeys = EMPTY_CAPTURE_KEYS
-    ) -> ForwardResult:
+    ) -> ForwardResult[Out]:
         return self.model.clean_forward(inputs, capture_keys, placement=self.placement)
 
     def component_activation_forward(
-        self, prepared_weights: PreparedT, inputs: Any, /, *, capture_keys: CaptureKeys
-    ) -> tuple[ForwardResult, dict[str, Array]]:
+        self,
+        prepared_weights: PreparedT,
+        inputs: Any,
+        /,
+        *,
+        sites: tuple[str, ...],
+        capture_keys: CaptureKeys,
+    ) -> tuple[ForwardResult[Out], dict[str, SiteCI]]:
         return self.model.component_activation_forward(
-            prepared_weights, inputs, capture_keys=capture_keys, placement=self.placement
+            prepared_weights,
+            inputs,
+            sites=sites,
+            capture_keys=capture_keys,
+            placement=self.placement,
         )
 
     def masked_forward(
@@ -379,7 +457,7 @@ class PlacedModel(eqx.Module, Generic[PreparedT]):
         masking: Masking,
         capture_keys: CaptureKeys = EMPTY_CAPTURE_KEYS,
         remat: bool,
-    ) -> ForwardResult:
+    ) -> ForwardResult[Out]:
         return self.model.masked_forward(
             prepared_weights,
             inputs,
@@ -390,8 +468,8 @@ class PlacedModel(eqx.Module, Generic[PreparedT]):
         )
 
 
-def prepare_compute_weights[PreparedT](
-    placed: PlacedModel[PreparedT], components: ComponentStacks
+def prepare_compute_weights[Out, PreparedT](
+    placed: PlacedModel[Out, PreparedT], components: ComponentStacks
 ) -> PreparedT:
     """Cast fp32 master components once, then build the target-private compute layout
     through the bundle's declared placement lifecycle (`None` = the unplaced CPU/test
@@ -401,8 +479,8 @@ def prepare_compute_weights[PreparedT](
     )
 
 
-def faithfulness_weight_deltas(
-    placed: PlacedModel, components: ComponentStacks
+def faithfulness_weight_deltas[Out](
+    placed: PlacedModel[Out], components: ComponentStacks
 ) -> dict[str, Array]:
     """Build fp32 faithfulness deltas through their complete declared placement lifecycle."""
     if placed.placement is None:

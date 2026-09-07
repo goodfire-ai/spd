@@ -8,13 +8,13 @@ release gets its own architecture module rather than another branch here.
 from jax.typing import DTypeLike
 
 from param_decomp.core.components import SiteSpec
+from param_decomp.target_ports.llama import LlamaConfig, llama3_inv_freq
 from param_decomp.targets.glu_transformer import (
     FrozenAttn,
     GLUDecomposedModel,
     HFWeights,
     load_decomposed_glu_from_hf,
 )
-from param_decomp.vendored_jax.llama import LlamaConfig, llama3_inv_freq
 
 
 def llama31_8b_config() -> LlamaConfig:

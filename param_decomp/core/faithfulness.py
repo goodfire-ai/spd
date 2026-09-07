@@ -1,25 +1,31 @@
 """Target-relative parameter faithfulness, bound once from frozen model weights."""
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from param_decomp.core.components import SiteSlots, site_slots_for
-from param_decomp.core.model import DecomposedModel
+from param_decomp.core.model import PlacedModel
 
-type FaithfulnessLossFn = Callable[[dict[str, Float[Array, "g _ _"]]], Float[Array, ""]]
+type FaithfulnessLossFn = Callable[[dict[str, Float[Array, "g ..."]]], Float[Array, ""]]
 
 
 def make_faithfulness_loss(
-    site_slots: SiteSlots, target_sq_norms: dict[str, tuple[float, ...]]
+    site_slots: SiteSlots,
+    target_sq_norms: dict[str, tuple[float, ...]],
+    stack_pads: Mapping[str, int],
 ) -> FaithfulnessLossFn:
     """Bind validated target scales for mean per-site relative Frobenius error (SPEC S17).
 
     `target_sq_norms` carries one `‖W_s‖²` per slot of each persistence stack, aligned
-    with the `weight_deltas` grouping; the returned loss consumes those stacked deltas."""
+    with the `weight_deltas` grouping; the returned loss consumes those stacked deltas.
+    `stack_pads` enumerates the persist-layer pad slots the delta stacks carry beyond
+    the real sites (the placement census fact): the faithfulness lane is THE pad's loss
+    exit — a pad slot's delta is exactly zero (zero V·U against a zero frozen pad), so
+    it contributes 0 to the sum and the site mean stays over the real sites."""
     slot_names: dict[str, list[str]] = {}
     for name, group, slot in site_slots:
         assert slot == len(slot_names.setdefault(group, [])), site_slots
@@ -37,17 +43,30 @@ def make_faithfulness_loss(
         if not math.isfinite(value) or value <= 0.0
     }
     assert not bad, f"faithfulness needs finite positive ‖W_s‖²: {bad}"
+    assert stack_pads.keys() <= target_sq_norms.keys(), (sorted(stack_pads), sorted(slot_names))
     n_sites = len(site_slots)
+    # Pad slots divide by 1.0: their zero delta contributes exactly 0 either way, and a
+    # real ‖W‖² does not exist for them.
+    padded_sq_norms = {
+        group: norms + (1.0,) * stack_pads.get(group, 0) for group, norms in target_sq_norms.items()
+    }
 
-    def faithfulness_loss(weight_deltas: dict[str, Float[Array, "g _ _"]]) -> Float[Array, ""]:
-        """`mean_s ‖W_s - V_sU_s‖²_F / ‖W_s‖²_F` over the stacked deltas, fp32."""
+    def relative_errors(delta_stack: Float[Array, "g ..."], sq_norms: tuple[float, ...]) -> Array:
+        """One group's per-slot `‖W_s − V_sU_s‖²_F / ‖W_s‖²_F`, fp32. The squared
+        Frobenius norm sums over every axis except the leading stack axis, so a dense
+        `[g, d_out, d_in]` stack and an expert-blocked `[g, expert, d_out, d_in]` stack
+        (whose blocks partition the same site matrix) reduce identically."""
+        assert delta_stack.shape[0] == len(sq_norms), (delta_stack.shape, len(sq_norms))
+        matrix_axes = tuple(range(1, delta_stack.ndim))
+        delta_sq_norms = jnp.sum(delta_stack.astype(jnp.float32) ** 2, axis=matrix_axes)
+        return delta_sq_norms / jnp.asarray(sq_norms, jnp.float32)
+
+    def faithfulness_loss(weight_deltas: dict[str, Float[Array, "g ..."]]) -> Float[Array, ""]:
+        """The mean over REAL sites of each site's relative error (SPEC S17)."""
         total = sum(
             (
-                jnp.sum(
-                    jnp.sum(weight_deltas[group].astype(jnp.float32) ** 2, axis=(1, 2))
-                    / jnp.asarray(norms, jnp.float32)
-                )
-                for group, norms in target_sq_norms.items()
+                jnp.sum(relative_errors(weight_deltas[group], sq_norms))
+                for group, sq_norms in padded_sq_norms.items()
             ),
             start=jnp.zeros((), jnp.float32),
         )
@@ -56,10 +75,20 @@ def make_faithfulness_loss(
     return faithfulness_loss
 
 
-def faithfulness_loss_for(model: DecomposedModel) -> FaithfulnessLossFn:
-    """Bind each frozen target squared norm into its relative-error loss."""
+def faithfulness_loss_for[Out](placed: PlacedModel[Out]) -> FaithfulnessLossFn:
+    """Bind each frozen target squared norm into its relative-error loss, with the
+    bundle's placement census supplying the persist-stack pads its deltas carry
+    (unplaced execution carries none)."""
     target_sq_norms = {
         group: tuple(float(value) for value in values)
-        for group, values in jax.device_get(model.target_weight_sq_norms()).items()
+        for group, values in jax.device_get(placed.model.target_weight_sq_norms()).items()
     }
-    return make_faithfulness_loss(site_slots_for(model.sites), target_sq_norms)
+    stack_pads = (
+        {}
+        if placed.placement is None
+        else {
+            group: entry.stack_pad
+            for group, entry in placed.placement.components.group_census.items()
+        }
+    )
+    return make_faithfulness_loss(site_slots_for(placed.model.sites), target_sq_norms, stack_pads)

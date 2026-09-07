@@ -85,12 +85,10 @@ Each `experiments/{tms,resid_mlp}/` carries:
   column-permutation source and their small on-host V/U, sharing `slow_eval.render_uv_figure`
   / `plot_uv_matrices` with the LM in-loop tier (SPEC S28). Toy `eval:` is a domain-specific
   closed schema: fresh `PGDReconLoss` runs against the target's own `recon_loss_fn` on
-  independent synthetic batches; optional `UVPlots` and target-generic `WellTemperedness`
-  operations run on the slow cadence (the latter samples the actual eval distribution, not the
-  single-feature probe) — read off
-  its own `slow` declaration, the same one the LM binder reads (`eval_config.schedule_for`;
-  SPEC S29), never a per-family choice. LM-only
-  token metrics refuse when toy evaluator construction reaches them. Ground-truth identity/dense CI scoring remains the
+  independent synthetic batches; the optional `UVPlots` operation runs on the slow cadence —
+  read off its own `slow` declaration, the same one the LM binder reads
+  (`eval_config.schedule_for`; SPEC S29), never a per-family choice. LM-only metrics
+  (`CEandKLLosses`, `WellTemperedness`) refuse when toy evaluator construction reaches them. Ground-truth identity/dense CI scoring remains the
   toy runner's native validation pass on the train-log cadence.
 - `configs/*.yaml` — the canonical `experiments.{tms,resid_mlp}.config` schema (TMS: 5-2 /
   40-10 / the `-id` deeper variants; ResidMLP: 1l/2l/3l).
@@ -100,7 +98,7 @@ CI arch (`type: global_mlp`) are wired end-to-end (the global arch dispatches th
 core `init_train_state` via `toy_config.build_toy_ci_arch`). The shipped ResidMLP configs
 all use per-site `layerwise_mlp` with `hidden_dims: [400]` at `C: 200` per site — wide
 enough to avoid the output bottleneck the `global_mlp` variant escapes.
-Toy clustering is not wired (`load_run` is LM-only).
+Toy offline consumers are not wired (`load_run` is LM-only).
 
 ## Picking a CI-fn arch — and `n_blocks: 0`
 
@@ -164,14 +162,23 @@ experiments/
 │   ├── resolved.py          # LM-only resolved data/run types (ResolvedLMData, LMRun)
 │   ├── eval.py              # token CE/KL + CI-L0 fast pass
 │   ├── attn_patterns_eval.py / arithmetic_eval.py
+│   ├── well_temperedness.py / well_temperedness_eval.py  # the `WellTemperedness` slow metric (kernel + operation)
 │   ├── data.py              # tokenize_and_concatenate (offline helper for prestage)
 │   ├── prestage_tokenized.py  # HF text -> int32 parquet shards for the JAX trainer
-│   └── arithmetic_probe.py    # a x b arithmetic grid spec -> in-memory eval probe (ArithmeticCIGrid)
+│   └── arithmetic_probe.py    # a x b arithmetic grid spec -> in-memory prompt grid (the tPD pool's layer) + eval probe (ArithmeticCIGrid, adds the single-token-answer premise)
 ├── tms/                     # TMS (CPU): run.py + configs/ (target: param_decomp/targets/tms.py; also the tPD engine's test fixture — no shipped toy tPD shape)
 └── resid_mlp/               # ResidMLP (CPU): run.py + configs/ (target: param_decomp/targets/resid_mlp.py)
 
 Tests mirror these roots under `param_decomp/tests/experiments/`.
 ```
+
+`lm/well_temperedness.py` measures whether components with higher causal-importance
+preactivations damage reconstruction more when ablated one at a time, at sampled token
+positions: components are compared across all heads and layers, separately for
+preactivations below 0, between 0 and 1, and above 1, and named `groups` add the same
+measurement for site subsets (attention vs MLP, say). It is LM-only — the kernel dispatches
+on the `LMOutput` edge (`PlacedModel[LMOutput]`) and needs a position axis — so
+`lm/eval_operations.py` binds it and the toy binder refuses it.
 
 ## Sites and the family grammar
 
@@ -236,6 +243,23 @@ tag `torch-oracle` — conversion needs torch, which the library deliberately do
 refuses at convert time. A Qwen3 run needs a Qwen3-tokenized prestaged dataset
 (`prestage_tokenized --tokenizer_name <the selected Qwen checkpoint>`).
 
+## LM `target.output_edge`
+
+Required on every LM config — a discriminated union on `kind`: `materialized` (the
+forward forms its full `[B, S, vocab]` logits in the target's native dtype) or
+`streamed` (`n_vocab_chunks` chunks; the forward returns the factored
+`targets.lm_output.StreamedLinearOutput` package and every comparison streams over the
+vocab axis with fp32-accumulated chunk logits, `targets.losses`). Prefer `streamed`
+wherever the family supports it — today the qwen36_moe family; the GLU/Llama families
+refuse it at resolve.
+
+```yaml
+target:
+  output_edge: {kind: streamed, n_vocab_chunks: 32}   # 248320 = 32 · 7760
+  # or
+  output_edge: {kind: materialized}
+```
+
 ## LM `data`
 
 `data` carries two required dataset references — `train` and the held-out `eval` split —
@@ -256,8 +280,9 @@ data:
     dir: /abs/path/to/shards
 ```
 
-A store name resolves to `<data_root>/datasets/<name>` (`infra.dataset_store`); the
-deployment populates the store (the root CLAUDE.md describes ours). The dataset dir is self-describing:
+A store name resolves to `<data_root>/datasets/<name>` (`infra.dataset_store`). Provision
+that directory before launch; `experiments.lm.prestage_tokenized` can create the shards and
+metadata. The dataset dir is self-describing:
 `meta.json` (`infra.dataset_store.DatasetMeta`) carries its seq_len and tokenizer, read
 at load time — prestage writes it alongside the shards. Tip reads pinned configs through
 this same strict schema; older shapes require their original revision or an external converter.
@@ -268,7 +293,7 @@ are NOT imported by the JAX trainer — `experiments/lm/config.py::resolve_decom
 only asserts the class identity (`kind: hf` matches the family's full class string; the
 other kinds match the class-name suffix) and routes to its own vendored JAX arch
 (`pretrained` LlamaSimpleMLP -> the pretrain-cache loader, `hf_weights_in_vendored`
-Llama -> `vendored_jax`). The dotted `model_class` is a stable identifier only, never
+Llama -> `target_ports`). The dotted `model_class` is a stable identifier only, never
 imported.
 
 The path schemas (`topology/path_schemas.py`) cover the pretrain (`GPT2*`,
@@ -280,24 +305,32 @@ sites consistently.
 The rank env (XLA client flags, NCCL/host-memory knobs) is config-driven via
 `runtime.launch_env` (`param_decomp.experiments.lm.runtime.LaunchEnv`), so `config.yaml`
 fully captures the environment a run executed with — A/B a flag in the YAML, not in
-the launcher. `lm/run.py` exports `LaunchEnv.as_env()` before importing JAX, so it applies
-on every path including a direct module invocation. Machine-specific environment such as
+the caller. `lm/run.py` exports `LaunchEnv.as_env(os.environ.get("XLA_FLAGS"))` before
+importing JAX, so it applies to direct module invocation. Existing `XLA_FLAGS` compose
+with the config rather than being replaced: disjoint flags append, identical duplicates
+dedupe, and conflicting values fail loudly. Machine-specific environment such as
 `LD_LIBRARY_PATH` belongs to the caller rather than the authored run configuration.
 
 XLA *compiler* flags go through `runtime.compiler_options` instead (passed natively to
 every jit, in the compile-cache key). REQUIRED, no default, no merge — every run's
-flags trace to a visible authored token: `tuned-v1` = the frozen production set
-(`TUNED_V1_COMPILER_OPTIONS` in `lm/runtime.py`, the one code copy — a changed tuned
-set is a new preset name, never an edit); `bare` = `{}` (true XLA defaults, the
-debugging baseline); or an explicit `xla_*`-keyed dict, used VERBATIM as the run's
-complete flag set (non-`xla_*` keys refuse at parse).
+flags trace to a visible authored token: `tuned-v2` = the frozen production set
+(`TUNED_V2_COMPILER_OPTIONS` in `lm/runtime.py`, the one code copy — a changed tuned
+set is a new preset name, never an edit). It keeps while-loop double-buffering off
+(that pass keeps O(1) extra copies of the while tuple — fatal for the
+`*-replicated-resident` placements, whose loops carry whole-depth ÷tp weight stacks as
+xs), so the one set serves every placement. `tuned-v2-autotune1` = tuned-v2 plus
+`xla_gpu_autotune_level: 1` (`TUNED_V2_AUTOTUNE1_COMPILER_OPTIONS`) — the fast-iteration
+preset: shorter first compile, and since autotune picks steer fusion, its arena
+and step time do not transfer to tuned-v2; `bare` = `{}` (true XLA
+defaults, the debugging baseline); or an explicit `xla_*`-keyed dict, used VERBATIM as
+the run's complete flag set (non-`xla_*` keys refuse at parse). The retired `tuned-v1`
+family refuses at parse naming its successor: jaxlib 0.11 removed the three
+`xla_gpu_enable_pipelined_*` compile options those presets froze.
 
 ```yaml
 runtime:
-  replicate: 4
-  fsdp: 8
-  tp: 1
-  compiler_options: tuned-v1   # or bare, or an explicit complete xla_* dict
+  mesh: {replicate: 4, fsdp: 8, tp: 1}   # or {data: D, tp: T} for *-replicated-resident
+  compiler_options: tuned-v2   # or tuned-v2-autotune1, bare, or an explicit xla_* dict
   launch_env:
     xla_python_client_allocator: platform
     env: { SOME_ONE_OFF_VAR: "1" }
@@ -309,7 +342,8 @@ The shipped TMS and ResidualMLP configs include `wandb:` and require authenticat
 that must not contact W&B should use a temporary config with `wandb: null`; local
 `metrics.jsonl` output is still written in the run directory.
 
-Launchers may stamp a W&B group and tags when `wandb:` is configured:
+The TMS and ResidualMLP module mains accept `--group <id>` and `--tags a,b,c`
+(no-ops when `wandb:` is omitted). Callers may supply the same W&B fields:
 
 - **`--group`** sets wandb's first-class `group` field — used by the UI's native
   collapsing and matched by workspace filters via `ws.Metric("Group")`.

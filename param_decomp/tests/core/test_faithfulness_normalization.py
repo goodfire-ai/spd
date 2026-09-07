@@ -18,6 +18,7 @@ from param_decomp.core.schedule import ScheduleConfig
 from param_decomp.core.train import ForwardSubstrate, make_faith_warmup_step, make_train_step
 from param_decomp.tests.core.test_generic_model_io import (
     SITE,
+    SyntheticOutput,
     _initial_state,
     _synthetic_ci_arch,
     _synthetic_inputs,
@@ -26,7 +27,7 @@ from param_decomp.tests.core.test_generic_model_io import (
 )
 
 
-def _objective(model: DecomposedModel):
+def _objective(model: DecomposedModel[SyntheticOutput]):
     return build_objective(
         (
             FaithfulnessLossConfig(coeff=1.0),
@@ -39,7 +40,7 @@ def _objective(model: DecomposedModel):
 
 def test_faithfulness_is_mean_of_per_site_relative_errors():
     site_slots = (("a", "g", 0), ("b", "g", 1), ("c", "h", 0))
-    loss = make_faithfulness_loss(site_slots, {"g": (8.0, 16.0), "h": (2.0,)})
+    loss = make_faithfulness_loss(site_slots, {"g": (8.0, 16.0), "h": (2.0,)}, {})
     deltas = {
         "g": jnp.stack([jnp.full((2, 2), 2.0), jnp.full((2, 2), 1.0)]),
         "h": jnp.full((1, 1, 4), 1.0),
@@ -49,7 +50,7 @@ def test_faithfulness_is_mean_of_per_site_relative_errors():
 
 def test_faithfulness_weights_sites_equally_not_by_parameter_count():
     site_slots = (("a", "g", 0), ("b", "h", 0))
-    loss = make_faithfulness_loss(site_slots, {"g": (4.0,), "h": (1.0,)})
+    loss = make_faithfulness_loss(site_slots, {"g": (4.0,), "h": (1.0,)}, {})
     deltas = {"g": jnp.ones((1, 2, 2)), "h": jnp.zeros((1, 100, 100))}
     assert float(loss(deltas)) == pytest.approx(0.5)
 
@@ -57,12 +58,12 @@ def test_faithfulness_weights_sites_equally_not_by_parameter_count():
 def test_make_faithfulness_loss_validates_norm_keys_and_values():
     site_slots = ((SITE, SITE, 0),)
     with pytest.raises(AssertionError):
-        make_faithfulness_loss(site_slots, {"not.a.group": (1.0,)})
+        make_faithfulness_loss(site_slots, {"not.a.group": (1.0,)}, {})
     with pytest.raises(AssertionError):
-        make_faithfulness_loss(site_slots, {SITE: (1.0, 1.0)})
+        make_faithfulness_loss(site_slots, {SITE: (1.0, 1.0)}, {})
     for value in (0.0, float("nan"), float("inf")):
         with pytest.raises(AssertionError, match="finite positive"):
-            make_faithfulness_loss(site_slots, {SITE: (value,)})
+            make_faithfulness_loss(site_slots, {SITE: (value,)}, {})
 
 
 def test_train_step_uses_target_relative_faithfulness():
@@ -70,7 +71,7 @@ def test_train_step_uses_target_relative_faithfulness():
     model = _synthetic_lm(key)
     placed = PlacedModel(model=model, placement=None)
     state, opt_vu, opt_ci = _initial_state(model, _synthetic_vu(key), _synthetic_ci_arch())
-    faithfulness = make_faithfulness_loss(((SITE, SITE, 0),), {SITE: (2.5,)})
+    faithfulness = make_faithfulness_loss(((SITE, SITE, 0),), {SITE: (2.5,)}, {})
     expected = float(faithfulness(model.weight_deltas(state.decomposition.components)))
     step = make_train_step(
         model_static=placed,
@@ -96,7 +97,7 @@ def test_faith_warmup_uses_target_relative_faithfulness():
     model = _synthetic_lm(key)
     placed = PlacedModel(model=model, placement=None)
     components = _synthetic_vu(key)
-    faithfulness = make_faithfulness_loss(((SITE, SITE, 0),), {SITE: (2.5,)})
+    faithfulness = make_faithfulness_loss(((SITE, SITE, 0),), {SITE: (2.5,)}, {})
     expected = float(faithfulness(model.weight_deltas(components)))
     opt = optax.adamw(1e-2, weight_decay=0.0)
     warmup_step = make_faith_warmup_step(opt, faithfulness)

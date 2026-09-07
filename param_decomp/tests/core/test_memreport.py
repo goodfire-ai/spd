@@ -2,6 +2,7 @@
 
 from param_decomp.core.tools.memreport import (
     BufferAssignment,
+    BufferLocation,
     HeapEvent,
     HeapEventKind,
     LogicalBuffer,
@@ -72,7 +73,7 @@ def test_buffer_assignment_proto_decode() -> None:
     assert a.allocation_sizes == (512, 4096)
     assert a.entry_parameter_allocation_indices == frozenset({0})
     assert a.arena_allocation_index == 1
-    assert a.buffer_arena_offsets == {1: 64, 2: 128}
+    assert a.buffer_locations == {1: BufferLocation(1, 64), 2: BufferLocation(1, 128)}
     assert a.events[0] == HeapEvent(HeapEventKind.ALLOC, 1, "fusion.1", None)
     assert a.events[2].kind is HeapEventKind.FREE
 

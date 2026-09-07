@@ -5,7 +5,7 @@ from typing import Literal
 import jax
 
 from param_decomp.core.ci_fn import LayerwiseMLPCIArch, init_layerwise_mlp_ci_fn
-from param_decomp.core.components import SiteC, init_component_stacks
+from param_decomp.core.components import SiteC, init_component_stacks, require_full_emission
 from param_decomp.core.configs import (
     KeepAllCheckpoints,
     NoCheckpointing,
@@ -43,7 +43,9 @@ def _toy_setup():
     vu = init_component_stacks(sites, jax.random.PRNGKey(1))
     probe = single_feature_probe(cfg.n_features)
     ci = ci_fn(capture_clean(model, probe, ci_fn.capture_keys), remat=False, placement=None)
-    return PlacedModel(model=model, placement=None), vu, ci.lower, ci.upper
+    lower = {name: require_full_emission(value) for name, value in ci.lower.items()}
+    upper = {name: require_full_emission(value) for name, value in ci.upper.items()}
+    return PlacedModel(model=model, placement=None), vu, lower, upper
 
 
 def test_toy_uv_spec_gates_on_uvplots_in_config():

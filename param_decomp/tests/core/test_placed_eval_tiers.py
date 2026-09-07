@@ -33,13 +33,11 @@ from param_decomp.core.ci_fn import (
     resolve_ci_placement,
 )
 from param_decomp.core.components import SiteC, init_component_stacks
-from param_decomp.core.configs import WellTemperednessConfig
 from param_decomp.core.init_placed import init_ci_fn_placed, init_component_stacks_placed
 from param_decomp.core.model import PlacedModel
 from param_decomp.core.placement import from_config
 from param_decomp.core.sharding import place_target, shard_batch
 from param_decomp.core.slow_eval import make_ci_reduction_step, make_position_ci_step
-from param_decomp.core.well_temperedness import make_well_temperedness_step
 from param_decomp.experiments.lm.arithmetic_eval import make_arithmetic_grid_step
 from param_decomp.experiments.lm.attn_patterns_eval import (
     attn_output_key_by_site,
@@ -47,11 +45,13 @@ from param_decomp.experiments.lm.attn_patterns_eval import (
     make_stochastic_attn_patterns_step,
 )
 from param_decomp.experiments.lm.eval import make_ce_kl_step, make_ci_l0_step
+from param_decomp.experiments.lm.eval_config import WellTemperednessConfig
 from param_decomp.experiments.lm.eval_context import make_lm_batch_context_step
+from param_decomp.experiments.lm.well_temperedness import make_well_temperedness_step
+from param_decomp.target_ports.llama import LlamaConfig
 from param_decomp.targets.glu_transformer import glu_site_specs, site_name
 from param_decomp.targets.testing import tiny_glu_cfg, tiny_glu_decomposed_lm
 from param_decomp.targets.transformer_taps import resid_tap_key
-from param_decomp.vendored_jax.llama import LlamaConfig
 
 pytestmark = [
     pytest.mark.multidevice,
@@ -100,7 +100,14 @@ def _placed_setup(seq: int, gbatch: int):
     ci_fn = init_ci_fn_placed(arch, model.sites, random.PRNGKey(2), mesh, rules)
     tokens = random.randint(random.PRNGKey(4), (gbatch, seq), 0, cfg.vocab_size)
     tokens = shard_batch(tokens, mesh, batch_axis=0)
-    return model, vu, PlacedCIFn(fn=ci_fn, placement=rules.ci_fn), tokens, mesh, rules
+    return (
+        model,
+        vu,
+        PlacedCIFn(fn=ci_fn, placement=resolve_ci_placement(arch, rules)),
+        tokens,
+        mesh,
+        rules,
+    )
 
 
 def test_every_placed_eval_tier_traces_and_returns_finite_values():

@@ -16,6 +16,7 @@ import pytest
 
 from param_decomp.core.adversary import (
     PersistentAdversary,
+    SourcesAdamState,
     init_persistent_sources,
     init_sources_adam_state,
 )
@@ -70,6 +71,7 @@ from param_decomp.targets.testing import (
     SIMPLE_MLP_MIXED_SITE_CS,
     capture_clean,
     capture_site_outputs,
+    materialized_logits,
     run_clean,
     run_masked,
     tiny_simple_mlp_cfg,
@@ -224,7 +226,7 @@ def test_clean_path_and_masked_identity():
         assert site_components.V.shape == (spec.d_in, spec.C)
         assert site_components.U.shape == (spec.C, spec.d_out)
 
-    clean = run_clean(model, tokens)
+    clean = materialized_logits(run_clean(model, tokens))
     assert clean.shape == (b, t, cfg.vocab_size)
 
     # Masks=1, delta=1, route-everywhere reconstructs the frozen path up to
@@ -233,7 +235,9 @@ def test_clean_path_and_masked_identity():
     ones_masks = {s.name: jnp.ones((b, t, s.C)) for s in model.sites}
     ones_delta = {s: jnp.ones((b, t)) for s in names}
     prepared = model.prepare_compute_weights(vu, None)
-    full = run_masked(model, prepared, tokens, ones_masks, ones_delta, None, True, remat=False)
+    full = materialized_logits(
+        run_masked(model, prepared, tokens, ones_masks, ones_delta, None, True, remat=False)
+    )
     assert jnp.allclose(clean, full, atol=1e-4), "mask=1 identity drifted"
 
     input_keys = model._capture_grammar().block_tap_keys((2, 3))
@@ -273,12 +277,14 @@ def test_zero_masking_one_site_changes_logits(ablated_site: str):
     b, t = 2, 16
     tokens = jax.random.randint(jax.random.PRNGKey(2), (b, t), 0, cfg.vocab_size)
 
-    clean = run_clean(model, tokens)
+    clean = materialized_logits(run_clean(model, tokens))
     fill = {s.name: 0.0 if s.name == ablated_site else 1.0 for s in model.sites}
     masks = {s.name: jnp.full((b, t, s.C), fill[s.name]) for s in model.sites}
     delta_masks = {s.name: jnp.full((b, t), fill[s.name]) for s in model.sites}
     prepared = model.prepare_compute_weights(vu, None)
-    ablated = run_masked(model, prepared, tokens, masks, delta_masks, None, True, remat=False)
+    ablated = materialized_logits(
+        run_masked(model, prepared, tokens, masks, delta_masks, None, True, remat=False)
+    )
     assert not jnp.allclose(clean, ablated, atol=1e-4), f"ablating {ablated_site} did nothing"
 
 
@@ -372,16 +378,18 @@ def test_o_site_masks_attention_output():
     b, t = 2, 16
     tokens = jax.random.randint(jax.random.PRNGKey(2), (b, t), 0, cfg.vocab_size)
 
-    clean = run_clean(model, tokens)
-    ones = run_masked(
-        model,
-        model.prepare_compute_weights(vu, None),
-        tokens,
-        {o_site: jnp.ones((b, t, 8))},
-        {o_site: jnp.ones((b, t))},
-        None,
-        True,
-        remat=False,
+    clean = materialized_logits(run_clean(model, tokens))
+    ones = materialized_logits(
+        run_masked(
+            model,
+            model.prepare_compute_weights(vu, None),
+            tokens,
+            {o_site: jnp.ones((b, t, 8))},
+            {o_site: jnp.ones((b, t))},
+            None,
+            True,
+            remat=False,
+        )
     )
     assert jnp.allclose(clean, ones, atol=1e-4)
     # o's clean site input is the pre-o_proj attention output, shape (b, t, qd)
@@ -402,8 +410,7 @@ def test_step_trains_and_has_vpd_signature():
     opt_ci = optax.adamw(1e-3, weight_decay=0.0)
 
     src = init_persistent_sources(
-        model.site_names,
-        tuple(s.C for s in model.sites),
+        model.sites,
         (1, seq),
         jnp.float32,
         jax.random.PRNGKey(3),
@@ -432,7 +439,7 @@ def test_step_trains_and_has_vpd_signature():
                     sources=src,
                     opt_state=init_sources_adam_state(src),
                     state_key=ppgd_cfg.type,
-                    adam=ppgd_cfg.optimizer,
+                    optimizer=ppgd_cfg.optimizer,
                     n_warmup=ppgd_cfg.n_warmup_steps,
                 )
             },
@@ -472,7 +479,7 @@ def test_step_trains_and_has_vpd_signature():
         components_optimizer=opt_vu,
         ci_fn_optimizer=opt_ci,
         total_steps=100,
-        faithfulness=faithfulness_loss_for(model),
+        faithfulness=faithfulness_loss_for(placed),
     )
 
     tokens = jax.random.randint(jax.random.PRNGKey(4), (2, seq), 0, cfg.vocab_size)
@@ -486,6 +493,7 @@ def test_step_trains_and_has_vpd_signature():
     assert int(state.training.step) == n_steps
     # SPEC S13: n_warmup + 1 source-Adam updates per training step, moments persist.
     ppgd_adv = state.training.adversaries["PersistentPGDReconLoss"]
+    assert isinstance(ppgd_adv.opt_state, SourcesAdamState)
     assert float(ppgd_adv.opt_state.step_count) == n_steps * (n_warmup + 1)
     # SPEC S15: sources stay projected to [0,1].
     for v in jax.tree.leaves(ppgd_adv.sources):
@@ -509,7 +517,7 @@ def test_faith_warmup_decreases_faith():
     )
     vu = init_component_stacks(sites, jax.random.PRNGKey(1))
     opt = optax.adamw(1e-2, weight_decay=0.0)
-    wstep = make_faith_warmup_step(opt, faithfulness_loss_for(placed.model))
+    wstep = make_faith_warmup_step(opt, faithfulness_loss_for(placed))
     ostate = opt.init(eqx.filter(vu, eqx.is_array))
     first_loss: float | None = None
     loss = None
@@ -557,11 +565,11 @@ _DATA_ROOT = Path(env) if (env := os.environ.get("PD_TEST_DATA_ROOT")) else None
 _REAL_CACHE_DIR = _DATA_ROOT / "pretrain_cache" / "spd-t-9d2b8f02" if _DATA_ROOT else None
 _PRODUCTION_CS = {
     "c_fc": 3072,
-    "down_proj": 3584,
+    "down_proj": 3072,
     "q_proj": 768,
     "k_proj": 768,
-    "v_proj": 1024,
-    "o_proj": 1024,
+    "v_proj": 768,
+    "o_proj": 768,
 }
 """The current JAX 4-layer Pile reference (`pile_llama_simple_mlp-4L.yaml`)."""
 
@@ -608,9 +616,9 @@ def test_pretrained_target_converts_with_all_layers():
     by_name = {sc.name: sc.C for sc in target.sites}
     for layer in range(4):
         assert by_name[f"h.{layer}.mlp.c_fc"] == 3072
-        assert by_name[f"h.{layer}.mlp.down_proj"] == 3584
+        assert by_name[f"h.{layer}.mlp.down_proj"] == 3072
         assert by_name[f"h.{layer}.attn.q_proj"] == 768
-        assert by_name[f"h.{layer}.attn.v_proj"] == 1024
+        assert by_name[f"h.{layer}.attn.v_proj"] == 768
     assert target.sites[0] == SiteC("h.0.attn.q_proj", 768)
     loss_terms = build_objective(
         cfg.pd.loss_metrics,

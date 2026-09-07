@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from param_decomp.core.components import SiteSpec
+from param_decomp.core.components import Dense, SiteSpec
 from param_decomp.targets.glu_transformer import _neuron_aligned_site_factors
 
 
@@ -12,9 +12,11 @@ def test_neuron_aligned_factors_select_or_exactly_partition(
     units_on_input: bool, component_count: int
 ) -> None:
     spec = (
-        SiteSpec(name="site", d_in=4, d_out=5, C=component_count, group="site")
+        SiteSpec(name="site", factorization=Dense(d_in=4, d_out=5, C=component_count), group="site")
         if units_on_input
-        else SiteSpec(name="site", d_in=5, d_out=4, C=component_count, group="site")
+        else SiteSpec(
+            name="site", factorization=Dense(d_in=5, d_out=4, C=component_count), group="site"
+        )
     )
     weight = 1 + jnp.arange(spec.d_out * spec.d_in, dtype=jnp.float32).reshape(
         spec.d_out, spec.d_in
@@ -39,9 +41,9 @@ def test_neuron_aligned_equal_width_keeps_canonical_factorization(
     units_on_input: bool,
 ) -> None:
     spec = (
-        SiteSpec(name="site", d_in=4, d_out=5, C=4, group="site")
+        SiteSpec(name="site", factorization=Dense(d_in=4, d_out=5, C=4), group="site")
         if units_on_input
-        else SiteSpec(name="site", d_in=5, d_out=4, C=4, group="site")
+        else SiteSpec(name="site", factorization=Dense(d_in=5, d_out=4, C=4), group="site")
     )
     weight = 1 + jnp.arange(spec.d_out * spec.d_in, dtype=jnp.float32).reshape(
         spec.d_out, spec.d_in

@@ -2,10 +2,14 @@
 
 For each partitioned site it reports two measures of how many nonlinearity uses each
 component's writes feed — under GQA a kv block is used `n_head / n_kv_head` times, so
-both statistics scale by the partition's use multiplicity. The device step reduces U to
-`[C]` vectors so full component stacks are never gathered to the host.
+both statistics scale by the partition's use multiplicity. The device step reduces each
+partitioned persistence group's WHOLE U stack to per-component statistics; a site's `[C]`
+vector is its slot of that small reduced stack, read on the host. The stack axis is never
+sliced on device (under the `owner` presets it is sharded, and a static per-slot slice of
+a sharded axis is unplaceable), and full component stacks are never gathered to the host.
 """
 
+from collections import defaultdict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import get_args
@@ -16,9 +20,7 @@ import numpy as np
 from jax.experimental import multihost_utils
 from jaxtyping import Array, Float
 
-from param_decomp.core.components import (
-    ComponentStacks,
-)
+from param_decomp.core.components import ComponentStacks, SiteSpec, site_slots_for, slot_index
 from param_decomp.core.jit_util import filter_jit
 from param_decomp.core.losses import nonlinearity_unit_squared_norm_fractions, soft_unit_count
 from param_decomp.core.nonlinearity import NonlinearityPartition, NonlinearityUnitKind
@@ -40,15 +42,29 @@ _UNIT_KINDS: tuple[NonlinearityUnitKind, ...] = get_args(NonlinearityUnitKind)
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True, kw_only=True)
 class ComponentNonlinearityStats:
-    soft_use_count: Float[Array, " C"]
-    effective_use_count_per_subcomponent: Float[Array, " C"]
+    """Per-component statistics in the components' own layout — a group's whole U stack
+    reduces to `[g, C]` (dense) or `[g, E, c]` (expert-blocked, block dims)."""
+
+    soft_use_count: Float[Array, "*components"]
+    effective_use_count_per_subcomponent: Float[Array, "*components"]
+
+
+@dataclass(frozen=True, kw_only=True)
+class SiteNonlinearityStats:
+    """One site's statistics on the host, in the flat C order every per-component consumer
+    emits (`narrow_component_sums`, the CI means): an expert-blocked site's component
+    `(e, j)` at `e·c + j`."""
+
+    soft_use_count: Float[np.ndarray, " C"]
+    effective_use_count_per_subcomponent: Float[np.ndarray, " C"]
 
 
 NonlinearityEvalStep = Callable[[ComponentStacks], dict[str, ComponentNonlinearityStats]]
+"""Per partitioned persistence group, the statistics of its whole U stack."""
 
 
 def component_nonlinearity_stats(
-    vectors: Float[Array, "C d"], partition: NonlinearityPartition
+    vectors: Float[Array, "*components d"], partition: NonlinearityPartition
 ) -> ComponentNonlinearityStats:
     """Return the fixed-threshold soft use count and L1 effective use count per component.
 
@@ -64,16 +80,33 @@ def component_nonlinearity_stats(
     )
 
 
+def _group_partitions(sites: tuple[SiteSpec, ...]) -> dict[str, NonlinearityPartition]:
+    """The one partition each group's partitioned sites share — a group is a matrix kind,
+    and one kind writes into one nonlinearity."""
+    by_group: defaultdict[str, set[NonlinearityPartition]] = defaultdict(set)
+    for site in sites:
+        if site.nonlinearity_partition is not None:
+            by_group[site.group].add(site.nonlinearity_partition)
+    partitions: dict[str, NonlinearityPartition] = {}
+    for group, found in by_group.items():
+        assert len(found) == 1, f"group {group!r} mixes nonlinearity partitions: {found}"
+        (partitions[group],) = found
+    return partitions
+
+
 def make_nonlinearity_eval_step(
-    partitions: Mapping[str, NonlinearityPartition],
+    sites: tuple[SiteSpec, ...],
     compiler_options: dict[str, bool | int | str],
 ) -> NonlinearityEvalStep:
+    """Reduce every partitioned group's whole U stack to per-component statistics."""
+    partitions = _group_partitions(sites)
+
     def nonlinearity_eval_step(
         components: ComponentStacks,
     ) -> dict[str, ComponentNonlinearityStats]:
         return {
-            name: component_nonlinearity_stats(components.site(name).U, part)
-            for name, part in partitions.items()
+            group: component_nonlinearity_stats(components.stacks[group][1], partition)
+            for group, partition in partitions.items()
         }
 
     return filter_jit(nonlinearity_eval_step, compiler_options=compiler_options)
@@ -86,12 +119,36 @@ def _host_array(value: Array) -> np.ndarray:
     return np.asarray(value)
 
 
-def _metric_values(stat: ComponentNonlinearityStats) -> dict[str, np.ndarray]:
+def site_nonlinearity_stats(
+    stack_stats: Mapping[str, ComponentNonlinearityStats], sites: tuple[SiteSpec, ...]
+) -> dict[str, SiteNonlinearityStats]:
+    """Each partitioned site's `[C]` statistics: its slot of the group's reduced stack,
+    the block dims of an expert-blocked group flattened to the flat expert-major C order."""
+    host = {
+        group: (
+            _host_array(stats.soft_use_count),
+            _host_array(stats.effective_use_count_per_subcomponent),
+        )
+        for group, stats in stack_stats.items()
+    }
+    slots = slot_index(site_slots_for(sites))
+    per_site: dict[str, SiteNonlinearityStats] = {}
+    for site in sites:
+        if site.nonlinearity_partition is None:
+            continue
+        group, slot = slots[site.name]
+        soft, effective = host[group]
+        per_site[site.name] = SiteNonlinearityStats(
+            soft_use_count=soft[slot].reshape(-1),
+            effective_use_count_per_subcomponent=effective[slot].reshape(-1),
+        )
+    return per_site
+
+
+def _metric_values(stat: SiteNonlinearityStats) -> dict[str, np.ndarray]:
     return {
-        NONLINEARITY_EVAL_SOFT_COUNT_KEY: _host_array(stat.soft_use_count),
-        NONLINEARITY_EVAL_EFFECTIVE_COUNT_KEY: _host_array(
-            stat.effective_use_count_per_subcomponent
-        ),
+        NONLINEARITY_EVAL_SOFT_COUNT_KEY: stat.soft_use_count,
+        NONLINEARITY_EVAL_EFFECTIVE_COUNT_KEY: stat.effective_use_count_per_subcomponent,
     }
 
 
@@ -111,7 +168,7 @@ def _mean_entries(
 
 
 def nonlinearity_log_entries(
-    stats: Mapping[str, ComponentNonlinearityStats],
+    stats: Mapping[str, SiteNonlinearityStats],
     ci_means: Mapping[str, np.ndarray],
     partitions: Mapping[str, NonlinearityPartition],
 ) -> dict[str, float]:

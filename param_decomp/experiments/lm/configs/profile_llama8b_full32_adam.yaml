@@ -145,18 +145,21 @@ pd:
 runtime:
   compilation_cache_dir: ~/.cache/param-decomp/xla
   sharding: zero1
-  replicate: 16
-  fsdp: 4
-  tp: 2
+  mesh:
+    replicate: 16
+    fsdp: 4
+    tp: 2
   remat_recon_forwards: true
   remat_ci_fn: true
   profiling:
     kind: ad_hoc
     steps: 3
-  compiler_options: tuned-v1
+  compiler_options: tuned-v2
 target:
   attention_implementation: xla
   weights_dtype: bfloat16
+  output_edge:
+    kind: materialized
   spec:
     kind: hf
     model_class: transformers.LlamaForCausalLM

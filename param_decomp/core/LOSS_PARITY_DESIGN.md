@@ -38,8 +38,8 @@ The exceptions:
   CI-space objectives). Already implemented; nothing to do.
 - `StochasticHiddenActsReconLoss` — a recon in spirit but its objective is MSE on
   *internal* activations, which the `DecomposedModel` fn-table deliberately does not
-  expose. The one genuine seam-breaker. Recommendation: keep on the offline bridge
-  (it is already in `torch_config.OFFLINE_EVAL_METRIC_TYPES`), per Oli's stance
+  expose. The one genuine seam-breaker. Recommendation: keep in the offline evaluator
+  (it is already in `torch_config.OFFLINE_EVAL_METRIC_TYPES`)
   that hidden-acts is an eval metric; see §4c.
 - Quirks that survive the factorization but need explicit decisions: PPGD warmup's
   route-all override, fresh-PGD's once-per-batch routing draw, `start_frac`,
@@ -76,7 +76,7 @@ exactly the JAX "mean over all forwards of `kl_per_position`" (§4e).
 
 Not in `LOSS_METRIC_CLASSES` (eval-only, composition-side): `CIHiddenActsReconLoss`,
 `CIMaskedAttnPatternsReconLoss`, `StochasticAttnPatternsReconLoss` — covered in
-§4c/§4d; they stay on the bridge.
+§4c/§4d; they stay offline.
 
 Trainer-level torch knobs that parameterize these (not per-loss):
 `pd.n_mask_samples`, `pd.sampling` (`continuous`/`binomial`) — in the shared config;
@@ -423,7 +423,7 @@ guard; add `validate_pgd_scope`-equivalent divisibility asserts; keep refusing
 `faith_coeff/stoch_coeff/imp_min/adversary/ReconConfig.{sites_per_chunk,n_samples}`
 for `loss_metrics + n_mask_samples + sampling` (`remat_forwards` stays).
 
-**SPEC amendments (explicit, with Oli):**
+**SPEC amendments:**
 
 - **S10′** — generalize from "the stochastic recon loss" to *recon loss terms*:
   each term is a static plan of `(live_sites, sampler, source-strategy)` entries;

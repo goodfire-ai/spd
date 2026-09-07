@@ -30,13 +30,13 @@ def test_profile_derivation_uses_the_explicit_mesh_surface():
 
     assert derived["run_name"] == "profile-h100-16l-b64-r8-f2-t4-semantic-zero1-adam"
     runtime = derived["runtime"]
-    assert (runtime["replicate"], runtime["fsdp"], runtime["tp"]) == (8, 2, 4)
-    assert "dp" not in runtime
+    assert runtime["mesh"] == {"replicate": 8, "fsdp": 2, "tp": 4}
+    assert "dp" not in runtime and "replicate" not in runtime
     # The profile window is the typed `runtime.profiling` arm — never launch_env plumbing.
     assert runtime["profiling"] == {"kind": "ad_hoc", "steps": 3}
     assert "PD_AD_HOC_PROFILE_STEPS" not in yaml.safe_dump(derived)
     # The derived config carries the base seat's authored compiler token verbatim.
-    assert runtime["compiler_options"] == raw["runtime"]["compiler_options"] == "tuned-v1"
+    assert runtime["compiler_options"] == raw["runtime"]["compiler_options"] == "tuned-v2"
     assert derived["decomposition"]["sites"]["layers"]["end"] == 16
     reconstruction = next(
         loss["hidden_acts_reconstruction"]

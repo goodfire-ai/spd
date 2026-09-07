@@ -25,11 +25,10 @@ from jax.typing import DTypeLike
 from jaxtyping import PRNGKeyArray
 
 from param_decomp.core.adversary import (
-    SiteSource,
-    Sources,
-    init_persistent_sources_stacked,
-    sources_c_groups,
-    unstack_persistent_sources,
+    ExpertBlockedSource,
+    SourceStack,
+    SourceStacks,
+    init_persistent_sources,
 )
 from param_decomp.core.axes import MeshAxis
 from param_decomp.core.ci_fn import (
@@ -38,67 +37,116 @@ from param_decomp.core.ci_fn import (
     CIFnArch,
     GlobalMLPCIFn,
     LayerwiseMLPCIFn,
+    MoEChunkwiseTransformerCIFn,
     build_ci_fn,
+    pad_ci_fn,
+    resolve_ci_placement,
 )
 from param_decomp.core.components import (
     ComponentStacks,
+    Dense,
+    ExpertBlocked,
     SiteSpec,
     init_component_stacks,
+    pad_component_stacks,
+    site_slots_for,
+    vu_groups,
 )
-from param_decomp.core.configs import SourceShape
+from param_decomp.core.configs import (
+    MergedStochasticSubsetPooledPPGDReconLossConfig,
+    PersistentPGDLossConfig,
+    SourceShape,
+)
 from param_decomp.core.model import (
-    BATCH_AXES,
     DecomposedModel,
     PlacedModel,
     PositionAxis,
     Positioned,
     Positionless,
 )
-from param_decomp.core.placement import PlacementRules, component_stacks_shardings
+from param_decomp.core.placement import (
+    CIFnPlacement,
+    PlacementRules,
+    batch_axes,
+    component_stacks_shardings,
+)
 
-type ComponentInitializer = Callable[[DecomposedModel, PRNGKeyArray], ComponentStacks]
+type ComponentInitializer[Out, PreparedT] = Callable[
+    [DecomposedModel[Out, PreparedT], PRNGKeyArray], ComponentStacks
+]
 """A target-aware, unplaced V/U initializer. The placed wrapper below owns sharding."""
 
 
-def random_component_initializer(model: DecomposedModel, key: PRNGKeyArray) -> ComponentStacks:
+def random_component_initializer[Out](
+    model: DecomposedModel[Out], key: PRNGKeyArray
+) -> ComponentStacks:
     """The domain-neutral random initializer used unless a composition root selects another."""
     return init_component_stacks(model.sites, key)
+
+
+def _census_stack_pads(rules: PlacementRules) -> dict[str, int]:
+    """The rules' resolved persist-stack pads, ready for `pad_component_stacks`."""
+    return {
+        group: entry.stack_pad
+        for group, entry in rules.components.group_census.items()
+        if entry.stack_pad
+    }
 
 
 def init_component_stacks_placed(
     sites: tuple[SiteSpec, ...], key: PRNGKeyArray, rules: PlacementRules
 ) -> ComponentStacks:
-    """Seed random V/U directly into the component persistence layout."""
-    abstract = eqx.filter_eval_shape(partial(init_component_stacks, sites), key)
+    """Seed random V/U directly into the component persistence layout, the census'
+    persist-stack pads appended as all-zero slots (real slots draw identically to an
+    unpadded init)."""
+    pads = _census_stack_pads(rules)
+    init = lambda k: pad_component_stacks(init_component_stacks(sites, k), pads)
+    abstract = eqx.filter_eval_shape(init, key)
     placement = component_stacks_shardings(abstract, rules)
-    return jax.jit(partial(init_component_stacks, sites), out_shardings=placement)(key)
+    return jax.jit(init, out_shardings=placement)(key)
 
 
-def init_model_component_stacks_placed(
-    model: PlacedModel,
+def padded_component_initializer[Out, PreparedT](
+    rules: PlacementRules, initializer: ComponentInitializer[Out, PreparedT]
+) -> ComponentInitializer[Out, PreparedT]:
+    """`initializer` with the census' persist-stack pads appended as all-zero slots — the
+    tree the component persistence layout is declared over, so every consumer of the
+    initializer's shape (the placed init, the pre-init placement audit) sees the pads."""
+    pads = _census_stack_pads(rules)
+    return lambda m, k: pad_component_stacks(initializer(m, k), pads)
+
+
+def init_model_component_stacks_placed[Out, PreparedT](
+    model: PlacedModel[Out, PreparedT],
     key: PRNGKeyArray,
     rules: PlacementRules,
-    initializer: ComponentInitializer,
+    initializer: ComponentInitializer[Out, PreparedT],
 ) -> ComponentStacks:
-    """Run a target-aware initializer directly into the component persistence layout.
+    """Run a target-aware initializer directly into the component persistence layout,
+    the census' persist-stack pads appended as all-zero slots.
 
     The frozen model stays a traced argument: an aligned initializer may read target weights.
     Initializers return semantic-group stacks, preserving the no-host-full-tree contract.
     """
-    abstract = eqx.filter_eval_shape(initializer, model.model, key)
+    init = padded_component_initializer(rules, initializer)
+    abstract = eqx.filter_eval_shape(init, model.model, key)
     placement = component_stacks_shardings(abstract, rules)
-    return jax.jit(initializer, out_shardings=placement)(model.model, key)
+    return jax.jit(init, out_shardings=placement)(model.model, key)
 
 
-def ci_fn_shardings(abstract: CIFn, mesh: Mesh, rules: PlacementRules) -> CIFn:
-    """The CI fn's own declared placement, dispatched by arch: the chunkwise transformer
-    from the placement table's `ci_fn` rows; the toy MLPs shard each weight's output
-    axis. THE single source of truth for the CI fn's persist layout — seeded init places
-    onto it, and AOT consumers (the fit check) type their abstract state with it."""
+def ci_fn_shardings(abstract: CIFn, mesh: Mesh, placement: CIFnPlacement | None) -> CIFn:
+    """The CI fn's own declared placement, dispatched by arch: the chunkwise transformers
+    from their RESOLVED placement (`resolve_ci_placement` — rows plus the chunk-stack
+    census the abstract fn is validated against); the toy MLPs run unplaced and shard
+    each weight's output axis. THE single source of truth for the CI fn's persist layout —
+    seeded init places onto it, and AOT consumers (the fit check) type their abstract
+    state with it."""
     match abstract:
-        case ChunkwiseTransformerCIFn():
-            return abstract.shardings(mesh, rules.ci_fn)
+        case ChunkwiseTransformerCIFn() | MoEChunkwiseTransformerCIFn():
+            assert placement is not None, f"{type(abstract).__name__} is placed by its rows"
+            return abstract.shardings(mesh, placement)
         case LayerwiseMLPCIFn() | GlobalMLPCIFn():
+            assert placement is None, f"{type(abstract).__name__} runs unplaced"
             return abstract.shardings(mesh)
         case _:
             raise AssertionError(f"unknown CI fn {type(abstract)}")
@@ -111,23 +159,27 @@ def init_ci_fn_placed(
     mesh: Mesh,
     rules: PlacementRules,
 ) -> CIFn:
-    """Seeded CI-fn init (any arch, via `build_ci_fn`) placed by `ci_fn_shardings`.
-    Shardings computed on the abstract model, init under jit."""
-    init = partial(build_ci_fn, arch, sites)
+    """Seeded CI-fn init (any arch, via `build_ci_fn`) directly into its persist layout,
+    the resolved chunk-stack pad appended as all-zero slots (`pad_ci_fn`; real slots draw
+    identically to an unpadded init) and placed by `ci_fn_shardings`. Shardings computed
+    on the abstract fn, init under jit."""
+    placement = resolve_ci_placement(arch, rules)
+    init = lambda k: pad_ci_fn(build_ci_fn(arch, sites, k), placement)
     abstract = eqx.filter_eval_shape(init, key)
-    return jax.jit(init, out_shardings=ci_fn_shardings(abstract, mesh, rules))(key)
+    return jax.jit(init, out_shardings=ci_fn_shardings(abstract, mesh, placement))(key)
 
 
 def _source_leading(
-    positions: PositionAxis, source_shape: SourceShape, global_batch: int
+    positions: PositionAxis, source_shape: SourceShape, global_batch: int, mesh: Mesh
 ) -> tuple[tuple[int, ...], tuple[tuple[MeshAxis, ...] | None, ...]]:
     """Each stored (positions x source_shape) leading shape, with its mesh spec: batch-B
     shapes batch-shard over the data axes, batch-1 and position axes replicate."""
+    data_axes = batch_axes(mesh)
     match positions, source_shape:
         case Positionless(), "c":
             return (1,), (None,)
         case Positionless(), "bc":
-            return (global_batch,), (BATCH_AXES,)
+            return (global_batch,), (data_axes,)
         case Positionless(), "sc" | "bsc":
             raise ValueError(
                 f"source_shape {source_shape!r} names a position axis; target is positionless"
@@ -135,86 +187,135 @@ def _source_leading(
         case Positioned(), "c":
             return (1, 1), (None, None)
         case Positioned(), "bc":
-            return (global_batch, 1), (BATCH_AXES, None)
+            return (global_batch, 1), (data_axes, None)
         case Positioned(n_positions=n), "sc":
             return (1, n), (None, None)
         case Positioned(n_positions=n), "bsc":
-            return (global_batch, n), (BATCH_AXES, None)
+            return (global_batch, n), (data_axes, None)
+
+
+def _source_stacks_shardings(
+    sites: tuple[SiteSpec, ...],
+    leading_spec: tuple[tuple[MeshAxis, ...] | None, ...],
+    mesh: Mesh,
+) -> SourceStacks[NamedSharding]:
+    stacks: dict[str, SourceStack[NamedSharding]] = {}
+    for group, members in vu_groups(sites).items():
+        match members.factorization:
+            case Dense():
+                components: NamedSharding | ExpertBlockedSource = NamedSharding(
+                    mesh, P(None, *leading_spec, "tp")
+                )
+            case ExpertBlocked():
+                components = ExpertBlockedSource(
+                    values=NamedSharding(mesh, P(None, *leading_spec, "tp", None))  # pyright: ignore[reportArgumentType]
+                )
+        stacks[group] = SourceStack(
+            components=components, delta=NamedSharding(mesh, P(None, *leading_spec))
+        )
+    return SourceStacks(stacks=stacks, site_slots=site_slots_for(sites))
 
 
 def persistent_sources_shardings(
-    site_names: tuple[str, ...],
+    sites: tuple[SiteSpec, ...],
     positions: PositionAxis,
     source_shape: SourceShape,
     global_batch: int,
     mesh: Mesh,
-) -> dict[str, SiteSource[NamedSharding]]:
-    """The per-site declared placement of one persistent adversary's sources — component
-    sources follow the CI's TP-sharded C axis, scalar delta sources are TP-replicated,
-    batch-B shapes batch-shard. THE single source of truth for the sources' persist
-    layout — `init_sources_sharded` places onto it, and AOT consumers (the fit check)
-    type their abstract state with it."""
-    _, leading_spec = _source_leading(positions, source_shape, global_batch)
-    component_sharding = NamedSharding(mesh, P(*leading_spec, "tp"))
-    delta_sharding = NamedSharding(mesh, P(*leading_spec))
-    return {
-        name: SiteSource(components=component_sharding, delta=delta_sharding) for name in site_names
-    }
+) -> SourceStacks[NamedSharding]:
+    """The declared placement of one ordinary persistent adversary's source stacks.
+
+    Batch-B shapes shard over the data axes; batch-1 and position axes replicate. The
+    component axis follows the CI's TP placement, and source-delta values replicate
+    over TP.
+    """
+    _, leading_spec = _source_leading(positions, source_shape, global_batch, mesh)
+    return _source_stacks_shardings(sites, leading_spec, mesh)
+
+
+def source_pool_shardings(sites: tuple[SiteSpec, ...], mesh: Mesh) -> SourceStacks[NamedSharding]:
+    """Replicate global pool rows over data axes and shard component columns over TP."""
+    return _source_stacks_shardings(sites, (None,), mesh)
+
+
+def init_source_pool_sharded(
+    sites: tuple[SiteSpec, ...],
+    pool_size: int,
+    source_dtype: DTypeLike,
+    key: PRNGKeyArray,
+    mesh: Mesh,
+) -> SourceStacks:
+    """Initialize ``pool_size`` globally shared cross-site adversarial particles."""
+    return jax.jit(
+        partial(init_persistent_sources, sites, (pool_size,), source_dtype),
+        out_shardings=source_pool_shardings(sites, mesh),
+    )(key)
+
+
+def persistent_sources_shardings_from_config(
+    sites: tuple[SiteSpec, ...],
+    positions: PositionAxis,
+    cfg: PersistentPGDLossConfig | MergedStochasticSubsetPooledPPGDReconLossConfig,
+    global_batch: int,
+    mesh: Mesh,
+) -> SourceStacks[NamedSharding]:
+    """The runtime placement declared by one persistent-source config."""
+    match cfg:
+        case MergedStochasticSubsetPooledPPGDReconLossConfig():
+            return source_pool_shardings(sites, mesh)
+        case PersistentPGDLossConfig(source_shape=source_shape):
+            return persistent_sources_shardings(sites, positions, source_shape, global_batch, mesh)
+
+
+def init_persistent_sources_from_config(
+    sites: tuple[SiteSpec, ...],
+    positions: PositionAxis,
+    cfg: PersistentPGDLossConfig | MergedStochasticSubsetPooledPPGDReconLossConfig,
+    global_batch: int,
+    key: PRNGKeyArray,
+    mesh: Mesh,
+) -> SourceStacks:
+    """Initialize one persistent-source config directly into its runtime placement."""
+    match cfg:
+        case MergedStochasticSubsetPooledPPGDReconLossConfig(pool_size=pool_size):
+            return init_source_pool_sharded(sites, pool_size, cfg.source_dtype, key, mesh)
+        case PersistentPGDLossConfig(source_shape=source_shape):
+            return init_sources_sharded(
+                sites,
+                positions,
+                source_shape,
+                global_batch,
+                cfg.source_dtype,
+                key,
+                mesh,
+            )
 
 
 def init_sources_sharded(
-    site_names: tuple[str, ...],
-    site_component_counts: tuple[int, ...],
+    sites: tuple[SiteSpec, ...],
     positions: PositionAxis,
     source_shape: SourceShape,
     global_batch: int,
     source_dtype: DTypeLike,
     key: PRNGKeyArray,
     mesh: Mesh,
-) -> Sources:
-    """Seeded PPGD-source init -> placed per `source_shape` (jit + `out_shardings`; same
-    no-host-tree rationale as `init_component_stacks_placed`). Every stored (positions x
-    source_shape) leading shape is written out in the match below; the rank always
-    matches the waist, with size-1 broadcast axes for the letters `source_shape` omits
-    (`configs.SourceShape`).
+) -> SourceStacks:
+    """Seeded PPGD-source init placed onto `persistent_sources_shardings` (jit +
+    `out_shardings`; same no-host-tree rationale as `init_component_stacks_placed`, and
+    the same few-outputs doctrine — one sharded output per semantic group). Every stored
+    (positions x source_shape) leading shape is enumerated in `_source_leading`; the rank
+    always matches the waist, with size-1 broadcast axes for the letters `source_shape`
+    omits (`configs.SourceShape`).
 
-    Batch-1 shapes (`c`, `sc`) share one source across the global batch. Component
-    sources follow the CI's TP-sharded C axis; scalar delta sources are TP-replicated.
-
-    Batch-B shapes (`bc`, `bsc`) are BATCH-SHARDED over the data-parallel axes
-    (`('replicate', 'fsdp')`, axis 0), aligning each batch element's source with that
-    element's `shard_batch`-placed residual/CI. The source is independent per element, so
-    the per-element grad is already shard-local — NO cross-rank reduction, matching
-    torch's `_skip_all_reduce`. (Requires `global_batch % n_dev == 0`, the same
-    divisibility `shard_batch` needs.)
-
-    The structured representation makes those independent placements explicit; no
-    runtime slice has to redistribute a monolithic C+1 value."""
-    leading_shape, leading_spec = _source_leading(positions, source_shape, global_batch)
-    # Two cheap compiles instead of one n_sites-sharded-output graph (same shape as
-    # `init_component_stacks_placed`, incl. the transient: the stacked copy can't donate into
-    # split outputs, so init briefly holds one extra shard-local copy of the sources).
-    stacked_shardings = {
-        c: SiteSource(
-            components=NamedSharding(mesh, P(None, *leading_spec, "tp")),
-            delta=NamedSharding(mesh, P(None, *leading_spec)),
-        )
-        for c in sources_c_groups(site_names, site_component_counts)
-    }
-    stacked = jax.jit(
-        partial(
-            init_persistent_sources_stacked,
-            site_names,
-            site_component_counts,
-            leading_shape,
-            source_dtype,
-        ),
-        out_shardings=stacked_shardings,
-    )(key)
-    out_shardings = persistent_sources_shardings(
-        site_names, positions, source_shape, global_batch, mesh
-    )
+    Batch-1 shapes (`c`, `sc`) share one source across the global batch. Batch-B shapes
+    (`bc`, `bsc`) are BATCH-SHARDED over the data-parallel axes (`placement.batch_axes`),
+    aligning each batch element's source with that element's `shard_batch`-placed
+    residual/CI. The source is independent per element, so the per-element grad is
+    already shard-local — NO cross-rank reduction, matching torch's `_skip_all_reduce`.
+    (Requires `global_batch % n_dev == 0`, the same divisibility `shard_batch` needs.)"""
+    leading_shape, _ = _source_leading(positions, source_shape, global_batch, mesh)
+    shardings = persistent_sources_shardings(sites, positions, source_shape, global_batch, mesh)
     return jax.jit(
-        partial(unstack_persistent_sources, site_names, site_component_counts),
-        out_shardings=out_shardings,
-    )(stacked)
+        partial(init_persistent_sources, sites, leading_shape, source_dtype),
+        out_shardings=shardings,
+    )(key)

@@ -68,7 +68,13 @@ from param_decomp.core.configs import (
 )
 from param_decomp.core.eval_schedule import EvalSchedule, eval_due
 from param_decomp.core.faithfulness import FaithfulnessLossFn, faithfulness_loss_for
-from param_decomp.core.init_placed import ComponentInitializer, random_component_initializer
+from param_decomp.core.hardware_utilization import StepCost
+from param_decomp.core.init_placed import (
+    ComponentInitializer,
+    padded_component_initializer,
+    random_component_initializer,
+)
+from param_decomp.core.jit_util import aot_compile
 from param_decomp.core.metrics import BarChart, LogRecord, PNGImage
 from param_decomp.core.model import PlacedModel, PositionAxis
 from param_decomp.core.objective import (
@@ -80,6 +86,7 @@ from param_decomp.core.run_state import build_optimizers, init_train_state
 from param_decomp.core.sharding import target_shardings_audit
 from param_decomp.core.train import (
     CIScaledWeightDecay,
+    FaithWarmupStep,
     ForwardSubstrate,
     TrainState,
     make_faith_warmup_step,
@@ -107,7 +114,7 @@ class JaxProfilerTrace:
 @dataclasses.dataclass(frozen=True)
 class NsightCaptureWindow:
     """The engine-side half of an external Nsight Systems capture: nvtx-annotate the steps
-    in `[start + warmup_steps, start + warmup_steps + capture_steps)` so the launcher's
+    in `[start + warmup_steps, start + warmup_steps + capture_steps)` so an external
     `nsys --capture-range=nvtx` gate fires; training itself proceeds normally."""
 
     warmup_steps: int
@@ -291,11 +298,17 @@ def install_sigterm_flag() -> None:
 
 
 def _sigterm_consensus() -> bool:
-    """Cross-rank-agreed SIGTERM flag. SLURM delivers SIGTERM per task with no simultaneity
-    guarantee, so reading the per-process flag independently at a collective gate (faith-warmup
-    exit, eval entry, orbax save) can diverge ranks and hang. OR-reduce it across processes;
-    callers read it once per step into a local the handler can't mutate mid-step. No-op when not
-    distributed."""
+    """Cross-rank-agreed SIGTERM flag. The scheduler delivers SIGTERM per task with no
+    simultaneity guarantee, so reading the per-process flag independently at a collective gate
+    (faith-warmup exit, eval entry, orbax save) can diverge ranks and hang. OR-reduce it across
+    processes; callers read it once into a local the handler can't mutate mid-step. The reduce
+    is a collective plus a blocking device->host readback, so the train loop takes it only at
+    train-log steps (`Cadence.train_log_every`, denser under `dense_log_phase`, and the final
+    step) — the log step already blocks on the step's metrics, and every rank derives the log
+    step from the step count alone, so all enter the collective together and it adds no device
+    sync of its own. Worst-case added latency to a requeue save: `train_log_every - 1` further
+    training steps after the signal lands; the lead time the scheduler grants between SIGTERM
+    and SIGKILL must cover that plus the save. No-op when not distributed."""
     if jax.process_count() == 1:
         return _sigterm_received
     import jax.experimental.multihost_utils as mhu
@@ -361,6 +374,8 @@ _METRIC_KEYS = {
     "nonlinearity_relative_threshold": "train/schedules/nonlinearity_relative_threshold",
     "src_lr": "train/schedules/lr/src",
     "step_time_s": "train/perf/step_time_s",
+    "hfu": "train/perf/hfu",
+    "flops_per_step": "train/perf/flops_per_step",
     "elapsed_s": "train/perf/elapsed_s",
     "eta_s": "train/perf/eta_s",
 }
@@ -618,13 +633,13 @@ class FaithfulnessWarmup:
     loss: FaithfulnessLossFn
 
 
-def _init_or_restore_state(
+def _init_or_restore_state[Out, PreparedT](
     *,
     pd: AnyPDConfig,
     ci_fn_arch: CIFnArch,
     positions: PositionAxis,
     run: RunInstance,
-    model: PlacedModel,
+    model: PlacedModel[Out, PreparedT],
     opt_vu: optax.GradientTransformation,
     opt_ci: optax.GradientTransformation,
     init_key: PRNGKeyArray,
@@ -635,7 +650,7 @@ def _init_or_restore_state(
     compiler_options: dict[str, bool | int | str],
     faith_warmup: FaithfulnessWarmup | None,
     profiling: ProfilingMode | None,
-    component_initializer: ComponentInitializer,
+    component_initializer: ComponentInitializer[Out, PreparedT],
 ) -> tuple[TrainState, int] | None:
     """The shared init/restore/finetune/faith-warmup phase (SPEC S21/S22/S33).
 
@@ -703,7 +718,7 @@ def _init_or_restore_state(
         faith_warmup_opt_state = faith_warmup_optimizer.init(
             eqx.filter(state.decomposition.components, eqx.is_array)
         )
-        faith_warmup_step = make_faith_warmup_step(
+        faith_warmup_step: FaithWarmupStep[Out, PreparedT] = make_faith_warmup_step(
             faith_warmup_optimizer, faith_warmup.loss, compiler_options
         )
         warmed_components = state.decomposition.components
@@ -799,19 +814,19 @@ class _PreparedRun:
     substrate, the muon waypoints, and every eval invocation pair with the live fn."""
 
 
-def _prepare_run(
+def _prepare_run[Out, PreparedT](
     *,
     pd: AnyPDConfig,
     cadence: Cadence,
     run: RunInstance,
-    model: PlacedModel,
+    model: PlacedModel[Out, PreparedT],
     ci_fn: CIFnArch,
     positions: PositionAxis,
     compiler_options: dict[str, bool | int | str],
     is_main: bool,
     faith_warmup: FaithfulnessWarmup | None,
     profiling: ProfilingMode | None,
-    component_initializer: ComponentInitializer,
+    component_initializer: ComponentInitializer[Out, PreparedT],
 ) -> _PreparedRun | None:
     """Everything before the train loop: mesh activation, optimizers, keys, checkpoint
     manager, the placement audit, and init/restore/finetune/faith-warmup. Returns `None`
@@ -830,7 +845,9 @@ def _prepare_run(
     jax.set_mesh(mesh)
     run.run_dir.mkdir(parents=True, exist_ok=True)
     ci_placement = resolve_ci_placement(ci_fn, rules)
-    opt_vu, opt_ci, (sched_vu, sched_ci) = build_optimizers(pd, ci_fn, mesh, rules, ci_placement)
+    opt_vu, opt_ci, (sched_vu, sched_ci) = build_optimizers(
+        pd, ci_fn, mesh, rules, ci_placement, model.sites
+    )
 
     key = random.PRNGKey(pd.seed)
     init_key, src_key, run_key = random.split(key, 3)
@@ -838,7 +855,10 @@ def _prepare_run(
     saver = _make_saver(cadence.checkpointing, run.run_dir, is_main)
     if is_main:
         audit = component_stacks_audit(
-            eqx.filter_eval_shape(component_initializer, model.model, init_key), rules
+            eqx.filter_eval_shape(
+                padded_component_initializer(rules, component_initializer), model.model, init_key
+            ),
+            rules,
         )
         print(
             rules.describe(
@@ -848,6 +868,10 @@ def _prepare_run(
             ),
             flush=True,
         )
+        if ci_placement is not None:
+            chunks = ci_placement.chunks
+            suffix = f" (stack pad +{chunks.stack_pad})" if chunks.stack_pad else ""
+            print(f"ci_fn chunk stack: {chunks.stack_len} chunks{suffix}", flush=True)
     init = _init_or_restore_state(
         pd=pd,
         ci_fn_arch=ci_fn,
@@ -883,11 +907,11 @@ def _prepare_run(
     )
 
 
-def run_decomposition_training[EvalPassT, EvalContextT](
+def run_decomposition_training[Out, PreparedT, EvalPassT, EvalContextT](
     pd: PDConfig,
     cadence: Cadence,
     run: RunInstance,
-    model: PlacedModel,
+    model: PlacedModel[Out, PreparedT],
     ci_fn: CIFnArch,
     positions: PositionAxis,
     remat_recon_forwards: bool,
@@ -897,7 +921,7 @@ def run_decomposition_training[EvalPassT, EvalContextT](
     evaluation: Evaluation[EvalPassT, EvalContextT] | None,
     sink: MetricsSink,
     profiling: ProfilingMode | None,
-    component_initializer: ComponentInitializer = random_component_initializer,
+    component_initializer: ComponentInitializer[Out, PreparedT] = random_component_initializer,
 ) -> None:
     """The generic VPD decomposition-training engine — the ONE train loop every target
     (LM, TMS, ResidMLP, …) runs through.
@@ -923,7 +947,7 @@ def run_decomposition_training[EvalPassT, EvalContextT](
     `profiling` is threaded as data from the composition root (the engine reads no ambient
     environment): `None` is a normal training run, `JaxProfilerTrace` turns the run into an
     in-process profile (trace then return), `NsightCaptureWindow` nvtx-annotates the
-    launcher-declared capture steps of an otherwise-normal run.
+    caller-declared capture steps of an otherwise-normal run.
 
     Everything generic — `init_train_state`, fine-tune init, faith warmup, the recon-grid
     step factory, orbax checkpointing, schedules, SIGTERM-save — lives here. The step
@@ -933,7 +957,7 @@ def run_decomposition_training[EvalPassT, EvalContextT](
     the same `_prepare_run` / `_run_loop` core.
     """
     is_main = jax.process_index() == 0
-    faithfulness = faithfulness_loss_for(model.model)
+    faithfulness = faithfulness_loss_for(model)
     faith_warmup = (
         FaithfulnessWarmup(
             steps=pd.faithfulness_warmup_steps,
@@ -982,15 +1006,25 @@ def run_decomposition_training[EvalPassT, EvalContextT](
     def run_step(state: TrainState, step: int) -> tuple[TrainState, dict[str, jax.Array]]:
         return step_fn(model, state, sample_batch(step), random.fold_in(prepared.run_key, step))
 
-    _run_loop(pd, cadence, evaluation, sink, prepared, is_main, run_step, profiling)
+    step_cost = StepCost.of(
+        aot_compile(
+            step_fn,
+            model,
+            prepared.state,
+            sample_batch(prepared.start_step),
+            random.fold_in(prepared.run_key, prepared.start_step),
+        ),
+        jax.devices(),
+    )
+    _run_loop(pd, cadence, evaluation, sink, prepared, is_main, run_step, step_cost, profiling)
 
 
-def run_targeted_decomposition_training[EvalPassT, EvalContextT](
+def run_targeted_decomposition_training[Out, PreparedT, EvalPassT, EvalContextT](
     pd: TargetedPDConfig,
     nontarget: NontargetConfig,
     cadence: Cadence,
     run: RunInstance,
-    model: PlacedModel,
+    model: PlacedModel[Out, PreparedT],
     ci_fn: CIFnArch,
     positions: PositionAxis,
     remat_recon_forwards: bool,
@@ -1001,7 +1035,7 @@ def run_targeted_decomposition_training[EvalPassT, EvalContextT](
     evaluation: Evaluation[EvalPassT, EvalContextT] | None,
     sink: MetricsSink,
     profiling: ProfilingMode | None,
-    component_initializer: ComponentInitializer = random_component_initializer,
+    component_initializer: ComponentInitializer[Out, PreparedT] = random_component_initializer,
 ) -> None:
     """The targeted-PD (tPD) engine entry (SPEC §11) — `run_decomposition_training`'s twin
     over the same `_prepare_run` / `_run_loop` core, stepping the two-pass
@@ -1066,7 +1100,18 @@ def run_targeted_decomposition_training[EvalPassT, EvalContextT](
             random.fold_in(prepared.run_key, step),
         )
 
-    _run_loop(pd, cadence, evaluation, sink, prepared, is_main, run_step, profiling)
+    step_cost = StepCost.of(
+        aot_compile(
+            step_fn,
+            model,
+            prepared.state,
+            sample_target_batch(prepared.start_step),
+            sample_nontarget_batch(prepared.start_step),
+            random.fold_in(prepared.run_key, prepared.start_step),
+        ),
+        jax.devices(),
+    )
+    _run_loop(pd, cadence, evaluation, sink, prepared, is_main, run_step, step_cost, profiling)
 
 
 def _run_loop[EvalPassT, EvalContextT](
@@ -1077,6 +1122,7 @@ def _run_loop[EvalPassT, EvalContextT](
     prepared: _PreparedRun,
     is_main: bool,
     run_step: Callable[[TrainState, int], tuple[TrainState, dict[str, jax.Array]]],
+    step_cost: StepCost,
     profiling: ProfilingMode | None,
 ) -> None:
     """The generic train loop over one already-built `run_step(state, step)`: log cadence,
@@ -1156,7 +1202,6 @@ def _run_loop[EvalPassT, EvalContextT](
         )
 
         now_step = step + 1
-        sigterm = _sigterm_consensus()
         dense = cadence.dense_log_phase
         train_record: LogRecord | None = None
         log_now = (
@@ -1164,6 +1209,7 @@ def _run_loop[EvalPassT, EvalContextT](
             or now_step == pd.steps
             or (dense is not None and now_step <= dense.until_step and now_step % dense.every == 0)
         )
+        sigterm = log_now and _sigterm_consensus()
         if log_now:
             jax.block_until_ready(metrics["total"])
             dt = time.time() - window_t0
@@ -1186,6 +1232,9 @@ def _run_loop[EvalPassT, EvalContextT](
                 f"other_count={len(nonfinite_other)}; other_first={nonfinite_other[:20]}"
             )
             record["step_time_s"] = per_step
+            record["flops_per_step"] = step_cost.flops_per_step
+            if (hfu := step_cost.hfu(per_step)) is not None:
+                record["hfu"] = hfu
             record["elapsed_s"] = time.time() - loop_t0
             record["eta_s"] = (pd.steps - now_step) * per_step
             # the LR this step applied (optax count is the pre-increment `step` == now_step - 1)
@@ -1194,6 +1243,19 @@ def _run_loop[EvalPassT, EvalContextT](
             mem_stats = jax.local_devices()[0].memory_stats()
             if mem_stats is not None:
                 record["train/mem/peak_gb_per_rank"] = mem_stats["peak_bytes_in_use"] / 1e9
+                # Device 0 is also the default device, so its high-water mark carries
+                # init-time weight staging (full-model assembly before resharding) and
+                # can mask step demand for the whole run; the min across local devices
+                # is staging-free — the step-and-eval high-water the fit check's
+                # verdict is actually about.
+                record["train/mem/peak_gb_min_device"] = (
+                    min(
+                        stats["peak_bytes_in_use"]
+                        for device in jax.local_devices()
+                        if (stats := device.memory_stats()) is not None
+                    )
+                    / 1e9
+                )
             train_record = record
 
         eval_record = (

@@ -1,19 +1,17 @@
 """Run ordinary language-model parameter-decomposition training from one config.
 
-    python -m param_decomp.experiments.lm.run <config.yaml>   # normally invoked by a
-        # submitter that pins the config as runs/<id>/launch_config.yaml and passes
-        # --run-id; re-running resumes in place
+    python -m param_decomp.experiments.lm.run <config.yaml> \
+        --data-root <root> --local-device-count <n>
 
 This is the LM I/O layer over the generic core engine
 (`param_decomp.core.run.run_decomposition_training`): read the run YAML, build the target, feed
 the per-step parquet token batch (`sample_batch`; the model embeds it), bind the CEandKL /
 CI-L0 / PGD / attn-patterns / slow eval operations, then
 call the engine. Process setup (`initialize_topology`, the SIGTERM flag, the persistent XLA
-compilation cache, HF http hardening), config pinning, and SLURM-requeue shutdown all live
-here. The toy domains mirror this file under `experiments/{tms,resid_mlp}/run.py`.
+compilation cache), config pinning, and requeue-safe shutdown all live here. The toy domains mirror this file under `experiments/{tms,resid_mlp}/run.py`.
 
-The config declares the logical `replicate×fsdp×tp` mesh. The launch boundary separately
-supplies the process-local device count used for JAX distributed bring-up.
+The config declares its logical `runtime.mesh`. The process entry separately supplies
+the process-local device count used for JAX distributed bring-up.
 """
 
 import os
@@ -37,14 +35,18 @@ from param_decomp.core.run import (
 )
 from param_decomp.core.sharding import (
     data_parallel_size,
-    hsdp_mesh,
     initialize_topology,
     local_data_parallel_size,
+    mesh_for_shape,
 )
 from param_decomp.experiments.eval_config import EvalConfig
 from param_decomp.experiments.lm.config import load_config
 from param_decomp.experiments.lm.eval_operations import global_token_batch, make_lm_evaluation
-from param_decomp.experiments.lm.load_run import build_target, component_initializer_for
+from param_decomp.experiments.lm.load_run import (
+    build_target,
+    component_initializer_for,
+    target_vocab_size,
+)
 from param_decomp.experiments.lm.resolved import LMRun
 from param_decomp.experiments.lm.runtime import (
     AdHocProfiling,
@@ -56,6 +58,7 @@ from param_decomp.experiments.lm.runtime import (
 from param_decomp.infra.dataset_store import read_dataset_meta
 from param_decomp.infra.run_files import generate_run_id
 from param_decomp.pretrain.batch_data import BatchSchedule, ShardServer, scan_shards
+from param_decomp.targets.lm_output import LMOutput
 
 
 def enable_persistent_compilation_cache(authored_dir: Path) -> Path:
@@ -79,8 +82,8 @@ def enable_persistent_compilation_cache(authored_dir: Path) -> Path:
 def engine_profiling(config: ProfilingConfig) -> ProfilingMode | None:
     """Lower the authored `runtime.profiling` arm to the engine's typed profiling data —
     the engine reads no environment; profiling arrives as an argument like everything
-    else. The nsight arm's `version` stays launcher-side (it names the `nsys` executable,
-    not engine behavior)."""
+    else. The nsight arm's `version` stays outside the engine (it names the `nsys`
+    executable, not engine behavior)."""
     match config:
         case ProfilingDisabled():
             return None
@@ -95,8 +98,8 @@ def enable_hlo_dump(run_dir: Path) -> None:
 
     Must run BEFORE `initialize_topology` — XLA reads `XLA_FLAGS` when the backend initializes,
     so a later mutation is ignored. Rank-gated via the generic `PD_RANK`
-    hint (read pre-jax-init only to pick the writer, never to decide topology); the launcher
-    exports it per rank, absent = single
+    hint (read pre-jax-init only to pick the writer, never to decide topology); whoever
+    starts the ranks exports it per rank, absent = single
     process) so a single rank writes; `xla_dump_hlo_module_re` filters to the big `*step*` modules to keep
     the dump to ~100s of MB. The buffer-assignment dump survives an exec-time OOM (compile
     completes first), so this is how we name the buffer that blows the allocator."""
@@ -137,7 +140,7 @@ def train(
     built: LMRun,
     runtime: RuntimeConfig,
     eval_config: EvalConfig | None,
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     mesh: Mesh,
 ) -> None:
     """The LM composition over the generic engine: a parquet `sample_batch` (the per-step
@@ -175,8 +178,10 @@ def train(
         local_data,
     )
 
+    vocab_size = target_vocab_size(model)
+
     def sample_batch(step: int) -> jax.Array:
-        return global_token_batch(server.local_batch(step), mesh, global_batch)
+        return global_token_batch(server.local_batch(step), mesh, global_batch, vocab_size)
 
     sink = MetricsSink.for_run(built.run, is_main)
     evaluation = None
@@ -236,7 +241,7 @@ def main(
     if run_id is None:
         # Ad-hoc run-here invocation (`python -m param_decomp.experiments.lm.run <config>`):
         # mint a fresh identity; `pin_config_copy` below stages the config into the run
-        # dir exactly as a launcher would (resume an existing run by passing --run-id).
+        # dir. Resume an existing run by passing --run-id.
         run_id = generate_run_id("param_decomp")
     built, authored = load_config(config, run_id, data_root)
     runtime = authored.runtime
@@ -244,7 +249,7 @@ def main(
     install_sigterm_flag()
     enable_hlo_dump(built.run.run_dir)
     initialize_topology(runtime.world_size, local_device_count)
-    mesh = hsdp_mesh(runtime.replicate, runtime.fsdp, runtime.tp)
+    mesh = mesh_for_shape(runtime.mesh)
 
     if built.run.resume_provenance is not None:
         assert_finetune_structural_compat(built, built.run.resume_provenance, data_root)
@@ -272,7 +277,7 @@ def main(
 
     # The bundle's `.model` (an eqx model) IS the frozen target — it carries the frozen
     # weights as fields, so the function-table era's separate `frozen` object is gone.
-    model = build_target(built.target, mesh, data_root, runtime.sharding)
+    model = build_target(built.target, mesh, data_root, runtime.sharding, runtime.sequence_sharding)
 
     train(built, runtime, authored.eval, model, mesh)
 

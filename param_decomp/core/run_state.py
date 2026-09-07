@@ -7,7 +7,7 @@ rebuild the state exactly as the run did — same init fns, same key derivation,
 optimizer-state structure.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import cast
 
 import equinox as eqx
@@ -20,15 +20,27 @@ from jax.sharding import PartitionSpec as P
 from jax.typing import ArrayLike
 from jaxtyping import Array, PRNGKeyArray
 
-from param_decomp.core.adversary import PersistentAdversary, init_sources_adam_state
+from param_decomp.core.adversary import PersistentAdversary, init_sources_opt_state
 from param_decomp.core.ci_fn import (
     ChunkwiseTransformerCIArch,
     ChunkwiseTransformerCIFn,
     CIFnArch,
+    GlobalMLPCIArch,
+    LayerwiseMLPCIArch,
+    MoEChunkwiseTransformerCIArch,
+    MoEChunkwiseTransformerCIFn,
+    moe_ns_compute_shardings,
     ns_compute_shardings,
 )
+from param_decomp.core.components import (
+    ComponentStacks,
+    Dense,
+    ExpertBlocked,
+    Factorization,
+    SiteSpec,
+    group_factorizations,
+)
 from param_decomp.core.configs import (
-    AdamPGDConfig,
     AdamWOptimizerConfig,
     AnyPDConfig,
     ImportanceMinimalityLossConfig,
@@ -39,7 +51,7 @@ from param_decomp.core.init_placed import (
     ComponentInitializer,
     init_ci_fn_placed,
     init_model_component_stacks_placed,
-    init_sources_sharded,
+    init_persistent_sources_from_config,
     random_component_initializer,
 )
 from param_decomp.core.losses import EmaFrequency, resolve_frequency, scheduled_value_traced
@@ -51,13 +63,10 @@ from param_decomp.core.placement import (
     PlacementRules,
     assert_stacked_muon_ci_staging,
     assert_stacked_muon_component_staging,
+    assert_stacked_muon_moe_ci_staging,
     ns_staging_sharding,
 )
-from param_decomp.core.recon import (
-    MixedPersistentStochasticSources,
-    PersistentSources,
-    persistent_configs,
-)
+from param_decomp.core.recon import PERSISTENT_SOURCE_TYPES, persistent_configs
 from param_decomp.core.schedule import ScheduleConfig
 from param_decomp.core.train import Decomposition, TrainingItem, TrainState
 
@@ -96,15 +105,69 @@ def clip_by_global_norm_with_eps(max_norm: float, eps: float) -> optax.GradientT
 
 
 def stacked_muon_dimension_numbers(params: optax.Params) -> optax.Params:
-    """Muon leaf labeling for matrix-STACK trees: every 3D leaf is a `[stack, a, b]` stack
-    of matrices — orthogonalize the trailing two axes, stack axis batched — and everything
-    else (e.g. the CI fn's `[n_chunks, d]` bias stacks) takes the Adam fallback. Covers
-    BOTH optimizer groups now: the chunkwise CI fn's per-chunk stacks (`ci_fn.py`) and the
-    owner-partitioned V/U semantic-group stacks (`components.py` — all leaves 3D, so the
-    fallback never fires there). optax's default rule (2D → muon) would Adam every V/U
-    leaf silently and, on the CI tree, NS-orthogonalize the bias stacks instead."""
+    """Label the CI fn's muon leaves by rank: every 3D leaf is a `[stack, a, b]` stack
+    of matrices whose trailing two axes muon orthogonalizes (the stack axis is batched),
+    and everything else — the `[n_chunks, d]` bias stacks — takes the Adam fallback.
+    Deciding by rank is safe here because the chunkwise CI tree has exactly two leaf
+    ranks, each with a fixed meaning. The V/U components tree is labeled from its
+    declared factorizations instead (`component_muon_dimension_numbers`). optax's
+    default rule (2D means muon) would NS-orthogonalize the bias stacks."""
     dims = optax.contrib.MuonDimensionNumbers(reduction_axis=-2, output_axis=-1)
     return jax.tree.map(lambda leaf: dims if leaf.ndim == 3 else None, params)
+
+
+def moe_stacked_muon_dimension_numbers(params: optax.Params) -> optax.Params:
+    """Label the MoE chunkwise CI fn's muon leaves by rank: 3D leaves are
+    `[n_chunks, a, b]` dense-matrix stacks, 4D leaves `[n_chunks, expert, a, b]` expert
+    stacks (both NS-orthogonalized over the trailing matrix, leading axes batched —
+    `muon_stacked._canonicalize` folds the expert axis in); 2D `[n_chunks, d]`
+    bias/norm-scale stacks take Adam. Safe by rank because the MoE chunkwise tree has
+    exactly these three leaf ranks, each with one meaning (the fused expert heads are
+    biasless, so no vector leaf reaches rank 3)."""
+    dims = optax.contrib.MuonDimensionNumbers(reduction_axis=-2, output_axis=-1)
+    return jax.tree.map(lambda leaf: dims if leaf.ndim in (3, 4) else None, params)
+
+
+def component_muon_dimension_numbers(
+    factorizations: Mapping[str, Factorization],
+) -> Callable[[optax.Params], optax.Params]:
+    """Label the V/U tree's muon leaves from each group's declared factorization. The
+    labeling never inspects leaf rank, so a factorization without an arm here fails at
+    optimizer build instead of silently falling back to Adam."""
+
+    def label(params: optax.Params) -> optax.Params:
+        stacks = params
+        assert isinstance(stacks, ComponentStacks), type(stacks)
+        assert stacks.stacks.keys() == factorizations.keys(), (
+            sorted(stacks.stacks),
+            sorted(factorizations),
+        )
+
+        def group_dims(group: str) -> optax.contrib.MuonDimensionNumbers:
+            match factorizations[group]:
+                case Dense():
+                    # [stack, a, b]: orthogonalize the trailing matrix, stack batched.
+                    return optax.contrib.MuonDimensionNumbers(reduction_axis=-2, output_axis=-1)
+                case ExpertBlocked():
+                    # [stack, expert, a, b]: each expert's block orthogonalized on its
+                    # own, both leading axes batched (stacked NS folds them into one —
+                    # `muon_stacked._canonicalize`).
+                    return optax.contrib.MuonDimensionNumbers(reduction_axis=-2, output_axis=-1)
+
+        labeled = {group: (group_dims(group), group_dims(group)) for group in stacks.stacks}
+        return cast(
+            optax.Params,
+            cast(
+                object,
+                ComponentStacks(
+                    stacks=labeled,
+                    site_slots=stacks.site_slots,
+                    stack_pads=stacks.stack_pads,
+                ),
+            ),
+        )
+
+    return label
 
 
 def _optimizer_with_clip(
@@ -119,24 +182,13 @@ def _optimizer_with_clip(
     config's — torch's is 0); Muon is a config-gated experimental variant (SPEC S19').
     `muon_dimension_numbers` labels the group's leaves for muon (None = optax's default
     2D-matrix rule, correct for the MLP CI fns); it and `waypoints` (the group's declared
-    stacked-NS staging) are read only by the stacked-muon arm."""
+    NS staging) are read only by the muon arm."""
     match opt:
         case AdamWOptimizerConfig():
             inner = optax.adamw(
                 schedule, b1=opt.betas[0], b2=opt.betas[1], eps=1e-8, weight_decay=opt.weight_decay
             )
-        case MuonOptimizerConfig(impl="optax"):
-            assert opt.ns_dtype == "float32", "ns_dtype is a stacked-impl knob (optax NS is fp32)"
-            inner = optax.contrib.muon(
-                schedule,
-                beta=opt.beta,
-                weight_decay=opt.weight_decay,
-                consistent_rms=opt.consistent_rms,
-                muon_weight_dimension_numbers=muon_dimension_numbers,
-                ns_steps=opt.ns_steps,
-            )
         case MuonOptimizerConfig():
-            assert opt.impl == "stacked", opt.impl
             inner = stacked_muon(
                 schedule,
                 beta=opt.beta,
@@ -164,6 +216,7 @@ def build_optimizers(
     mesh: Mesh,
     placement: PlacementRules,
     ci_placement: CIFnPlacement | None,
+    sites: tuple[SiteSpec, ...],
 ):
     """Returns (opt_vu, opt_ci, schedules): the schedule fns are returned too so the
     log path reports the exact LR the optimizer applies (single source of truth).
@@ -173,18 +226,19 @@ def build_optimizers(
     absent when `grad_clip_norm` is null. Each group's stacked-NS staging comes from its
     `ns_compute` placement rows: one row for the V/U stacks, one per CI weight family
     (`ci_fn.ns_compute_shardings`). `ci_placement` is the run's RESOLVED CI-fn placement
-    (`resolve_ci_placement`) — never re-derived from `placement` here."""
+    (`resolve_ci_placement`) — never re-derived from `placement` here. `sites` supplies
+    each component group's factorization, which forces the V/U muon leaf labeling."""
     sched_vu = optax_schedule(pd.components_optimizer.lr_schedule, pd.steps)
     sched_ci = optax_schedule(pd.ci_fn_optimizer.lr_schedule, pd.steps)
     match pd.components_optimizer:
-        case MuonOptimizerConfig(impl="stacked"):
+        case MuonOptimizerConfig():
             assert_stacked_muon_component_staging(placement)
-        case _:
+        case AdamWOptimizerConfig():
             pass
     opt_vu = _optimizer_with_clip(
         pd.components_optimizer,
         sched_vu,
-        stacked_muon_dimension_numbers,
+        component_muon_dimension_numbers(group_factorizations(sites)),
         waypoints=_uniform_waypoints(ns_staging_sharding(placement.components.ns_compute, mesh)),
     )
     ci_muon_dim_nums: Callable[[optax.Params], optax.Params] | None
@@ -193,9 +247,9 @@ def build_optimizers(
         case ChunkwiseTransformerCIArch():
             assert ci_placement is not None, "a placed run's chunkwise CI fn carries its rows"
             match pd.ci_fn_optimizer:
-                case MuonOptimizerConfig(impl="stacked"):
-                    assert_stacked_muon_ci_staging(placement, len(ci_fn_arch.chunks))
-                case _:
+                case MuonOptimizerConfig():
+                    assert_stacked_muon_ci_staging(ci_placement)
+                case AdamWOptimizerConfig():
                     pass
             ci_stage_rows = ci_placement
             ci_muon_dim_nums = stacked_muon_dimension_numbers
@@ -204,7 +258,21 @@ def build_optimizers(
             ci_waypoints = lambda tree: ns_compute_shardings(
                 cast(ChunkwiseTransformerCIFn, cast(object, tree)), mesh, ci_stage_rows
             )
-        case _:
+        case MoEChunkwiseTransformerCIArch():
+            assert ci_placement is not None, "a placed run's MoE chunkwise CI fn carries its rows"
+            match pd.ci_fn_optimizer:
+                case MuonOptimizerConfig():
+                    assert_stacked_muon_moe_ci_staging(ci_placement, ci_fn_arch.n_experts)
+                case AdamWOptimizerConfig():
+                    pass
+            moe_stage_rows = ci_placement
+            ci_muon_dim_nums = moe_stacked_muon_dimension_numbers
+            # As on the dense arm: the muon-masked update tree keeps the MoE chunkwise
+            # treedef, so the structural navigation applies to it directly.
+            ci_waypoints = lambda tree: moe_ns_compute_shardings(
+                cast(MoEChunkwiseTransformerCIFn, cast(object, tree)), mesh, moe_stage_rows
+            )
+        case LayerwiseMLPCIArch() | GlobalMLPCIArch():
             assert ci_placement is None, f"{type(ci_fn_arch).__name__} runs unplaced"
             ci_muon_dim_nums = None
             ci_waypoints = _uniform_waypoints(NamedSharding(mesh, P(None, None, None)))
@@ -214,7 +282,7 @@ def build_optimizers(
     return opt_vu, opt_ci, (sched_vu, sched_ci)
 
 
-def _placed_init_geometry(model: PlacedModel) -> tuple[PlacementRules, Mesh]:
+def _placed_init_geometry[Out](model: PlacedModel[Out]) -> tuple[PlacementRules, Mesh]:
     """The bundle's own rules + mesh. Seeded init places real arrays, so an unplaced
     bundle and the abstract (spec-check) arm of `PlacementRules.mesh` are both refused."""
     rules = model.placement
@@ -224,11 +292,11 @@ def _placed_init_geometry(model: PlacedModel) -> tuple[PlacementRules, Mesh]:
     return rules, mesh
 
 
-def init_decomposition(
-    model: PlacedModel,
+def init_decomposition[Out, PreparedT](
+    model: PlacedModel[Out, PreparedT],
     ci_fn_arch: CIFnArch,
     init_key: PRNGKeyArray,
-    component_initializer: ComponentInitializer = random_component_initializer,
+    component_initializer: ComponentInitializer[Out, PreparedT] = random_component_initializer,
 ) -> Decomposition:
     """The trained-product half of `init_train_state`, factored out so a consumer can
     `jax.eval_shape` it to recover the saved `decomposition` item's tree structure
@@ -244,21 +312,21 @@ def init_decomposition(
     return Decomposition(components=components, ci_fn=ci_fn)
 
 
-def _imp_min_config(pd: AnyPDConfig) -> ImportanceMinimalityLossConfig:
+def imp_min_config(pd: AnyPDConfig) -> ImportanceMinimalityLossConfig:
     [imp_cfg] = [m for m in pd.loss_metrics if isinstance(m, ImportanceMinimalityLossConfig)]
     return imp_cfg
 
 
-def init_train_state(
+def init_train_state[Out, PreparedT](
     pd: AnyPDConfig,
-    model: PlacedModel,
+    model: PlacedModel[Out, PreparedT],
     ci_fn_arch: CIFnArch,
     positions: PositionAxis,
     opt_vu: optax.GradientTransformation,
     opt_ci: optax.GradientTransformation,
     init_key: PRNGKeyArray,
     src_key: PRNGKeyArray,
-    component_initializer: ComponentInitializer = random_component_initializer,
+    component_initializer: ComponentInitializer[Out, PreparedT] = random_component_initializer,
 ) -> TrainState:
     """Persistent sources are shaped from `positions` (the run's waist geometry)."""
     _, mesh = _placed_init_geometry(model)
@@ -267,7 +335,7 @@ def init_train_state(
     )
     decomposition = init_decomposition(model, ci_fn_arch, init_key, component_initializer)
     components, ci_fn = decomposition.components, decomposition.ci_fn
-    match _imp_min_config(pd).frequency:
+    match imp_min_config(pd).frequency:
         case None:
             freq_role = None
         case freq_cfg:
@@ -279,29 +347,26 @@ def init_train_state(
     term_coeff_by_state_key = {
         term.sources.state_key: term.coeff
         for term in recon_terms
-        if isinstance(term.sources, (PersistentSources, MixedPersistentStochasticSources))
+        if isinstance(term.sources, PERSISTENT_SOURCE_TYPES)
     }
     assert set(term_coeff_by_state_key) == set(persistent)
     adversaries: dict[str, PersistentAdversary] = {}
     if persistent:
         for term_idx, state_key in enumerate(persistent):
             cfg = persistent[state_key]
-            assert isinstance(cfg.optimizer, AdamPGDConfig)
-            sources = init_sources_sharded(
-                model.site_names,
-                tuple(s.C for s in model.sites),
+            sources = init_persistent_sources_from_config(
+                model.sites,
                 positions,
-                cfg.source_shape,
+                cfg,
                 pd.batch_size,
-                jnp.dtype(cfg.source_dtype),
                 random.fold_in(src_key, term_idx),
                 mesh,
             )
             adversaries[state_key] = PersistentAdversary(
                 sources=sources,
-                opt_state=init_sources_adam_state(sources),
+                opt_state=init_sources_opt_state(cfg.optimizer, sources),
                 state_key=state_key,
-                adam=cfg.optimizer,
+                optimizer=cfg.optimizer,
                 n_warmup=cfg.n_warmup_steps,
             )
     return TrainState(

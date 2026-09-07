@@ -33,14 +33,21 @@ from param_decomp.core.built_run import BuiltRun
 from param_decomp.core.ci_fn import (
     Chunk,
     ChunkwiseTransformerCIArch,
+    FullSlot,
     GlobalMLPCIArch,
     GQACIAttention,
     MHACIAttention,
+    MoEChunk,
+    MoEChunkwiseTransformerCIArch,
+    MoESlot,
+    NarrowSlot,
+    RoutingTap,
     TapSpec,
     resolve_ci_placement,
 )
 from param_decomp.core.components import SiteC, SiteDims, SiteSpec
 from param_decomp.core.configs import (
+    AdamWOptimizerConfig,
     MuonOptimizerConfig,
     NontargetConfig,
     PDConfigBase,
@@ -53,7 +60,7 @@ from param_decomp.core.objective import (
     build_objective,
     build_targeted_objective,
 )
-from param_decomp.core.sharding import hsdp_abstract_mesh
+from param_decomp.core.sharding import abstract_mesh_for_shape
 from param_decomp.experiments.config import (
     ExperimentConfig,
     ExperimentConfigBase,
@@ -65,6 +72,7 @@ from param_decomp.experiments.lm.resolved import (
     LlamaSimpleMLPTargetConfig,
     LMRun,
     LMTargetedRun,
+    Qwen36MoeTargetConfig,
     ResolvedLMData,
     TargetConfig,
     WeightsDtype,
@@ -74,11 +82,18 @@ from param_decomp.experiments.lm.targeted_data import LMPromptPoolConfig
 from param_decomp.infra import pretrain_cache
 from param_decomp.infra.dataset_store import DatasetRef, resolve_dataset_ref
 from param_decomp.migrations.schedule_knots import migrate_raw as migrate_schedule_knots
-from param_decomp.targets import glu_transformer, llama31, llama_simple_mlp, qwen3
+from param_decomp.target_ports.llama import AttentionImplementation
+from param_decomp.targets import glu_transformer, llama31, llama_simple_mlp, qwen3, qwen36_moe
 from param_decomp.targets.glu_transformer import GluMatrix
 from param_decomp.targets.llama_simple_mlp import SimpleMlpMatrix
+from param_decomp.targets.qwen36_moe import (
+    ExpertsExecution,
+    MaterializedOutputEdge,
+    OutputEdge,
+    Qwen36MoeMatrix,
+    StreamedOutputEdge,
+)
 from param_decomp.targets.transformer_taps import TransformerTapGrammar, resid_tap_key
-from param_decomp.vendored_jax.llama import AttentionImplementation
 
 
 class HFTarget(BaseConfig):
@@ -119,11 +134,51 @@ LMTargetSpec = Annotated[
 ]
 
 
+class MaterializedOutputEdgeConfig(BaseConfig):
+    """The materialized model-output edge: every forward forms its full `[B, S, vocab]`
+    logits in the target's native dtype (bf16 on a bf16 target), cast to fp32 at the
+    comparison kernels."""
+
+    kind: Literal["materialized"] = "materialized"
+
+
+class StreamedOutputEdgeConfig(BaseConfig):
+    """The streamed model-output edge (the qwen36_moe family only): forwards return the
+    factored {final activations, unembedding} package and every output comparison — the
+    recon KL and the eval CE/KL variants — streams over vocab chunks with fp32 online
+    accumulators, so no `[B, S, vocab]` buffer ever materializes. Each chunk's logits are
+    fp32-accumulated from the native-dtype operands, so this edge differs from
+    `materialized` by the one bf16 rounding of the logits the materialized edge carries
+    (`targets.losses` documents the recurrences and the seam)."""
+
+    kind: Literal["streamed"] = "streamed"
+    n_vocab_chunks: PositiveInt
+    """Chunks the vocab axis streams in; must divide the target's vocab size
+    (248320 = 2^9·5·97 — e.g. 32 chunks of 7760)."""
+
+
+LMOutputEdgeConfig = Annotated[
+    MaterializedOutputEdgeConfig | StreamedOutputEdgeConfig, Discriminator("kind")
+]
+
+
 class LMTargetConfig(BaseConfig):
     """Config for the LM target model."""
 
     spec: LMTargetSpec
     attention_implementation: AttentionImplementation
+    experts_execution: ExpertsExecution = "routed"
+    """The qwen36_moe family's decomposed-expert execution
+    (`targets.qwen36_moe.ExpertsExecution`); families without routed experts refuse a
+    non-default value at resolve. `routed` computes only the selected experts and is the only arm narrow masks can
+    drive; `dense` computes every expert for every token and serves as the parity oracle.
+    The choice is explicit because the two arms have different memory and compute costs."""
+    output_edge: LMOutputEdgeConfig
+    """The model-output edge, authored on every LM config — a stored config that omitted
+    it could not say which logits its run compared. Prefer `streamed` wherever the family
+    supports it (today: qwen36_moe): no full-vocab logits buffer — at a 248k vocab the
+    arena's largest resident — and fp32-accumulated logits. The other families
+    materialize their logits and refuse `streamed` at resolve."""
     weights_dtype: WeightsDtype
     """dtype for the FROZEN target weights. Only the frozen target is cast; trained V/U
     components keep their fp32 AdamW master.
@@ -135,7 +190,7 @@ class LMTargetConfig(BaseConfig):
     `float32` is a genuine option but not a free one: the masked forward promotes where
     fp32 frozen weights meet the bf16 compute V/U, so the whole recon forward runs fp32.
     That is ~2x the activation memory, and it drops off cuDNN flash attention
-    (`vendored_jax.llama.attn_implementation` selects it only for the half precisions), so
+    (`target_ports.llama.attn_implementation` selects it only for the half precisions), so
     the [B, H, T, T] scores materialize. A reference-run dtype, not a production one.
 
     Deliberately has no default: it is the largest single memory decision in the config,
@@ -202,6 +257,19 @@ class SimpleMlpCSpec(BaseConfig):
     initialization: Literal["random", "neuron_aligned"] = "random"
 
 
+class Qwen36MoeCSpec(BaseConfig):
+    """Per-matrix-type C tiled across EVERY layer (the qwen36_moe MoE family). The target
+    requires whole-grid coverage per decomposed kind, so `layers` must select all; an
+    `experts_*` C must be a multiple of `n_experts` (components are expert-local), which
+    `site_factorization` asserts at resolution. Neuron-aligned init is a GLU-anatomy
+    notion, so only random init exists here."""
+
+    kind: Literal["qwen36_moe"] = "qwen36_moe"
+    layers: LayerSelection
+    cs: dict[Qwen36MoeMatrix, PositiveInt] = Field(..., min_length=1)
+    initialization: Literal["random"] = "random"
+
+
 @dataclass(frozen=True)
 class BlockSites:
     """One transformer block's decomposed matrices, in canonical within-block (family) order.
@@ -241,7 +309,7 @@ def _select_layers(sel: LayerSelection, n_layer: int) -> tuple[int, ...]:
 
 
 def resolve_site_tree(
-    sites: GluTransformerCSpec | SimpleMlpCSpec, family: ArchFamily, n_layer: int
+    sites: "GluTransformerCSpec | SimpleMlpCSpec | Qwen36MoeCSpec", family: ArchFamily, n_layer: int
 ) -> SiteTree:
     """Tile the per-matrix-type `cs` across the selected layers into a `SiteTree`. Every block
     shares ONE `slots` tuple (canonical family order, only the requested matrices), so the tree
@@ -356,6 +424,40 @@ class ChunkwiseTransformerCiConfig(BaseConfig):
         return self
 
 
+class MoEChunkwiseTransformerCiConfig(BaseConfig):
+    """MoE chunkwise-transformer CI fn (the qwen36_moe family): each chunk covers
+    `blocks_per_chunk` consecutive target layers (one stage) and runs `n_blocks` blocks
+    of non-causal attention + a CONCAT-WIDE routed MoE FFN — one expert bank per covered
+    layer, dispatched by that layer's CAPTURED routing — plus a dense swiglu shared
+    expert. Expert-blocked sites emit NARROW `NarrowCI` bundles via per-expert heads
+    fused into the last block's expert slots; shared sites emit full-width. The chunk
+    input concatenates `input_tap`'s RMS-normed taps with one dense routing-weight
+    vector per covered layer. `n_experts`/`experts_per_token` come from the target;
+    `expert_ffn_hidden` sizes one CI expert (the target's `moe_intermediate` mirrors
+    the stage's expert parameters exactly), `shared_ffn_hidden` the shared expert."""
+
+    type: Literal["moe_chunkwise_transformer"] = "moe_chunkwise_transformer"
+    blocks_per_chunk: PositiveInt
+    input_tap: ChunkInputTap = "first_block_resid"
+    d_model: PositiveInt
+    n_blocks: PositiveInt
+    attention: CiAttentionConfig
+    expert_ffn_hidden: PositiveInt
+    shared_ffn_hidden: PositiveInt
+    learned_norm_scale: bool = Field(
+        default=False,
+        description="Learned per-channel scale on the block RMSNorms (the per-tap input "
+        "norms stay weightless). Inits to ones, so step 0 is identical to weightless.",
+    )
+
+    @model_validator(mode="after")
+    def validate_head_dim(self) -> Self:
+        n_heads = self.attention.n_heads
+        assert self.d_model % n_heads == 0, (self.d_model, n_heads)
+        assert (self.d_model // n_heads) % 2 == 0, "head_dim must be even for RoPE"
+        return self
+
+
 class GlobalMlpCiConfig(BaseConfig):
     """Global-MLP CI fn (the tPD paper's LM CI net, arXiv 2607.13047): ONE shared MLP over
     the concatenation of `input_tap`'s taps across ALL decomposed blocks, applied pointwise
@@ -368,10 +470,12 @@ class GlobalMlpCiConfig(BaseConfig):
 
 
 LMCiConfig = Annotated[
-    ChunkwiseTransformerCiConfig | GlobalMlpCiConfig, Field(discriminator="type")
+    ChunkwiseTransformerCiConfig | MoEChunkwiseTransformerCiConfig | GlobalMlpCiConfig,
+    Field(discriminator="type"),
 ]
-"""The CI-fn arches an LM run can author, both positioned: the chunkwise transformer
-(cross-position CI within a chunk) and the global MLP (pointwise per token)."""
+"""The CI-fn arches an LM run can author, all positioned: the chunkwise transformer
+(cross-position CI within a chunk), its MoE sibling (routed banks + narrow emission),
+and the global MLP (pointwise per token)."""
 
 
 class LMDecompositionConfig(BaseConfig):
@@ -381,14 +485,14 @@ class LMDecompositionConfig(BaseConfig):
     non-compiling heterogeneous decomposition is unrepresentable). The `sites.kind` family
     (glu vs simple-MLP) is checked against the target family at resolve."""
 
-    sites: Annotated[GluTransformerCSpec | SimpleMlpCSpec, Discriminator("kind")]
+    sites: Annotated[GluTransformerCSpec | SimpleMlpCSpec | Qwen36MoeCSpec, Discriminator("kind")]
     ci: LMCiConfig
 
 
 class LMExperimentConfig(ExperimentConfig):
     runtime: RuntimeConfig
     """The LM's compute substrate. Declared HERE, not on the shared base: an LM run is the
-    only domain that spans devices, nodes and a launcher, so it is the only one with a
+    only domain that spans devices and nodes, so it is the only one with a
     world size, a placement policy, remat trades and an XLA-flag surface to author."""
 
     eval: EvalConfig | None = None
@@ -472,6 +576,31 @@ convert time — a new model gets an explicit variant entry (config checked agai
 config.json), never a silent guess."""
 
 
+QWEN36_MOE_MODEL_NAME = "Qwen/Qwen3.6-35B-A3B"
+QWEN36_MOE_MODEL_CLASS = "transformers.Qwen3_5MoeForCausalLM"
+"""The one MoE checkpoint the composition implements. It is not an `HFModelVariant`:
+that registry is typed over the GLU-transformer machinery, while this target has its own
+engine (`param_decomp.targets.qwen36_moe`) — a second MoE checkpoint would generalize
+this pair into a registry of its own."""
+
+
+def _assert_qwen36_ci_taps(ci: "LMCiConfig") -> None:
+    """The qwen36_moe capture vocabulary serves residual boundaries (and site outputs),
+    not the GLU block taps, so a CI config selecting `all_block_taps` must refuse at
+    resolution rather than at first trace."""
+    assert ci.input_tap != "all_block_taps", (
+        "qwen36_moe serves residual-boundary taps only; use input_tap: first_block_resid"
+        " or all_block_resids"
+    )
+    if isinstance(ci, MoEChunkwiseTransformerCiConfig):
+        arch = qwen36_moe.qwen36_35b_a3b_config()
+        assert ci.blocks_per_chunk == arch.full_attention_interval, (
+            f"the MoE chunkwise arch chunks per STAGE ({arch.full_attention_interval} "
+            f"layers — the concat-wide banks mirror one stage's routers); got "
+            f"blocks_per_chunk={ci.blocks_per_chunk}"
+        )
+
+
 def hf_model_variant(model_name: str) -> HFModelVariant:
     assert model_name in HF_MODEL_VARIANTS, (
         f"no vendored model variant for {model_name!r}; supported: {sorted(HF_MODEL_VARIANTS)}"
@@ -480,7 +609,7 @@ def hf_model_variant(model_name: str) -> HFModelVariant:
 
 
 @dataclass(frozen=True)
-class _ResolvedDecomposition:
+class ResolvedDecomposition:
     """Target config + its block-structured `SiteTree` + arch family, resolved once and shared
     by the target's flat `.sites`, the chunkwise chunk generator, and validation. `grammar`
     is the family tap grammar bound to this target's shape (block range, residual width,
@@ -514,9 +643,21 @@ def _build_tap_grammar(
     )
 
 
+def _resolve_output_edge(edge: LMOutputEdgeConfig, vocab_size: int) -> OutputEdge:
+    match edge:
+        case MaterializedOutputEdgeConfig():
+            return MaterializedOutputEdge()
+        case StreamedOutputEdgeConfig(n_vocab_chunks=n_vocab_chunks):
+            assert vocab_size % n_vocab_chunks == 0, (
+                f"target.output_edge.n_vocab_chunks={n_vocab_chunks} must divide the "
+                f"vocab size {vocab_size}"
+            )
+            return StreamedOutputEdge(n_vocab_chunks=n_vocab_chunks)
+
+
 def resolve_decomposition(
     target_config: LMTargetConfig, decomposition: LMDecompositionConfig, data_root: Path
-) -> _ResolvedDecomposition:
+) -> ResolvedDecomposition:
     """Target spec + tiled `decomposition.sites` -> target config + `SiteTree`.
 
     HF specs resolve their variant from `HF_MODEL_VARIANTS` (all GLU-transformer targets); `kind:
@@ -525,7 +666,47 @@ def resolve_decomposition(
     asserts the c-spec's declared family matches the target's."""
     spec = target_config.spec
     sites = decomposition.sites
+    if not isinstance(sites, Qwen36MoeCSpec):
+        assert target_config.experts_execution == "routed", (
+            "target.experts_execution serves the qwen36_moe family's routed experts; "
+            f"this family has none (got {target_config.experts_execution!r})"
+        )
+        assert isinstance(target_config.output_edge, MaterializedOutputEdgeConfig), (
+            "target.output_edge `streamed` serves the qwen36_moe family only; this "
+            "family materializes its logits"
+        )
     match spec:
+        case HFTarget() if isinstance(sites, Qwen36MoeCSpec):
+            assert spec.model_name == QWEN36_MOE_MODEL_NAME, (
+                f"qwen36_moe c-specs serve only {QWEN36_MOE_MODEL_NAME!r}, got {spec.model_name!r}"
+            )
+            assert spec.model_class == QWEN36_MOE_MODEL_CLASS, spec.model_class
+            assert isinstance(sites.layers, AllLayers), (
+                "qwen36_moe requires whole-grid coverage: every layer per decomposed kind"
+                " (`layers: {kind: all}`)"
+            )
+            _assert_qwen36_ci_taps(decomposition.ci)
+            arch = qwen36_moe.qwen36_35b_a3b_config()
+            tree = resolve_site_tree(sites, qwen36_moe.FAMILY, arch.n_layer)
+            qwen36_target = Qwen36MoeTargetConfig(
+                model_name=spec.model_name,
+                sites=tree.site_cs(qwen36_moe.FAMILY.name_of),
+                weights_dtype=target_config.weights_dtype,
+                attention_implementation=target_config.attention_implementation,
+                experts_execution=target_config.experts_execution,
+                output_edge=_resolve_output_edge(target_config.output_edge, arch.vocab_size),
+                component_initialization=sites.initialization,
+            )
+            grammar = _build_tap_grammar(
+                family=qwen36_moe.FAMILY,
+                n_layer=arch.n_layer,
+                d_resid=arch.n_embd,
+                d_attention_output=arch.n_head * arch.head_dim,
+                d_mlp_hidden=arch.n_experts * arch.moe_intermediate,
+                dims_of=lambda kind: qwen36_moe.site_dims(arch, kind),
+            )
+            site_specs = qwen36_moe.qwen36_moe_site_specs(arch, qwen36_target.sites)
+            return ResolvedDecomposition(qwen36_target, tree, grammar, site_specs)
         case HFWeightsInVendored() | HFTarget():
             glu_sites = cast(GluTransformerCSpec, sites)
             match spec:
@@ -562,7 +743,7 @@ def resolve_decomposition(
                     glu_transformer.validate_neuron_aligned_capacity(
                         glu_transformer.GLU_ANATOMY, site_spec
                     )
-            return _ResolvedDecomposition(target, tree, grammar, site_specs)
+            return ResolvedDecomposition(target, tree, grammar, site_specs)
         case PretrainedTarget():
             assert spec.model_class.rsplit(".", 1)[-1] == "LlamaSimpleMLP", spec.model_class
             cache_dir = pretrain_cache.resolved_cache_dir(data_root, spec.run_path)
@@ -590,7 +771,7 @@ def resolve_decomposition(
                     glu_transformer.validate_neuron_aligned_capacity(
                         llama_simple_mlp.SIMPLE_MLP_ANATOMY, site_spec
                     )
-            return _ResolvedDecomposition(target, tree, grammar, site_specs)
+            return ResolvedDecomposition(target, tree, grammar, site_specs)
 
 
 def _chunk_input_taps(
@@ -650,19 +831,12 @@ def _resolve_chunkwise_ci_arch(
     values on both sides."""
     first_chunk_taps = _chunk_input_taps(ci.input_tap, tree.blocks[: ci.blocks_per_chunk], grammar)
     input_dim = sum(grammar.width_of(key) for key in first_chunk_taps)
-    match ci.attention:
-        case MHACiAttentionConfig():
-            attention = MHACIAttention(n_heads=ci.attention.n_heads)
-        case GQACiAttentionConfig():
-            attention = GQACIAttention(
-                n_heads=ci.attention.n_heads, n_kv_heads=ci.attention.n_kv_heads
-            )
     return ChunkwiseTransformerCIArch(
         chunks=_resolved_chunks(tree, ci.blocks_per_chunk, ci.input_tap, grammar),
         input_dim=input_dim,
         d_model=ci.d_model,
         n_blocks=ci.n_blocks,
-        attention=attention,
+        attention=_resolve_ci_attention(ci.attention),
         ffn_hidden=ci.ffn.hidden,
         ffn_kind=ci.ffn.kind,
         learned_norm_scale=ci.learned_norm_scale,
@@ -687,14 +861,84 @@ def _resolve_global_mlp_ci_arch(
     )
 
 
-LMCIFnArch = ChunkwiseTransformerCIArch | GlobalMLPCIArch
+def _resolve_ci_attention(ci_attention: CiAttentionConfig) -> MHACIAttention | GQACIAttention:
+    match ci_attention:
+        case MHACiAttentionConfig():
+            return MHACIAttention(n_heads=ci_attention.n_heads)
+        case GQACiAttentionConfig():
+            return GQACIAttention(n_heads=ci_attention.n_heads, n_kv_heads=ci_attention.n_kv_heads)
+
+
+def _resolve_moe_chunkwise_ci_arch(
+    tree: SiteTree,
+    ci: MoEChunkwiseTransformerCiConfig,
+    grammar: TransformerTapGrammar,
+) -> MoEChunkwiseTransformerCIArch:
+    """Resolve the MoE chunkwise arch: each chunk covers `blocks_per_chunk` consecutive
+    target layers, carries every covered layer's routing tap (bank r on layer r's
+    routing), and emits expert kinds as `NarrowSlot`s keyed by their in-chunk router
+    index. The qwen36_moe family is the one MoE target this composition implements —
+    its canonical shape supplies `n_experts` (as `QWEN36_MOE_MODEL_NAME` supplies the
+    checkpoint)."""
+    assert grammar.family.key == qwen36_moe.FAMILY.key, (
+        f"the MoE chunkwise CI arch serves the qwen36_moe family, got {grammar.family.key!r}"
+    )
+    target = qwen36_moe.qwen36_35b_a3b_config()
+    blocks = tree.blocks
+    assert len(blocks) % ci.blocks_per_chunk == 0, (
+        f"{len(blocks)} decomposed blocks not divisible by blocks_per_chunk={ci.blocks_per_chunk}"
+    )
+    chunks: list[MoEChunk] = []
+    for start in range(0, len(blocks), ci.blocks_per_chunk):
+        group = blocks[start : start + ci.blocks_per_chunk]
+        slots: list[MoESlot] = []
+        for router, block in enumerate(group):
+            for kind, _c in block.slots:
+                site = grammar.family.name_of(block.layer_idx, kind)
+                if qwen36_moe.is_expert_kind(kind):
+                    slots.append(NarrowSlot(site=site, router=router))
+                else:
+                    slots.append(FullSlot(site=site))
+        chunks.append(
+            MoEChunk(
+                input_taps=_chunk_input_taps(ci.input_tap, group, grammar),
+                routing=tuple(
+                    RoutingTap(
+                        ids_key=qwen36_moe.router_idx_tap_key(block.layer_idx),
+                        weights_key=qwen36_moe.router_weights_tap_key(block.layer_idx),
+                    )
+                    for block in group
+                ),
+                slots=tuple(slots),
+            )
+        )
+    first = chunks[0]
+    input_dim = sum(grammar.width_of(key) for key in first.input_taps) + (
+        len(first.routing) * target.n_experts
+    )
+    return MoEChunkwiseTransformerCIArch(
+        chunks=tuple(chunks),
+        input_dim=input_dim,
+        d_model=ci.d_model,
+        n_blocks=ci.n_blocks,
+        attention=_resolve_ci_attention(ci.attention),
+        n_experts=target.n_experts,
+        expert_ffn_hidden=ci.expert_ffn_hidden,
+        shared_ffn_hidden=ci.shared_ffn_hidden,
+        learned_norm_scale=ci.learned_norm_scale,
+        # the CI experts mirror the target's MoE grid, and run the same production arm
+        grouped_matmul_backend=qwen36_moe.GROUPED_MATMUL_BACKEND,
+    )
+
+
+LMCIFnArch = ChunkwiseTransformerCIArch | MoEChunkwiseTransformerCIArch | GlobalMLPCIArch
 """What `LMCiConfig` resolves to — the arches an LM run (and its stored-run consumers)
 can carry."""
 
 
 def resolve_lm_ci_arch(
     tree: SiteTree,
-    ci: ChunkwiseTransformerCiConfig | GlobalMlpCiConfig,
+    ci: ChunkwiseTransformerCiConfig | MoEChunkwiseTransformerCiConfig | GlobalMlpCiConfig,
     grammar: TransformerTapGrammar,
 ) -> LMCIFnArch:
     """The one authored-CI → resolved-arch seam: every LM build route (train, targeted,
@@ -703,6 +947,8 @@ def resolve_lm_ci_arch(
     match ci:
         case ChunkwiseTransformerCiConfig():
             return _resolve_chunkwise_ci_arch(tree, ci, grammar)
+        case MoEChunkwiseTransformerCiConfig():
+            return _resolve_moe_chunkwise_ci_arch(tree, ci, grammar)
         case GlobalMlpCiConfig():
             return _resolve_global_mlp_ci_arch(tree, ci, grammar)
 
@@ -737,15 +983,15 @@ def _assert_supported_weights_dtype(target: AnyLMTargetConfig) -> None:
 
 
 def _assert_placement_claims(
-    resolved: _ResolvedDecomposition,
+    resolved: ResolvedDecomposition,
     runtime: RuntimeConfig,
     ci_fn: LMCIFnArch,
     pd: PDConfigBase,
 ) -> None:
     """The config-build placement gate (SPEC D4 amendment 2026-07-21): construct the
-    run's `PlacementRules` at the mesh shape `runtime.{dp,tp}` implies, firing the
-    per-semantic-group persist-vs-zero1 assignment and the sharding spec's bidirectional
-    claim where the resolved site set and the declared topology first coexist — at
+    run's `PlacementRules` at the declared `runtime.mesh` shape, firing the
+    per-semantic-group tiling refusals and the preset↔mesh-axes claim where the
+    resolved site set and the declared topology first coexist — at
     pre-submit validation and at every in-job /
     consumer config build. The composition root's `placement.from_config` at the
     concrete mesh is the same construction; nothing decides later or deeper.
@@ -753,7 +999,7 @@ def _assert_placement_claims(
     divisibility here too (a `kv_head` assignment the CI arch's K/V head count cannot
     tile refuses pre-submit, not on the GPUs)."""
     match ci_fn:
-        case ChunkwiseTransformerCIArch():
+        case ChunkwiseTransformerCIArch() | MoEChunkwiseTransformerCIArch():
             pass
         case GlobalMLPCIArch():
             assert not isinstance(runtime.sharding, PlacementTableConfig), (
@@ -764,22 +1010,32 @@ def _assert_placement_claims(
             )
     rules = placement.from_config(
         runtime.sharding,
-        hsdp_abstract_mesh(runtime.replicate, runtime.fsdp, runtime.tp),
+        abstract_mesh_for_shape(runtime.mesh),
         resolved.site_specs,
+        sequence_sharding=runtime.sequence_sharding,
     )
-    resolve_ci_placement(ci_fn, rules)
-    # The muon-stacked staging claims fire pre-submit ONLY for an optimizer that will
-    # consume the ns_compute rows — a non-muon run keeps any-stack-length placement
+    ci_placement = resolve_ci_placement(ci_fn, rules)
+    # The muon staging claims fire pre-submit ONLY for an optimizer that will consume the
+    # ns_compute rows — a non-muon run keeps any-stack-length placement
     # (run_state.build_optimizers re-fires the same claims at the consumer boundary).
     match pd.components_optimizer:
-        case MuonOptimizerConfig(impl="stacked"):
+        case MuonOptimizerConfig():
             placement.assert_stacked_muon_component_staging(rules)
-        case _:
+        case AdamWOptimizerConfig():
             pass
-    match (pd.ci_fn_optimizer, ci_fn):
-        case (MuonOptimizerConfig(impl="stacked"), ChunkwiseTransformerCIArch()):
-            placement.assert_stacked_muon_ci_staging(rules, len(ci_fn.chunks))
-        case _:
+    match pd.ci_fn_optimizer:
+        case MuonOptimizerConfig():
+            match ci_fn:
+                case ChunkwiseTransformerCIArch():
+                    assert ci_placement is not None
+                    placement.assert_stacked_muon_ci_staging(ci_placement)
+                case MoEChunkwiseTransformerCIArch():
+                    assert ci_placement is not None
+                    placement.assert_stacked_muon_moe_ci_staging(ci_placement, ci_fn.n_experts)
+                case GlobalMLPCIArch():
+                    # Runs unplaced and stages replicated: no ns_compute rows to claim.
+                    pass
+        case AdamWOptimizerConfig():
             pass
 
 
@@ -787,15 +1043,15 @@ def _assert_batch_size(name: str, batch_size: int, runtime: RuntimeConfig) -> No
     n_data = runtime.data_parallel_size
     assert batch_size >= n_data and batch_size % n_data == 0, (
         f"{name}={batch_size} must be a positive multiple of effective data-parallel size "
-        f"{n_data} (mesh={runtime.replicate}×{runtime.fsdp}×{runtime.tp})"
+        f"{n_data} (mesh={runtime.mesh})"
     )
 
 
 def assert_placement_claims(
     cfg: "LMExperimentConfig | LMTargetedExperimentConfig", data_root: Path
 ) -> None:
-    """Standalone spelling of the placement gate for submitters' pre-submit validation and
-    the repo-config parse gate; both build routes run it on every build."""
+    """Standalone placement gate for callers that validate before starting a run and for
+    the repository config parse gate; both build routes run it on every build."""
     resolved = resolve_decomposition(cfg.target, cfg.decomposition, data_root)
     _assert_placement_claims(
         resolved,
@@ -862,7 +1118,7 @@ def build_from_schema(
 ) -> tuple[LMRun, LMExperimentConfig]:
     """Validate a single self-contained LM run config (the canonical `LMExperimentConfig`
     schema) and convert it to the engine's `BuiltRun` bundle. `run_id` is the minted run
-    identity (the launcher's CLI arg, or the run-dir name when reloading a finished run).
+    identity (the entry point's CLI arg, or the run-dir name when reloading a finished run).
 
     The authored config comes back alongside the bundle: `runtime` lives there, and the
     composition root threads it into the engine explicitly (the bundle is core's, and core

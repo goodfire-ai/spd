@@ -92,6 +92,7 @@ def test_cache_round_trip_matches_decomposition_loader():
         target = lsm.load_target_from_pretrain_cache(cache, loaded_cfg, jnp.float32)
         idx = jnp.arange(2 * 16, dtype=jnp.int32).reshape(2, 16) % mc.vocab_size
         loaded_logits = run_clean(target, idx)
+        assert isinstance(loaded_logits, jax.Array)
         assert jnp.allclose(loaded_logits, model(idx), atol=1e-4)
 
 

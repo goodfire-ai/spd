@@ -7,12 +7,10 @@ obligation: each schema change must migrate it, forever. Seats are capped at
 
 ## Why committing sweep configs adds nothing
 
-A launched run's config provenance already lives in three places, none of them
-the repo tree:
+A launched run's config provenance already lives outside the repo tree:
 
 1. the run dir's pinned `launch_config.yaml` (immutable; resume byte-compares it),
-2. the git snapshot ref `refs/runs/snapshot/<id>` taken at submit,
-3. the wandb run config.
+2. the W&B run config, when W&B logging is enabled.
 
 So a sweep/profile/one-off yaml committed "for the record" records nothing —
 it only rots. Launch one-offs from your workspace (`python -m param_decomp.experiments.lm.run <path>`
@@ -24,15 +22,15 @@ run directories carry the exact configs.
 | seat | file | purpose |
 |---|---|---|
 | llama8b L18 | `param_decomp/experiments/lm/configs/llama8b_l18_C49k_200k.yaml` | the L18-MLP decomposition flagship recipe |
-| llama8b full-model | `param_decomp/experiments/lm/configs/llama8b_full32L_HSDP_b64_dp64.yaml` | the full-32L production TP1 recipe; TP variants are derived from the performance-benchmark seat rather than committed as additional configs |
-| save-path smoke | `param_decomp/experiments/lm/configs/llama8b_full32L_HSDP_b32_dp32_SAVESMOKE.yaml` | cheap end-to-end save/resume smoke launch |
 | config-suite fixture | `param_decomp/experiments/lm/configs/llama8b_l18_b128_cmp32.yaml` | the representative full config the core config/resume tests load (`test_config.py`, `test_finetune_resume.py`, `test_llama_simple_mlp.py`) |
 | chunkwise fixture | `param_decomp/experiments/lm/configs/llama8b_l18-26_9layer_chunkwise.yaml` | the 27-site chunkwise CI-fn config `test_config.py` converts |
-| ss 2L SimpleMLP | `param_decomp/experiments/lm/configs/ss_llama_simple_mlp-2L.yaml` | current JAX reference for the 2L SimpleStories VPD target (dp=1); reproduces [p-5926d125](https://wandb.ai/goodfire/param-decomp-ss2l-repro/runs/p-5926d125) |
-| pile 4L VPD reference | `param_decomp/experiments/lm/configs/pile_llama_simple_mlp-4L.yaml` | current JAX reference for the VPD paper target; reproduces [p-76082aa1](https://wandb.ai/goodfire/param-decomp/runs/p-76082aa1) |
+| pile 4L VPD reference | `param_decomp/experiments/lm/configs/pile_llama_simple_mlp-4L.yaml` | current JAX reference for the VPD paper target; reproduces [p-8383f5e5](https://wandb.ai/goodfire/param-decomp/runs/p-8383f5e5) |
 | full32 performance benchmark | `param_decomp/experiments/lm/configs/profile_llama8b_full32_adam.yaml` | canonical faith-on base for derivable, matched H100 communication profiles; the checked-in file is maintained, while generated topology variants remain launch-local |
 | tPD L18 arithmetic | `param_decomp/experiments/lm/configs/llama8b_l18_arith_targeted.yaml` | the tPD (SPEC §11) L18 modular-addition recipe; the targeted-schema fixture `test_lm_targeted.py` loads |
-| tPD full-model arithmetic | `param_decomp/experiments/lm/configs/llama8b_full32L_arith_targeted.yaml` | the full-32L tPD modular-addition recipe (every layer at low C) |
+| qwen36 large-capacity reference | `param_decomp/experiments/lm/configs/qwen36_35b_cpe512_dp8tp8.yaml` | large-capacity reference: c_per_expert 512 (C = 131,072/site), MoE chunkwise CI with narrow emission, smooth-L0, batch-shared sources, and batch 32×512 |
+| qwen36 large-capacity reference (bsc) | `param_decomp/experiments/lm/configs/qwen36_35b_cpe512_bsc_dp8tp8.yaml` | the large-capacity seat with per-example `bsc` sources (uint16 fixed-point values, stochastic-rounding stores, and momentum SGD), a streamed output edge, and command-buffer capture |
+| qwen36 compact reference | `param_decomp/experiments/lm/configs/qwen36_35b_cpe128_b32_dp8tp8.yaml` | smaller-capacity reference with c_per_expert 128, CI width 2048, and batch 32×512 |
+| qwen36 tPD arithmetic | `param_decomp/experiments/lm/configs/qwen36_35b_tpd_arith_cpe128_dp8tp8.yaml` | targeted decomposition (SPEC §11) of a single-digit addition pool, with c_per_expert 128, narrow MoE CI, Muon components, uint16 momentum sources, and mesh {data: 8, tp: 8} |
 
 The toy testbeds (`param_decomp/experiments/tms/configs/`,
 `param_decomp/experiments/resid_mlp/configs/`) and the pretrain configs
@@ -96,6 +94,10 @@ chunk over all 4 blocks); git history keeps both.
    CI-enforced by the parse gate's `test_seats_carry_names_never_locations`.
    Known tracked exception: `resume_provenance.parent_run_dir` is an absolute
    path that should be a run id.
+6. **Every LM seat authors its `target.output_edge`.** The edge is a required field, so
+   a pin always says which logits its run compared. Prefer `streamed` wherever the
+   family supports it (today: qwen36_moe) — no full-vocab logits buffer, fp32-accumulated
+   logits; the GLU/Llama families materialize and refuse `streamed` at resolve.
 
 ## Case history
 
@@ -104,7 +106,7 @@ chunk over all 4 blocks); git history keeps both.
 - **#966**: the counter-example — carve migration shipped as an in-repo,
   executed tool covering every live repo yaml.
 - **#982**: 25 sweep yamls in one PR — the accumulation pattern this policy
-  ends. The sweeps' findings live in lore; the run dirs pin their configs.
+  ends. Durable experiment records retain the findings; the run dirs pin their configs.
 - **dataset-name schema** (2026-07-27): the whole HF-costume `data:` block →
   `data: {kind: name, name} | {kind: dir, dir}` — the block IS the dataset ref
   (2026-07-30: nested to `data: {train, eval}`, each a required dataset ref;
@@ -118,7 +120,7 @@ chunk over all 4 blocks); git history keeps both.
   wrong on every other — plus a hand-declared `tokenizer_name` nothing read. Both are
   gone: `data:` is the same `DatasetRef` the LM seats carry, moved to
   `infra.dataset_store` so the pretrainer never imports `experiments/lm/`, resolved
-  against the run's stamped root. The launcher's `out_dir` stamp (`<data_root>/runs`)
+  against the run's stamped root. The former `out_dir` stamp (`<data_root>/runs`)
   became a `data_root` stamp, the trainer having already been recovering the root as
   `out_dir.parent`. The tokenizer is the dataset's own fact, in its `meta.json`. The
   parse gate now covers the pretrain seats.

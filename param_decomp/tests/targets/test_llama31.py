@@ -14,6 +14,7 @@ import pytest
 
 from param_decomp.core.adversary import (
     PersistentAdversary,
+    SourcesAdamState,
     init_persistent_sources,
     init_sources_adam_state,
 )
@@ -25,6 +26,7 @@ from param_decomp.core.ci_fn import (
 )
 from param_decomp.core.components import (
     ComponentStacks,
+    Dense,
     SiteC,
     SiteSpec,
     init_component_stacks,
@@ -56,6 +58,7 @@ from param_decomp.core.train import (
     make_faith_warmup_step,
     make_train_step,
 )
+from param_decomp.target_ports.llama import LlamaConfig
 from param_decomp.targets.glu_transformer import (
     GLUDecomposedModel,
     canonical_site_cs,
@@ -67,6 +70,7 @@ from param_decomp.targets.glu_transformer import (
 from param_decomp.targets.testing import (
     capture_clean,
     capture_site_outputs,
+    materialized_logits,
     run_clean,
     run_masked,
     tiny_glu_cfg,
@@ -79,7 +83,6 @@ from param_decomp.targets.transformer_taps import (
     mlp_hidden_tap_key,
     mlp_input_tap_key,
 )
-from param_decomp.vendored_jax.llama import LlamaConfig
 
 
 def _mlp_sites(cfg: LlamaConfig, first: int, last: int, C: int) -> tuple[SiteSpec, ...]:
@@ -218,7 +221,11 @@ def test_frozen_component_activations_match_captured_inputs_times_v():
 
     requested_keys = ("resid.0", attention_input_tap_key(4))
     forward_result, actual = model.component_activation_forward(
-        prepared_weights, tokens, capture_keys=frozenset(requested_keys), placement=None
+        prepared_weights,
+        tokens,
+        sites=model.site_names,
+        capture_keys=frozenset(requested_keys),
+        placement=None,
     )
     assert set(forward_result.captures) == set(requested_keys)
     input_keys = tuple(_site_input_key(site) for site in model.site_names)
@@ -232,10 +239,12 @@ def test_frozen_component_activations_match_captured_inputs_times_v():
         layer, kind = parse_site_name(site)
         V = prepared_weights[kind]["V"][layer]
         expected = site_inputs[site].astype(V.dtype) @ V
+        value = actual[site]
+        assert isinstance(value, jax.Array), site
         # Same bf16-reassociation bound as above: the forward's in-scan x@V vs a direct matmul.
-        assert jnp.allclose(
-            actual[site].astype(jnp.float32), expected.astype(jnp.float32), atol=1e-2
-        ), site
+        assert jnp.allclose(value.astype(jnp.float32), expected.astype(jnp.float32), atol=1e-2), (
+            site
+        )
 
 
 @pytest.mark.parametrize("first,last", [(4, 4), (3, 6)])
@@ -248,7 +257,7 @@ def test_clean_path_and_masked_identity(first: int, last: int):
     b, t = 2, 16
     tokens = jax.random.randint(jax.random.PRNGKey(2), (b, t), 0, cfg.vocab_size)
 
-    clean = run_clean(model, tokens)
+    clean = materialized_logits(run_clean(model, tokens))
     assert clean.shape == (b, t, cfg.vocab_size)
 
     # Masks=1, delta=1, route-everywhere reconstructs the frozen path up to
@@ -256,15 +265,17 @@ def test_clean_path_and_masked_identity(first: int, last: int):
     names = model.site_names
     ones_masks = {s: jnp.ones((b, t, C)) for s in names}
     ones_delta = {s: jnp.ones((b, t)) for s in names}
-    full = run_masked(
-        model,
-        model.prepare_compute_weights(vu, None),
-        tokens,
-        ones_masks,
-        ones_delta,
-        None,
-        True,
-        remat=False,
+    full = materialized_logits(
+        run_masked(
+            model,
+            model.prepare_compute_weights(vu, None),
+            tokens,
+            ones_masks,
+            ones_delta,
+            None,
+            True,
+            remat=False,
+        )
     )
     assert jnp.allclose(clean, full, atol=1e-4), "mask=1 identity drifted"
 
@@ -298,19 +309,21 @@ def test_attention_sites_clean_and_masked_identity():
         assert site_components.V.shape == (spec.d_in, spec.C)
         assert site_components.U.shape == (spec.C, spec.d_out)
 
-    clean = run_clean(model, tokens)
+    clean = materialized_logits(run_clean(model, tokens))
     names = model.site_names
     ones_masks = {s.name: jnp.ones((b, t, s.C)) for s in model.sites}
     ones_delta = {s: jnp.ones((b, t)) for s in names}
-    full = run_masked(
-        model,
-        model.prepare_compute_weights(vu, None),
-        tokens,
-        ones_masks,
-        ones_delta,
-        None,
-        True,
-        remat=False,
+    full = materialized_logits(
+        run_masked(
+            model,
+            model.prepare_compute_weights(vu, None),
+            tokens,
+            ones_masks,
+            ones_delta,
+            None,
+            True,
+            remat=False,
+        )
     )
     assert jnp.allclose(clean, full, atol=1e-4), "mask=1 identity drifted (attention sites)"
 
@@ -321,15 +334,17 @@ def test_attention_sites_clean_and_masked_identity():
     assert q_site in names
     zero_mask = {n: jnp.zeros((b, t, site_c[n])) for n in names}
     zero_delta = {n: jnp.zeros((b, t)) for n in names}
-    ablated = run_masked(
-        model,
-        model.prepare_compute_weights(vu, None),
-        tokens,
-        zero_mask,
-        zero_delta,
-        None,
-        True,
-        remat=False,
+    ablated = materialized_logits(
+        run_masked(
+            model,
+            model.prepare_compute_weights(vu, None),
+            tokens,
+            zero_mask,
+            zero_delta,
+            None,
+            True,
+            remat=False,
+        )
     )
     assert not jnp.allclose(clean, ablated, atol=1e-4), "ablating layer 4 did nothing"
 
@@ -359,9 +374,11 @@ def test_clean_output_and_activations_shares_the_forward():
     resid_taps = tuple(f"resid.{i}" for i in range(cfg.n_layer + 1))
     wanted = resid_taps + model._capture_grammar().block_tap_keys((3, 4, 5, 6))
     clean_forward_result = model.clean_forward(tokens, frozenset(wanted), placement=None)
-    logits = clean_forward_result.output
+    logits = materialized_logits(clean_forward_result.output)
     taps = clean_forward_result.captures
-    assert jnp.array_equal(logits, run_clean(model, tokens)), "fused clean logits drifted"
+    assert jnp.array_equal(logits, materialized_logits(run_clean(model, tokens))), (
+        "fused clean logits drifted"
+    )
     separate = capture_clean(model, tokens, wanted)
     assert set(taps) == set(wanted)
     for key in wanted:
@@ -381,16 +398,18 @@ def test_o_site_masks_attention_output():
     b, t = 2, 16
     tokens = jax.random.randint(jax.random.PRNGKey(2), (b, t), 0, cfg.vocab_size)
 
-    clean = run_clean(model, tokens)
-    ones = run_masked(
-        model,
-        model.prepare_compute_weights(vu, None),
-        tokens,
-        {o_site: jnp.ones((b, t, 8))},
-        {o_site: jnp.ones((b, t))},
-        None,
-        True,
-        remat=False,
+    clean = materialized_logits(run_clean(model, tokens))
+    ones = materialized_logits(
+        run_masked(
+            model,
+            model.prepare_compute_weights(vu, None),
+            tokens,
+            {o_site: jnp.ones((b, t, 8))},
+            {o_site: jnp.ones((b, t))},
+            None,
+            True,
+            remat=False,
+        )
     )
     assert jnp.allclose(clean, ones, atol=1e-4)
     # o's clean site input is the pre-o_proj attention output, shape (b, t, qd)
@@ -419,8 +438,7 @@ def test_step_trains_and_has_vpd_signature(site_cs: tuple[SiteC, ...]):
     )
 
     src = init_persistent_sources(
-        model.site_names,
-        tuple(s.C for s in model.sites),
+        model.sites,
         (1, seq),
         jnp.float32,
         jax.random.PRNGKey(3),
@@ -449,7 +467,7 @@ def test_step_trains_and_has_vpd_signature(site_cs: tuple[SiteC, ...]):
                     sources=src,
                     opt_state=init_sources_adam_state(src),
                     state_key=ppgd_cfg.type,
-                    adam=ppgd_cfg.optimizer,
+                    optimizer=ppgd_cfg.optimizer,
                     n_warmup=ppgd_cfg.n_warmup_steps,
                 )
             },
@@ -492,7 +510,7 @@ def test_step_trains_and_has_vpd_signature(site_cs: tuple[SiteC, ...]):
         components_optimizer=opt_vu,
         ci_fn_optimizer=opt_ci,
         total_steps=100,
-        faithfulness=faithfulness_loss_for(model),
+        faithfulness=faithfulness_loss_for(placed),
     )
 
     tokens = jax.random.randint(jax.random.PRNGKey(4), (2, seq), 0, cfg.vocab_size)
@@ -511,6 +529,7 @@ def test_step_trains_and_has_vpd_signature(site_cs: tuple[SiteC, ...]):
     assert int(state.training.step) == n_steps
     # SPEC S13: n_warmup + 1 source-Adam updates per training step, moments persist.
     ppgd_adv = state.training.adversaries["PersistentPGDReconLoss"]
+    assert isinstance(ppgd_adv.opt_state, SourcesAdamState)
     assert float(ppgd_adv.opt_state.step_count) == n_steps * (n_warmup + 1)
     # SPEC S15: sources stay projected to [0,1].
     for v in jax.tree.leaves(ppgd_adv.sources):
@@ -534,7 +553,7 @@ def test_faith_warmup_decreases_faith():
     )
     vu = init_component_stacks(sites, jax.random.PRNGKey(1))
     opt = optax.adamw(1e-2, weight_decay=0.0)
-    wstep = make_faith_warmup_step(opt, faithfulness_loss_for(placed.model))
+    wstep = make_faith_warmup_step(opt, faithfulness_loss_for(placed))
     ostate = opt.init(eqx.filter(vu, eqx.is_array))
     first_loss: float | None = None
     loss = None
@@ -635,7 +654,7 @@ def test_fresh_pgd_adversary_step():
             components_optimizer=opt_vu,
             ci_fn_optimizer=opt_ci,
             total_steps=100,
-            faithfulness=faithfulness_loss_for(model),
+            faithfulness=faithfulness_loss_for(placed),
         )
         tokens = jax.random.randint(jax.random.PRNGKey(4), (2, seq), 0, cfg.vocab_size)
         return step(placed, state, tokens, jax.random.PRNGKey(100))
@@ -669,7 +688,9 @@ def test_chunkwise_ci_init_vmap_matches_unrolled_reference():
     kinds = (("self_attn.q_proj", 8), ("self_attn.v_proj", 12), ("mlp.down_proj", 16))
     n_chunks = 3
     sites = tuple(
-        SiteSpec(f"layers.{i}.{k}", 24, 24, c, k) for i in range(n_chunks) for k, c in kinds
+        SiteSpec(f"layers.{i}.{k}", Dense(d_in=24, d_out=24, C=c), k)
+        for i in range(n_chunks)
+        for k, c in kinds
     )
     arch = ChunkwiseTransformerCIArch(
         chunks=tuple(
@@ -705,3 +726,73 @@ def test_chunkwise_ci_init_vmap_matches_unrolled_reference():
     ):
         assert got.shape == want.shape and got.dtype == want.dtype
         assert jnp.array_equal(got, want)
+
+
+def test_glu_source_masking_matches_materialized_masks_bit_identically():
+    """The GLU family's `SourceMasking` arm (eager stacked composition,
+    `_attach_per_kind_sources`) vs the committed spelling (`masks_from_sources` →
+    `MaterializedMasking`): output and grads w.r.t. V/U, the CI envelope, and the float
+    source view BIT-identical under one jit — the arm re-spells the same S1 composition
+    at the stacked geometry. Subset sites exercise the dummy-filler rows; `sc` uint16
+    sources exercise the broadcast lead axes and the fixed-point dequant seam."""
+    import numpy as np
+
+    from param_decomp.core.adversary import (
+        Sources,
+        init_persistent_sources,
+        source_values_to_float,
+    )
+    from param_decomp.core.masking import masks_from_sources, source_value_cis
+    from param_decomp.core.model import SourceMasking
+    from param_decomp.core.train import model_cotangents_scaled
+
+    cfg = tiny_glu_cfg()
+    batch, seq = 2, 16
+    sites = _mlp_sites(cfg, 2, 6, 8)
+    model = tiny_glu_decomposed_lm(cfg, sites, jax.random.PRNGKey(0))
+    vu = init_component_stacks(sites, jax.random.PRNGKey(1))
+    prepared = model.prepare_compute_weights(vu, None)
+    tokens = jax.random.randint(jax.random.PRNGKey(2), (batch, seq), 0, cfg.vocab_size)
+    ci_lower = {
+        spec.name: jax.random.uniform(
+            jax.random.fold_in(jax.random.PRNGKey(3), idx), (batch, seq, spec.C), jnp.bfloat16
+        )
+        for idx, spec in enumerate(sites)
+    }
+    stored = init_persistent_sources(model.sites, (1, seq), jnp.uint16, jax.random.PRNGKey(4))
+    coeff = 0.5
+
+    def out_loss(masking: MaterializedMasking | SourceMasking) -> jax.Array:
+        out = model.masked_forward(
+            prepared, tokens, masking=masking, placement=None, remat=True
+        ).output
+        return jnp.sum(materialized_logits(out).astype(jnp.float32) ** 2)
+
+    def loss_eager(args: tuple[dict[str, jax.Array], Sources]) -> jax.Array:
+        lower, sources = args
+        masks, deltas = masks_from_sources(model_cotangents_scaled(lower, coeff), sources)
+        return out_loss(
+            MaterializedMasking(component_masks=masks, weight_delta_masks=deltas, routes=None)
+        )
+
+    def loss_recipe(args: tuple[dict[str, jax.Array], Sources]) -> jax.Array:
+        lower, sources = args
+        values, deltas = source_value_cis(lower, sources)
+        return out_loss(
+            SourceMasking(
+                ci_stacked=model_cotangents_scaled(model.stack_ci(lower), coeff),
+                source_values_stacked=model.stack_ci(values),
+                delta_values_stacked=model.stack_ci(deltas),
+                routes=None,
+            )
+        )
+
+    args = (ci_lower, source_values_to_float(stored).per_site())
+    eager_loss, eager_grads = eqx.filter_jit(eqx.filter_value_and_grad(loss_eager))(args)
+    recipe_loss, recipe_grads = eqx.filter_jit(eqx.filter_value_and_grad(loss_recipe))(args)
+    np.testing.assert_array_equal(np.asarray(eager_loss), np.asarray(recipe_loss))
+    eager_leaves = jax.tree.leaves(eager_grads)
+    recipe_leaves = jax.tree.leaves(recipe_grads)
+    assert eager_leaves and len(eager_leaves) == len(recipe_leaves)
+    for eager_leaf, recipe_leaf in zip(eager_leaves, recipe_leaves, strict=True):
+        np.testing.assert_array_equal(np.asarray(eager_leaf), np.asarray(recipe_leaf))

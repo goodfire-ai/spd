@@ -43,10 +43,14 @@ import param_decomp.core.losses as core_losses_mod
 import param_decomp.core.masking as masking_mod
 import param_decomp.core.train as train_mod
 import param_decomp.targets.losses as losses_mod
-from param_decomp.core.adversary import SiteSource, split_source_channels
+from param_decomp.core.adversary import SiteSource, full_source_components
+from param_decomp.core.components import require_full_emission
 from param_decomp.core.masking import masks_from_sources
-from param_decomp.targets.testing import run_masked
-from param_decomp.tests.targets.equivalence.jax_equivalence import compute_jax_terms
+from param_decomp.targets.testing import materialized_logits, run_masked
+from param_decomp.tests.targets.equivalence.jax_equivalence import (
+    compute_jax_terms,
+    split_packed_fixture,
+)
 
 HERE = Path(__file__).resolve().parent
 RTOL = 2e-4
@@ -103,9 +107,10 @@ def test_structure_recon_is_kl_not_mse() -> None:
 
 def test_structure_ppgd_has_delta_channel() -> None:
     """SPEC S1: component sources are interpolated; delta sources are raw masks."""
-    src = inspect.getsource(masking_mod.masks_from_sources)
-    assert "source.components" in src and "source.delta" in src
-    assert "ci + (1.0 - ci) * source.components" in src, (
+    ingredients = inspect.getsource(masking_mod.source_value_cis)
+    assert "source.components" in ingredients and "source.delta" in ingredients
+    compose = inspect.getsource(masking_mod.compose_source_mask)
+    assert "ci + (1.0 - ci) * source_values" in compose, (
         "ppgd must interpolate mask=ci+(1-ci)*source"
     )
 
@@ -195,23 +200,26 @@ def test_sc_source_broadcasts_over_batch_in_masked_forward() -> None:
     packed_source = per_site_sc("ppgd_source")  # (1, T, C+1) per site
     for s in model.site_names:
         assert packed_source[s].shape == (1, T, packed_source[s].shape[-1])
-    source = {site: split_source_channels(value) for site, value in packed_source.items()}
+    source = {site: split_packed_fixture(value) for site, value in packed_source.items()}
 
     masks, delta_masks = masks_from_sources(ci_lower, source)
     # `ci + (1-ci)*src` lifts the sc mask to the CI's batch dim; delta stays sc.
     for s in model.site_names:
-        assert masks[s].shape[0] == B and masks[s].shape[1] == T, masks[s].shape
+        mask = require_full_emission(masks[s])
+        assert mask.shape[0] == B and mask.shape[1] == T, mask.shape
         assert delta_masks[s].shape == (1, T), delta_masks[s].shape
 
-    pred = run_masked(
-        model,
-        model.prepare_compute_weights(vu, None),
-        resid,
-        masks,
-        delta_masks,
-        None,
-        True,
-        remat=False,
+    pred = materialized_logits(
+        run_masked(
+            model,
+            model.prepare_compute_weights(vu, None),
+            resid,
+            masks,
+            delta_masks,
+            None,
+            True,
+            remat=False,
+        )
     )
     assert pred.shape == (B, T, vocab), pred.shape
 
@@ -219,10 +227,10 @@ def test_sc_source_broadcasts_over_batch_in_masked_forward() -> None:
     # broadcast against the `(B, T, C)` ci. The time axis is load-bearing, not interchangeable.
     bt_transposed_packed = {s: packed_source[s][:, :B, :] for s in model.site_names}
     bt_transposed = {
-        site: split_source_channels(value) for site, value in bt_transposed_packed.items()
+        site: split_packed_fixture(value) for site, value in bt_transposed_packed.items()
     }
     for s in model.site_names:
-        assert bt_transposed[s].components.shape[:2] == (1, B)
+        assert full_source_components(bt_transposed[s].components).shape[:2] == (1, B)
     with pytest.raises(Exception):  # noqa: B017 — broadcast error, framework-specific type
         bad_masks, bad_delta = masks_from_sources(ci_lower, bt_transposed)
         run_masked(

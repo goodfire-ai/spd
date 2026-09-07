@@ -129,14 +129,12 @@ def _build_sharded(seed: int):
     )
     opt_vu = optax.chain(optax.clip_by_global_norm(0.01), optax.adamw(1e-3, weight_decay=0.0))
     opt_ci = optax.adamw(1e-3, weight_decay=0.0)
-    site_cs = tuple(s.C for s in model.sites)
     ppgd_cfgs = (_persistent_cfg(None), _persistent_cfg("ppgd_second"))
     adversaries: dict[str, PersistentAdversary] = {}
     for i, (state_key, ppgd_cfg) in enumerate(zip(PERSISTENT_TERMS, ppgd_cfgs, strict=True)):
         assert ppgd_cfg.coeff is not None
         src = init_sources_sharded(
-            model.site_names,
-            site_cs,
+            model.sites,
             Positioned(seq),
             "sc",
             mesh.devices.size,
@@ -148,6 +146,7 @@ def _build_sharded(seed: int):
         # A direct Adam ascent creates the same state shape with deterministic values that
         # differ between the saved and restore-reference seeds, without any collectives.
         opt_state = init_sources_adam_state(src)
+        assert isinstance(ppgd_cfg.optimizer, AdamPGDConfig)
         sources, opt_state = sources_adam_ascend_project(
             src,
             jax.tree.map(partial(jnp.full_like, fill_value=seed + i + 1), src),
@@ -159,7 +158,7 @@ def _build_sharded(seed: int):
             sources=sources,
             opt_state=opt_state,
             state_key=state_key,
-            adam=ppgd_cfg.optimizer,
+            optimizer=ppgd_cfg.optimizer,
             n_warmup=ppgd_cfg.n_warmup_steps,
         )
     state = TrainState(
@@ -181,22 +180,21 @@ def _build_sharded(seed: int):
 
 
 def _assert_moments_present(adversaries: dict[str, PersistentAdversary]) -> None:
-    """SPEC S22/S23: every persistent term carries m, v (one leaf per source site, same
-    shape as the source) and a non-zero step_count."""
+    """SPEC S22/S23: every persistent term carries m, v (mirroring the source stacks
+    leaf-for-leaf, same shapes) and a non-zero step_count."""
     assert tuple(adversaries) == PERSISTENT_TERMS, adversaries.keys()
     for term in PERSISTENT_TERMS:
         adv = adversaries[term]
         adam = adv.opt_state
         assert isinstance(adam, SourcesAdamState)
-        assert set(adam.m) == set(adv.sources), (term, adam.m.keys())
-        assert set(adam.v) == set(adv.sources), (term, adam.v.keys())
-        for site, src in adv.sources.items():
-            assert jax.tree.map(lambda x: x.shape, adam.m[site]) == jax.tree.map(
-                lambda x: x.shape, src
-            ), (term, site)
-            assert jax.tree.map(lambda x: x.shape, adam.v[site]) == jax.tree.map(
-                lambda x: x.shape, src
-            ), (term, site)
+        source_structure = jax.tree.structure(adv.sources)
+        assert jax.tree.structure(adam.m) == source_structure, term
+        assert jax.tree.structure(adam.v) == source_structure, term
+        for moment in (adam.m, adam.v):
+            for moment_leaf, source_leaf in zip(
+                jax.tree.leaves(moment), jax.tree.leaves(adv.sources), strict=True
+            ):
+                assert moment_leaf.shape == source_leaf.shape, term
         assert float(adam.step_count) > 0.0, (term, float(adam.step_count))
 
 
@@ -216,6 +214,8 @@ def test_sharded_roundtrip_persists_source_moments(tmp_path: Path):
     for term in PERSISTENT_TERMS:
         saved_adam = state.training.adversaries[term].opt_state
         reference_adam = fresh.training.adversaries[term].opt_state
+        assert isinstance(saved_adam, SourcesAdamState)
+        assert isinstance(reference_adam, SourcesAdamState)
         assert any(
             not np.array_equal(np.asarray(saved), np.asarray(reference))
             for saved, reference in zip(

@@ -18,8 +18,8 @@ from param_decomp.core.ci_fn import (
     build_ci_fn,
     init_chunkwise_transformer_ci_fn,
 )
-from param_decomp.core.components import SiteSpec
-from param_decomp.vendored_jax.llama import apply_rope, repeat_kv, rope_cos_sin
+from param_decomp.core.components import Dense, SiteSpec, require_full_emission
+from param_decomp.target_ports.llama import apply_rope, repeat_kv, rope_cos_sin
 
 
 def _arch(attention: CIAttention, sites: tuple[SiteSpec, ...]) -> ChunkwiseTransformerCIArch:
@@ -36,8 +36,8 @@ def _arch(attention: CIAttention, sites: tuple[SiteSpec, ...]) -> ChunkwiseTrans
 
 
 SITES = (
-    SiteSpec("layers.0.q_proj", 12, 12, 3, "q_proj"),
-    SiteSpec("layers.0.mlp", 12, 12, 5, "mlp"),
+    SiteSpec("layers.0.q_proj", Dense(d_in=12, d_out=12, C=3), "q_proj"),
+    SiteSpec("layers.0.mlp", Dense(d_in=12, d_out=12, C=5), "mlp"),
 )
 
 
@@ -148,7 +148,8 @@ def test_gqa_ci_fn_runs_end_to_end():
     taps = {"resid.0": jax.random.normal(jax.random.PRNGKey(1), (2, 6, 12))}
     ci = ci_fn(taps, remat=False, placement=None)
     for site in SITES:
-        for squashed in (ci.preactivations[site.name], ci.lower[site.name], ci.upper[site.name]):
+        for value in (ci.preactivations[site.name], ci.lower[site.name], ci.upper[site.name]):
+            squashed = require_full_emission(value)
             assert squashed.shape == (2, 6, site.C), squashed.shape
             assert jnp.isfinite(squashed).all()
 

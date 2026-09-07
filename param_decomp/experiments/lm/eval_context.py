@@ -27,6 +27,7 @@ from param_decomp.core.recon import ForwardObservations
 from param_decomp.core.run import EvalInvocation
 from param_decomp.core.sharding import batch_shard_leading
 from param_decomp.experiments.lm.eval import PreparedLMBatch
+from param_decomp.targets.lm_output import LMOutput
 
 
 @dataclass(frozen=True)
@@ -47,27 +48,29 @@ class LMBatchContext:
     recompute their fp32 views from `ci.preactivations`, preserving each metric's exact
     numerics. Its per-batch residency matches what the training step already
     materializes. `captures` holds only the operations' declared demands — the CI taps
-    are consumed inside the context step and never leave it."""
+    are consumed inside the context step and never leave it. `clean_output` is the
+    target's output edge as spelled — materialized logits or the streamed package — so
+    every consumer dispatches on the union."""
 
     pass_index: int
     batch_index: int
     tokens: Array
-    clean_output: Array
+    clean_output: LMOutput
     captures: dict[str, Array]
     ci: CI
     prepared_weights: Any
 
 
 type LMBatchContextStep = Callable[
-    [PlacedModel, ComponentStacks, PlacedCIFn, Array],
-    tuple[Array, Array, dict[str, Array], CI, Any],
+    [PlacedModel[LMOutput], ComponentStacks, PlacedCIFn, Array],
+    tuple[Array, LMOutput, dict[str, Array], CI, Any],
 ]
 """`(model, components, placed_ci_fn, token_ids) -> (tokens, clean_output, captures, ci,
 prepared_weights)`. `model` (frozen-weight-bearing) is the jit ARG."""
 
 
 def make_lm_batch_context_step(
-    model_static: PlacedModel,
+    model_static: PlacedModel[LMOutput],
     ci_capture_keys: CaptureKeys,
     operation_capture_keys: CaptureKeys,
     mesh: Mesh | None,
@@ -79,8 +82,11 @@ def make_lm_batch_context_step(
     capture_keys = ci_capture_keys | operation_capture_keys
 
     def context_step(
-        model: PlacedModel, components: ComponentStacks, placed_ci_fn: PlacedCIFn, token_ids: Array
-    ) -> tuple[Array, Array, dict[str, Array], CI, Any]:
+        model: PlacedModel[LMOutput],
+        components: ComponentStacks,
+        placed_ci_fn: PlacedCIFn,
+        token_ids: Array,
+    ) -> tuple[Array, LMOutput, dict[str, Array], CI, Any]:
         tokens = batch_shard_leading(token_ids, mesh)
         result = model.clean_forward(tokens, capture_keys)
         # No batch-sharding constraint on `ci.lower`: under the Explicit mesh the CI
@@ -89,7 +95,7 @@ def make_lm_batch_context_step(
         ci = evaluate_ci(
             placed_ci_fn, select_captures(result.captures, ci_capture_keys), remat=False
         )
-        clean_output = batch_shard_leading(result.output, mesh)
+        clean_output = model.pin_output_batch(result.output, mesh)
         captures = select_captures(result.captures, operation_capture_keys)
         return tokens, clean_output, captures, ci, prepare_compute_weights(model, components)
 
@@ -97,7 +103,7 @@ def make_lm_batch_context_step(
 
 
 def make_lm_batch_contexts(
-    context_step: LMBatchContextStep, model: PlacedModel
+    context_step: LMBatchContextStep, model: PlacedModel[LMOutput]
 ) -> Callable[[LMEvalPass], Iterator[LMBatchContext]]:
     def batch_contexts(eval_pass: LMEvalPass) -> Iterator[LMBatchContext]:
         decomposition = eval_pass.state.decomposition

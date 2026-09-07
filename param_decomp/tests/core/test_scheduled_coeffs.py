@@ -8,10 +8,10 @@ import pytest
 
 from param_decomp.core.adversary import (
     PersistentAdversary,
-    SiteSource,
     init_persistent_sources,
     init_sources_adam_state,
 )
+from param_decomp.core.components import Dense, SiteSpec
 from param_decomp.core.configs import (
     AdamPGDConfig,
     FaithfulnessLossConfig,
@@ -173,31 +173,25 @@ class TestModelCotangentsScaled:
         assert jnp.array_equal(jax.grad(loss)(x, jnp.asarray(0.0)), jnp.zeros_like(x))
 
     def test_final_ascend_is_one_plain_adam_ascent(self):
-        sources = init_persistent_sources(("a",), (4,), (1, 1), jnp.float32, jax.random.PRNGKey(0))
+        site = SiteSpec(name="a", factorization=Dense(d_in=4, d_out=4, C=4), group="g")
+        sources = init_persistent_sources((site,), (1, 1), jnp.float32, jax.random.PRNGKey(0))
         adv = PersistentAdversary(
             sources=sources,
             opt_state=init_sources_adam_state(sources),
             state_key="k",
-            adam=AdamPGDConfig(lr_schedule=ScheduleConfig.constant(0.1)),
+            optimizer=AdamPGDConfig(lr_schedule=ScheduleConfig.constant(0.1)),
             n_warmup=0,
         )
-        grad_array = jax.random.normal(jax.random.PRNGKey(2), (1, 1, 5))
-        grad = {"a": SiteSource(grad_array[..., :-1], grad_array[..., -1])}
-        out = adv.final_ascend(grad, _frac(0.0))
-        via_helper = adv.after_one_adam_ascent(grad, _frac(0.0))
+        grad = jax.tree.map(lambda a: jax.random.normal(jax.random.PRNGKey(2), a.shape), sources)
+        out = adv.final_ascend(grad, _frac(0.0), jax.random.PRNGKey(0))
+        via_helper = adv.after_one_ascent(grad, _frac(0.0), jax.random.PRNGKey(0))
         assert all(
             jnp.array_equal(a, b)
             for a, b in zip(
-                jax.tree.leaves(out.sources["a"]),
-                jax.tree.leaves(via_helper.sources["a"]),
-                strict=True,
+                jax.tree.leaves(out.sources), jax.tree.leaves(via_helper.sources), strict=True
             )
         )
         assert any(
             not jnp.array_equal(a, b)
-            for a, b in zip(
-                jax.tree.leaves(out.sources["a"]),
-                jax.tree.leaves(adv.sources["a"]),
-                strict=True,
-            )
+            for a, b in zip(jax.tree.leaves(out.sources), jax.tree.leaves(adv.sources), strict=True)
         )

@@ -47,7 +47,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [llama-goldens, core, lab-multidevice]
+        shard:
+          - llama-goldens
+          - core-engine
+          - core-targets
+          - lab-lm
+          - lab-pipeline
+          - multidevice-placement
+          - multidevice-worlds
+          - multidevice-routed
+          - multidevice-evals
+          - multidevice-substrate
     name: build (${{ matrix.shard }})
     runs-on: ubuntu-latest
     permissions:
@@ -112,8 +122,12 @@ jobs:
       - name: Run ruff format
         run: uv run ruff format .
 
+      # Disable core dumps: one process holding eight simulated devices' executables
+      # can dump multiple GB and leave no room to save the compile cache.
       - name: Run tests
-        run: make test-ci-${{ matrix.shard }}
+        run: |
+          ulimit -c 0
+          make test-ci-${{ matrix.shard }}
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
           OMPI_ALLOW_RUN_AS_ROOT: 1

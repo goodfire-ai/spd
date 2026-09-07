@@ -26,9 +26,10 @@ import numpy as np
 
 jax.config.update("jax_enable_x64", False)
 
-from param_decomp.core.adversary import split_source_channels  # noqa: E402
+from param_decomp.core.adversary import SiteSource  # noqa: E402
 from param_decomp.core.components import component_stacks_from_sites  # noqa: E402
 from param_decomp.core.masking import masks_from_sources  # noqa: E402
+from param_decomp.target_ports.llama import LlamaConfig  # noqa: E402
 from param_decomp.targets.glu_transformer import (  # noqa: E402
     MLP_KINDS,
     FrozenAttn,
@@ -40,8 +41,11 @@ from param_decomp.targets.glu_transformer import (  # noqa: E402
     site_name,
 )
 from param_decomp.targets.losses import kl_per_position  # noqa: E402
-from param_decomp.targets.testing import run_clean, run_masked  # noqa: E402
-from param_decomp.vendored_jax.llama import LlamaConfig  # noqa: E402
+from param_decomp.targets.testing import (  # noqa: E402
+    materialized_logits,
+    run_clean,
+    run_masked,
+)
 
 HERE = Path(__file__).resolve().parent
 RTOL = 2e-4
@@ -52,6 +56,12 @@ ATOL = 1e-5
 # reference is fp32). The production step runs bf16 compute; here we isolate the loss
 # MATH from bf16 rounding (a bf16 forward agrees with torch only to ~1e-3).
 FP = jnp.float32
+
+
+def split_packed_fixture(packed: jnp.ndarray) -> SiteSource:
+    """The frozen torch goldens store sources PACKED `[.., C+1]` (their era's layout);
+    unpack into the explicit-field spelling at the fixture boundary."""
+    return SiteSource(components=packed[..., :-1], delta=packed[..., -1])
 
 
 def _zero_attn(d: int, _di: int) -> FrozenAttn:
@@ -137,7 +147,7 @@ def compute_jax_terms(f: dict[str, np.ndarray]) -> dict[str, float]:
     model, vu, n_layers = _build(f)
     resid = jnp.asarray(f["resid"], dtype=FP)
 
-    clean = jax.lax.stop_gradient(run_clean(model, resid))
+    clean = jax.lax.stop_gradient(materialized_logits(run_clean(model, resid)))
 
     # fixtures key CI per kind as (B, T, L, C); the trainer keys per site.
     def per_site(prefix: str) -> dict[str, jnp.ndarray]:
@@ -148,19 +158,21 @@ def compute_jax_terms(f: dict[str, np.ndarray]) -> dict[str, float]:
 
     # ---- ppgd (FIXED sources) ----
     source = {
-        site: split_source_channels(jnp.asarray(packed))
+        site: split_packed_fixture(jnp.asarray(packed))
         for site, packed in per_site("ppgd_source").items()
     }
     masks, delta_masks = masks_from_sources(ci_lower, source)
-    pred = run_masked(
-        model,
-        model.prepare_compute_weights(vu, None),
-        resid,
-        masks,
-        delta_masks,
-        None,
-        True,
-        remat=False,
+    pred = materialized_logits(
+        run_masked(
+            model,
+            model.prepare_compute_weights(vu, None),
+            resid,
+            masks,
+            delta_masks,
+            None,
+            True,
+            remat=False,
+        )
     )
     ppgd = float(kl_per_position(pred, clean))
 

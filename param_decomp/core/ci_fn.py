@@ -28,7 +28,8 @@ which is position-local by construction (see `ChunkwiseTransformerCIArch`).
 """
 
 import math
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from typing import Literal, Protocol, runtime_checkable
 
 import einops
@@ -40,20 +41,48 @@ from jax.sharding import PartitionSpec as P
 from jaxtyping import Array, Float, Int, PRNGKeyArray
 
 from param_decomp.core.axes import Axes, MeshAxis, SemanticAxis
-from param_decomp.core.components import SiteSpec, activation_axes
+from param_decomp.core.components import (
+    ExpertBlocked,
+    NarrowCI,
+    SiteCI,
+    SiteSpec,
+    activation_axes,
+    map_site_ci,
+)
 from param_decomp.core.linear_plan import placed_linear, value_mesh
 from param_decomp.core.model import CaptureKeys
 from param_decomp.core.placement import (
     CIFnPlacement,
+    CIFnRows,
     CIWeightFamily,
     CIWeightPlacement,
     PlacedRule,
     PlacementRules,
+    StackCensus,
+    batch_axes,
     materialize_reduced_weights,
     ns_staging_sharding,
+    resolve_stack_census,
+    strip_stack_pad,
+    validate_stacked_leaf,
 )
 from param_decomp.core.precision import COMPUTE_DT, cast_floating
-from param_decomp.vendored_jax.llama import (
+from param_decomp.routed.experts import (
+    ExpertShardedJobs,
+    GroupedMatmulBackend,
+    RoutedJobs,
+    combine_jobs,
+    ep_combine_jobs,
+    ep_gather_tokens,
+    ep_grouped_matmul,
+    ep_unsort_jobs,
+    expert_sharded_jobs,
+    gather_tokens,
+    grouped_matmul,
+    routed_jobs,
+    unsort_jobs,
+)
+from param_decomp.target_ports.llama import (
     apply_rope,
     attn_implementation,
     rms_norm,
@@ -64,8 +93,12 @@ CI_FN_RMS_EPS = float(jnp.finfo(jnp.float32).eps)
 """Matches torch's `F.rms_norm` default eps (`finfo(fp32).eps` ~1.19e-7); RMS upcasts to
 fp32 internally, so this is the dtype that governs (SPEC S4)."""
 
-SiteDict = dict[str, Float[Array, "*leading C"]]
-"""Per-output-site tensor keyed by OUTPUT site name."""
+
+SiteDict = dict[str, SiteCI]
+"""Per-output-site CI value keyed by OUTPUT site name: full `[*leading, C]` arrays for
+dense sites, `NarrowCI` bundles for expert-blocked narrow-emitting sites
+(`components.SiteCI` / `components.NarrowCI`)."""
+
 
 _StoredCIAxes = tuple[SemanticAxis, SemanticAxis, SemanticAxis]
 # Attention keeps per-projection axes: q/o carry the query head axis, k/v the K/V head
@@ -129,11 +162,11 @@ class CI:
     upper: SiteDict
 
     @staticmethod
-    def from_preactivations(preactivations: SiteDict) -> "CI":
+    def from_preactivations(preactivations: "Mapping[str, SiteCI]") -> "CI":
         return CI(
-            preactivations=preactivations,
-            lower={k: lower_leaky_hard_sigmoid(v) for k, v in preactivations.items()},
-            upper={k: upper_leaky_hard_sigmoid(v) for k, v in preactivations.items()},
+            preactivations=dict(preactivations),
+            lower={k: map_site_ci(lower_leaky_hard_sigmoid, v) for k, v in preactivations.items()},
+            upper={k: map_site_ci(upper_leaky_hard_sigmoid, v) for k, v in preactivations.items()},
         )
 
 
@@ -200,19 +233,32 @@ def evaluate_padded_ci(
 
 
 def materialize_ci_compute_weights(placed_ci_fn: PlacedCIFn) -> PlacedCIFn:
+    """The CI fn's entry: fp32 masters → compute dtype → every stacked leaf to its
+    compute row with the chunk stack's persist pads stripped on the way
+    (`_reconstruct_ci_compute_weights`), so the fn the forward scans carries ONLY real
+    chunks (`_resident_chunk_stack`)."""
     compute_ci_fn = cast_floating(placed_ci_fn.fn, COMPUTE_DT)
-    if isinstance(compute_ci_fn, ChunkwiseTransformerCIFn):
-        chunks = _reconstruct_ci_compute_weights(compute_ci_fn.chunks, placed_ci_fn.placement)
-        return PlacedCIFn(
-            fn=eqx.tree_at(lambda f: f.chunks, compute_ci_fn, chunks),
-            placement=placed_ci_fn.placement,
-        )
-    # Bypass protection: `resolve_ci_placement` never pairs an MLP fn with rows, so a
-    # placed non-chunkwise bundle can only be a hand-built mispairing.
-    assert placed_ci_fn.placement is None, (
-        f"CI placement rows require a chunkwise transformer, got {type(placed_ci_fn.fn)}"
-    )
-    return PlacedCIFn(fn=compute_ci_fn, placement=None)
+    placement = placed_ci_fn.placement
+    match compute_ci_fn:
+        case ChunkwiseTransformerCIFn():
+            chunks = _reconstruct_ci_compute_weights(compute_ci_fn.chunks, placement)
+            return PlacedCIFn(
+                fn=_resident_chunk_stack(compute_ci_fn, chunks, placement), placement=placement
+            )
+        case MoEChunkwiseTransformerCIFn():
+            chunks = _reconstruct_moe_ci_compute_weights(compute_ci_fn.chunks, placement)
+            return PlacedCIFn(
+                fn=_resident_chunk_stack(compute_ci_fn, chunks, placement), placement=placement
+            )
+        case LayerwiseMLPCIFn() | GlobalMLPCIFn():
+            # Bypass protection: `resolve_ci_placement` never pairs an MLP fn with rows,
+            # so a placed non-chunkwise bundle can only be a hand-built mispairing.
+            assert placement is None, (
+                f"CI placement rows require a chunkwise transformer, got {type(compute_ci_fn)}"
+            )
+            return PlacedCIFn(fn=compute_ci_fn, placement=None)
+        case _:
+            raise AssertionError(f"unknown CI fn {type(compute_ci_fn)}")
 
 
 def ci_preactivations(placed_ci_fn: PlacedCIFn, taps: dict[str, Array], *, remat: bool) -> SiteDict:
@@ -311,6 +357,109 @@ CIFfnKind = Literal["gelu", "swiglu"]
 rescales it — the width is the config author's to state."""
 
 
+def _attention_half(
+    x: Float[Array, "b t d"],
+    *,
+    wq: Array,
+    wk: Array,
+    wv: Array,
+    wo: Array,
+    attention: CIAttention,
+    inv_freq: Array,
+    norm_scale: Array | None,
+    eps: float,
+    placement: CIFnPlacement | None,
+    valid_token_count: Int[Array, ""] | None,
+) -> Array:
+    """The pre-norm bidirectional-RoPE attention half of a CI block, residual included —
+    shared verbatim by the dense and MoE blocks. `valid_token_count` masks right-padding
+    out of attention (the padded prompt-analysis path)."""
+    t = x.shape[1]
+    h = _rms_norm_maybe_scaled(x, norm_scale, eps)
+
+    def heads(  # [b, t, d] -> [b, nh, t, hd]  (RoPE layout)
+        w: Array, n_head: int, stored_axes: _StoredCIAxes
+    ) -> Array:
+        proj = _ci_linear(
+            h,
+            w,
+            placement,
+            "attention",
+            stored_axes[1:],
+            transposed=True,
+        )
+        if not value_mesh(proj).empty:
+            # Type the head split: the flat head dim's assignment (tp) lands on the
+            # HEAD axis — an untyped reshape may park it on head_dim, which the
+            # attention contraction then cannot resolve. Both head counts tile their
+            # assignments by construction (`resolve_ci_placement` refuses otherwise),
+            # so the assignment carries through unconditionally.
+            mesh = value_mesh(proj)
+            proj_spec = jax.typeof(proj).sharding.spec
+            return jax.lax.reshape(
+                proj,
+                (*proj.shape[:2], n_head, proj.shape[2] // n_head),
+                out_sharding=NamedSharding(mesh, P(*proj_spec[:2], proj_spec[2], None)),
+            ).transpose(0, 2, 1, 3)
+        return einops.rearrange(proj, "b t (nh hd) -> b nh t hd", nh=n_head)
+
+    q = heads(wq, attention.n_heads, CI_ATTN_Q_AXES)
+    kv = attention.n_kv_heads
+    k, v = heads(wk, kv, CI_ATTN_KV_AXES), heads(wv, kv, CI_ATTN_KV_AXES)
+    cos, sin = rope_cos_sin(inv_freq, t, x.dtype)
+    q, k = apply_rope(q, k, cos, sin)  # cos/sin broadcast over the head axis: any count
+    qt, kt, vt = (einops.rearrange(a, "b nh t hd -> b t nh hd") for a in (q, k, v))
+    # cuDNN flash on GPU (its partitioner requires device-local heads — true here, no
+    # head-sharding); XLA elsewhere (CPU tests have no cuDNN). Bidirectional. Fewer K/V
+    # heads than query heads is GQA, grouped natively by dot_product_attention.
+    impl = attn_implementation("auto", jax.default_backend(), qt.dtype, t)
+    sequence_lengths = (
+        None
+        if valid_token_count is None
+        else jnp.full((x.shape[0],), valid_token_count, dtype=jnp.int32)
+    )
+    if value_mesh(qt).empty:
+        y = jax.nn.dot_product_attention(
+            qt,
+            kt,
+            vt,
+            is_causal=False,
+            query_seq_lengths=sequence_lengths,
+            key_value_seq_lengths=sequence_lengths,
+            implementation=impl,
+        )
+    else:
+        # The XLA arm's internals (vmap + einsum) don't preserve explicit-sharding
+        # typing across their batch dims, so run the call under auto axes and re-type
+        # the output with the operands' own (identical) sharding. The sequence lengths
+        # ride as an operand (None when unpadded) so both arms share one padding spelling.
+        def attention_under_auto(operands: tuple[Array, Array, Array, Array | None]) -> Array:
+            q, k, v, lengths = operands
+            return jax.nn.dot_product_attention(
+                q,
+                k,
+                v,
+                is_causal=False,
+                query_seq_lengths=lengths,
+                key_value_seq_lengths=lengths,
+                implementation=impl,
+            )
+
+        out_sharding = NamedSharding(value_mesh(qt), jax.typeof(qt).sharding.spec)
+        y = jax.sharding.auto_axes(attention_under_auto, out_sharding=out_sharding)(
+            (qt, kt, vt, sequence_lengths)
+        )
+        assert isinstance(y, jax.Array), type(y)
+    return x + _ci_linear(
+        einops.rearrange(y, "b t nh hd -> b t (nh hd)"),
+        wo,
+        placement,
+        "attention",
+        CI_ATTN_OUT_AXES[1:],
+        transposed=True,
+    )
+
+
 class CIBlock(eqx.Module):
     """Pre-norm block: RMSNorm → bidirectional RoPE attention → residual;
     RMSNorm → FFN (`gelu` or `swiglu`) → residual.
@@ -384,67 +533,19 @@ class CIBlock(eqx.Module):
         placement: CIFnPlacement | None,
         valid_token_count: Int[Array, ""] | None,
     ) -> Array:
-        t = x.shape[1]
         attn_scale, mlp_scale = (None, None) if self.norm_scales is None else self.norm_scales
-        h = _rms_norm_maybe_scaled(x, attn_scale, self.eps)
-
-        def heads(  # [b, t, d] -> [b, nh, t, hd]  (RoPE layout)
-            w: Array, n_head: int, stored_axes: _StoredCIAxes
-        ) -> Array:
-            proj = _ci_linear(
-                h,
-                w,
-                placement,
-                "attention",
-                stored_axes[1:],
-                transposed=True,
-            )
-            if not value_mesh(proj).empty:
-                # Type the head split: the flat head dim's assignment (tp) lands on the
-                # HEAD axis — an untyped reshape may park it on head_dim, which the
-                # attention contraction then cannot resolve. Both head counts tile their
-                # assignments by construction (`resolve_ci_placement` refuses otherwise),
-                # so the assignment carries through unconditionally.
-                mesh = value_mesh(proj)
-                proj_spec = jax.typeof(proj).sharding.spec
-                return jax.lax.reshape(
-                    proj,
-                    (*proj.shape[:2], n_head, proj.shape[2] // n_head),
-                    out_sharding=NamedSharding(mesh, P(*proj_spec[:2], proj_spec[2], None)),
-                ).transpose(0, 2, 1, 3)
-            return einops.rearrange(proj, "b t (nh hd) -> b nh t hd", nh=n_head)
-
-        q = heads(self.wq, self.attention.n_heads, CI_ATTN_Q_AXES)
-        kv = self.attention.n_kv_heads
-        k, v = heads(self.wk, kv, CI_ATTN_KV_AXES), heads(self.wv, kv, CI_ATTN_KV_AXES)
-        cos, sin = rope_cos_sin(inv_freq, t, x.dtype)
-        q, k = apply_rope(q, k, cos, sin)  # cos/sin broadcast over the head axis: any count
-        qt, kt, vt = (einops.rearrange(a, "b nh t hd -> b t nh hd") for a in (q, k, v))
-        # cuDNN flash on GPU (its partitioner requires device-local heads — true here, no
-        # head-sharding); XLA elsewhere (CPU tests have no cuDNN). Bidirectional. Fewer K/V
-        # heads than query heads is GQA, grouped natively by dot_product_attention.
-        impl = attn_implementation("auto", jax.default_backend(), qt.dtype, t)
-        sequence_lengths = (
-            None
-            if valid_token_count is None
-            else jnp.full((x.shape[0],), valid_token_count, dtype=jnp.int32)
-        )
-        y = jax.nn.dot_product_attention(
-            qt,
-            kt,
-            vt,
-            is_causal=False,
-            query_seq_lengths=sequence_lengths,
-            key_value_seq_lengths=sequence_lengths,
-            implementation=impl,
-        )
-        x = x + _ci_linear(
-            einops.rearrange(y, "b t nh hd -> b t (nh hd)"),
-            self.wo,
-            placement,
-            "attention",
-            CI_ATTN_OUT_AXES[1:],
-            transposed=True,
+        x = _attention_half(
+            x,
+            wq=self.wq,
+            wk=self.wk,
+            wv=self.wv,
+            wo=self.wo,
+            attention=self.attention,
+            inv_freq=inv_freq,
+            norm_scale=attn_scale,
+            eps=self.eps,
+            placement=placement,
+            valid_token_count=valid_token_count,
         )
         h = _rms_norm_maybe_scaled(x, mlp_scale, self.eps)
         up = (
@@ -652,59 +753,56 @@ def ns_compute_shardings(
 def _reconstruct_ci_compute_weights(
     chunks: "ChunkTransformer", placement: CIFnPlacement | None
 ) -> "ChunkTransformer":
-    """Transition persistent CI weights to their declared resident-compute rows.
-
-    Equal rows are communication-free. Staged weights may remain FSDP-sharded so operand
-    materialization occurs per block inside the scan. No-op off-mesh."""
+    """The stacked chunk module's entry: every weight leaf from its persist row to its
+    compute row with the chunk stack's pads stripped on the way
+    (`materialize_reduced_weights` — the leaves arrive compute-dtype, the whole fn is
+    cast first), every vector leaf's pads stripped in place (`strip_stack_pad`: the
+    vectors row is their persist AND compute layout, whole on the stack axis). The
+    leaves are enumerated by name; `_resident_chunk_stack` checks every leaf's extent so
+    one this list misses cannot reach the scan padded. No-op off-mesh."""
     if jax.sharding.get_abstract_mesh().empty:
         return chunks
     assert placement is not None, "on-mesh CI compute-weight materialization requires placement"
-    attention, ffn, in_proj, output = (
-        placement.attention,
-        placement.ffn,
-        placement.input,
-        placement.output,
-    )
+    census = placement.chunks
 
-    def pin(x: Array, weights: CIWeightPlacement, axes: Axes) -> Array:
-        # x arrives already compute-dtype (the whole fn is cast before reconstruction), so
-        # the gather's collective moves bf16 bytes, not the f32 master's —
-        # materialize_reduced_weights barriers the cast ahead of the collective.
+    def enter(x: Array, weights: CIWeightPlacement, axes: Axes) -> Array:
         return materialize_reduced_weights(
             x,
+            census=census,
             source=weights.optimizer_state,
             destination=weights.compute_weights,
             axes=axes,
         )
 
-    def pin_block(blk: CIBlock) -> CIBlock:
-        # The vector leaves (biases, the swiglu gate bias, norm scales) have no separate
-        # compute row: they stay at their persistence layout (the ci_fn/vectors row).
-        pinned = eqx.tree_at(
-            lambda b: (b.wq, b.wk, b.wv, b.wo, b.w1, b.w2),
-            blk,
-            (
-                pin(blk.wq, attention, CI_ATTN_Q_AXES),
-                pin(blk.wk, attention, CI_ATTN_KV_AXES),
-                pin(blk.wv, attention, CI_ATTN_KV_AXES),
-                pin(blk.wo, attention, CI_ATTN_OUT_AXES),
-                pin(blk.w1, ffn, CI_FFN_IN_AXES),
-                pin(blk.w2, ffn, CI_FFN_OUT_AXES),
-            ),
-        )
-        if blk.gate is not None:
-            pinned = eqx.tree_at(lambda b: b.gate[0], pinned, pin(blk.gate[0], ffn, CI_FFN_IN_AXES))
-        return pinned
+    def vector(x: Array) -> Array:
+        return strip_stack_pad(x, census)
 
-    pinned_blocks = [pin_block(blk) for blk in chunks.blocks]
-    return eqx.tree_at(
-        lambda ct: (ct.in_proj_w, ct.blocks, ct.out_ws),
+    def block(blk: CIBlock) -> CIBlock:
+        return replace(
+            blk,
+            wq=enter(blk.wq, placement.attention, CI_ATTN_Q_AXES),
+            wk=enter(blk.wk, placement.attention, CI_ATTN_KV_AXES),
+            wv=enter(blk.wv, placement.attention, CI_ATTN_KV_AXES),
+            wo=enter(blk.wo, placement.attention, CI_ATTN_OUT_AXES),
+            w1=enter(blk.w1, placement.ffn, CI_FFN_IN_AXES),
+            b1=vector(blk.b1),
+            w2=enter(blk.w2, placement.ffn, CI_FFN_OUT_AXES),
+            b2=vector(blk.b2),
+            gate=None
+            if blk.gate is None
+            else (enter(blk.gate[0], placement.ffn, CI_FFN_IN_AXES), vector(blk.gate[1])),
+            norm_scales=None
+            if blk.norm_scales is None
+            else (vector(blk.norm_scales[0]), vector(blk.norm_scales[1])),
+        )
+
+    return replace(
         chunks,
-        (
-            pin(chunks.in_proj_w, in_proj, CI_INPUT_AXES),
-            pinned_blocks,
-            tuple(pin(w, output, CI_OUTPUT_AXES) for w in chunks.out_ws),
-        ),
+        in_proj_w=enter(chunks.in_proj_w, placement.input, CI_INPUT_AXES),
+        in_proj_b=vector(chunks.in_proj_b),
+        blocks=[block(blk) for blk in chunks.blocks],
+        out_ws=tuple(enter(w, placement.output, CI_OUTPUT_AXES) for w in chunks.out_ws),
+        out_bs=tuple(vector(b) for b in chunks.out_bs),
     )
 
 
@@ -716,18 +814,23 @@ class ChunkwiseTransformerCIFn(eqx.Module):
     and an identical per-slot C tuple — same C-per-output-site ORDER) so the stack, including
     the per-slot output heads, is rectangular — asserted at init."""
 
-    chunks: ChunkTransformer  # arrays stacked along leading n_chunks
+    chunks: ChunkTransformer  # arrays stacked along leading n_chunks (+ stack_pad)
     inv_freq: Array  # shared across chunks (RoPE buffer); NOT mapped
 
     capture_keys: CaptureKeys = eqx.field(static=True)
     output_names: tuple[str, ...] = eqx.field(static=True)  # all sites, flat
     chunk_meta: tuple[_ChunkMeta, ...] = eqx.field(static=True)  # per-chunk routing
+    stack_pad: int = eqx.field(static=True)
+    """The persist-layer PAD slots trailing the real chunks on every `chunks` leaf
+    (`pad_ci_fn`) — enumerated here, never shape-inferred; `chunk_meta` never names
+    them. `0` on every unplaced fn and on the compute residents the forward scans."""
     eps: float = eqx.field(static=True)
     has_position_axis: bool = eqx.field(static=True)
 
     def shardings(self, mesh: Mesh, placement: CIFnPlacement) -> "ChunkwiseTransformerCIFn":
-        """The stacked per-chunk transformer's HSDP layout (`ChunkTransformer.shardings`,
-        leading `n_chunks` axis un-sharded); `inv_freq` (a 1-D RoPE buffer) replicates."""
+        """The stacked per-chunk transformer's persist layout (`ChunkTransformer.shardings`
+        at the padded chunk extent); `inv_freq` (a 1-D RoPE buffer) replicates."""
+        _validate_chunk_stack(self, placement.chunks, self.chunks.in_proj_w.shape[0])
         return eqx.tree_at(
             lambda f: (f.chunks, f.inv_freq),
             self,
@@ -771,6 +874,10 @@ class ChunkwiseTransformerCIFn(eqx.Module):
         placement: CIFnPlacement | None,
         valid_token_count: Int[Array, ""] | None,
     ) -> CI:
+        assert self.stack_pad == 0, (
+            f"the chunk scan runs the compute residents, which carry no persist pads "
+            f"(got stack_pad={self.stack_pad}); enter through materialize_ci_compute_weights"
+        )
         per_chunk_in = [
             jnp.concatenate(
                 [
@@ -967,9 +1074,939 @@ def init_chunkwise_transformer_ci_fn(
         capture_keys=arch.capture_keys,
         output_names=tuple(name for ch in arch.chunks for name in ch.output_sites),
         chunk_meta=tuple(_ChunkMeta(ch.input_taps, ch.output_sites) for ch in arch.chunks),
+        stack_pad=0,
         eps=CI_FN_RMS_EPS,
         has_position_axis=True,
     )
+
+
+# ------------------- MoE chunkwise transformer (routed narrow emission) -------------------
+# The chunkwise transformer's sibling for MoE targets: blocks mirror the target's MoE
+# stage (non-causal attention + concat-wide routed-expert FFN banks reusing the target's
+# CAPTURED per-token routing), and expert-blocked output sites are scored NARROWLY —
+# per-(router, expert) head blocks fused into the expert slots, emitting `NarrowCI`
+# bundles rather than the unmaterializable full `[*leading, C]`.
+
+
+CI_EXPERT_FFN_IN_AXES: Axes = ("stack", "expert", "d_model", "ffn_hidden")
+CI_EXPERT_FFN_OUT_AXES: Axes = ("stack", "expert", "ffn_hidden", "d_model")
+CI_EXPERT_HEAD_AXES: Axes = ("stack", "expert", "ffn_hidden", "C_block")
+
+
+@dataclass(frozen=True)
+class RoutingTap:
+    """One target MoE layer's captured routing, as two input taps: `ids_key` resolves to
+    the top-k expert ids `[*leading, k]` (integer) and `weights_key` to the renormalized
+    routing weights `[*leading, k]`, in the target's stored top-k order. Captured from
+    the CLEAN forward like every other CI input tap, so the values arrive stop-gradded;
+    the CI fn never routes for itself."""
+
+    ids_key: str
+    weights_key: str
+
+
+@dataclass(frozen=True)
+class FullSlot:
+    """A chunk output site scored by a dense `[d_model, C]` head — full emission."""
+
+    site: str
+
+
+@dataclass(frozen=True)
+class NarrowSlot:
+    """An expert-blocked output site, scored narrowly under router `router` (an index
+    into the chunk's `routing`): its head blocks dispatch on exactly that target layer's
+    top-k — the per-(layer, expert) parameter identity."""
+
+    site: str
+    router: int
+
+
+MoESlot = FullSlot | NarrowSlot
+
+
+@dataclass(frozen=True)
+class MoEChunk:
+    """One resolved MoE chunk: the input taps to concatenate, the routing tap of EVERY
+    target layer the chunk covers (each block's concat-wide expert banks dispatch on
+    all of them, and each routing also enters the chunk input as a dense weight
+    vector), and the output slots in emission order. Authored lab-side; core treats
+    every key as opaque."""
+
+    input_taps: tuple[str, ...]
+    routing: tuple[RoutingTap, ...]
+    slots: tuple[MoESlot, ...]
+
+    @property
+    def output_sites(self) -> tuple[str, ...]:
+        return tuple(slot.site for slot in self.slots)
+
+
+@dataclass(frozen=True)
+class MoEChunkwiseTransformerCIArch:
+    """Resolved MoE chunkwise-transformer arch. Each chunk covers one target stage and
+    runs `n_blocks` blocks of non-causal RoPE attention + a CONCAT-WIDE MoE FFN: one
+    `n_experts` swiglu bank per covered target layer (`len(chunk.routing)` banks, each
+    expert `d_model -> expert_ffn_hidden`), every bank dispatched by ITS layer's
+    captured routing in the same block — so expert slot (layer, e) holds parameters
+    that activate exactly when the target routed (layer, e) — plus an always-on dense
+    swiglu shared expert (`shared_ffn_hidden`). There is no learned router and no gelu
+    arm: the FFN mirrors the target's MoE shape by construction. `n_blocks >= 1` is the
+    size lever: each block's expert banks cost one target stage's expert parameters.
+
+    `input_dim` is the full concatenated chunk-input width: the RMS-normed activation
+    taps' widths PLUS one dense `n_experts`-wide routing-weight vector per covered
+    layer (the lab sums both). `d_model`, `attention`, and `learned_norm_scale` mean
+    exactly what they mean on `ChunkwiseTransformerCIArch`."""
+
+    chunks: tuple[MoEChunk, ...]
+    input_dim: int
+    d_model: int
+    n_blocks: int
+    attention: CIAttention
+    n_experts: int
+    expert_ffn_hidden: int
+    shared_ffn_hidden: int
+    learned_norm_scale: bool
+    grouped_matmul_backend: GroupedMatmulBackend
+    """The arm the expert banks' grouped matmuls run — authored where the arch is
+    resolved (the experiment authors the target family's production arm; toy-shape
+    builders author the `ragged_dot` oracle, whose shapes the split arm's 64-tiling
+    kernel refuses)."""
+
+    @property
+    def capture_keys(self) -> CaptureKeys:
+        """Every chunk's activation taps plus both halves of every routing tap."""
+        return frozenset(
+            key
+            for chunk in self.chunks
+            for key in (
+                *chunk.input_taps,
+                *(k for tap in chunk.routing for k in (tap.ids_key, tap.weights_key)),
+            )
+        )
+
+
+def _ci_expert_shard_axis(placement: CIFnPlacement) -> MeshAxis:
+    """The ONE mesh axis the CI fn's expert grid shards over, read off the moe
+    expert-FFN operand row — the same axis the target's experts shard over (the
+    co-location premise). Fail-closed: a multi-axis or absent assignment has no EP
+    spelling here."""
+    moe = placement.moe
+    assert moe is not None, "the MoE CI dispatch needs the table's moe families"
+    assignment = moe.expert_ffn.operands.assignment("expert")
+    assert len(assignment) == 1, (
+        f"the placed MoE CI fn needs the expert axis on exactly one mesh axis; "
+        f"ci_fn/expert_ffn.operands assigns expert -> {assignment!r}"
+    )
+    (axis,) = assignment
+    return axis
+
+
+@dataclass(frozen=True)
+class _TokenDispatch:
+    """One chunk's captured routing as job schedules, UNPLACED: per-router `RoutedJobs`
+    over the flattened token axis. One schedule per (chunk, router) serves every block's
+    bank for that router and its sites' fused heads."""
+
+    jobs: tuple[RoutedJobs, ...]
+    weights: tuple[Float[Array, "T k"], ...]
+    lead: tuple[int, ...]
+    backend: GroupedMatmulBackend
+
+    def gather(self, router: int, h: Float[Array, "b t d"]) -> Float[Array, "J d"]:
+        return gather_tokens(h.reshape(-1, h.shape[-1]), self.jobs[router])
+
+    def expert_matmul(self, router: int, x_jobs: Array, experts: Array) -> Array:
+        return grouped_matmul(x_jobs, experts, self.jobs[router].group_sizes, self.backend)
+
+    def combine(self, router: int, y: Float[Array, "J d"]) -> Float[Array, "b t d"]:
+        return combine_jobs(y, self.jobs[router], self.weights[router]).reshape(
+            *self.lead, y.shape[-1]
+        )
+
+    def narrow_values(self, router: int, y: Float[Array, "J c"]) -> Float[Array, "b t k_c"]:
+        per_token = unsort_jobs(y, self.jobs[router])  # [T, k, c]
+        return per_token.reshape(*self.lead, per_token.shape[-2] * per_token.shape[-1])
+
+    def router_ids(self, router: int) -> Int[Array, "b t k"]:
+        ids = self.jobs[router].top_idx
+        return ids.reshape(*self.lead, ids.shape[-1])
+
+
+@dataclass(frozen=True)
+class _ExpertShardedDispatch:
+    """The expert-parallel sibling on the explicit mesh: per-router `ExpertShardedJobs`
+    co-located with the target's expert shard. The narrow combine's unsort sums over
+    the expert-shard axis — an ACTIVATION all-reduce over tp, the same collective the
+    routed trunk combine already pays."""
+
+    jobs: tuple[ExpertShardedJobs, ...]
+    weights: tuple[Float[Array, "b t k"], ...]
+    shard_axis: str
+    backend: GroupedMatmulBackend
+
+    def gather(self, router: int, h: Float[Array, "b t d"]) -> Float[Array, "b s J d"]:
+        return ep_gather_tokens(h, self.jobs[router], self.shard_axis)
+
+    def expert_matmul(self, router: int, x_jobs: Array, experts: Array) -> Array:
+        return ep_grouped_matmul(x_jobs, experts, self.jobs[router], self.shard_axis, self.backend)
+
+    def combine(self, router: int, y: Float[Array, "b s J d"]) -> Float[Array, "b t d"]:
+        # the CI fn's waist stays replicated over tp in every arm (only the target's
+        # masked forwards have a sequence-parallel spelling), so the combine is an all-reduce.
+        return ep_combine_jobs(
+            y,
+            self.jobs[router],
+            self.weights[router],
+            self.shard_axis,
+            P(jax.typeof(y).sharding.spec[0], None, None),
+        )
+
+    def narrow_values(self, router: int, y: Float[Array, "b s J c"]) -> Float[Array, "b t k_c"]:
+        per_token = ep_unsort_jobs(y, self.jobs[router], self.shard_axis)  # [b, t, k, c]
+        b, t, k, c = per_token.shape
+        return per_token.reshape(b, t, k * c)
+
+    def router_ids(self, router: int) -> Int[Array, "b t k"]:
+        return self.jobs[router].top_idx
+
+
+MoEDispatch = _TokenDispatch | _ExpertShardedDispatch
+"""One chunk's routed dispatch — both arms answer the same five moves, so blocks and
+heads never branch on placement."""
+
+
+def _moe_ci_dispatch(
+    ids: Int[Array, "R b t k"],
+    weights: Float[Array, "R b t k"],
+    n_experts: int,
+    placement: CIFnPlacement | None,
+    backend: GroupedMatmulBackend,
+) -> MoEDispatch:
+    n_routers, *lead, k = ids.shape
+    if placement is None:
+        return _TokenDispatch(
+            jobs=tuple(routed_jobs(ids[r].reshape(-1, k), n_experts) for r in range(n_routers)),
+            weights=tuple(weights[r].reshape(-1, k) for r in range(n_routers)),
+            lead=tuple(lead),
+            backend=backend,
+        )
+    shard_axis = _ci_expert_shard_axis(placement)
+    n_shards = placement.activations.mesh.shape[shard_axis]
+    return _ExpertShardedDispatch(
+        jobs=tuple(expert_sharded_jobs(ids[r], n_experts, n_shards) for r in range(n_routers)),
+        weights=tuple(weights[r] for r in range(n_routers)),
+        shard_axis=shard_axis,
+        backend=backend,
+    )
+
+
+class MoECIBlock(eqx.Module):
+    """Pre-norm block: RMSNorm → bidirectional RoPE attention → residual; RMSNorm →
+    concat-wide MoE FFN → residual. The attention half is `CIBlock`'s exactly
+    (`_attention_half`). The FFN is the target STAGE's MoE shape: one `E`-expert swiglu
+    bank per covered target layer, bank r dispatched by router r's captured routing —
+    every token activates its `R·k` routed slots — fp32 routing-weighted combines
+    scaled 1/R (each router's renormalized weights sum to 1, so R banks would write
+    residual mass R where a target block writes 1), plus the always-on dense swiglu
+    shared expert. No FFN biases — the expert leaves are exactly the routed-matmul
+    operand shapes. The banks are LENGTH-R TUPLES of `[E, ., .]` leaves, not one
+    `[R, E, ., .]` axis: the stacked bundle's leaves stay rank-4 — the grouped-matmul
+    rhs, the muon 4D canonical fold, and the placement rows all consume that rank
+    directly. `norm_scales` as on `CIBlock`."""
+
+    wq: Array
+    wk: Array
+    wv: Array
+    wo: Array
+    expert_gate: tuple[Float[Array, "E d_model expert_ffn"], ...]
+    expert_up: tuple[Float[Array, "E d_model expert_ffn"], ...]
+    expert_down: tuple[Float[Array, "E expert_ffn d_model"], ...]
+    shared_gate: Float[Array, "d_model shared_ffn"]
+    shared_up: Float[Array, "d_model shared_ffn"]
+    shared_down: Float[Array, "shared_ffn d_model"]
+    norm_scales: tuple[Array, Array] | None
+    attention: CIAttention = eqx.field(static=True)
+    eps: float = eqx.field(static=True)
+
+    def shardings(self, mesh: Mesh, placement: CIFnPlacement) -> "MoECIBlock":
+        """Attention at the ci_fn/attention rows, expert banks at the moe expert_ffn
+        rows (expert co-located with the target's expert shard), the shared swiglu at
+        the ci_fn/ffn rows, norm scales at the vectors row."""
+        moe = placement.moe
+        assert moe is not None, "MoECIBlock placement needs the table's moe families"
+        attention = placement.attention.optimizer_state
+        ffn = placement.ffn.optimizer_state
+        expert_ffn = moe.expert_ffn.optimizer_state
+        attention.validate_shape(CI_ATTN_Q_AXES, self.wq.shape)
+        attention.validate_shape(CI_ATTN_KV_AXES, self.wk.shape)
+        attention.validate_shape(CI_ATTN_KV_AXES, self.wv.shape)
+        attention.validate_shape(CI_ATTN_OUT_AXES, self.wo.shape)
+        for gate, up, down in zip(self.expert_gate, self.expert_up, self.expert_down, strict=True):
+            expert_ffn.validate_shape(CI_EXPERT_FFN_IN_AXES, gate.shape)
+            expert_ffn.validate_shape(CI_EXPERT_FFN_IN_AXES, up.shape)
+            expert_ffn.validate_shape(CI_EXPERT_FFN_OUT_AXES, down.shape)
+        ffn.validate_shape(CI_FFN_IN_AXES, self.shared_gate.shape)
+        ffn.validate_shape(CI_FFN_IN_AXES, self.shared_up.shape)
+        ffn.validate_shape(CI_FFN_OUT_AXES, self.shared_down.shape)
+        bank_in = NamedSharding(mesh, expert_ffn.spec_for(CI_EXPERT_FFN_IN_AXES))
+        bank_out = NamedSharding(mesh, expert_ffn.spec_for(CI_EXPERT_FFN_OUT_AXES))
+        placed = eqx.tree_at(
+            lambda b: (
+                b.wq,
+                b.wk,
+                b.wv,
+                b.wo,
+                b.expert_gate,
+                b.expert_up,
+                b.expert_down,
+                b.shared_gate,
+                b.shared_up,
+                b.shared_down,
+            ),
+            self,
+            (
+                NamedSharding(mesh, attention.spec_for(CI_ATTN_Q_AXES)),
+                NamedSharding(mesh, attention.spec_for(CI_ATTN_KV_AXES)),
+                NamedSharding(mesh, attention.spec_for(CI_ATTN_KV_AXES)),
+                NamedSharding(mesh, attention.spec_for(CI_ATTN_OUT_AXES)),
+                tuple(bank_in for _ in self.expert_gate),
+                tuple(bank_in for _ in self.expert_up),
+                tuple(bank_out for _ in self.expert_down),
+                NamedSharding(mesh, ffn.spec_for(CI_FFN_IN_AXES)),
+                NamedSharding(mesh, ffn.spec_for(CI_FFN_IN_AXES)),
+                NamedSharding(mesh, ffn.spec_for(CI_FFN_OUT_AXES)),
+            ),
+        )
+        if self.norm_scales is not None:
+            vectors = placement.vectors
+            norm = _vector_sharding(vectors, ("stack", "d_model"), self.norm_scales[0].shape)
+            placed = eqx.tree_at(lambda b: b.norm_scales, placed, (norm, norm))
+        return placed
+
+    def __call__(
+        self,
+        x: Float[Array, "b t d"],
+        inv_freq: Array,
+        dispatch: MoEDispatch,
+        *,
+        placement: CIFnPlacement | None,
+    ) -> tuple[Float[Array, "b t d"], tuple[Array, ...]]:
+        """Returns the residual plus each router's expert hidden states in JOB space —
+        the last block's are the fused narrow heads' inputs, on the same jobs the
+        slots' swiglus already ran."""
+        attn_scale, mlp_scale = (None, None) if self.norm_scales is None else self.norm_scales
+        x = _attention_half(
+            x,
+            wq=self.wq,
+            wk=self.wk,
+            wv=self.wv,
+            wo=self.wo,
+            attention=self.attention,
+            inv_freq=inv_freq,
+            norm_scale=attn_scale,
+            eps=self.eps,
+            placement=placement,
+            # The MoE arch has no padded consumer: prompt analysis (the one padded
+            # caller) dispatches on the dense chunkwise arch only.
+            valid_token_count=None,
+        )
+        h = _rms_norm_maybe_scaled(x, mlp_scale, self.eps)
+        n_routers = len(self.expert_gate)
+        routed = jnp.zeros_like(x)
+        hidden_jobs: list[Array] = []
+        for router in range(n_routers):
+            x_jobs = dispatch.gather(router, h)
+            gate = dispatch.expert_matmul(router, x_jobs, self.expert_gate[router])
+            up = dispatch.expert_matmul(router, x_jobs, self.expert_up[router])
+            hidden = jax.nn.silu(gate) * up
+            down = dispatch.expert_matmul(router, hidden, self.expert_down[router])
+            routed = routed + dispatch.combine(router, down)
+            hidden_jobs.append(hidden)
+        shared_gate = _ci_linear(
+            h, self.shared_gate, placement, "ffn", CI_FFN_IN_AXES[1:], transposed=False
+        )
+        shared_up = _ci_linear(
+            h, self.shared_up, placement, "ffn", CI_FFN_IN_AXES[1:], transposed=False
+        )
+        shared = _ci_linear(
+            jax.nn.silu(shared_gate) * shared_up,
+            self.shared_down,
+            placement,
+            "ffn",
+            CI_FFN_OUT_AXES[1:],
+            transposed=False,
+        )
+        return x + routed / n_routers + shared, tuple(hidden_jobs)
+
+
+class DenseCIHead(eqx.Module):
+    """One full-emission site head: `x_final @ w + b -> [*leading, C]`."""
+
+    w: Float[Array, "d_model C"]
+    b: Float[Array, " C"]
+
+
+class ExpertCIHead(eqx.Module):
+    """One narrow-emission site head, FUSED into the expert slots: block (e, :) reads
+    the LAST trunk block's (router, e) expert hidden state on that slot's jobs — the
+    same jobs the slot's swiglu already ran, no extra gather — and emits the slot's `c`
+    preactivations, token-major `[*leading, k·c]`. The head's parameters activate
+    exactly when its (layer, expert) is routed. Biasless like the expert banks: the
+    leaf is exactly the routed-matmul operand shape."""
+
+    w: Float[Array, "E expert_ffn c"]
+    router: int = eqx.field(static=True)
+
+
+MoECIHead = DenseCIHead | ExpertCIHead
+"""Per-slot head union: the static discriminator rides the treedef, so the stacked
+bundle stays rectangular per slot while slots differ in emission."""
+
+
+class MoEChunkTransformer(eqx.Module):
+    """ONE MoE chunk: its (already assembled, concatenated) input `[b, t, total_d_in]`
+    → in_proj → `n_blocks` `MoECIBlock`s (every block dispatching on all `R` captured
+    routings) → one head per output slot: `DenseCIHead`s read the final residual
+    full-width; `ExpertCIHead`s read the last block's job-space expert hiddens and emit
+    `NarrowCI` bundles carrying the dispatch's own router indices. In the bundle every
+    array leaf carries a leading `n_chunks` axis and the module runs under a
+    `jax.lax.scan` over that axis, exactly as `ChunkTransformer` does."""
+
+    in_proj_w: Float[Array, "total_d_in d_model"]
+    in_proj_b: Float[Array, " d_model"]
+    blocks: list[MoECIBlock]
+    heads: tuple[MoECIHead, ...]
+
+    def shardings(self, mesh: Mesh, placement: CIFnPlacement) -> "MoEChunkTransformer":
+        """in_proj at ci_fn/input, dense heads at ci_fn/output, expert heads at the
+        ci_fn moe expert_head rows; biases at the vectors row."""
+        moe = placement.moe
+        assert moe is not None, "MoEChunkTransformer placement needs the table's moe families"
+        input_row = placement.input.optimizer_state
+        output_row = placement.output.optimizer_state
+        head_row = moe.expert_head.optimizer_state
+        input_row.validate_shape(CI_INPUT_AXES, self.in_proj_w.shape)
+        vectors = placement.vectors
+        placed_heads: list[MoECIHead] = []
+        for head in self.heads:
+            match head:
+                case DenseCIHead():
+                    output_row.validate_shape(CI_OUTPUT_AXES, head.w.shape)
+                    placed_heads.append(
+                        DenseCIHead(
+                            w=NamedSharding(mesh, output_row.spec_for(CI_OUTPUT_AXES)),  # pyright: ignore[reportArgumentType]
+                            b=_vector_sharding(vectors, ("stack", "C"), head.b.shape),  # pyright: ignore[reportArgumentType]
+                        )
+                    )
+                case ExpertCIHead():
+                    head_row.validate_shape(CI_EXPERT_HEAD_AXES, head.w.shape)
+                    placed_heads.append(
+                        ExpertCIHead(
+                            w=NamedSharding(mesh, head_row.spec_for(CI_EXPERT_HEAD_AXES)),  # pyright: ignore[reportArgumentType]
+                            router=head.router,
+                        )
+                    )
+        return eqx.tree_at(
+            lambda ct: (ct.in_proj_w, ct.in_proj_b, ct.blocks, ct.heads),
+            self,
+            (
+                NamedSharding(mesh, input_row.spec_for(CI_INPUT_AXES)),
+                _vector_sharding(vectors, ("stack", "d_model"), self.in_proj_b.shape),
+                [b.shardings(mesh, placement) for b in self.blocks],
+                tuple(placed_heads),
+            ),
+        )
+
+    def __call__(
+        self,
+        x: Float[Array, "b t total_d_in"],
+        inv_freq: Array,
+        dispatch: MoEDispatch,
+        *,
+        placement: CIFnPlacement | None,
+    ) -> tuple[SiteCI, ...]:
+        x = (
+            _ci_linear(x, self.in_proj_w, placement, "input", CI_INPUT_AXES[1:], transposed=False)
+            + self.in_proj_b
+        )
+        hidden_jobs: tuple[Array, ...] = ()
+        for block in self.blocks:
+            x, hidden_jobs = block(x, inv_freq, dispatch, placement=placement)
+        outputs: list[SiteCI] = []
+        for head in self.heads:
+            match head:
+                case DenseCIHead(w=w, b=b):
+                    outputs.append(
+                        _ci_linear(x, w, placement, "output", CI_OUTPUT_AXES[1:], transposed=False)
+                        + b
+                    )
+                case ExpertCIHead(w=w, router=router):
+                    values_jobs = dispatch.expert_matmul(router, hidden_jobs[router], w)
+                    outputs.append(
+                        NarrowCI(
+                            values=dispatch.narrow_values(router, values_jobs),
+                            router_indices=dispatch.router_ids(router),
+                            n_experts=w.shape[0],
+                        )
+                    )
+        return tuple(outputs)
+
+
+@dataclass(frozen=True)
+class _MoEChunkMeta:
+    """Per-chunk static routing, index-aligned with the stacked `chunks` leading axis."""
+
+    input_taps: tuple[str, ...]
+    routing: tuple[RoutingTap, ...]
+    slots: tuple[MoESlot, ...]
+
+
+class MoEChunkwiseTransformerCIFn(eqx.Module):
+    """`ChunkwiseTransformerCIFn`'s MoE sibling: stacked `MoEChunkTransformer`s under a
+    `jax.lax.scan` with per-chunk remat. Expert sites emit `NarrowCI` bundles — each
+    narrow site's values leave this fn already married to the router indices that key
+    them (the slot's `router` tap); dense sites emit full-width arrays. Each chunk's
+    input concatenates its RMS-normed activation taps with one dense `[.., E]`
+    routing-weight vector per covered layer (F2): the weights are scattered by the
+    captured ids and scaled by a FIXED k (a k-sparse vector's own RMS would mis-scale
+    it), so a uniformly-routed token's entries are O(1) like the normed taps'."""
+
+    chunks: MoEChunkTransformer  # arrays stacked along leading n_chunks (+ stack_pad)
+    inv_freq: Array  # shared across chunks (RoPE buffer); NOT mapped
+
+    capture_keys: CaptureKeys = eqx.field(static=True)
+    output_names: tuple[str, ...] = eqx.field(static=True)
+    chunk_meta: tuple[_MoEChunkMeta, ...] = eqx.field(static=True)
+    stack_pad: int = eqx.field(static=True)
+    """As on `ChunkwiseTransformerCIFn`: the enumerated persist pad trailing the real
+    chunks on every `chunks` leaf."""
+    n_experts: int = eqx.field(static=True)
+    grouped_matmul_backend: GroupedMatmulBackend = eqx.field(static=True)
+    eps: float = eqx.field(static=True)
+    has_position_axis: bool = eqx.field(static=True)
+
+    def shardings(self, mesh: Mesh, placement: CIFnPlacement) -> "MoEChunkwiseTransformerCIFn":
+        """The stacked per-chunk transformer's persist layout (`MoEChunkTransformer.
+        shardings` at the padded chunk extent); `inv_freq` replicates."""
+        _validate_chunk_stack(self, placement.chunks, self.chunks.in_proj_w.shape[0])
+        return eqx.tree_at(
+            lambda f: (f.chunks, f.inv_freq),
+            self,
+            (self.chunks.shardings(mesh, placement), NamedSharding(mesh, P())),
+        )
+
+    def _chunk_input(
+        self, meta: _MoEChunkMeta, taps: dict[str, Array], placement: CIFnPlacement | None
+    ) -> Array:
+        parts = [
+            # Both boundaries matter, as on the dense chunkwise fn: keep the cached tap
+            # TP-replicated through the RMS reduction, and stop the in_proj slice from
+            # sinking backward through it.
+            _constrain_ci_activation(
+                _weightless_rms_norm(
+                    _constrain_ci_activation(taps[key], placement, "feature"), self.eps
+                ),
+                placement,
+                "feature",
+            )
+            for key in meta.input_taps
+        ]
+        for tap in meta.routing:
+            ids = taps[tap.ids_key]
+            weights = taps[tap.weights_key]
+            k = ids.shape[-1]
+            dense = jnp.sum(
+                jax.nn.one_hot(ids, self.n_experts, dtype=weights.dtype) * weights[..., None],
+                axis=-2,
+            )
+            parts.append(_constrain_ci_activation(dense * k, placement, "feature"))
+        return jnp.concatenate(parts, axis=-1)
+
+    def __call__(
+        self,
+        taps: dict[str, Array],
+        *,
+        remat: bool,
+        placement: CIFnPlacement | None,
+    ) -> CI:
+        assert self.stack_pad == 0, (
+            f"the chunk scan runs the compute residents, which carry no persist pads "
+            f"(got stack_pad={self.stack_pad}); enter through materialize_ci_compute_weights"
+        )
+        per_chunk_in = [self._chunk_input(meta, taps, placement) for meta in self.chunk_meta]
+        stacked_in = jnp.stack(per_chunk_in, axis=0)  # [n_chunks, b, t, total_d_in]
+        stacked_ids = jnp.stack(
+            [jnp.stack([taps[tap.ids_key] for tap in m.routing]) for m in self.chunk_meta]
+        )  # [n_chunks, R, b, t, k]
+        stacked_weights = jnp.stack(
+            [jnp.stack([taps[tap.weights_key] for tap in m.routing]) for m in self.chunk_meta]
+        )
+        inv_freq = jax.lax.stop_gradient(self.inv_freq)
+        chunk_arrays, chunk_static = eqx.partition(self.chunks, eqx.is_array)
+
+        def run_chunk(
+            _: None, scanned: tuple[MoEChunkTransformer, Array, Array, Array]
+        ) -> tuple[None, tuple[SiteCI, ...]]:
+            chunk_array, chunk_input, ids, weights = scanned
+            chunk = eqx.combine(chunk_array, chunk_static)
+            dispatch = _moe_ci_dispatch(
+                ids, weights, self.n_experts, placement, self.grouped_matmul_backend
+            )
+            return None, chunk(chunk_input, inv_freq, dispatch, placement=placement)
+
+        # Per-CHUNK checkpoint of the scan body in BOTH modes, exactly as the dense
+        # chunkwise fn spells it: `remat` controls only whether chunk ACTIVATIONS are
+        # recomputed, never the entry weight gather.
+        policy = (
+            jax.checkpoint_policies.nothing_saveable
+            if remat
+            else jax.checkpoint_policies.dots_saveable
+        )
+        body = jax.checkpoint(run_chunk, policy=policy)
+        _, stacked_per_slot = jax.lax.scan(
+            body, None, (chunk_arrays, stacked_in, stacked_ids, stacked_weights)
+        )
+        preactivations: SiteDict = {}
+        for chunk_idx, meta in enumerate(self.chunk_meta):
+            for slot, moe_slot in enumerate(meta.slots):
+                # Slices both emissions: a bare array, or a NarrowCI whose leaves each
+                # carry the scanned n_chunks axis.
+                preactivations[moe_slot.site] = jax.tree.map(
+                    lambda a, i=chunk_idx: a[i], stacked_per_slot[slot]
+                )
+        return CI.from_preactivations(preactivations)
+
+
+def moe_ns_compute_shardings(
+    ci_fn: MoEChunkwiseTransformerCIFn, mesh: Mesh, placement: CIFnPlacement
+) -> MoEChunkwiseTransformerCIFn:
+    """`ns_compute_shardings`' MoE sibling: every muon-labeled weight position carries
+    its family's `ns_compute` waypoint row (expert banks and fused heads at the moe
+    rows); every other position rides through untouched."""
+    moe = placement.moe
+    assert moe is not None, "MoE CI muon staging needs the table's moe families"
+
+    def staging(weights: CIWeightPlacement) -> NamedSharding:
+        return ns_staging_sharding(weights.ns_compute, mesh)
+
+    attention, ffn = staging(placement.attention), staging(placement.ffn)
+    expert_ffn, expert_head = staging(moe.expert_ffn), staging(moe.expert_head)
+
+    def where(f: MoEChunkwiseTransformerCIFn) -> tuple[Array, ...]:
+        locations: list[Array] = [f.chunks.in_proj_w]
+        locations += [head.w for head in f.chunks.heads]
+        for block in f.chunks.blocks:
+            locations += [block.wq, block.wk, block.wv, block.wo]
+            locations += [*block.expert_gate, *block.expert_up, *block.expert_down]
+            locations += [block.shared_gate, block.shared_up, block.shared_down]
+        return tuple(locations)
+
+    values: list[NamedSharding] = [staging(placement.input)]
+    for head in ci_fn.chunks.heads:
+        match head:
+            case DenseCIHead():
+                values.append(staging(placement.output))
+            case ExpertCIHead():
+                values.append(expert_head)
+    for block in ci_fn.chunks.blocks:
+        values += [attention] * 4
+        values += [expert_ffn] * (
+            len(block.expert_gate) + len(block.expert_up) + len(block.expert_down)
+        )
+        values += [ffn] * 3
+    return eqx.tree_at(where, ci_fn, tuple(values))
+
+
+def _reconstruct_moe_ci_compute_weights(
+    chunks: MoEChunkTransformer, placement: CIFnPlacement | None
+) -> MoEChunkTransformer:
+    """`_reconstruct_ci_compute_weights` over the MoE chunk module: the expert banks and
+    fused heads enter through the MoE families' rows. No-op off-mesh."""
+    if jax.sharding.get_abstract_mesh().empty:
+        return chunks
+    assert placement is not None, "on-mesh CI compute-weight materialization requires placement"
+    moe = placement.moe
+    assert moe is not None, "MoE CI compute materialization needs the table's moe families"
+    census = placement.chunks
+
+    def enter(x: Array, weights: CIWeightPlacement, axes: Axes) -> Array:
+        return materialize_reduced_weights(
+            x,
+            census=census,
+            source=weights.optimizer_state,
+            destination=weights.compute_weights,
+            axes=axes,
+        )
+
+    def vector(x: Array) -> Array:
+        return strip_stack_pad(x, census)
+
+    def head(h: MoECIHead) -> MoECIHead:
+        match h:
+            case DenseCIHead():
+                return replace(h, w=enter(h.w, placement.output, CI_OUTPUT_AXES), b=vector(h.b))
+            case ExpertCIHead():
+                return replace(h, w=enter(h.w, moe.expert_head, CI_EXPERT_HEAD_AXES))
+
+    def block(blk: MoECIBlock) -> MoECIBlock:
+        return replace(
+            blk,
+            wq=enter(blk.wq, placement.attention, CI_ATTN_Q_AXES),
+            wk=enter(blk.wk, placement.attention, CI_ATTN_KV_AXES),
+            wv=enter(blk.wv, placement.attention, CI_ATTN_KV_AXES),
+            wo=enter(blk.wo, placement.attention, CI_ATTN_OUT_AXES),
+            expert_gate=tuple(
+                enter(w, moe.expert_ffn, CI_EXPERT_FFN_IN_AXES) for w in blk.expert_gate
+            ),
+            expert_up=tuple(enter(w, moe.expert_ffn, CI_EXPERT_FFN_IN_AXES) for w in blk.expert_up),
+            expert_down=tuple(
+                enter(w, moe.expert_ffn, CI_EXPERT_FFN_OUT_AXES) for w in blk.expert_down
+            ),
+            shared_gate=enter(blk.shared_gate, placement.ffn, CI_FFN_IN_AXES),
+            shared_up=enter(blk.shared_up, placement.ffn, CI_FFN_IN_AXES),
+            shared_down=enter(blk.shared_down, placement.ffn, CI_FFN_OUT_AXES),
+            norm_scales=None
+            if blk.norm_scales is None
+            else (vector(blk.norm_scales[0]), vector(blk.norm_scales[1])),
+        )
+
+    return replace(
+        chunks,
+        in_proj_w=enter(chunks.in_proj_w, placement.input, CI_INPUT_AXES),
+        in_proj_b=vector(chunks.in_proj_b),
+        blocks=[block(blk) for blk in chunks.blocks],
+        heads=tuple(head(h) for h in chunks.heads),
+    )
+
+
+def _moe_slot_signature(
+    chunk: MoEChunk, site_spec: dict[str, SiteSpec], n_experts: int
+) -> tuple[tuple[object, ...], ...]:
+    """One chunk's per-slot (emission, shape) signature — equal across chunks ⟺ the
+    stacked bundle is rectangular and every slot means the same thing in every chunk."""
+    signature: list[tuple[object, ...]] = []
+    for slot in chunk.slots:
+        spec = site_spec[slot.site]
+        match slot:
+            case FullSlot():
+                signature.append(("full", spec.C))
+            case NarrowSlot(router=router):
+                factorization = spec.factorization
+                assert isinstance(factorization, ExpertBlocked), (
+                    f"narrow slot {slot.site!r} needs an expert-blocked site, "
+                    f"got {type(factorization).__name__}"
+                )
+                assert factorization.n_experts == n_experts, (
+                    slot.site,
+                    factorization.n_experts,
+                    n_experts,
+                )
+                assert 0 <= router < len(chunk.routing), (slot.site, router, len(chunk.routing))
+                signature.append(("narrow", router, factorization.c_per_expert))
+    return tuple(signature)
+
+
+def _init_moe_chunk_transformer(
+    arch: MoEChunkwiseTransformerCIArch,
+    slot_signature: tuple[tuple[object, ...], ...],
+    n_routers: int,
+    key: PRNGKeyArray,
+) -> MoEChunkTransformer:
+    """One MoE chunk's params under the chunkwise Kaiming scheme: relu-gain (√2) on
+    in_proj / gate / up projections, linear gain (1) on down projections and heads,
+    PyTorch-default `U(±1/√fan_in)` on the attention projections, zero biases. Each
+    consumer takes its OWN explicit key — the split counts live next to their use."""
+    relu_gain = 2.0**0.5
+    d, di, ds = arch.d_model, arch.expert_ffn_hidden, arch.shared_ffn_hidden
+    n_experts = arch.n_experts
+    d_kv = (d // arch.attention.n_heads) * arch.attention.n_kv_heads
+
+    def kaiming(k: PRNGKeyArray, shape: tuple[int, ...], fan_in: int, gain: float) -> Array:
+        return jax.random.normal(k, shape) * (gain / fan_in**0.5)
+
+    def attn_default(k: PRNGKeyArray, shape: tuple[int, ...], fan_in: int) -> Array:
+        bound = 1.0 / fan_in**0.5
+        return jax.random.uniform(k, shape, minval=-bound, maxval=bound)
+
+    def block(bkey: PRNGKeyArray) -> MoECIBlock:
+        # 4 attention + 3 per router bank + 3 shared draws; the split count derives
+        # every key, so it lives here, next to the draws.
+        kq, kk, kv, ko, *rest = jax.random.split(bkey, 4 + 3 * n_routers + 3)
+        gate_keys, up_keys = rest[:n_routers], rest[n_routers : 2 * n_routers]
+        down_keys = rest[2 * n_routers : 3 * n_routers]
+        ksg, ksu, ksd = rest[3 * n_routers :]
+        norm_scales = (jnp.ones((d,)), jnp.ones((d,))) if arch.learned_norm_scale else None
+        return MoECIBlock(
+            wq=attn_default(kq, (d, d), d),
+            wk=attn_default(kk, (d_kv, d), d),
+            wv=attn_default(kv, (d_kv, d), d),
+            wo=attn_default(ko, (d, d), d),
+            expert_gate=tuple(kaiming(k, (n_experts, d, di), d, relu_gain) for k in gate_keys),
+            expert_up=tuple(kaiming(k, (n_experts, d, di), d, relu_gain) for k in up_keys),
+            expert_down=tuple(kaiming(k, (n_experts, di, d), di, 1.0) for k in down_keys),
+            shared_gate=kaiming(ksg, (d, ds), d, relu_gain),
+            shared_up=kaiming(ksu, (d, ds), d, relu_gain),
+            shared_down=kaiming(ksd, (ds, d), ds, 1.0),
+            norm_scales=norm_scales,
+            attention=arch.attention,
+            eps=CI_FN_RMS_EPS,
+        )
+
+    in_key, heads_key, *block_keys = jax.random.split(key, arch.n_blocks + 2)
+    head_keys = jax.random.split(heads_key, len(slot_signature))
+    heads: list[MoECIHead] = []
+    for slot_sig, head_key in zip(slot_signature, head_keys, strict=True):
+        match slot_sig:
+            case ("full", int() as c_full):
+                heads.append(
+                    DenseCIHead(w=kaiming(head_key, (d, c_full), d, 1.0), b=jnp.zeros((c_full,)))
+                )
+            case ("narrow", int() as router, int() as c):
+                heads.append(
+                    ExpertCIHead(w=kaiming(head_key, (n_experts, di, c), di, 1.0), router=router)
+                )
+            case _:
+                raise AssertionError(slot_sig)
+    return MoEChunkTransformer(
+        in_proj_w=kaiming(in_key, (arch.input_dim, d), arch.input_dim, relu_gain),
+        in_proj_b=jnp.zeros((d,)),
+        blocks=[block(bk) for bk in block_keys],
+        heads=tuple(heads),
+    )
+
+
+def init_moe_chunkwise_transformer_ci_fn(
+    arch: MoEChunkwiseTransformerCIArch, sites: tuple[SiteSpec, ...], key: PRNGKeyArray
+) -> MoEChunkwiseTransformerCIFn:
+    """Validate the output partition and chunk homogeneity as the dense chunkwise init
+    does — plus: every `NarrowSlot` names an expert-blocked site whose factorization
+    matches the arch's `n_experts`, every `FullSlot` a dense site, and every chunk
+    covers one shared router count — then build stacked chunk params under the same
+    Kaiming scheme."""
+    site_spec = {s.name: s for s in sites}
+    covered = [slot.site for chunk in arch.chunks for slot in chunk.slots]
+    assert sorted(covered) == sorted(site_spec), "chunks must partition sites"
+    assert len(covered) == len(set(covered)), "chunks overlap on an output site"
+    assert arch.n_blocks >= 1, (
+        f"the MoE chunkwise arch needs n_blocks >= 1 ({arch.n_blocks}): the fused narrow "
+        "heads read the last block's expert hiddens"
+    )
+    router_counts = {len(chunk.routing) for chunk in arch.chunks}
+    assert len(router_counts) == 1, f"chunks not homogeneous in router count: {router_counts}"
+    (n_routers,) = router_counts
+    signatures = {_moe_slot_signature(chunk, site_spec, arch.n_experts) for chunk in arch.chunks}
+    assert len(signatures) == 1, (
+        f"chunks not homogeneous in per-slot (emission, shape) signature (the per-slot "
+        f"heads stack slot-by-slot across chunks): {signatures}"
+    )
+    (slot_signature,) = signatures
+    assert all(chunk.input_taps for chunk in arch.chunks), "each chunk needs an input tap"
+
+    n_heads = arch.attention.n_heads
+    hd = arch.d_model // n_heads
+    assert arch.d_model % n_heads == 0 and hd % 2 == 0, (arch.d_model, n_heads)
+    inv_freq = 1.0 / (10000.0 ** (jnp.arange(0, hd, 2, dtype=jnp.float32) / hd))
+
+    chunk_keys = jax.vmap(lambda i: jax.random.fold_in(key, i))(jnp.arange(len(arch.chunks)))
+    stacked: MoEChunkTransformer = eqx.filter_vmap(
+        lambda k: _init_moe_chunk_transformer(arch, slot_signature, n_routers, k)
+    )(chunk_keys)
+
+    return MoEChunkwiseTransformerCIFn(
+        chunks=stacked,
+        inv_freq=inv_freq,
+        capture_keys=arch.capture_keys,
+        output_names=tuple(name for chunk in arch.chunks for name in chunk.output_sites),
+        chunk_meta=tuple(
+            _MoEChunkMeta(chunk.input_taps, chunk.routing, chunk.slots) for chunk in arch.chunks
+        ),
+        stack_pad=0,
+        n_experts=arch.n_experts,
+        grouped_matmul_backend=arch.grouped_matmul_backend,
+        eps=CI_FN_RMS_EPS,
+        has_position_axis=True,
+    )
+
+
+# ----------------------- the chunk stack's persist pads -----------------------
+# Both chunkwise fns stack every array leaf along a leading chunk axis; a placement whose
+# persist rows cut that axis pads it (`StackCensus`, resolved in `resolve_ci_placement`)
+# exactly as the V/U groups pad theirs: trailing all-zero slots on EVERY leaf of the
+# stacked chunk module, appended by the placed init (`pad_ci_fn`), stripped at the entry
+# (`_reconstruct_ci_compute_weights`), never named by `chunk_meta`, never scanned.
+
+ChunkStackedCIFn = ChunkwiseTransformerCIFn | MoEChunkwiseTransformerCIFn
+
+
+def _validate_chunk_stack(fn: ChunkStackedCIFn, census: StackCensus, stack_extent: int) -> None:
+    """BOUNDARY VALIDATION of the resolved chunk census against the fn actually held —
+    its static chunk routing, its pad enumeration, and its leaves' stack extent.
+    Disagreement is an upstream bug and dies here."""
+    assert census.stack_len == len(fn.chunk_meta), (
+        f"placement expects a {census.stack_len}-chunk CI fn; this fn routes "
+        f"{len(fn.chunk_meta)} chunks"
+    )
+    assert census.stack_pad == fn.stack_pad, (
+        f"placement expects a chunk-stack pad of {census.stack_pad}; this fn enumerates "
+        f"{fn.stack_pad}"
+    )
+    assert stack_extent == census.padded_stack_len, (
+        "chunk leaves disagree with the padded census extent",
+        stack_extent,
+        census,
+    )
+
+
+def _pad_chunk_stack[Chunks: eqx.Module](chunks: Chunks, pad: int) -> Chunks:
+    return jax.tree.map(
+        lambda leaf: jnp.concatenate([leaf, jnp.zeros((pad, *leaf.shape[1:]), leaf.dtype)]),
+        chunks,
+    )
+
+
+def _resident_chunk_stack[Fn: ChunkStackedCIFn](
+    fn: Fn, resident_chunks: eqx.Module, placement: CIFnPlacement | None
+) -> Fn:
+    """What the scan consumes: the entry's resident chunk module on a fn that enumerates
+    no pads. Boundary check of the entry's leaf enumeration — every resident leaf carries
+    exactly the real chunk extent, so a leaf the entry did not name cannot reach the scan
+    padded."""
+    if placement is None:
+        assert fn.stack_pad == 0, f"an unplaced CI fn carries no persist pads: {fn.stack_pad}"
+        return replace(fn, chunks=resident_chunks)
+    census = placement.chunks
+    _validate_chunk_stack(fn, census, fn.chunks.in_proj_w.shape[0])
+    for leaf in jax.tree.leaves(resident_chunks):
+        assert leaf.shape[0] == census.stack_len, (
+            "a chunk leaf reached the scan at the padded extent",
+            leaf.shape,
+            census,
+        )
+    return replace(fn, chunks=resident_chunks, stack_pad=0)
+
+
+def pad_ci_fn(fn: CIFn, placement: CIFnPlacement | None) -> CIFn:
+    """The one constructor of a padded persist tree: append the placement's chunk-stack
+    pad as trailing all-zero slots on every leaf of the stacked chunk module and
+    enumerate it on `stack_pad`. The MLP fns carry no chunk stack and run unplaced."""
+    match fn:
+        case ChunkwiseTransformerCIFn() | MoEChunkwiseTransformerCIFn():
+            assert placement is not None, f"{type(fn).__name__} is placed by its rows"
+            assert fn.stack_pad == 0, f"already padded: {fn.stack_pad}"
+            census = placement.chunks
+            assert census.stack_len == len(fn.chunk_meta), (census, len(fn.chunk_meta))
+            if census.stack_pad == 0:
+                return fn
+            return replace(
+                fn, chunks=_pad_chunk_stack(fn.chunks, census.stack_pad), stack_pad=census.stack_pad
+            )
+        case LayerwiseMLPCIFn() | GlobalMLPCIFn():
+            assert placement is None, f"{type(fn).__name__} runs unplaced"
+            return fn
+        case _:
+            raise AssertionError(f"unknown CI fn {type(fn)}")
 
 
 # ------------- per-site / global MLPs (pointwise over every leading axis) -------------
@@ -1006,15 +2043,14 @@ class SiteMLP(eqx.Module):
 
     def shardings(self, mesh: Mesh) -> "SiteMLP":
         """Each `[d_in, d_out]` weight shards its OUTPUT axis (axis 1) over the data axes
-        (`("replicate","fsdp")`) — the master + Adam state shard ÷(replicate·fsdp). 1-D
-        biases replicate. The MLP is single-shot (no scan), so there is no compute
+        (`placement.batch_axes`) — the master + Adam state shard ÷N. 1-D biases
+        replicate. The MLP is single-shot (no scan), so there is no compute
         reconstruction; GSPMD gathers as needed (trivial at the toy's small device count).
         Asserts every output dim tiles its actual shard count — not the total device count,
         which over-counts by ×tp."""
-        shard_axes: tuple[MeshAxis, ...] = ("replicate", "fsdp")
-        shard_out = NamedSharding(mesh, P(None, shard_axes))
+        shard_out = NamedSharding(mesh, P(None, batch_axes(mesh)))
         repl = NamedSharding(mesh, P())
-        n = math.prod(mesh.shape[a] for a in shard_axes)
+        n = math.prod(mesh.shape[a] for a in batch_axes(mesh))
         for layer_idx, w in enumerate(self.weights):
             assert w.shape[1] % n == 0, (
                 f"SiteMLP.weights[{layer_idx}].d_out {w.shape[1]} not ÷ N={n}"
@@ -1210,30 +2246,153 @@ def init_global_mlp_ci_fn(
 # ----------------------------- construction (placement-agnostic) -----------------------------
 
 
-CIFnArch = ChunkwiseTransformerCIArch | LayerwiseMLPCIArch | GlobalMLPCIArch
+CIFnArch = (
+    ChunkwiseTransformerCIArch
+    | MoEChunkwiseTransformerCIArch
+    | LayerwiseMLPCIArch
+    | GlobalMLPCIArch
+)
 """Every CI-fn architecture. Construction goes through `build_ci_fn`; sharding/placement is
 a separate, scale-driven concern (see `init_placed`), never coupled to arch type."""
 
 
-def resolve_ci_placement(arch: CIFnArch, rules: PlacementRules | None) -> CIFnPlacement | None:
-    """THE one CI-placement resolution, at run assembly: the chunkwise transformer
-    consumes the run's CI rows; the MLP archs run unplaced. Downstream code receives
-    the already-paired `PlacedCIFn` (or, on the muon path, this resolved value) —
-    never the raw rules next to a fn.
+@dataclass(frozen=True)
+class _WeightLeaf:
+    """One arch-known stacked weight leaf: the family whose rows it enters through, its
+    semantic axes, and its per-chunk shape (the stack axis prepended at validation)."""
 
-    Resolution is also where the attention head split's divisibility is refused: the
-    split parks each projection's flat assignment on its head-COUNT axis
-    (`CIBlock.__call__`'s `heads`), so both counts must tile — under GQA `kv_head` is
-    the narrow one. There is no replication fallback; a user who WANTS replicated K/V
-    heads authors an explicit table with `kv_head` unmapped."""
+    family: CIWeightPlacement
+    axes: Axes
+    per_chunk: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class _VectorLeaf:
+    """One arch-known stacked vector leaf, resting at the vectors row."""
+
+    axes: Axes
+    per_chunk: tuple[int, ...]
+
+
+_ChunkLeaf = _WeightLeaf | _VectorLeaf
+
+
+def _validate_chunk_leaves(
+    census: StackCensus, rows: CIFnRows, leaves: tuple[_ChunkLeaf, ...]
+) -> None:
+    """Construction-time tiling of every arch-known persist leaf at the PADDED chunk
+    extent — the CI twin of `_resolve_group_census`'s shape validation, so a mesh the
+    CI masters (or a padded chunk stack's entry waypoint) cannot tile refuses where the
+    arch and the rows first meet. The per-slot heads' C is a site fact and is validated
+    where the fn is placed (`shardings`)."""
+    for leaf in leaves:
+        shape = (census.padded_stack_len, *leaf.per_chunk)
+        match leaf:
+            case _WeightLeaf(family=family, axes=axes):
+                validate_stacked_leaf(
+                    census, family.optimizer_state, family.compute_weights, axes, shape
+                )
+            case _VectorLeaf(axes=axes):
+                rows.vectors.validate_shape(axes, shape)
+
+
+def _attention_leaves(
+    rows: CIFnRows, attention: CIAttention, d_model: int
+) -> tuple[_ChunkLeaf, ...]:
+    d_kv = (d_model // attention.n_heads) * attention.n_kv_heads
+    return (
+        _WeightLeaf(rows.attention, CI_ATTN_Q_AXES, (d_model, d_model)),
+        _WeightLeaf(rows.attention, CI_ATTN_KV_AXES, (d_kv, d_model)),
+        _WeightLeaf(rows.attention, CI_ATTN_OUT_AXES, (d_model, d_model)),
+    )
+
+
+def _validate_ci_head_split(rows: CIFnRows, attention: CIAttention) -> None:
+    """The attention head split's divisibility: the split parks each projection's flat
+    assignment on its head-COUNT axis (`CIBlock.__call__`'s `heads`), so both counts
+    must tile — under GQA `kv_head` is the narrow one. There is no replication
+    fallback; a user who WANTS replicated K/V heads authors an explicit table with
+    `kv_head` unmapped."""
+    rows.activations.validate_shape(("q_head",), (attention.n_heads,))
+    rows.activations.validate_shape(("kv_head",), (attention.n_kv_heads,))
+
+
+def resolve_ci_placement(arch: CIFnArch, rules: PlacementRules | None) -> CIFnPlacement | None:
+    """THE one CI-placement resolution, at run assembly: the chunkwise transformers
+    consume the run's CI rows (the MoE arch additionally requires the table's MoE
+    families) and resolve their chunk stack's census — the pad that makes the persist
+    stack tile every row its leaves rest at (`CIFnRows.chunk_persist_rows`, plus the MoE
+    families' masters); the MLP archs run unplaced. Downstream code receives the
+    already-paired `PlacedCIFn` (or, on the muon path, this resolved value) — never the
+    raw rows next to a fn.
+
+    Resolution is also the construction-time refusal point for everything the arch
+    alone determines: the head split (`_validate_ci_head_split`) and every arch-known
+    master leaf's tiling at the padded extent (`_validate_chunk_leaves`)."""
     match arch:
         case ChunkwiseTransformerCIArch():
             if rules is None:
                 return None
-            activations = rules.ci_fn.activations
-            activations.validate_shape(("q_head",), (arch.attention.n_heads,))
-            activations.validate_shape(("kv_head",), (arch.attention.n_kv_heads,))
-            return rules.ci_fn
+            rows = rules.ci_fn
+            _validate_ci_head_split(rows, arch.attention)
+            census = resolve_stack_census(len(arch.chunks), rows.chunk_persist_rows)
+            d, ffn = arch.d_model, arch.ffn_hidden
+            leaves: tuple[_ChunkLeaf, ...] = (
+                _WeightLeaf(rows.input, CI_INPUT_AXES, (arch.input_dim, d)),
+                _VectorLeaf(("stack", "d_model"), (d,)),
+            )
+            if arch.n_blocks > 0:
+                leaves += (
+                    *_attention_leaves(rows, arch.attention, d),
+                    _WeightLeaf(rows.ffn, CI_FFN_IN_AXES, (d, ffn)),
+                    _WeightLeaf(rows.ffn, CI_FFN_OUT_AXES, (ffn, d)),
+                    _VectorLeaf(("stack", "ffn_hidden"), (ffn,)),
+                )
+            _validate_chunk_leaves(census, rows, leaves)
+            return CIFnPlacement.resolved(rows, census)
+        case MoEChunkwiseTransformerCIArch():
+            if rules is None:
+                return None
+            rows = rules.ci_fn
+            moe = rows.moe
+            assert moe is not None, (
+                "the MoE chunkwise CI arch needs a placement table carrying the ci_fn moe "
+                "families (expert_ffn + expert_head) — the zero1-replicated-resident-moe "
+                "preset; this table binds none"
+            )
+            _validate_ci_head_split(rows, arch.attention)
+            # The tp split of the CI expert grid must cut whole experts, exactly as the
+            # target's fused axes do.
+            moe.expert_ffn.operands.validate_shape(("expert",), (arch.n_experts,))
+            moe.expert_head.operands.validate_shape(("expert",), (arch.n_experts,))
+            census = resolve_stack_census(
+                len(arch.chunks),
+                (
+                    *rows.chunk_persist_rows,
+                    moe.expert_ffn.optimizer_state,
+                    moe.expert_head.optimizer_state,
+                ),
+            )
+            d, di, ds, n_experts = (
+                arch.d_model,
+                arch.expert_ffn_hidden,
+                arch.shared_ffn_hidden,
+                arch.n_experts,
+            )
+            _validate_chunk_leaves(
+                census,
+                rows,
+                (
+                    _WeightLeaf(rows.input, CI_INPUT_AXES, (arch.input_dim, d)),
+                    _VectorLeaf(("stack", "d_model"), (d,)),
+                    *_attention_leaves(rows, arch.attention, d),
+                    _WeightLeaf(moe.expert_ffn, CI_EXPERT_FFN_IN_AXES, (n_experts, d, di)),
+                    _WeightLeaf(moe.expert_ffn, CI_EXPERT_FFN_OUT_AXES, (n_experts, di, d)),
+                    _WeightLeaf(rows.ffn, CI_FFN_IN_AXES, (d, ds)),
+                    _WeightLeaf(rows.ffn, CI_FFN_OUT_AXES, (ds, d)),
+                ),
+            )
+            return CIFnPlacement.resolved(rows, census)
         case LayerwiseMLPCIArch() | GlobalMLPCIArch():
             return None
 
@@ -1244,6 +2403,8 @@ def build_ci_fn(arch: CIFnArch, sites: tuple[SiteSpec, ...], key: PRNGKeyArray) 
     match arch:
         case ChunkwiseTransformerCIArch():
             return init_chunkwise_transformer_ci_fn(arch, sites, key)
+        case MoEChunkwiseTransformerCIArch():
+            return init_moe_chunkwise_transformer_ci_fn(arch, sites, key)
         case LayerwiseMLPCIArch():
             return init_layerwise_mlp_ci_fn(arch, sites, key)
         case GlobalMLPCIArch():

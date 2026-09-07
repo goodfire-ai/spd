@@ -4,7 +4,7 @@
 # same run as llama8b_l18_b128_cmp32.yaml — the converter test asserts that.
 run_name: jax-l18-b128-cmp32-from-torch
 # torch leg of the torch-vs-JAX same-config comparison (32 GPU / 4 nodes each side).
-# Single-pool core Trainer (param_decomp/optimize.py) with the SPEC §2 production
+# Single-pool core trainer (param_decomp/core/run.py) with the SPEC §2 production
 # constants (= lr_mid), full-model forward (no residual-start on this path), vendored
 # Llama, pre-tokenized fineweb (no HF at run time). JAX leg:
 # pd-nano-jax param_decomp/configs/llama8b_l18_b128_cmp32.yaml — same constants,
@@ -108,6 +108,8 @@ target:
     model_name: meta-llama/Llama-3.1-8B
   attention_implementation: auto
   weights_dtype: bfloat16
+  output_edge:
+    kind: materialized
 data:
   train:
     kind: name
@@ -118,11 +120,12 @@ data:
 runtime:
   compilation_cache_dir: ~/.cache/param-decomp/xla
   remat_recon_forwards: true
-  replicate: 1
-  fsdp: 1
-  tp: 1
+  mesh:
+    replicate: 1
+    fsdp: 1
+    tp: 1
   sharding: zero1
-  compiler_options: tuned-v1
+  compiler_options: tuned-v2
 wandb:
   project: param-decomp-llama
   entity: goodfire

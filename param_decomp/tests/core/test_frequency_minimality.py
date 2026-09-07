@@ -49,7 +49,9 @@ def test_legacy_reference_token_count_alias():
 def test_closed_form():
     # γ=1: psi = c²/(c²+1); f = column means of psi; a' = 8.
     ci = {"a": jnp.array([[1.0, 2.0], [3.0, 4.0]])}  # psi columns: [1/2, 9/10], [4/5, 16/17]
-    activity, freq = importance_minimality_terms(ci, GAMMA, reference_datapoint_count=8)
+    activity, freq = importance_minimality_terms(
+        ci, GAMMA, reference_datapoint_count=8, normalize_at_one=False
+    )
     f0 = (1 / 2 + 9 / 10) / 2
     f1 = (4 / 5 + 16 / 17) / 2
     assert math.isclose(float(activity), f0 + f1, rel_tol=1e-6)
@@ -60,7 +62,9 @@ def test_closed_form():
 def test_zero_frequency_zero_contribution():
     # A component that never fires (f=0) contributes exactly 0 to freq: psi(0) = 0.
     ci = {"a": jnp.array([[0.0, 5.0], [0.0, 5.0]])}  # f = [0, 25/26]
-    _, freq = importance_minimality_terms(ci, GAMMA, reference_datapoint_count=16)
+    _, freq = importance_minimality_terms(
+        ci, GAMMA, reference_datapoint_count=16, normalize_at_one=False
+    )
     f1 = 25 / 26
     expected = 0.0 + f1 * math.log2(1 + 16 * f1)
     assert math.isclose(float(freq), expected, rel_tol=1e-6)
@@ -71,8 +75,12 @@ def test_batch_invariance():
     base = jnp.array([[0.1, 0.4, 0.7]])  # one row of per-token values
     small = {"a": jnp.tile(base, (4, 1))}  # n=4
     large = {"a": jnp.tile(base, (64, 1))}  # n=64, identical f_c
-    _, freq_small = importance_minimality_terms(small, GAMMA, reference_datapoint_count=1024)
-    _, freq_large = importance_minimality_terms(large, GAMMA, reference_datapoint_count=1024)
+    _, freq_small = importance_minimality_terms(
+        small, GAMMA, reference_datapoint_count=1024, normalize_at_one=False
+    )
+    _, freq_large = importance_minimality_terms(
+        large, GAMMA, reference_datapoint_count=1024, normalize_at_one=False
+    )
     assert jnp.allclose(freq_small, freq_large, rtol=1e-5)
 
 
@@ -90,15 +98,21 @@ def test_a_prime_bt_reproduces_old_rolled_log_term():
         mean = sums / n
         old = old + (mean + beta * mean * jnp.log2(1 + sums)).sum()
 
-    activity, freq = importance_minimality_terms(ci, GAMMA, reference_datapoint_count=n)
+    activity, freq = importance_minimality_terms(
+        ci, GAMMA, reference_datapoint_count=n, normalize_at_one=False
+    )
     assert jnp.allclose(activity + beta * freq, old, rtol=1e-6)
 
 
 def test_activity_independent_of_reference_datapoint_count():
     ci = {"a": jnp.array([[0.5, 1.5], [2.5, 3.5]])}
     gamma = jnp.asarray(1.5)
-    activity_a, _ = importance_minimality_terms(ci, gamma, reference_datapoint_count=32)
-    activity_b, _ = importance_minimality_terms(ci, gamma, reference_datapoint_count=999)
+    activity_a, _ = importance_minimality_terms(
+        ci, gamma, reference_datapoint_count=32, normalize_at_one=False
+    )
+    activity_b, _ = importance_minimality_terms(
+        ci, gamma, reference_datapoint_count=999, normalize_at_one=False
+    )
     assert jnp.allclose(activity_a, activity_b)
 
 
@@ -112,22 +126,29 @@ def test_dispatch_no_frequency_gives_zero_freq():
     assert float(activity) > 0.0
 
 
-def test_frequencies_seam_matches_direct_terms():
+@pytest.mark.parametrize("normalize_at_one", [False, True])
+def test_frequencies_seam_matches_direct_terms(normalize_at_one: bool):
     # The train step's two readouts (activity_sum + the resolved role's term over one
     # per_component_frequencies pass) equal the closed-form pair.
     cfg = ImportanceMinimalityLossConfig(
         coeff=1.0,
         gamma=ScheduleConfig.constant(1.0),
         frequency=FrequencyMinimalityConfig(coeff=0.5, reference_datapoint_count=128),
+        normalize_at_one=normalize_at_one,
     )
     ci = {"a": jnp.array([[0.1, 0.9], [0.4, 0.6]])}
     gamma = scheduled_value_at(jnp.asarray(0.0), cfg.gamma)
-    frequencies = per_component_frequencies(ci, gamma)
+    frequencies = per_component_frequencies(ci, gamma, normalize_at_one=cfg.normalize_at_one)
     assert cfg.frequency is not None
     role = resolve_frequency(cfg.frequency)
     assert isinstance(role, BatchFrequency)
     term = role.term(frequencies)
-    activity_d, freq_d = importance_minimality_terms(ci, gamma, reference_datapoint_count=128)
+    activity_d, freq_d = importance_minimality_terms(
+        ci,
+        gamma,
+        reference_datapoint_count=128,
+        normalize_at_one=normalize_at_one,
+    )
     assert jnp.allclose(activity_sum(frequencies), activity_d)
     assert jnp.allclose(term.freq, freq_d)
 
@@ -153,7 +174,7 @@ def test_ema_finite_at_extreme_halflife():
     # form is stable through the configured cap (1e6), incl. the step-0 identity.
     cfg = _ema_cfg(halflife=1e6)
     ci = {"a": jnp.array([[0.2, 0.8], [0.4, 0.1]])}
-    frequencies = per_component_frequencies(ci, GAMMA)
+    frequencies = per_component_frequencies(ci, GAMMA, normalize_at_one=False)
     ema = {"a": jnp.zeros(2, jnp.float32)}
     assert cfg.frequency is not None
     role = resolve_frequency(cfg.frequency)
@@ -187,7 +208,7 @@ def test_ema_stationary_equals_batch_penalty():
     # Constant batches: ema_t = (1 - decay^t)·f, so the debiased f̂ is f at EVERY step.
     cfg = _ema_cfg(halflife=8.0)
     ci = {"a": jnp.array([[0.2, 0.8], [0.4, 0.1]])}
-    frequencies = per_component_frequencies(ci, GAMMA)
+    frequencies = per_component_frequencies(ci, GAMMA, normalize_at_one=False)
     ema = {name: jnp.zeros(v.shape[-1], jnp.float32) for name, v in ci.items()}
     assert cfg.frequency is not None
     role = resolve_frequency(cfg.frequency)
@@ -241,11 +262,13 @@ def test_ema_gradient_matches_unsmoothed_at_stationarity():
     assert isinstance(role, EmaFrequency)
 
     def ema_freq(ci: jax.Array) -> jax.Array:
-        frequencies = per_component_frequencies({"a": ci}, GAMMA)
+        frequencies = per_component_frequencies({"a": ci}, GAMMA, normalize_at_one=False)
         return role.term(frequencies, {"a": jnp.zeros(2)}, jnp.asarray(0.0)).freq
 
     def batch_freq(ci: jax.Array) -> jax.Array:
-        _, freq = importance_minimality_terms({"a": ci}, GAMMA, reference_datapoint_count=64)
+        _, freq = importance_minimality_terms(
+            {"a": ci}, GAMMA, reference_datapoint_count=64, normalize_at_one=False
+        )
         return freq
 
     assert jnp.allclose(jax.grad(ema_freq)(ci_val), jax.grad(batch_freq)(ci_val), rtol=1e-5)
@@ -259,7 +282,7 @@ def test_ema_state_carries_no_gradient():
     assert isinstance(role, EmaFrequency)
 
     def ema_mass(ci: jax.Array) -> jax.Array:
-        frequencies = per_component_frequencies({"a": ci}, GAMMA)
+        frequencies = per_component_frequencies({"a": ci}, GAMMA, normalize_at_one=False)
         ft = role.term(frequencies, {"a": jnp.zeros(2)}, jnp.asarray(0.0))
         return jnp.sum(ft.new_freq_ema["a"])
 

@@ -1,7 +1,6 @@
 """Target-selected residual relative-MSE auxiliary recon loss (SPEC S35)."""
 
 from collections.abc import Callable
-from typing import Any
 
 import equinox as eqx
 import jax
@@ -13,6 +12,7 @@ from pydantic import ValidationError
 from param_decomp.core import train as train_module
 from param_decomp.core.adversary import (
     PersistentAdversary,
+    SourcesAdamState,
     init_persistent_sources,
     init_sources_adam_state,
 )
@@ -230,8 +230,8 @@ def test_hidden_acts_reconstruction_config_needs_both_halves_and_sane_points():
         HiddenActsReconstruction(coeff=0.3, points=())
     with pytest.raises(ValidationError, match="duplicate points"):
         HiddenActsReconstruction(coeff=0.3, points=("resid.3", "resid.3"))
-    with pytest.raises(ValidationError):
-        HiddenActsReconstruction(coeff=0.0, points=("resid.3",))
+    measured = HiddenActsReconstruction(coeff=0.0, points=("resid.3",))
+    assert measured.coeff == 0.0
 
 
 def _one_step_with_recon(
@@ -283,7 +283,7 @@ def _one_step_with_recon(
         components_optimizer=opt_vu,
         ci_fn_optimizer=opt_ci,
         total_steps=100,
-        faithfulness=faithfulness_loss_for(model),
+        faithfulness=faithfulness_loss_for(placed),
     )
     tokens = jax.random.randint(jax.random.PRNGKey(4), (2, seq), 0, cfg.vocab_size)
     return step(placed, state, tokens, jax.random.PRNGKey(100))
@@ -368,11 +368,11 @@ def test_hidden_acts_reconstruction_coeff_disabled_logs_no_breakdown_at_all(
     # not a valid bit-identity oracle: XLA can produce different (but internally deterministic)
     # fp32 reduction orderings on different CPU architectures. This differential pin remains
     # exact while exercising the complete optimizer trajectory on every backend CI uses.
-    def legacy_objective(
-        recon_loss_fn: Callable[[Any, Any], jax.Array],
+    def legacy_objective[Out](
+        recon_loss_fn: Callable[[Out, Out], jax.Array],
         *,
-        masked: ForwardObservations,
-        clean: ForwardObservations,
+        masked: ForwardObservations[Out],
+        clean: ForwardObservations[Out],
         reconstruction: ReconstructionSpec,
         valid_row_mask: jax.Array | None = None,
     ) -> OutputOnlyReconstructionLoss:
@@ -415,8 +415,7 @@ def _ppgd_run(
     opt_ci = optax.adamw(1e-3, weight_decay=0.0)
 
     src = init_persistent_sources(
-        model.site_names,
-        tuple(s.C for s in model.sites),
+        model.sites,
         (1, seq),
         jnp.float32,
         jax.random.PRNGKey(3),
@@ -455,7 +454,7 @@ def _ppgd_run(
                     sources=src,
                     opt_state=init_sources_adam_state(src),
                     state_key=ppgd_cfg.type,
-                    adam=ppgd_cfg.optimizer,
+                    optimizer=ppgd_cfg.optimizer,
                     n_warmup=ppgd_cfg.n_warmup_steps,
                 )
             },
@@ -490,7 +489,7 @@ def _ppgd_run(
         components_optimizer=opt_vu,
         ci_fn_optimizer=opt_ci,
         total_steps=100,
-        faithfulness=faithfulness_loss_for(model),
+        faithfulness=faithfulness_loss_for(placed),
     )
     tokens = jax.random.randint(jax.random.PRNGKey(4), (2, seq), 0, cfg.vocab_size)
     per_step: list[dict[str, jnp.ndarray]] = []
@@ -510,6 +509,7 @@ def test_hidden_acts_reconstruction_with_persistent_pgd_adversary():
         assert all(bool(jnp.isfinite(v).all()) for v in metrics.values())
     assert int(state.training.step) == n_steps
     adv = state.training.adversaries[ppgd_key]
+    assert isinstance(adv.opt_state, SourcesAdamState)
     assert float(adv.opt_state.step_count) == n_steps * (n_warmup + 1)
     for v in jax.tree.leaves(adv.sources):
         assert float(v.min()) >= 0.0 and float(v.max()) <= 1.0
@@ -543,20 +543,13 @@ def test_adversary_actually_ascends_the_combined_objective():
     baseline, _ = _ppgd_run(hidden_acts_reconstruction_coeff=1.0, n_steps=1, n_warmup=0)
     pulled, _ = _ppgd_run(hidden_acts_reconstruction_coeff=50.0, n_steps=1, n_warmup=0)
     key = "PersistentPGDReconLoss"
-    base_m = baseline.training.adversaries[key].opt_state.m
-    pulled_m = pulled.training.adversaries[key].opt_state.m
-    assert set(base_m) == set(pulled_m)
-    changed = [
-        site
-        for site in base_m
-        if any(
-            not bool(jnp.array_equal(a, b))
-            for a, b in zip(
-                jax.tree.leaves(base_m[site]), jax.tree.leaves(pulled_m[site]), strict=True
-            )
-        )
-    ]
-    assert changed, (
+    base_state = baseline.training.adversaries[key].opt_state
+    pulled_state = pulled.training.adversaries[key].opt_state
+    assert isinstance(base_state, SourcesAdamState) and isinstance(pulled_state, SourcesAdamState)
+    assert any(
+        not bool(jnp.array_equal(a, b))
+        for a, b in zip(jax.tree.leaves(base_state.m), jax.tree.leaves(pulled_state.m), strict=True)
+    ), (
         "source moments are identical at hidden-activation reconstruction coeff 1 and 50, so the term "
         "is not reaching the final-ascent gradient"
     )

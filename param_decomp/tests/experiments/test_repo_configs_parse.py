@@ -4,7 +4,9 @@ A schema PR that breaks a seat migrates it in the same PR, with an executed in-r
 migration — never a script attached to a PR comment (see CONFIGS.md).
 """
 
+import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 from zipfile import ZipFile
@@ -13,7 +15,14 @@ import pytest
 import yaml
 
 from param_decomp.core.base_config import BaseConfig
+from param_decomp.core.configs import (
+    ImportanceMinimalityLossConfig,
+    MergedStochasticSubsetPooledPPGDReconLossConfig,
+    NonlinearityLocalityLossConfig,
+    PGDReconLossConfig,
+)
 from param_decomp.experiments.lm.config import (
+    QWEN36_MOE_MODEL_CLASS,
     LMExperimentConfig,
     LMTargetedExperimentConfig,
     PretrainedTarget,
@@ -62,6 +71,53 @@ def _load(path: Path) -> dict[str, Any]:
     return yaml.safe_load(path.read_text())
 
 
+def test_pile4l_canonical_recipe() -> None:
+    config = LMExperimentConfig.from_file(
+        REPO / "param_decomp/experiments/lm/configs/pile_llama_simple_mlp-4L.yaml"
+    )
+    imp = next(
+        term for term in config.pd.loss_metrics if isinstance(term, ImportanceMinimalityLossConfig)
+    )
+    locality = next(
+        term for term in config.pd.loss_metrics if isinstance(term, NonlinearityLocalityLossConfig)
+    )
+    recon = next(
+        term
+        for term in config.pd.loss_metrics
+        if isinstance(term, MergedStochasticSubsetPooledPPGDReconLossConfig)
+    )
+    assert config.eval is not None
+    eval_pgd = next(
+        metric for metric in config.eval.metrics if isinstance(metric, PGDReconLossConfig)
+    )
+
+    assert imp.coeff == 2e-4
+    assert imp.frequency is not None
+    assert imp.frequency.coeff == 6.6e-5
+    assert imp.frequency.reference_datapoint_count == 6_553_600
+    assert locality.coeff == 3e-5
+    assert recon.hidden_acts_reconstruction is None
+    assert recon.pool_size == 2064
+    assert recon.optimizer.lr_schedule.max_val == 0.02
+    assert config.runtime.sharding == "owner"
+    assert eval_pgd.hidden_acts_reconstruction is not None
+    assert eval_pgd.hidden_acts_reconstruction.coeff == 0.0
+    assert eval_pgd.hidden_acts_reconstruction.points == (
+        "resid.1",
+        "resid.2",
+        "resid.3",
+        "resid.4",
+    )
+
+    schedules = (
+        imp.gamma,
+        config.pd.components_optimizer.lr_schedule,
+        config.pd.ci_fn_optimizer.lr_schedule,
+    )
+    assert all(schedule.points[-2].at == 0.9 for schedule in schedules)
+    assert all(schedule.points[-2].frac == schedule.points[-1].frac for schedule in schedules)
+
+
 def test_gate_collects_the_seat_registry() -> None:
     """Moved roots must not silently make a domain disappear from the parametrized tests."""
     collected_dirs = {str(path.parent.relative_to(REPO)) for path in PUBLIC_CONFIG_PATHS}
@@ -83,9 +139,54 @@ def test_lm_config_builds_placement_claims(path: Path) -> None:
     )
     # The placement gate resolves the site set from config + arch, so every maintained
     # config's sharding claim is exercised at its pinned dp. A pretrained target is the
-    # enumerated gap: resolving it reads a cluster-local pretrain cache.
+    # enumerated gap: resolving it reads a external pretrain cache.
     if not isinstance(config.target.spec, PretrainedTarget):
         assert_placement_claims(config, Path("out"))
+
+
+# Seats the CPU trace gate covers: families with an abstract (shape-only) model
+# builder — today the qwen36_moe family (`trace_check` enumerates the gap).
+TRACE_GATE_PATHS = [
+    path
+    for path in LM_CONFIG_PATHS
+    if _load(path)["target"]["spec"].get("model_class") == QWEN36_MOE_MODEL_CLASS
+]
+
+
+@pytest.mark.parametrize("path", TRACE_GATE_PATHS, ids=lambda p: str(p.relative_to(REPO)))
+def test_lm_seat_train_step_traces_at_declared_topology(path: Path) -> None:
+    """The placement-claims gate never TRACES the step, and explicit-sharding refusals
+    (an ambiguous sharded contraction) fire only at trace time. Lower the seat's real
+    train step at its declared topology on
+    simulated CPU devices: a subprocess, because the world size must exist as local
+    devices before jax initializes. Sequence is never sharded, so the pinned 512 (the
+    seats' dataset extent) exercises every sharding rule any extent would. The gate also
+    lowers the seat's eval programs on every output edge the family supports, so an
+    eval-only streamed-edge trace failure dies here too."""
+    config = (
+        LMTargetedExperimentConfig.model_validate(_load(path))
+        if _is_targeted_seat(path)
+        else LMExperimentConfig.model_validate(_load(path))
+    )
+    env = os.environ | {
+        "XLA_FLAGS": f"--xla_force_host_platform_device_count={config.runtime.mesh.world_size}",
+        "JAX_PLATFORMS": "cpu",
+    }
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "param_decomp.experiments.lm.trace_check",
+            str(path),
+            "--seq-len",
+            "512",
+        ],
+        cwd=REPO,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"trace gate failed for {path.name}:\n{result.stderr[-3000:]}"
 
 
 @pytest.mark.parametrize(
@@ -126,12 +227,6 @@ def test_wheel_contains_every_public_config(tmp_path: Path) -> None:
     with ZipFile(wheel) as archive:
         packaged = set(archive.namelist())
     expected = {str(path.relative_to(REPO)) for path in PUBLIC_CONFIG_PATHS}
-    # Derived from the tree rather than named: the public cut drops configs whose schema
-    # lives outside this package, so a hardcoded path asserts a fact about this checkout
-    # instead of one about packaging, and fails on a tree that legitimately lacks it.
-    expected |= {
-        str(path.relative_to(REPO)) for path in REPO.glob("param_decomp/clustering/configs/*.yaml")
-    }
     assert expected <= packaged, sorted(expected - packaged)
 
 

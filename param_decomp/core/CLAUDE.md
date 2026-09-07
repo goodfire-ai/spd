@@ -12,8 +12,8 @@ layering (core imports NO target, targets import core only) is pinned by
 Open items: the persistent-source shape `nsc` and sigmoid parameterization are
 deliberately refused. SPEC S24's two torch-parity quirks (PPGD warmup route-all,
 fresh-PGD single routing draw) are pinned pending a team decision. tPD's target-pass
-delta polarity (SPEC T10) and whether T3's faithfulness exclusion is definitional await
-the algorithm's author-definition.
+delta polarity is decided (SPEC T10, resolved 2026-08-27, with its rationale in the
+row); whether T3's faithfulness exclusion is definitional stays open.
 
 ## Step-machinery rules
 
@@ -30,26 +30,28 @@ the algorithm's author-definition.
 ## The one rule
 
 **Every change is checked against SPEC.md, by invariant ID.** If a change deviates
-from an invariant, either fix the change or (deliberately, with Oli) amend the spec —
+from an invariant, either fix the change or deliberately amend the spec —
 never silently diverge. Cite IDs (`S14`, `N1`, …) in commit messages and reviews.
 
 ## Architecture in one breath
 
-`model.py` defines `DecomposedModel[PreparedT]` — a `@runtime_checkable Protocol` with
+`model.py` defines `DecomposedModel[Out, PreparedT]` — a `@runtime_checkable Protocol` with
 ordered `sites`, `has_position_axis`, `site_output_keys`, one `clean_forward`, one
 `masked_forward`, `component_activation_forward`, `target_weight_sq_norms`, `weight_deltas`, and
-`recon_loss_fn` (LM:
-`kl_per_position`). Activation identity is target-owned: core passes immutable frozensets of
+the two output operations on the target's declared output type `Out` — `recon_loss_fn`
+(LM: `lm_output_kl_per_position`) and `pin_output_batch` — both pure `@staticmethod`s.
+Activation identity is target-owned: core passes immutable frozensets of
 canonical names, and each target parses and deterministically orders them into its private
 sparse slot layout on first trace. No capture-plan type crosses the protocol, and core never
 imports or
-interprets a residual/block/matrix vocabulary. `ForwardResult.captures` carries one array per
+interprets a residual/block/matrix vocabulary. `ForwardResult[Out].captures` carries one array per
 requested physical activation. Transformer site names are not aliases for matrix inputs;
 consumers ask directly for the vectors they need. An empty key set takes the target's
-untouched no-capture path. Both forwards return one `ForwardResult`; masked execution receives
+untouched no-capture path. Both forwards return one `ForwardResult[Out]`; masked execution receives
 the exhaustive
-`MaterializedMasking | StochasticMasking` union, preserving in-block stochastic mask
-rebuilds without a deterministic/stochastic method grid. `PreparedT` is the target-private
+`MaterializedMasking | StochasticMasking | SourceMasking` union, preserving in-block mask
+rebuilds — stochastic redraws and persistent-source recomposition alike — without a
+per-strategy method grid. `PreparedT` is the target-private
 compute layout returned by `prepare_compute_weights`; generic code may transport it only
 back into that same target's methods, so cross-target prepared-weight mixing is type-invalid.
 Component-linear execution receives the run's resolved `PlacementRules` explicitly:
@@ -86,7 +88,14 @@ letters are stored size-1 broadcast axes, rank always matches the waist. Batch-B
 the batch (SPEC S16/D1). `sc`/`bsc` on a positionless target raise; per-step (fresh) PGD
 rejects `sc` at validation; legacy spellings (`scope: {type: ...}`, `mask_scope`, the
 verbose value names) are rejected at parse — no config aliases remain. Every (positions x source_shape) persistent
-shape is written out in `init_sources_sharded`, so persistent PGD runs on the toys too.
+shape is written out in `init_placed._source_leading`, so persistent PGD runs on the toys too.
+Persistent sources PERSIST as target-declared semantic stacks (`adversary.SourceStacks`,
+the same `SiteSpec.group` grouping `ComponentStacks` uses: one slot-major
+`[slot, *leading, C]` / `[slot, *leading, E, c]` stack per group plus `[slot, *leading]`
+deltas; slot axis replicated, leading batch axis on `data`, C / expert axis on `tp`).
+The SRC_STEP state and checkpoint tree mirror that layout; every CONSUMER (mask
+formation, eval probes) reads the site-keyed view (`site(name)` / `per_site()`), whose
+slot slices are views — core never sees a kind vocabulary.
 Batch size is `pd.batch_size` uniformly — `DataConfig` carries no batch.
 Each configured recon term retains its end-to-end comparison and may add S35's
 `HiddenActsReconstruction` at explicit target-owned capture points, currently measured as
@@ -100,10 +109,17 @@ numerics: GELU is exact-erf (`approximate=False`),
 RMSNorm eps is `finfo(fp32).eps` (`CI_FN_RMS_EPS`) — SPEC §4.6. The
 three EDGES are generic so non-LM (bio-style) targets fit: the model INPUT
 (the opaque batch `clean_forward` / `masked_forward` consume, typed `Any` — token ids for
-an LM, a dict for bio), the model OUTPUT (`ForwardResult.output: Any` — logits, a tuple of
-heads, coords; field NAMES stay `*_logits` pending a deferred rename), and the recon
-comparison (`recon_loss_fn(masked_output, clean_output) -> scalar`, default
-`kl_per_position` so the LM path is byte-identical). The waist shape contract (all per-site
+an LM, a dict for bio), the model OUTPUT (`ForwardResult[Out].output` — `Out` is the
+target's declared type, named at every core seam that carries an output: `Array` logits or
+the factored `StreamedLinearOutput` for an LM (`targets.lm_output.LMOutput`), a tuple of
+heads, coords), and the recon comparison (`recon_loss_fn(masked_output, clean_output) ->
+scalar`; the LM binds `lm_output_kl_per_position`). Core never inspects an output: the
+two things it does with one — compare two, pin one's batch axis — are the target's own
+`recon_loss_fn` / `pin_output_batch`, composed via `ForwardSubstrate` and the eval step
+factories, and everything else core knows about an output derives from those.
+Code in core that carries a model or a forward result without caring about its output is
+generic in `Out` (`def f[Out, PreparedT](model: PlacedModel[Out, PreparedT], ...)`); a bare
+`PlacedModel` / `ForwardResult` / `ForwardObservations` is a type error. The waist shape contract (all per-site
 tensors in one forward share one `*leading` prefix) is enforced at trace time by
 `@jaxtyped(typechecker=beartype)` on the core `step`, `masked_recon`, and the loss fns.
 `train.py` is the generic step factory
@@ -157,11 +173,6 @@ NAIVE host gather of the C-sharded V/U (gated on `want_uv_plots`) and passes `co
 special handling; for the positionless toys (TMS/ResidMLP) `toy_uv_eval.render_uv_metric`
 renders it off the small on-host V/U + the probe CI as permutation source (cheap, no
 gather), sharing `slow_eval.render_uv_figure` / `plot_uv_matrices` with the LM path.
-
-`well_temperedness.py` measures whether components with higher causal importance
-preactivations have a greater effect on reconstruction loss when ablated one at a time. It
-compares components across all heads and layers, separately below 0, between 0 and 1, and
-above 1. Named groups add the same measurement for subsets such as attention and MLP sites.
 
 `experiments/lm/arithmetic_eval.py` is a config-gated LM-only figure tier (`ArithmeticCIGrid`, on
 `eval.slow_every`) for inspecting how the decomposition reconstructs a `target model`'s
@@ -233,7 +244,9 @@ position-LOCAL and attention-free, still `has_position_axis=True`, but affine on
 tap — no hidden layer and blind to tap magnitude. A positioned target whose position count
 makes O(P²) attention infeasible (pairwise positions) should take
 `LayerwiseMLPCIArch(has_position_axis=True)`; the blockless chunk is a baseline.
-The mesh is `(replicate, fsdp, tp)`. No axis is required to coincide with a hardware
+The mesh is `(replicate, fsdp, tp)` — or, for the `*-replicated-resident` placements
+(whose bf16 working copy is resident whole, so no fsdp axis exists), the two-axis
+`(data, tp)`. No axis is required to coincide with a hardware
 boundary (`sharding.py`); the maintained seats AUTHOR `replicate` across nodes with each
 node an `(fsdp, tp)` NVLink plane, and owner placement's zero-cross-node weight
 collectives + node-local muon NS hold under exactly that authoring. `tp` shards declared
@@ -244,17 +257,28 @@ optimizer moments persist as target-declared semantic stacks (`ComponentStacks.s
 targets group by matrix kind). Under owner placement, the stack
 axis ÷`replicate` — whole matrices owned per node-group, zero cross-node weight collectives,
 muon NS node-local — matrix d dims ÷`fsdp`, C ÷`tp`; SPEC D4. Placement is fallback-free:
-one set of component rows places EVERY semantic group, and a stack that doesn't tile a
-stack-sharded row refuses at `placement.from_config(spec, mesh, sites)` during config build
-(pre-submit for a submitted run), naming the groups and the remedies — a tiling mesh, or a
-placement with no stack sharding (`zero1` rests every master intra-matrix; its faithfulness
-rows ARE that master layout). Mixed per-group placement is unrepresentable (no fallback
-preset, no fallback rows in the schema). The resolved group census flows down as data; the
-consumer boundary (`placement.component_stacks_shardings`) only validates the received
-census, never re-decides. See PLACEMENT_DESIGN.md, "Presets"). The CI-fn
+one set of component rows places EVERY semantic group. A stack that doesn't tile a
+stack-sharded row is placed by PADDING the persist stack with trailing all-zero slots
+(`StackCensus.stack_pad` — an enumerated fact, never shape-inferred: the V/U groups'
+`GroupCensus`, mirrored on `ComponentStacks.stack_pads`; the chunkwise CI fn's chunk
+stack at `CIFnPlacement.chunks`, resolved where the CI arch meets the rows
+(`ci_fn.resolve_ci_placement`) and mirrored on the fn's static `stack_pad`. The entry
+strips pads BEFORE its gather — through `placement.padded_entry_waypoint`, so the
+cross-`data` all-gather moves real slots only — and compute (the layer scan and the
+chunk scan alike) never sees them; the faithfulness lane rides the V/U pads as exact
+zeros, and wd=0 keeps every pad at zero); anything else
+the rows cannot place refuses at `placement.from_config(spec, mesh, sites)` /
+`resolve_ci_placement` during config
+build (pre-submit for a submitted run) with the remedies named. Mixed per-group placement
+is unrepresentable (no fallback preset, no fallback rows in the schema). The resolved
+censuses flow down as data; the consumer boundaries (`placement.component_stacks_shardings`,
+the CI fn's `shardings` / `materialize_ci_compute_weights`)
+only validate the received census, never re-decide. See PLACEMENT_DESIGN.md, "Presets"
+and "Persist-stack padding"). Under `zero1` the CI-fn
 masters + moments keep intra-matrix ZeRO-1 (`("fsdp","replicate")` on d_model — fsdp-major,
 so the ÷N→÷fsdp reconstruct is a pure all-gather over `replicate`; replicate-major would
-cost a per-step grid-transpose collective-permute). Either way
+cost a per-step grid-transpose collective-permute); under `owner` they stack-cut like the
+V/U masters. Either way
 the dominant optimizer-state memory scales 1/N, not the fixed 1/fsdp. The bf16
 COMPUTE weights are materialized to the `fsdp`-sharded (÷fsdp) layout ONCE per step in ENTRY
 (the cross-`replicate` gather, off the hot path — `placement.materialize_reduced_weights`, via
@@ -266,9 +290,14 @@ collectives); the scan body then reshards ONE layer's `fsdp` shard to full d_in 
 (NVLink, freed each iteration) — NEVER a full-model `[n_layer, full_d_in, C]` weight stack
 resident.
 `run_state.init_train_state` takes the resolved `ci_fn_arch: CIFnArch`
-(`LayerwiseMLPCIArch` / `GlobalMLPCIArch` / `ChunkwiseTransformerCIArch`; construction
-dispatched by `ci_fn.build_ci_fn`) and uses replicated (not
-C-sharded) V/U + CI for the tiny toys; the core `ci_fn.CIFnArch` admits all three and the
+(`LayerwiseMLPCIArch` / `GlobalMLPCIArch` / `ChunkwiseTransformerCIArch` /
+`MoEChunkwiseTransformerCIArch` — the MoE sibling: per-stage chunks of concat-wide
+routed expert banks on the target's CAPTURED routing, expert sites emitting
+`components.NarrowCI` bundles (values + router indices as ONE value; the full C axis
+unconstructible outside test oracles) through per-expert heads fused into the last
+block's expert slots; construction dispatched by `ci_fn.build_ci_fn`) and uses
+replicated (not C-sharded) V/U + CI for the tiny toys; the core `ci_fn.CIFnArch`
+admits all four and the
 composition-side `experiments.toy_config.build_toy_ci_arch` builds the layerwise / global
 arch from the toy `decomposition.ci` (validated end-to-end on CPU via
 the ResidMLP composition root). Offline consumer runs over the toys are NOT wired
@@ -285,12 +314,13 @@ Llama-8B target is multi-GB. Therefore:
   recompiled per concrete model). As a traced arg, the array leaves are dynamic inputs and
   the static fields (`sites`, `eps`, `has_position_axis`) bake harmlessly.
 - **Step factories read only STATIC config off the closed-over `model_static` at trace-setup**
-  (`model_static.site_names`, `model_static.sites`, `model_static.recon_loss_fn` — `recon_loss_fn` is a `@staticmethod`,
-  pure, holds no arrays, so closing over it is safe). All ARRAY access goes through the
+  (`model_static.site_names`, `model_static.sites`, and the two output operations
+  `model_static.recon_loss_fn` / `pin_output_batch` — each a `@staticmethod`, pure,
+  holding no arrays, so closing over it is safe). All ARRAY access goes through the
   model ARG (named `model` inside the jitted fn). `make_train_step`, `make_eval_step`,
-  `make_slow_eval_step`, `make_position_ci_step`,
-  `make_*_attn_patterns_step`, and `make_faith_warmup_step` all follow this; each carries a
-  comment at the step factory. The toy `run.py`s follow the same rule.
+  `make_lm_batch_context_step`, `make_*_attn_patterns_step`, and `make_faith_warmup_step`
+  all follow this; each carries a comment at the step factory. The toy `run.py`s
+  thread the model as a filter_jit arg too.
 - This is why the methods take only the *runtime-varying* args (`vu`, `resid`, masks, …) and
   the frozen weights ride on `self`: `self` reaches the trace as the traced model arg.
 
@@ -365,8 +395,8 @@ device by construction — declares no `runtime:` section at all)
 plus the run-instance fields —
 top-level `run_name`, the
 `runtime.remat_recon_forwards` memory/compute knob, and `wandb.group`/`wandb.tags`.
-`run_id`/`out_dir` are NOT config fields: the launcher mints the id and passes it as
-`--run-id`, and the run dir is a pure function of `data_root` + id
+`run_id`/`out_dir` are NOT config fields: the entry point mints the id unless the caller
+passes `--run-id`, and the run dir is a pure function of `data_root` + id
 (`experiments.config.run_instance`).
 
 **Fine-tune from a parent checkpoint** (`resume_provenance`, SPEC S33, LM-only). A fresh
@@ -392,8 +422,9 @@ gamma-anneal schedule recomputes over the new `cfg.steps` from 0. A subsequent S
 asserts matching sites (names + C) + ci-fn arch before the restore. Provenance flows into
 `launch_config.yaml` + `wandb.config`. Run the module entry point with the new config.
 
-**Mesh topology is explicit; allocation topology belongs to the launcher.**
-`runtime.{replicate,fsdp,tp}` names the logical mesh directly, with world size their
+**Mesh topology is explicit; allocation topology belongs to the caller.**
+`runtime.mesh` names the logical mesh directly — `{replicate: R, fsdp: F, tp: T}`, or
+`{data: D, tp: T}` for a `*-replicated-resident` run — with world size the axes'
 product. No axis is required to coincide with a process or node boundary. The process
 entry receives `local_device_count` from whoever allocated it; `initialize_topology`
 uses that fact only for JAX process bring-up and asserts the realized world matches the
@@ -401,7 +432,7 @@ authored mesh.
 
 `python -m param_decomp.experiments.lm.run <config> --data-root … --local-device-count N`
 runs in the current allocation, minting and pinning its own identity when `--run-id` is
-absent. An external launcher may mint the identity, pin the config and code revision, and
+absent. A caller may instead supply the identity, pin the config and code revision, and
 start the matching process topology; those deployment choices are not part of the library.
 
 `main` enables JAX's persistent compilation cache
@@ -448,6 +479,6 @@ author the cache dir on a filesystem all its nodes share.
   so it's correct for BOTH single-process-many-devices and multi-process-1-device.
   Do NOT revert to the per-`process_index()`-slice idiom — it silently replicates one
   slice on single-process multi-device CPU.
-- **`vendored_jax` is `param_decomp/vendored_jax` — a subpackage of the same `param-decomp` distribution**;
+- **`target_ports` and `routed` are `param_decomp/` subpackages of the same `param-decomp` distribution**;
   no `sys.path` hacks anywhere. If an import fails, the install is broken — fix the env
   (`make install-dev`), don't add a path shim.

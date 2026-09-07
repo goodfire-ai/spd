@@ -22,6 +22,7 @@ internal-only slices simply aren't in the set. No slice is ever special to the e
 | `glu_transformer` | Shared HF GLU-transformer machinery (site grammar, `FrozenAttn`/`GLULayer`, `GLUDecomposedModel`, the scan/masked-forward engine, HF safetensors loading) |
 | `llama31` | Llama-3.1 architecture (vendored `LlamaConfig`, llama3 rope); concrete support: 8B — a `glu_transformer` family |
 | `qwen3` | Qwen3 architecture (`Qwen3FrozenAttn`: required QK-norm via the `_prep_qk` hook); concrete support: dense 0.6B/1.7B/4B/8B/14B Base and post-trained — a `glu_transformer` family |
+| `qwen36_moe` | Qwen3.6-MoE architecture (HF `qwen3_5_moe`: hybrid gated-DeltaNet/gated-attention mixers + per-layer MoE MLP) on its OWN stage-scan engine; sites are the MoE matrices with the expert axis structural inside fused per-layer sites; concrete support: Qwen3.6-35B-A3B — its own `qwen36_moe` family (kernels: `target_ports/qwen3_5_moe.py`) |
 | `llama_simple_mlp` | The pile-pretrained `LlamaSimpleMLP` (loads from the `pretrain/` cache) — its own `simple_mlp` family, hosted on the shared `glu_transformer` engine (GELU MLP, tied head) |
 | `transformer_taps` | The transformer families' activation-tap vocabulary (opaque strings to the engine) |
 | `tms` | Toy: TMS (positionless, in-process pretrain) |

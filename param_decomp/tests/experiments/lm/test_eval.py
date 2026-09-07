@@ -1,8 +1,8 @@
 """CPU tests for the in-loop eval step at a tiny config.
 
-Checks the torch-parity key set, the variant identities (rounded-at-impossible-threshold
-== unmasked; CI-L0 saturates at C / 0 for out-of-range thresholds), CE correctness
-against a hand-rolled computation, and determinism in the key.
+Checks the torch-parity key set, the variant identities (the rounded mask at threshold 1
+is the zero mask; CI-L0 equals the count computed directly off the CI values, and 0 at
+threshold 1), CE correctness against a hand-rolled computation, and determinism in the key.
 """
 
 from collections.abc import Mapping
@@ -12,6 +12,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import pytest
+from jax.sharding import Mesh
 
 from param_decomp.core.ci_fn import (
     Chunk,
@@ -19,9 +20,11 @@ from param_decomp.core.ci_fn import (
     MHACIAttention,
     PlacedCIFn,
     build_ci_fn,
+    evaluate_ci,
     resolve_ci_placement,
 )
-from param_decomp.core.components import SiteSpec
+from param_decomp.core.ci_l0_eval import alive_component_counts
+from param_decomp.core.components import Dense, SiteCI, SiteSpec
 from param_decomp.core.losses import relative_squared_error
 from param_decomp.core.model import (
     EMPTY_CAPTURE_KEYS,
@@ -38,7 +41,9 @@ from param_decomp.experiments.lm.eval import (
     next_token_cross_entropy,
 )
 from param_decomp.targets.glu_transformer import glu_site_specs, mlp_family_site_cs
+from param_decomp.targets.lm_output import LMOutput
 from param_decomp.targets.testing import (
+    capture_clean,
     tiny_glu_cfg,
     tiny_glu_decomposed_lm,
 )
@@ -52,7 +57,7 @@ def test_row_masked_relative_squared_error_excludes_padding_from_both_sums():
     assert float(relative_squared_error(masked, clean, valid_row_mask=row_mask)) == 1.0
 
 
-def _build_ci_fn(model: PlacedModel, n_embd: int, key: jax.Array) -> PlacedCIFn:
+def _build_ci_fn(model: PlacedModel[LMOutput], n_embd: int, key: jax.Array) -> PlacedCIFn:
     """One transformer chunk over all sites, reading the residual entering the first
     decomposed block. The old `CIArch(16, 1, 2, 32)` dims map onto the chunk arch."""
     site_names = model.site_names
@@ -75,7 +80,8 @@ def _build_ci_fn(model: PlacedModel, n_embd: int, key: jax.Array) -> PlacedCIFn:
 
 class _PositionlessStub(eqx.Module):
     """A minimal positionless model whose methods are never called — used only to
-    exercise the LM-only `has_position_axis` guards (which fire at construction)."""
+    exercise the LM-only `has_position_axis` guards (which fire at construction). It
+    binds the LM output edge so the LM step factories admit it up to that guard."""
 
     sites: tuple[SiteSpec, ...] = eqx.field(static=True)
     has_position_axis: bool = eqx.field(static=True)
@@ -88,8 +94,14 @@ class _PositionlessStub(eqx.Module):
         del placement
         raise AssertionError("positionless stub fn must not be called")
 
-    def recon_loss_fn(self, masked_output: Any, clean_output: Any) -> jax.Array:
+    @staticmethod
+    def recon_loss_fn(masked_output: LMOutput, clean_output: LMOutput) -> jax.Array:
         del masked_output, clean_output
+        raise AssertionError("positionless stub fn must not be called")
+
+    @staticmethod
+    def pin_output_batch(output: LMOutput, mesh: Mesh | None) -> LMOutput:
+        del output, mesh
         raise AssertionError("positionless stub fn must not be called")
 
     def site_output_keys(self, sites: tuple[str, ...]) -> tuple[str, ...]:
@@ -105,7 +117,7 @@ class _PositionlessStub(eqx.Module):
         capture_keys: CaptureKeys = EMPTY_CAPTURE_KEYS,
         *,
         placement: PlacementRules | None,
-    ) -> ForwardResult:
+    ) -> ForwardResult[LMOutput]:
         del resid, capture_keys, placement
         raise AssertionError("positionless stub fn must not be called")
 
@@ -119,13 +131,14 @@ class _PositionlessStub(eqx.Module):
         inputs: Any,
         /,
         *,
+        sites: tuple[str, ...],
         capture_keys: CaptureKeys,
         placement: PlacementRules | None,
-    ) -> tuple[ForwardResult, dict[str, jax.Array]]:
-        del prepared_weights, inputs, capture_keys, placement
+    ) -> tuple[ForwardResult[LMOutput], dict[str, SiteCI]]:
+        del prepared_weights, inputs, sites, capture_keys, placement
         raise NotImplementedError
 
-    def stack_ci(self, ci_lower: dict[str, Any]) -> dict[str, Any]:
+    def stack_ci(self, ci_lower: Mapping[str, SiteCI]) -> Mapping[str, SiteCI]:
         return ci_lower
 
     def masked_forward(
@@ -138,7 +151,7 @@ class _PositionlessStub(eqx.Module):
         placement: PlacementRules | None,
         capture_keys: CaptureKeys = EMPTY_CAPTURE_KEYS,
         remat: bool,
-    ) -> ForwardResult:
+    ) -> ForwardResult[LMOutput]:
         del prepared_weights, inputs, masking, placement, capture_keys, remat
         raise AssertionError("positionless stub fn must not be called")
 
@@ -150,9 +163,12 @@ class _PositionlessStub(eqx.Module):
         raise AssertionError("positionless stub fn must not be called")
 
 
-def _positionless_model() -> PlacedModel:
+def _positionless_model() -> PlacedModel[LMOutput]:
     stub = _PositionlessStub(
-        sites=(SiteSpec("linear1", 5, 2, 8, "linear1"), SiteSpec("linear2", 2, 5, 6, "linear2")),
+        sites=(
+            SiteSpec("linear1", Dense(d_in=5, d_out=2, C=8), "linear1"),
+            SiteSpec("linear2", Dense(d_in=2, d_out=5, C=6), "linear2"),
+        ),
         has_position_axis=False,
     )
     return PlacedModel(model=stub, placement=None)
@@ -185,13 +201,11 @@ def test_eval_step_keys_identities_and_determinism():
     b, t = 2, 16
     token_ids = jax.random.randint(jax.random.PRNGKey(3), (b, t), 0, cfg.vocab_size)
 
-    # rounding_threshold=-1 makes the rounded mask all-ones == the unmasked variant;
-    # ci_alive_threshold=-1 makes every component alive -> L0 == C exactly.
     eval_step = make_eval_step(
         model,
         ci_fn.fn.capture_keys,
-        rounding_threshold=-1.0,
-        ci_alive_threshold=-1.0,
+        rounding_threshold=0.5,
+        ci_alive_threshold=0.0,
         l0_group_patterns=None,
         fresh_pgd=None,
         n_valid_rows=None,
@@ -202,7 +216,7 @@ def test_eval_step_keys_identities_and_determinism():
     expected_keys = (
         {f"ce_kl/kl_{v}" for v in (*variants, "zero_masked")}
         | {f"ce_kl/ce_difference_{v}" for v in variants}
-        | {f"l0/-1.0_{site}" for site in model.site_names}
+        | {f"l0/0.0_{site}" for site in model.site_names}
     )
     assert set(out) == expected_keys
 
@@ -211,12 +225,15 @@ def test_eval_step_keys_identities_and_determinism():
     for variant in (*variants, "zero_masked"):
         assert out[f"ce_kl/kl_{variant}"] >= 0, variant
 
-    assert jnp.allclose(out["ce_kl/kl_rounded_masked"], out["ce_kl/kl_unmasked"], rtol=1e-3)
-    assert jnp.allclose(
-        out["ce_kl/ce_difference_rounded_masked"], out["ce_kl/ce_difference_unmasked"], rtol=1e-3
-    )
+    # L0 is the count computed directly off the CI values the step reads (dense sites: no
+    # unrouted term), averaged over the (batch, position) leading axes.
+    ci_lower = evaluate_ci(
+        ci_fn, capture_clean(model.model, token_ids, ci_fn.fn.capture_keys), remat=False
+    ).lower
     for site in model.site_names:
-        assert float(out[f"l0/-1.0_{site}"]) == C
+        expected_l0 = float(alive_component_counts(ci_lower[site], 0.0).mean())
+        assert float(out[f"l0/0.0_{site}"]) == pytest.approx(expected_l0, abs=1e-4)
+        assert 0.0 <= expected_l0 <= C
 
     # deterministic in the key; key-independent variants unchanged under a new key
     out_same = eval_step(model, vu, ci_fn, token_ids, jax.random.PRNGKey(5))
@@ -226,18 +243,22 @@ def test_eval_step_keys_identities_and_determinism():
         assert jnp.array_equal(out[f"ce_kl/kl_{variant}"], out_other[f"ce_kl/kl_{variant}"])
     assert not jnp.array_equal(out["ce_kl/kl_stoch_masked"], out_other["ce_kl/kl_stoch_masked"])
 
-    eval_step_dead = make_eval_step(
+    # Threshold 1 is the top of the CI domain: no lower CI is strictly above it (the lower
+    # leaky hard sigmoid clips to [0, 1]), so the rounded mask IS the zero mask and no
+    # component is alive.
+    eval_step_top = make_eval_step(
         model,
         ci_fn.fn.capture_keys,
-        rounding_threshold=-1.0,
-        ci_alive_threshold=1.5,
+        rounding_threshold=1.0,
+        ci_alive_threshold=1.0,
         l0_group_patterns=None,
         fresh_pgd=None,
         n_valid_rows=None,
     )
-    out_dead = eval_step_dead(model, vu, ci_fn, token_ids, jax.random.PRNGKey(5))
+    out_top = eval_step_top(model, vu, ci_fn, token_ids, jax.random.PRNGKey(5))
+    assert jnp.array_equal(out_top["ce_kl/kl_rounded_masked"], out_top["ce_kl/kl_zero_masked"])
     for site in model.site_names:
-        assert float(out_dead[f"l0/1.5_{site}"]) == 0
+        assert float(out_top[f"l0/1.0_{site}"]) == 0
 
 
 def test_eval_step_fresh_pgd_probe():
@@ -287,7 +308,10 @@ def test_eval_step_fresh_pgd_probe():
     assert jnp.array_equal(out["loss/fresh_probe"], out_same["loss/fresh_probe"])
 
 
-def test_eval_step_fresh_pgd_hidden_acts_reconstruction_uses_and_logs_combined_objective():
+@pytest.mark.parametrize("coeff", [0.0, 3.0])
+def test_eval_step_fresh_pgd_hidden_acts_reconstruction_uses_and_logs_combined_objective(
+    coeff: float,
+):
     cfg = tiny_glu_cfg()
     sites = glu_site_specs(cfg, mlp_family_site_cs(4, 4, 8))
     model = PlacedModel(
@@ -300,7 +324,7 @@ def test_eval_step_fresh_pgd_hidden_acts_reconstruction_uses_and_logs_combined_o
     ci_fn = _build_ci_fn(model, cfg.n_embd, jax.random.PRNGKey(2))
     token_ids = jax.random.randint(jax.random.PRNGKey(3), (2, 16), 0, cfg.vocab_size)
     hidden_acts_reconstruction = OutputAndHiddenActsReconstruction(
-        coeff=3.0, points=("resid.5", "resid.8")
+        coeff=coeff, points=("resid.5", "resid.8")
     )
     eval_step = make_eval_step(
         model,
@@ -371,8 +395,8 @@ def test_eval_step_fresh_pgd_probe_device_count_invariant():
     """R-7 (eval facet): the fresh `c` PGD probe's KL must be invariant to device
     count up to float reassociation.
 
-    The probe ascends `source += step * sign(dKL/dsource)` on a `(1,1,C+1)` source
-    REPLICATED across the dp mesh. Each ascent's sign is taken AFTER the cotangent
+    The probe ascends `source += step * sign(dKL/dsource)` on a `(1,1,C)` component
+    source (plus its `(1,1)` delta) REPLICATED across the dp mesh. Each ascent's sign is taken AFTER the cotangent
     folds into the replicated leaf, so the gradient must be the GLOBAL-batch mean grad
     (torch all-reduce-AVG parity, S15/E19) — NOT a per-shard partial. A per-shard
     partial would flip signs on some shards, send the ascent down a different
@@ -570,3 +594,59 @@ def test_eval_step_n_valid_rows_masks_pad_tail():
             float(masked[k]),
             float(reference[k]),
         )
+
+
+def test_ce_kl_step_agrees_across_the_qwen36_output_edge_flip():
+    """`make_ce_kl_step` on the tiny qwen36_moe target, streamed vs materialized edge:
+    one key drives identical mask draws, so every emitted metric — the six KL variants,
+    the CE differences, row-masked and not — must agree to fp32 reassociation tolerance
+    across the flip."""
+    import dataclasses
+
+    from param_decomp.core.components import init_component_stacks
+    from param_decomp.experiments.lm.eval import make_ce_kl_step
+    from param_decomp.targets.qwen36_moe import (
+        Qwen36MoeDecomposedModel,
+        StreamedOutputEdge,
+        full_site_cs,
+        qwen36_moe_site_specs,
+    )
+    from param_decomp.targets.testing import (
+        TINY_QWEN36_CS,
+        tiny_qwen36_cfg,
+        tiny_qwen36_decomposed_model,
+    )
+
+    cfg = tiny_qwen36_cfg()
+    sites = qwen36_moe_site_specs(cfg, full_site_cs(cfg, TINY_QWEN36_CS))
+    materialized = tiny_qwen36_decomposed_model(cfg, sites, jax.random.PRNGKey(0))
+    vu = init_component_stacks(sites, jax.random.PRNGKey(1))
+    tokens = jax.random.randint(jax.random.PRNGKey(2), (4, 8), 0, cfg.vocab_size)
+
+    def metrics_for(
+        target: Qwen36MoeDecomposedModel, n_valid_rows: int | None
+    ) -> Mapping[str, jax.Array]:
+        placed = PlacedModel(model=target, placement=None)
+        ci_fn = _build_ci_fn(placed, cfg.n_embd, jax.random.PRNGKey(3))
+        step = make_ce_kl_step(
+            placed,
+            ci_fn.fn.capture_keys,
+            rounding_threshold=0.5,
+            n_valid_rows=n_valid_rows,
+        )
+        return step(placed, vu, ci_fn, tokens, jax.random.PRNGKey(4))
+
+    streamed_model = dataclasses.replace(
+        materialized, output_edge=StreamedOutputEdge(n_vocab_chunks=4)
+    )
+    for n_valid_rows in (None, 3):
+        reference = metrics_for(materialized, n_valid_rows)
+        streamed = metrics_for(streamed_model, n_valid_rows)
+        assert set(streamed) == set(reference)
+        for key, expected in reference.items():
+            assert jnp.allclose(streamed[key], expected, rtol=1e-4, atol=1e-5), (
+                key,
+                n_valid_rows,
+                float(streamed[key]),
+                float(expected),
+            )

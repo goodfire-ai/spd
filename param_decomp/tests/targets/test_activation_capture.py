@@ -9,9 +9,10 @@ from jax.sharding import PartitionSpec as P
 from jaxtyping import Array
 
 from param_decomp.core.components import SiteC, init_component_stacks
-from param_decomp.core.model import BATCH_AXES, MaterializedMasking, PlacedModel
-from param_decomp.core.placement import from_config
+from param_decomp.core.model import MaterializedMasking, PlacedModel
+from param_decomp.core.placement import batch_axes, from_config
 from param_decomp.core.sharding import hsdp_mesh, target_shardings_audit
+from param_decomp.target_ports.llama import rms_norm
 from param_decomp.targets.glu_transformer import (
     GLU_ANATOMY,
     GatedMLP,
@@ -22,7 +23,11 @@ from param_decomp.targets.glu_transformer import (
     glu_site_specs,
     site_name,
 )
-from param_decomp.targets.testing import tiny_glu_cfg, tiny_glu_decomposed_lm
+from param_decomp.targets.testing import (
+    materialized_logits,
+    tiny_glu_cfg,
+    tiny_glu_decomposed_lm,
+)
 from param_decomp.targets.transformer_taps import (
     attention_input_tap_key,
     attention_output_tap_key,
@@ -31,7 +36,6 @@ from param_decomp.targets.transformer_taps import (
     post_attention_tap_key,
     site_output_tap_key,
 )
-from param_decomp.vendored_jax.llama import rms_norm
 
 
 def _gated_mlp_out(layer: GLULayer, mlp_in: Array) -> Array:
@@ -181,7 +185,10 @@ def test_clean_and_frozen_masked_paths_agree_at_every_declared_point_class():
     for key in keys:
         assert jnp.array_equal(masked_captures[key], clean_captures[key]), key
         assert clean_captures[key].shape[-1] == model._capture_grammar().width_of(key)
-    assert jnp.array_equal(masked_forward_result.output, clean_forward_result.output)
+    assert jnp.array_equal(
+        materialized_logits(masked_forward_result.output),
+        materialized_logits(clean_forward_result.output),
+    )
 
 
 def test_new_residual_point_classes_match_direct_block_algebra():
@@ -262,7 +269,7 @@ def test_capture_values_are_batch_sharded_at_the_producer():
             )
         )(model, components, tokens)
 
-    expected = NamedSharding(mesh, P(BATCH_AXES, None, None))
+    expected = NamedSharding(mesh, P(batch_axes(mesh), None, None))
     for forward_result in (clean_forward_result, masked_forward_result):
         assert forward_result.captures
         assert all(

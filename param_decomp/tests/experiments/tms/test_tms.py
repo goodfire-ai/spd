@@ -16,7 +16,13 @@ import optax
 import pytest
 
 from param_decomp.core.ci_fn import CI, LayerwiseMLPCIArch, PlacedCIFn, init_layerwise_mlp_ci_fn
-from param_decomp.core.components import ComponentStacks, SiteC, SiteSpec, init_component_stacks
+from param_decomp.core.components import (
+    ComponentStacks,
+    SiteC,
+    SiteSpec,
+    init_component_stacks,
+    require_full_emission,
+)
 from param_decomp.core.configs import (
     AnyLossMetricConfig,
     FaithfulnessLossConfig,
@@ -197,10 +203,11 @@ def test_mlp_ci_fn_per_site_preactivations_and_values():
     inputs = capture_clean(model, x, ci_fn.capture_keys)
     values = ci_fn(inputs, remat=False, placement=None)
     assert isinstance(values, CI)
-    assert values.lower["linear1"].shape == (b, 8)
-    assert values.lower["linear2"].shape == (b, 6)
+    assert require_full_emission(values.lower["linear1"]).shape == (b, 8)
+    assert require_full_emission(values.lower["linear2"]).shape == (b, 6)
     # lower_leaky is clamped to [0,1]
-    for v in values.lower.values():
+    for value in values.lower.values():
+        v = require_full_emission(value)
         assert float(v.min()) >= 0.0 and float(v.max()) <= 1.0
 
 
@@ -237,7 +244,9 @@ def _make_state_and_step(
     sites: tuple[SiteSpec, ...],
     total_steps: int,
     loss_metrics: tuple[AnyLossMetricConfig, ...],
-) -> tuple[PlacedModel, TrainState, Callable[..., tuple[TrainState, dict[str, jax.Array]]]]:
+) -> tuple[
+    PlacedModel[jax.Array], TrainState, Callable[..., tuple[TrainState, dict[str, jax.Array]]]
+]:
     model = PlacedModel(model=tms_decomposed_model(cfg, target, sites), placement=None)
     vu = init_component_stacks(sites, jax.random.PRNGKey(1))
     ci_fn = init_layerwise_mlp_ci_fn(
@@ -283,7 +292,7 @@ def _make_state_and_step(
         components_optimizer=opt_vu,
         ci_fn_optimizer=opt_ci,
         total_steps=total_steps,
-        faithfulness=faithfulness_loss_for(model.model),
+        faithfulness=faithfulness_loss_for(model),
     )
     return model, state, step
 
@@ -538,7 +547,7 @@ def test_faith_warmup_decreases_faith():
     model = PlacedModel(model=tms_decomposed_model(cfg, target, sites), placement=None)
     vu = init_component_stacks(sites, jax.random.PRNGKey(1))
     opt = optax.adamw(1e-2, weight_decay=0.0)
-    wstep = make_faith_warmup_step(opt, faithfulness_loss_for(model.model))
+    wstep = make_faith_warmup_step(opt, faithfulness_loss_for(model))
     ostate = opt.init(eqx.filter(vu, eqx.is_array))
     first_loss = None
     loss = None
@@ -580,7 +589,7 @@ def _recovery_loss_metrics():
 
 
 def _faith_warmed_state(
-    model: PlacedModel,
+    model: PlacedModel[jax.Array],
     sites: tuple[SiteSpec, ...],
     total_steps: int,
     warmup_steps: int,
@@ -598,7 +607,7 @@ def _faith_warmed_state(
         jax.random.PRNGKey(2),
     )
     warm_opt = optax.adamw(1e-2, weight_decay=0.0)
-    wstep = make_faith_warmup_step(warm_opt, faithfulness_loss_for(model.model))
+    wstep = make_faith_warmup_step(warm_opt, faithfulness_loss_for(model))
     warm_state = warm_opt.init(eqx.filter(vu, eqx.is_array))
     for _ in range(warmup_steps):
         vu, warm_state, _ = wstep(model, vu, warm_state)
@@ -628,7 +637,7 @@ def _faith_warmed_state(
         components_optimizer=opt_vu,
         ci_fn_optimizer=opt_ci,
         total_steps=total_steps,
-        faithfulness=faithfulness_loss_for(model.model),
+        faithfulness=faithfulness_loss_for(model),
     )
     return state, step
 

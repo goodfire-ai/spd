@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from param_decomp.core.adversary import (
     PersistentAdversary,
+    SourcesAdamState,
     init_persistent_sources,
     init_sources_adam_state,
 )
@@ -20,6 +21,7 @@ from param_decomp.core.configs import (
     FaithfulnessLossConfig,
     HiddenActsReconstruction,
     ImportanceMinimalityLossConfig,
+    MergedStochasticSubsetPooledPPGDReconLossConfig,
     MergedStochasticSubsetPPGDReconLossConfig,
     SourceShape,
     UniformKSubsetRoutingConfig,
@@ -27,7 +29,10 @@ from param_decomp.core.configs import (
 from param_decomp.core.faithfulness import faithfulness_loss_for
 from param_decomp.core.model import PlacedModel
 from param_decomp.core.objective import build_objective
-from param_decomp.core.recon import MixedPersistentStochasticSources
+from param_decomp.core.recon import (
+    MixedPersistentStochasticSources,
+    PersistentSourcePool,
+)
 from param_decomp.core.schedule import Knot, ScheduleConfig
 from param_decomp.core.train import (
     Decomposition,
@@ -74,6 +79,80 @@ def _merged_cfg(
     return cfg
 
 
+def _pooled_cfg(
+    n_warmup: int,
+    pool_size: int,
+    hidden_acts_reconstruction: HiddenActsReconstruction | None = None,
+) -> MergedStochasticSubsetPooledPPGDReconLossConfig:
+    return MergedStochasticSubsetPooledPPGDReconLossConfig(
+        coeff=1.0,
+        adv_fraction=ScheduleConfig.constant(0.5),
+        routing=UniformKSubsetRoutingConfig(),
+        pool_size=pool_size,
+        optimizer=AdamPGDConfig(
+            beta1=0.5,
+            beta2=0.99,
+            lr_schedule=ScheduleConfig(
+                max_val=0.02,
+                points=(
+                    Knot(at=0.0, frac=0.0),
+                    Knot(at=0.025, frac=1.0),
+                    Knot(at=1.0, frac=1.0),
+                ),
+            ),
+        ),
+        n_warmup_steps=n_warmup,
+        hidden_acts_reconstruction=hidden_acts_reconstruction,
+    )
+
+
+def test_pooled_config_builds_selected_strategy_without_a_dense_source_shape():
+    cfg = _pooled_cfg(n_warmup=1, pool_size=8)
+    assert cfg.optimizer.lr_schedule.max_val == 0.02
+    losses = build_objective(
+        (
+            FaithfulnessLossConfig(coeff=1e5),
+            ImportanceMinimalityLossConfig(coeff=5e-6, gamma=ScheduleConfig.constant(1.0)),
+            cfg,
+        ),
+        ("a", "b"),
+    )
+    (term,) = losses.recon
+    assert isinstance(term.sources, PersistentSourcePool)
+
+    with pytest.raises(ValidationError, match="source_shape"):
+        MergedStochasticSubsetPooledPPGDReconLossConfig.model_validate(
+            cfg.model_dump() | {"source_shape": "bsc"}
+        )
+
+
+def test_sample_source_pool_draws_one_cross_site_particle_per_document():
+    from param_decomp.core.masking import sample_source_pool
+
+    cfg = tiny_simple_mlp_cfg()
+    sites = site_specs(cfg, SIMPLE_MLP_MIXED_SITE_CS)
+    n, batch, positions = 8, 4, 6
+    pool = init_persistent_sources(sites, (n,), jnp.float32, jax.random.PRNGKey(0))
+    row_code = jnp.arange(n, dtype=jnp.float32)
+    pool = jax.tree.map(
+        lambda value: jnp.broadcast_to(
+            row_code.reshape(1, n, *(1 for _ in value.shape[2:])), value.shape
+        ),
+        pool,
+    )
+    ci_lower = {site.name: jnp.zeros((batch, positions, site.C), jnp.float32) for site in sites}
+
+    sampled = sample_source_pool(jax.random.PRNGKey(1), ci_lower, pool)
+    reference = sampled[sites[0].name].delta
+    assert reference.shape == (batch, 1)
+    assert float(jnp.std(reference)) > 0.0
+    for site in sites:
+        source = sampled[site.name]
+        assert isinstance(source.components, jax.Array)
+        assert jnp.array_equal(source.delta, reference)
+        assert jnp.array_equal(source.components[..., 0], reference)
+
+
 def test_adv_fraction_ramp_accepted_and_bounded():
     ramp_to_one = ScheduleConfig(
         max_val=1.0, points=(Knot(at=0.0, frac=0.1), Knot(at=1.0, frac=1.0))
@@ -114,13 +193,21 @@ def test_merged_config_builds_one_mixed_sources_term():
 
 @pytest.mark.slow
 @pytest.mark.parametrize(
-    "source_shape,src_leading",
-    [("c", (1, 1)), ("bc", (2, 1)), ("sc", (1, 16)), ("bsc", (2, 16))],
+    "source_shape,src_leading,pool_size",
+    [
+        ("c", (1, 1), None),
+        ("bc", (2, 1), None),
+        ("sc", (1, 16), None),
+        ("bsc", (2, 16), None),
+        ("bsc", (8,), 8),
+    ],
 )
-def test_merged_train_step_end_to_end(source_shape: SourceShape, src_leading: tuple[int, int]):
-    """Full jitted step with ONE merged recon term, at every `source_shape`: finite
-    losses, the persistent adversary updates (n_warmup + 1 per step through warmup + the
-    S14' final ascent), sources stay projected."""
+def test_merged_train_step_end_to_end(
+    source_shape: SourceShape,
+    src_leading: tuple[int, ...],
+    pool_size: int | None,
+):
+    """Full jitted steps cover every dense source shape and the selected vector pool."""
     cfg = tiny_simple_mlp_cfg()
     seq = 16
     n_warmup = 1
@@ -131,17 +218,17 @@ def test_merged_train_step_end_to_end(source_shape: SourceShape, src_leading: tu
     opt_vu = optax.chain(optax.clip_by_global_norm(0.01), optax.adamw(1e-3, weight_decay=0.0))
     opt_ci = optax.adamw(1e-3, weight_decay=0.0)
 
-    merged = _merged_cfg(
-        n_warmup,
-        source_shape=source_shape,
-        hidden_acts_reconstruction=HiddenActsReconstruction(
-            coeff=0.2,
-            points=("resid.3", "resid.4", "resid.5", "resid.6"),
-        ),
+    hidden_acts = HiddenActsReconstruction(
+        coeff=0.2,
+        points=("resid.3", "resid.4", "resid.5", "resid.6"),
+    )
+    merged = (
+        _merged_cfg(n_warmup, source_shape=source_shape, hidden_acts_reconstruction=hidden_acts)
+        if pool_size is None
+        else _pooled_cfg(n_warmup, pool_size, hidden_acts)
     )
     src = init_persistent_sources(
-        model.site_names,
-        tuple(s.C for s in model.sites),
+        model.sites,
         src_leading,
         jnp.float32,
         jax.random.PRNGKey(3),
@@ -157,7 +244,7 @@ def test_merged_train_step_end_to_end(source_shape: SourceShape, src_leading: tu
                     sources=src,
                     opt_state=init_sources_adam_state(src),
                     state_key=merged.type,
-                    adam=merged.optimizer,
+                    optimizer=merged.optimizer,
                     n_warmup=merged.n_warmup_steps,
                 )
             },
@@ -192,7 +279,7 @@ def test_merged_train_step_end_to_end(source_shape: SourceShape, src_leading: tu
         components_optimizer=opt_vu,
         ci_fn_optimizer=opt_ci,
         total_steps=100,
-        faithfulness=faithfulness_loss_for(model),
+        faithfulness=faithfulness_loss_for(placed),
     )
 
     tokens = jax.random.randint(jax.random.PRNGKey(4), (2, seq), 0, cfg.vocab_size)
@@ -200,11 +287,12 @@ def test_merged_train_step_end_to_end(source_shape: SourceShape, src_leading: tu
     for i in range(n_steps):
         state, metrics = step(placed, state, tokens, jax.random.PRNGKey(100 + i))
         assert all(bool(jnp.isfinite(v).all()) for v in metrics.values())
-        assert "loss/MergedStochasticSubsetPPGDReconLoss" in metrics
-        assert "loss/MergedStochasticSubsetPPGDReconLoss/hidden_acts_reconstruction" in metrics
+        assert f"loss/{merged.type}" in metrics
+        assert f"loss/{merged.type}/hidden_acts_reconstruction" in metrics
     assert int(state.training.step) == n_steps
 
     adv = state.training.adversaries[merged.type]
+    assert isinstance(adv.opt_state, SourcesAdamState)
     assert float(adv.opt_state.step_count) == n_steps * (n_warmup + 1)
     for v in jax.tree.leaves(adv.sources):
         assert float(v.min()) >= 0.0 and float(v.max()) <= 1.0
@@ -239,8 +327,7 @@ def _one_step_adversary_objective_probe(
         }
     )
     sources = init_persistent_sources(
-        model.site_names,
-        tuple(site.C for site in model.sites),
+        model.sites,
         (1, 16),
         jnp.float32,
         jax.random.PRNGKey(3),
@@ -255,7 +342,7 @@ def _one_step_adversary_objective_probe(
                     sources=sources,
                     opt_state=init_sources_adam_state(sources),
                     state_key=merged.type,
-                    adam=merged.optimizer,
+                    optimizer=merged.optimizer,
                     n_warmup=merged.n_warmup_steps,
                 )
             },
@@ -288,7 +375,7 @@ def _one_step_adversary_objective_probe(
         components_optimizer=components_optimizer,
         ci_fn_optimizer=ci_fn_optimizer,
         total_steps=100,
-        faithfulness=faithfulness_loss_for(model),
+        faithfulness=faithfulness_loss_for(placed),
     )
     tokens = jax.random.randint(jax.random.PRNGKey(4), (2, 16), 0, cfg.vocab_size)
     state, _ = step(placed, state, tokens, jax.random.PRNGKey(100))

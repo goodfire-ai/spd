@@ -2,7 +2,13 @@
 
 Status: implemented. `placement.py` is the single source of truth for model-state,
 operand, and activation placement. Run configuration names the logical mesh explicitly as
-`runtime.{replicate,fsdp,tp}`; none of those axes is required to coincide with a node boundary.
+`runtime.mesh` — three-axis `{replicate, fsdp, tp}`, or two-axis `{data, tp}` for the
+`*-replicated-resident` presets; no axis is required to coincide with a node boundary.
+Which shape a table runs on is the table's own knowledge — the mesh axes its rows name
+(`PlacementTable.mesh_axes`) — checked ONCE at construction (`_bind`) for presets and
+explicit tables alike: a row naming an axis the mesh lacks refuses, and so does a
+multi-device mesh axis no row shards over (a size-1 axis is exempt — the mesh schema
+requires every axis of a shape, so `tp: 1` is how a run says "no tensor parallelism").
 
 Companion prose, each canonical for its piece: `sharding.py`'s module docstring — the
 mesh axes and the authored (not required) hardware alignment; `muon_stacked.py`'s
@@ -12,19 +18,27 @@ and optimizer invariants; `CLAUDE.md` (this directory) — the agent-facing summ
 
 ## Invariants
 
-1. No GPU materializes a fully replicated model. Between forwards, BF16 target, component, and
-   CI weights remain sharded over their declared `fsdp` and `tp` dimensions. At TP1, full matrix
-   replication exists only for the current linear operand, inside that linear's execution
-   boundary; a TP operand retains its Megatron shard.
+1. Under the HSDP presets, no GPU materializes a fully replicated model. Between forwards,
+   BF16 target, component, and CI weights remain sharded over their declared `fsdp` and `tp`
+   dimensions. At TP1, full matrix replication exists only for the current linear operand,
+   inside that linear's execution boundary; a TP operand retains its Megatron shard. The
+   `*-replicated-resident` presets deliberately trade this working-copy sharding away: the
+   BF16 weights rest whole (÷tp only), buying loop-free weight collectives at the memory
+   cost of the resident model. FP32 masters and optimizer state stay ÷N everywhere
+   (invariant 2 is unconditional).
 2. FP32 trainable parameters and optimizer moments use their declared `optimizer_state` rows.
    Adam never requires parameter replication.
 3. Every reshard follows from two declared forward placements. Gradient communication is the
    ordinary transpose of those forward transitions: there are no gradient-placement rows,
    per-linear custom VJPs, or custom scan backwards.
 4. Semantic axes are authored by the code that owns a tensor. Unlisted semantic axes replicate;
-   unknown rows, unknown mesh axes, rank mismatches, and non-tiling semantic groups fail closed.
-   Placement is total and fallback-free: one set of component rows places every group, and a
-   group those rows cannot place refuses at construction with the remedies spelled out.
+   unknown rows, a mesh outside the table's axis vocabulary, rank mismatches, and non-tiling
+   matrix axes fail closed.
+   Placement is total and fallback-free: one set of component rows places every group. A stack
+   length that does not tile the stack-sharding component rows is placed by PADDING the persist
+   stack with trailing all-zero slots (an enumerated `GroupCensus.stack_pad`, stripped at the
+   entry gather — see "Persist-stack padding" below); anything else those rows cannot place
+   refuses at construction with the remedies spelled out.
 5. Nested mesh-axis order is semantic. For example, `("fsdp", "replicate")` and
    `("replicate", "fsdp")` are different linearizations and may lower to different collectives.
 
@@ -33,19 +47,32 @@ and optimizer invariants; `CLAUDE.md` (this directory) — the agent-facing summ
 There are three distinct vocabularies:
 
 - **Semantic axes** describe tensor meaning: `stack`, `d_in`, `d_out`, `C`, `batch`, `q_head`,
-  `kv_head`, `ffn_hidden`, and so on.
-- **Mesh axes** describe the logical device grid: `replicate`, `fsdp`, and `tp`.
+  `kv_head`, `ffn_hidden`, and so on. Expert-blocked component stacks add `expert` and
+  `C_block` (per-expert component axis); their `d_in`/`d_out` name one expert's block dims.
+  The component rows' legal keys derive from the run's factorizations, so a key no group
+  consumes refuses at construction.
+- **Mesh axes** describe the logical device grid: `replicate`, `fsdp`, and `tp` on the
+  three-axis HSDP mesh; `data` (the merged data axis) and `tp` on the resident two-axis
+  mesh.
 - **Placement rows** map semantic axes to ordered mesh axes for one lifecycle phase or activation
-  boundary. A `PartitionSpec` is always derived from a typed row plus a tensor's semantic axes.
+  boundary. A rule value has ONE in-code form, the ordered tuple of mesh axes
+  (`axes.MeshAssignment`; `()` = replicated) — the config's `tp` / `[tp, data]` / `null`
+  spellings are authoring sugar folded at the parse boundary (`placement._rule`), so no
+  consumer branches on a value's shape. A `PartitionSpec` is always derived from a typed
+  row plus a tensor's semantic axes.
 
 `PlacementRules` contains four closed sections:
 
 - `components`: `optimizer_state`, `compute_weights`, faithfulness weight/delta rows,
   `operands`, the muon-NS staging waypoint `ns_compute`, and the resolved semantic-group
-  census (stack lengths);
+  census (each group's factorization and stack length; the transitions read per-group
+  leaf axes from it);
 - `ci_fn`: `optimizer_state`, `compute_weights`, `operands`, and `ns_compute` for attention,
   FFN, input, and output weights, plus vector-state and activation rows;
-- `activations`: the target/component external waist and the `C`-sharded internal waist;
+- `activations`: the target/component external waist, the masked passes' between-blocks
+  residual (`masked_external` — the external row itself unless the run authors
+  `runtime.sequence_sharding: sequence_parallel`, which adds `position -> tp`), and the
+  `C`-sharded internal waist;
 - `target`: persist/operand rows for every frozen weight role, Megatron column/row activation
   contracts, normalization/position buffers, and the component-replaced public interface.
 
@@ -111,8 +138,9 @@ transition is the identity: `owner` keeps the stack rows (delta row `stack` on `
 `d_out` on `fsdp`), `zero1` the matrix rows (`d_in`/`d_out` on `fsdp`, `C` on
 `("tp", "replicate")`; the delta row scatters both `C` contractions onto `d_in`, so no
 full-rank delta matrix is materialized). An explicit table may declare a different
-faithfulness pair; a stack-sharded faithfulness row refuses non-tiling groups at
-construction, like every stack-sharded component row. Transitions are typed `reshard`s —
+faithfulness pair; a stack-sharded faithfulness row participates in the persist-stack
+pad resolution, like every stack-sharded component row (the faithfulness lane rides the
+pads as exact zeros). Transitions are typed `reshard`s —
 semantics-preserving by construction (an axis permutation is unrepresentable); the
 anti-collective-permute claim moved from a construction-time allowlist to census-based
 tests over the compiled HLO.
@@ -136,7 +164,7 @@ or padded. The waypoint is reached
 by `muon_stacked.staging_hops` — one mesh axis moved per reshard, since a combined
 move-and-gather reshard also trips the fallback. Every preset declares the same staging,
 the stack split over `replicate` (the node axis under the seats' authored convention —
-see `sharding.py`): under owner persistence the ingress is the identity on the stack
+see `sharding.py`; on the resident mesh the same split respells to `data`): under owner persistence the ingress is the identity on the stack
 axis; under intra-matrix (zero1) or replicated (ddp)
 persistence it is a shard-to-shard hop chain. The NS redundancy within a replicate
 group (a kind's shard replicated across that group's fsdp × tp plane — intra-node as
@@ -151,6 +179,15 @@ constraint (every kind's stack length must divide the larger split,
 masters the write-back stops being communication-free — egress from a wider split is
 an intra-node collective. NS is off the critical path, so comms-free wins over
 FLOP-optimal until profiling says otherwise.
+
+The pairing is STRUCTURAL for the components group: a stacked-muon run whose master
+layout splits a within-block matrix axis across a staging axis (zero1's intra-matrix
+cut — `C`/`C_block` riding the ns stack axes) refuses at the components claim
+(`assert_stacked_muon_component_staging`), naming the owner-flavored remedies.
+Newton-Schulz needs whole matrices per device, and such a layout silently pays a
+per-step staging round-trip of the full master bytes; Adam-family optimizers stay
+layout-agnostic. The CI families keep their own claims (hop-chain staging remains
+legal there).
 
 `owner` staging is Distributed Muon in the sense of Moonshot's Moonlight paper (*Muon
 is Scalable for LLM Training*: ZeRO-1-partitioned optimizer states, whole-matrix
@@ -178,9 +215,57 @@ with `dots_saveable`, a gathered operand is not itself a saved dot residual.
 - `zero1`: globally matrix-sharded FP32 trainable state; HSDP-resident BF16 compute weights. No
   row shards the component stack axis, so every semantic group — any stack length — is placeable.
 - `owner`: semantic stacks sharded over `replicate`, matrix dimensions over `fsdp`. A group whose
-  stack does not tile `replicate` refuses at construction; the refusal names the groups and the
-  remedies (a tiling mesh, or a stack-free placement such as `zero1`). There is no fallback
+  stack does not tile `replicate` pads its persist stack to the next multiple
+  (`GroupCensus.stack_pad`; see "Persist-stack padding" below). There is no fallback
   preset and no fallback row — mixed per-group placement is unrepresentable.
+- `zero1-replicated-resident` / `owner-replicated-resident`: the resident twins, on the
+  two-axis `(data, tp)` mesh. The BF16 working copy is RESIDENT whole (÷tp only): every
+  compute-weight and target-persist row IS its operand row, so the once-per-step
+  masters→resident entry gather is the step's only weight collective and no while body
+  gathers weights. Residency leaves fsdp nothing to shard, so the axis does not exist;
+  the tables are the zero1/owner rules under a mechanical respelling — `fsdp`
+  assignments drop, `replicate` renames to `data` (`_resident_table`). Masters keep
+  their base persistence (zero1: intra-matrix, `C` on `("tp", "data")`; owner:
+  stack-cut, `stack` on `data`), so the faithfulness transition stays the identity in
+  both, and owner's stack cut carries over (÷data, padded where the stacks don't tile it).
+- `zero1-replicated-resident-moe` / `owner-replicated-resident-moe`: the resident
+  twins extended with the rows expert-blocked component groups need — in both, V/U
+  expert blocks co-locate with their frozen experts (`expert: tp` on residents and
+  operands), the faithfulness rows ARE the master layout (identity transition), and
+  the component waist additionally keys `expert`, so a component activation's
+  expert-blocked view derives from the same row as its flat `C` view (the flat axis is
+  expert-major — one layout, two spellings). Keyed on `expert` (+`C_block` where used),
+  they bind only site sets that actually hold expert-blocked groups; a dense-only run
+  refuses at the rule-key check and uses the dense twins.
+  The zero1 flavor rests masters intra-matrix ÷N (`expert: tp`, `C_block: data`) — any
+  stack length placeable; its costs: the faithfulness V·U contraction runs over the
+  data-cut `C_block` (the delta lands through a cross-`data` reduce-scatter at entry),
+  and the layout is stacked-muon-incompatible (below). One faithfulness-delta row
+  serves both factorization kinds, and an expert delta carries `expert` and `d_in`
+  together, so `d_in` cannot also ride `tp`: the dense (shared-kind) deltas' tp
+  contraction all-reduces at entry instead of scattering — small matrices, off the
+  hot loop.
+  The owner flavor rests COMPONENT masters stack-cut — `{stack: data, expert: tp}`,
+  every V/U block whole on one device on both axes. The entry gather becomes the
+  layout-preserving stack-axis all-gather over `data`, the faithfulness V·U
+  contraction is fully rank-local (the delta path carries no cross-`data` collective),
+  and stacked-muon NS staging keeps owner's story (identity on the cross-node stack
+  axis; intra-node tp gathers of co-located block axes only). Stack-cut ÷data like
+  every owner, padded where the stacks don't tile it. The flavor is the components masters' —
+  the CI-fn rows stay the zero1 twin's (owner-cut CI masters would bind `n_chunks` to
+  ÷data for nothing).
+  Both flavors also carry the MoE CI fn's two weight families
+  (`ci_fn/moe.expert_ffn`, `ci_fn/moe.expert_head`): CI expert banks and fused narrow
+  heads rest whole per expert shard at `expert: tp` — co-located with the target's
+  frozen experts and the V/U blocks, so the CI fn's routed compute rides the same
+  expert-parallel schedule with zero weight movement — masters ÷(tp·data) in the zero1
+  spirit under EITHER flavor (`ffn_hidden`/`C_block` on `data`): an owner-style
+  stack-cut would demand the CI chunk stack tile `data` (n_chunks = 10 does not tile
+  8), and the intra-matrix cut costs owner nothing it claims — CI weights have no
+  faithfulness row, and the seats keep the CI group on adamw. Entry is a pure
+  all-gather over `data`; NS staging `{stack: data}` (the 4D expert leaves fold
+  layer/expert into the canonical stack). Dense presets bind `moe = None`;
+  `resolve_ci_placement` refuses pairing the MoE arch with them.
 - `ddp`: replicated model state for small-model and single-node work only.
 
 Unrepresentable is the point. One row set placing every group is a claim a reader can
@@ -191,6 +276,70 @@ reachable state multiplying what the placement claim has to cover, and the claim
 being total. The refusal-with-remedies costs one config edit before submission; the
 multiplication would be paid on every read, forever.
 
+## Persist-stack padding
+
+A stack-sharding persist row demands the stack extent tile its cut. Rather than
+refusing node counts the layer grid does not divide (40 layers at data=16, or the
+36-chunk CI fn at data=64), construction PADS each persist stack to the next common
+multiple of its stack-sharding rows' extents. The pad is an enumerated fact, never an
+inference — one census type (`StackCensus`: real length + pad) for every persist stack:
+
+- Each V/U semantic group resolves a `GroupCensus` in `from_config`, from the site set,
+  over the component rows that cut the stack (`optimizer_state`, `faithfulness_weights`,
+  `faithfulness_deltas`); `ComponentStacks.stack_pads` mirrors it on the value tree.
+- The chunkwise CI fn's chunk stack resolves a `StackCensus` in `resolve_ci_placement`
+  — where the CI arch first meets the rows, at run assembly and at the config-build
+  gate — over every row its stacked leaves rest at (`CIFnRows.chunk_persist_rows`: the
+  four families' `optimizer_state` plus `vectors`, and the MoE families' masters for
+  the MoE arch). The resolved placement carries it (`CIFnPlacement.chunks`), and
+  `ChunkwiseTransformerCIFn.stack_pad` / `MoEChunkwiseTransformerCIFn.stack_pad`
+  mirror it on the value tree.
+
+Both value trees are boundary-validated against their census
+(`_validate_component_stacks`, `_validate_chunk_stack`), and no consumer ever derives a
+pad from a shape — the muon 96-stack zero-padding saga is the cautionary tale this
+design refuses to repeat.
+
+Pad slots are trailing all-zero stack entries — (V, U) slots for a group, one slot on
+EVERY leaf of the stacked chunk module for the CI fn (weights and vector leaves alike,
+so the stack stays rectangular) — and exist in exactly two places:
+
+- The persist layer — fp32 masters and optimizer moments. The seeded init appends them
+  (`pad_component_stacks`, `pad_ci_fn`); wd=0 plus exactly-zero gradients keep them at
+  zero through adamw and stacked muon alike (NS on a zero matrix is zero — the wasted
+  optimizer FLOPs are the pad fraction, `stack_pad / padded_stack_len`). Muon's
+  canonical NS stack length is the padded one (`GroupCensus.ns_stack_len`; the CI
+  staging claims read `CIFnPlacement.chunks.padded_stack_len`).
+- The faithfulness lane, whose rows ARE the master layout: pads ride the identity
+  weights transition as exact zeros, targets extend the frozen stack with zero
+  matrices (`weight_deltas` — pad deltas are exactly `0 − 0·0 = 0`), and
+  `make_faithfulness_loss` keeps the site mean over the REAL sites. (No faithfulness
+  row exists for CI weights; the CI pads have only the persist layer.)
+
+Compute never sees a pad, and the entry gather never moves one: the entry
+(`component_stacks_to_compute_weights`; `materialize_ci_compute_weights` for the CI fn)
+strips the pads BEFORE the cross-`data` gather (`materialize_reduced_weights`), so the
+residents, the forwards, the chunk scan, and every mask/CI surface carry only real
+stacks and the all-gather's result shapes read `stack_len`, never `padded_stack_len`.
+The typed slice cannot drop slots from a cut stack axis (a real length that does not
+tile the cut has no sharded spelling — the very reason the pad exists), so a padded
+stack first hops to its entry waypoint (`padded_entry_waypoint`: the compute layout with
+the stack cut re-parked minor on the leaf's last axis — an all-to-all moving one padded
+slot per device, after which the stack rests whole and every device still holds ÷cut of
+the bytes), the pads exit there device-local (`strip_stack_pad`), and the all-gather
+carries only real slots. The transpose runs the route backwards: a real-slot
+reduce-scatter, the slice's transpose writing exact zeros into the pad slots, the
+all-to-all returning them to their owners. The CI vector leaves rest whole on the stack
+axis at their persist row (`_bind` refuses `stack` on the vectors row, as on every
+scanned row) and strip in place. The waypoint's tiling — the leaf's last dim against
+its compute assignment with the stack cut nested minor — is validated where the rows
+are bound (`validate_stacked_leaf`), like every other matrix-axis tiling. The costs are
+the pad fraction on persist bytes and optimizer work, plus the entry all-to-all's one
+padded slot per device — nothing on the hot loop, and nothing padded in the step's
+largest collective or transient. Checkpoints persist the PADDED stacks, so a consumer
+re-placing a padded run must resolve the same pad counts (a different mesh that
+resolves different pads refuses at restore shape validation).
+
 Owner vs `zero1` in magnitude: under elementwise optimizers (Adam) the two are
 ~equivalent per-step communication — entry gather and exit reduce-scatter move the same
 bytes either way, and the faithfulness transition is the identity in both. Under
@@ -200,10 +349,32 @@ masters take the `staging_hops` shard-to-shard chain, in `ns_dtype` bytes. Both 
 bounded, off-critical-path transfers; neither preset is a memory class apart — the
 per-rank whole-fp32-stack peak is what the hop chain excludes, in every preset.
 
-`from_config` resolves the semantic-group census once from the concrete site set and refuses any
-group the rows cannot place. Consumers validate that census against their arrays and never
-re-decide it; a consumer re-placing a finished run on one device tiles trivially (every stack
-length divides 1).
+`from_config` resolves the semantic-group census once from the concrete site set — pad counts
+included — and refuses any group the rows cannot place; `resolve_ci_placement` does the same
+for the chunk stack from the CI arch (and refuses, at the same construction time, every
+arch-known CI master leaf the rows cannot tile). Consumers validate those censuses against
+their arrays and never re-decide them; a consumer re-placing a finished run on one device tiles
+trivially (every stack length divides 1, so no pads resolve — which is exactly why a PADDED
+run's checkpoint must be re-placed on a mesh resolving the same pads).
+
+## Sequence parallelism on masked forwards
+
+`runtime.sequence_sharding: sequence_parallel` (default `replicate`) retypes the MASKED
+passes' between-blocks residual to `position -> tp` (`activations/masked_external`) —
+Megatron's sequence parallelism, scoped to the masked forwards. The block interiors are
+untouched — mixers and the MoE (jobs schedule, routing, shared sites) always run at the
+full external width: each block entry gathers the normed carry (one all-gather whose
+transpose is that block input's ONE cotangent reduction, where the replicated residual
+pays a per-consumer tp all-reduce), and each block-exit reduction — the row linears'
+output contraction and the expert combine — lands position-sharded (half the ring bytes
+of the replicated arm's all-reduce), with the between-blocks residuals and norms resting
+and computing at 1/tp. The final residual gathers back to `external` before the output
+edge, and clean forwards, CI-fn taps, and eval comparisons keep the replicated residual
+everywhere, so nothing outside the masked engine sees the sharded type. It is a
+resharding of the same math (numerics move at reassociation level, SPEC D4); captures
+under sequence parallelism are an enumerated gap and refuse. Sequence length must tile
+tp, and only targets implementing it accept the row (qwen36_moe; others refuse at their
+masked forward).
 
 ## Performance evidence and profiling validity
 
@@ -282,11 +453,8 @@ names, comments, and copied filenames are labels, not configuration evidence.
   the ordinary XLA lowering can change compiled memory far beyond the model-state estimate.
   Inspect the full compiled memory plan.
 
-### Cluster and cache validity
+### Cache validity
 
-- A whole-node batch allocation does not give a one-task-per-node `srun` step the node's
-  memory; the launcher pins `--mem=0`. Inspect the step's `AllocTRES` before diagnosing a
-  compiler or GPU-memory failure.
 - XLA's persistent-cache autotune subdir is unsafe for unrelated Unix users to share; the
   cache dir is the config-authored per-user `runtime.compilation_cache_dir`.
 
@@ -296,8 +464,8 @@ records that support them; this document carries only the resulting rules.
 ## Known frontiers
 
 - The step-boundary weight lifecycle is unscheduled: the entry owner-to-resident gathers and
-  exit gradient reduce-scatters run at the cross-node wire floor with zero compute overlap, a
-  material fraction of the measured step (campaign log). The fix is scheduling — a staged
+  exit gradient reduce-scatters run at the cross-node wire floor with zero compute overlap and
+  can occupy a material fraction of the measured step. The fix is scheduling — a staged
   per-group owner/resident stream — not byte reduction.
 - Sitewise source, mask, routing, and importance work still grows compiler IR with site count even
   though target and CI depth are scanned.

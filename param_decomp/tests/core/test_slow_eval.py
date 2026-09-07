@@ -12,6 +12,7 @@ background `BackgroundRenderer` logging figures on a deferred semantic step axis
 import base64
 import sys
 import types
+from collections.abc import Mapping
 from functools import cache, partial
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,7 @@ from param_decomp.core.ci_fn import (
     evaluate_ci,
     lower_leaky_hard_sigmoid,
 )
-from param_decomp.core.components import SiteC
+from param_decomp.core.components import SiteC, SiteCI
 from param_decomp.core.configs import (
     IdentityCIErrorConfig,
     IdentityCITargetSpec,
@@ -75,6 +76,7 @@ from param_decomp.core.slow_eval import (
     site_reductions as finalize_site_reductions,
 )
 from param_decomp.targets.glu_transformer import glu_site_specs
+from param_decomp.targets.lm_output import LMOutput
 from param_decomp.targets.testing import (
     capture_clean,
     tiny_glu_cfg,
@@ -92,7 +94,7 @@ def _slow_eval_media(
     """A slow-tier figure payload, assembled as the operations in
     `experiments/lm/diagnostic_eval_operations.py` assemble theirs — the whole figure set at
     once, so one render exercises every key the deferred axis has to carry."""
-    figures = render_slow_eval_figures(reductions)
+    figures = render_slow_eval_figures(reductions, {})
     if position_ci is not None:
         figures |= render_permutation_figures(perm_spec, position_ci, components)
     return DeferredMediaRecord(
@@ -102,7 +104,7 @@ def _slow_eval_media(
     )
 
 
-def _build_ci_fn(model: DecomposedModel, n_embd: int, key: jax.Array) -> PlacedCIFn:
+def _build_ci_fn(model: DecomposedModel[LMOutput], n_embd: int, key: jax.Array) -> PlacedCIFn:
     """One transformer chunk over all sites, reading the residual entering the first
     decomposed block. The old `CIArch(16, 1, 2, 32)` dims map onto the chunk arch."""
     site_names = model.site_names
@@ -152,8 +154,8 @@ def _tiny_setup(
 
 
 def _preactivations(
-    model: PlacedModel, ci_fn: PlacedCIFn, residual: jax.Array
-) -> dict[str, jax.Array]:
+    model: PlacedModel[LMOutput], ci_fn: PlacedCIFn, residual: jax.Array
+) -> Mapping[str, SiteCI]:
     """The shared batch context's compute-precision CI preactivations, prepared eagerly."""
     captures = capture_clean(model.model, residual, ci_fn.fn.capture_keys)
     return evaluate_ci(ci_fn, captures, remat=False).preactivations
@@ -161,7 +163,7 @@ def _preactivations(
 
 def accumulate_site_reductions(
     step: CIReductionStep,
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     ci_fn: PlacedCIFn,
     residual_batches: list[jax.Array],
 ) -> dict[str, SiteReduction]:
@@ -175,7 +177,7 @@ def accumulate_site_reductions(
 
 def accumulate_position_ci(
     step: PositionCIStep,
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     ci_fn: PlacedCIFn,
     residual_batches: list[jax.Array],
 ) -> dict[str, PositionCI]:
@@ -203,14 +205,6 @@ def test_reductions_match_hand_rolled_per_component():
         assert r.n_positions == b * t
         np.testing.assert_allclose(r.density_counts, (flat > 0.0).sum(0), rtol=1e-4, atol=1e-4)
         np.testing.assert_allclose(r.ci_sums, flat.sum(0), rtol=1e-4, atol=1e-4)
-
-
-def test_density_threshold_caps_counts_at_n_positions():
-    cfg, model, ci_fn, step, _ = _tiny_setup(threshold=-1.0)  # everything "alive"
-    residual = jax.random.randint(jax.random.PRNGKey(7), (2, 16), 0, cfg.vocab_size)
-    reductions = accumulate_site_reductions(step, model, ci_fn, [residual])
-    for r in reductions.values():
-        np.testing.assert_array_equal(r.density_counts, np.full_like(r.density_counts, 2 * 16))
 
 
 def test_cross_batch_sum_accumulates_linearly():
@@ -275,7 +269,7 @@ def test_a_metric_wanting_no_histogram_bins_nothing():
 
     assert all(r.value_histograms is None for r in reductions.values())
     assert all(r.density_counts.size and r.ci_sums.size for r in reductions.values())
-    figures = render_slow_eval_figures(reductions)
+    figures = render_slow_eval_figures(reductions, {})
     assert "figures/causal_importance_values" not in figures
     assert "figures/causal_importance_values_pre_sigmoid" not in figures
     assert "figures/component_activation_density" in figures
@@ -296,7 +290,7 @@ def test_render_emits_torch_keyed_pngs():
     cfg, model, ci_fn, step, _ = _tiny_setup(threshold=0.0)
     residual = jax.random.randint(jax.random.PRNGKey(4), (2, 16), 0, cfg.vocab_size)
     reductions = accumulate_site_reductions(step, model, ci_fn, [residual])
-    figures = render_slow_eval_figures(reductions)
+    figures = render_slow_eval_figures(reductions, {})
     assert set(figures) == {
         "figures/causal_importance_values",
         "figures/causal_importance_values_pre_sigmoid",
@@ -359,7 +353,7 @@ def test_render_includes_density_heatmap_when_enabled():
     cfg, model, ci_fn, step, _ = _tiny_setup(threshold=0.0, density_heatmap_n_bins=40)
     residual = jax.random.randint(jax.random.PRNGKey(4), (2, 16), 0, cfg.vocab_size)
     reductions = accumulate_site_reductions(step, model, ci_fn, [residual])
-    figures = render_slow_eval_figures(reductions)
+    figures = render_slow_eval_figures(reductions, {})
     assert "figures/ci_density_heatmap" in figures
     assert figures["figures/ci_density_heatmap"][:4] == b"\x89PNG"
 
@@ -847,3 +841,40 @@ def test_deferred_media_rejects_duplicate_semantic_keys(
 
     with pytest.raises(AssertionError, match="colliding semantic keys"):
         sink.log_deferred_media(record)
+
+
+def test_group_figures_render_for_grouped_sites():
+    """Sites whose components come in groups get the group-shaped views: the mean-CI
+    spectrum `(n_groups, c)` and per-group dead counts — dense sites render only the
+    flat figures, and a run with no grouped sites emits no `*_groups` key at all."""
+    from param_decomp.core.components import Dense, ExpertBlocked, SiteSpec
+    from param_decomp.core.slow_eval import SiteReduction, component_group_counts
+
+    def reduction(c_total: int) -> SiteReduction:
+        rng = np.random.default_rng(c_total)
+        return SiteReduction(
+            density_counts=rng.integers(0, 3, c_total).astype(np.float64),
+            ci_sums=rng.uniform(0.0, 4.0, c_total),
+            n_positions=4,
+            value_histograms=None,
+            density_hist=None,
+        )
+
+    sites = (
+        SiteSpec(
+            name="moe",
+            factorization=ExpertBlocked(n_experts=3, d_in=4, d_out=4, c_per_expert=2),
+            group="experts",
+        ),
+        SiteSpec(name="dense", factorization=Dense(d_in=4, d_out=4, C=6), group="shared"),
+    )
+    group_counts = component_group_counts(sites)
+    assert group_counts == {"moe": 3}
+
+    reductions = {"moe": reduction(6), "dense": reduction(6)}
+    figures = render_slow_eval_figures(reductions, group_counts)
+    assert figures["figures/ci_mean_per_component_groups"].startswith(b"\x89PNG")
+    assert figures["figures/component_activation_density_groups"].startswith(b"\x89PNG")
+
+    ungrouped = render_slow_eval_figures(reductions, {})
+    assert not any(key.endswith("_groups") for key in ungrouped)

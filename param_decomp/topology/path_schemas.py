@@ -13,10 +13,13 @@ from typing import Literal
 from param_decomp.topology.canonical import (
     CanonicalWeight,
     Embed,
+    FFNWeight,
     FusedAttnWeight,
     GLUWeight,
     LayerWeight,
     MLPWeight,
+    MoEExpertsWeight,
+    MoESharedWeight,
     SeparateAttnWeight,
     Unembed,
 )
@@ -68,10 +71,15 @@ class _FusedAttnPathSchema:
 
 @dataclass
 class _GLUPathSchema:
+    """One gate/up/down GLU projection group; `weight_type` names the canonical kind it
+    parses to, so one block may carry several GLU groups (an MoE's fused-expert and
+    shared-expert stacks) without their canonical addresses colliding."""
+
     base: str
     gate: str
     up: str
     down: str
+    weight_type: type[GLUWeight | MoEExpertsWeight | MoESharedWeight]
 
     def _lookup(self) -> dict[str, Literal["up", "down", "gate"]]:
         return {self.gate: "gate", self.up: "up", self.down: "down"}
@@ -79,12 +87,16 @@ class _GLUPathSchema:
     def _reverse(self) -> dict[str, str]:
         return {"gate": self.gate, "up": self.up, "down": self.down}
 
+    def handles(self, w: FFNWeight) -> bool:
+        return isinstance(w, self.weight_type)
+
     def parse(self, projection_name: str, layer_idx: int) -> LayerWeight:
         table = self._lookup()
         assert projection_name in table, f"Unknown GLU projection: {projection_name}"
-        return LayerWeight(layer_idx, GLUWeight(table[projection_name]))
+        return LayerWeight(layer_idx, self.weight_type(table[projection_name]))
 
-    def render(self, w: GLUWeight) -> str:
+    def render(self, w: GLUWeight | MoEExpertsWeight | MoESharedWeight) -> str:
+        assert self.handles(w), (self.weight_type, w)
         return f"{self.base}.{self._reverse()[w.weight]}"
 
 
@@ -100,6 +112,9 @@ class _FFNPathSchema:
     def _reverse(self) -> dict[str, str]:
         return {"up": self.up, "down": self.down}
 
+    def handles(self, w: FFNWeight) -> bool:
+        return isinstance(w, MLPWeight)
+
     def parse(self, projection_name: str, layer_idx: int) -> LayerWeight:
         table = self._lookup()
         assert projection_name in table, f"Unknown MLP projection: {projection_name}"
@@ -113,7 +128,7 @@ class _PathSchema(ABC):
     embedding_path: str
     blocks: str
     attn: _SeparateAttnPathSchema | _FusedAttnPathSchema
-    mlp: _GLUPathSchema | _FFNPathSchema
+    ffns: tuple[_GLUPathSchema | _FFNPathSchema, ...]
     unembed_path: str
     _block_re: re.Pattern[str] | None = None
 
@@ -138,22 +153,26 @@ class _PathSchema(ABC):
     def _parse_block_path(self, path: str) -> LayerWeight:
         """Parse a block-level path like 'h.3.attn.q_proj' into a LayerWeight."""
         if self._block_re is None:
-            attn_base = re.escape(self.attn.base)
-            mlp_base = re.escape(self.mlp.base)
             blocks = re.escape(self.blocks)
-            self._block_re = re.compile(
-                rf"^{blocks}\.(?P<idx>\d+)\."
-                rf"(?:(?P<attn>{attn_base})\.(?P<attn_proj>\w+)"
-                rf"|(?P<mlp>{mlp_base})\.(?P<mlp_proj>\w+))$"
+            groups = "|".join(
+                rf"(?P<g{i}>{re.escape(group.base)})\.(?P<p{i}>\w+)"
+                for i, group in enumerate((self.attn, *self.ffns))
             )
+            self._block_re = re.compile(rf"^{blocks}\.(?P<idx>\d+)\.(?:{groups})$")
 
         m = self._block_re.match(path)
         assert m is not None, f"Invalid block path: {path!r}"
 
         layer_idx = int(m.group("idx"))
-        if m.group("attn"):
-            return self.attn.parse(m.group("attn_proj"), layer_idx)
-        return self.mlp.parse(m.group("mlp_proj"), layer_idx)
+        for i, group in enumerate((self.attn, *self.ffns)):
+            if m.group(f"g{i}"):
+                return group.parse(m.group(f"p{i}"), layer_idx)
+        raise AssertionError(f"Invalid block path: {path!r}")
+
+    def _ffn_schema_for(self, w: FFNWeight) -> _GLUPathSchema | _FFNPathSchema:
+        matches = [schema for schema in self.ffns if schema.handles(w)]
+        assert len(matches) == 1, f"Expected exactly one FFN schema for {w!r}, got {matches}"
+        return matches[0]
 
     def _render_layer_weight(self, w: LayerWeight) -> str:
         """Render a LayerWeight into a concrete path."""
@@ -165,19 +184,25 @@ class _PathSchema(ABC):
             case FusedAttnWeight() as attn_w:
                 assert isinstance(self.attn, _FusedAttnPathSchema)
                 return f"{base}.{self.attn.render(attn_w)}"
-            case GLUWeight() as ffn_w:
-                assert isinstance(self.mlp, _GLUPathSchema)
-                return f"{base}.{self.mlp.render(ffn_w)}"
             case MLPWeight() as ffn_w:
-                assert isinstance(self.mlp, _FFNPathSchema)
-                return f"{base}.{self.mlp.render(ffn_w)}"
+                schema = self._ffn_schema_for(ffn_w)
+                assert isinstance(schema, _FFNPathSchema)
+                return f"{base}.{schema.render(ffn_w)}"
+            case GLUWeight() | MoEExpertsWeight() | MoESharedWeight() as ffn_w:
+                schema = self._ffn_schema_for(ffn_w)
+                assert isinstance(schema, _GLUPathSchema)
+                return f"{base}.{schema.render(ffn_w)}"
 
 
 class _LlamaSimplePathSchema(_PathSchema):
     embedding_path = "wte"
     blocks = "h"
     attn = _SeparateAttnPathSchema(base="attn", q="q_proj", k="k_proj", v="v_proj", o="o_proj")
-    mlp = _GLUPathSchema(base="mlp", gate="gate_proj", up="up_proj", down="down_proj")
+    ffns = (
+        _GLUPathSchema(
+            base="mlp", gate="gate_proj", up="up_proj", down="down_proj", weight_type=GLUWeight
+        ),
+    )
     unembed_path = "lm_head"
 
 
@@ -185,7 +210,7 @@ class _LlamaSimpleMLPPathSchema(_PathSchema):
     embedding_path = "wte"
     blocks = "h"
     attn = _SeparateAttnPathSchema(base="attn", q="q_proj", k="k_proj", v="v_proj", o="o_proj")
-    mlp = _FFNPathSchema(base="mlp", up="c_fc", down="down_proj")
+    ffns = (_FFNPathSchema(base="mlp", up="c_fc", down="down_proj"),)
     unembed_path = "lm_head"
 
 
@@ -193,7 +218,7 @@ class _GPT2SimplePathSchema(_PathSchema):
     embedding_path = "wte"
     blocks = "h"
     attn = _SeparateAttnPathSchema(base="attn", q="q_proj", k="k_proj", v="v_proj", o="o_proj")
-    mlp = _FFNPathSchema(base="mlp", up="c_fc", down="down_proj")
+    ffns = (_FFNPathSchema(base="mlp", up="c_fc", down="down_proj"),)
     unembed_path = "lm_head"
 
 
@@ -201,7 +226,7 @@ class _GPT2PathSchema(_PathSchema):
     embedding_path = "wte"
     blocks = "h_torch"
     attn = _FusedAttnPathSchema(base="attn", qkv="c_attn", o="c_proj")
-    mlp = _FFNPathSchema(base="mlp", up="c_fc", down="c_proj")
+    ffns = (_FFNPathSchema(base="mlp", up="c_fc", down="c_proj"),)
     unembed_path = "lm_head"
 
 
@@ -212,7 +237,38 @@ class _HFGLUPathSchema(_PathSchema):
     embedding_path = "embed_tokens"
     blocks = "layers"
     attn = _SeparateAttnPathSchema(base="self_attn", q="q_proj", k="k_proj", v="v_proj", o="o_proj")
-    mlp = _GLUPathSchema(base="mlp", gate="gate_proj", up="up_proj", down="down_proj")
+    ffns = (
+        _GLUPathSchema(
+            base="mlp", gate="gate_proj", up="up_proj", down="down_proj", weight_type=GLUWeight
+        ),
+    )
+    unembed_path = "lm_head"
+
+
+class _Qwen36MoePathSchema(_PathSchema):
+    """The qwen36_moe site grammar (`param_decomp.targets.qwen36_moe`): each MoE block
+    carries the fused all-expert GLU stack (`mlp.experts.*`) and the shared expert's
+    (`mlp.shared_expert.*`) as separate canonical kinds (`{i}.moe.*` / `{i}.moe_shared.*`)."""
+
+    embedding_path = "embed_tokens"
+    blocks = "layers"
+    attn = _SeparateAttnPathSchema(base="self_attn", q="q_proj", k="k_proj", v="v_proj", o="o_proj")
+    ffns = (
+        _GLUPathSchema(
+            base="mlp.experts",
+            gate="gate_proj",
+            up="up_proj",
+            down="down_proj",
+            weight_type=MoEExpertsWeight,
+        ),
+        _GLUPathSchema(
+            base="mlp.shared_expert",
+            gate="gate_proj",
+            up="up_proj",
+            down="down_proj",
+            weight_type=MoESharedWeight,
+        ),
+    )
     unembed_path = "lm_head"
 
 
@@ -223,6 +279,7 @@ _MODEL_TYPE_PATH_SCHEMAS: dict[str, type[_PathSchema]] = {
     "GPT2": _GPT2PathSchema,
     "Llama": _HFGLUPathSchema,
     "Qwen3": _HFGLUPathSchema,
+    "Qwen3_5Moe": _Qwen36MoePathSchema,
 }
 
 

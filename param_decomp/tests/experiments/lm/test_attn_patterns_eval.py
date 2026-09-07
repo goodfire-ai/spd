@@ -5,12 +5,14 @@ targets), the all-false-routes clean target (KL=0 when masked==clean), and the
 host-side token-weighted accumulation (combined = Σ sum_kl / Σ n_distributions).
 """
 
+from collections.abc import Mapping
 from typing import Any
 
 import equinox as eqx
 import jax
 import numpy as np
 import pytest
+from jax.sharding import Mesh
 
 from param_decomp.core.ci_fn import (
     Chunk,
@@ -22,7 +24,9 @@ from param_decomp.core.ci_fn import (
 )
 from param_decomp.core.components import (
     ComponentStacks,
+    Dense,
     SiteC,
+    SiteCI,
     SiteSpec,
     init_component_stacks,
 )
@@ -51,6 +55,7 @@ from param_decomp.targets.llama_simple_mlp import (
 from param_decomp.targets.llama_simple_mlp import (
     site_specs as simple_site_specs,
 )
+from param_decomp.targets.lm_output import LMOutput
 from param_decomp.targets.testing import (
     tiny_glu_cfg as _llama_cfg,
 )
@@ -65,7 +70,7 @@ from param_decomp.targets.testing import (
 )
 
 
-def _build_ci_fn(model: PlacedModel, n_embd: int, key: jax.Array) -> PlacedCIFn:
+def _build_ci_fn(model: PlacedModel[LMOutput], n_embd: int, key: jax.Array) -> PlacedCIFn:
     """One transformer chunk over all sites, reading the residual entering the first
     decomposed block. The old `CIArch(16, 1, 2, 32)` dims map onto the chunk arch."""
     site_names = model.site_names
@@ -117,8 +122,11 @@ def test_attention_pattern_from_qk_shape_and_causal_softmax_simple_mlp():
 
 
 def _context_values(
-    model: PlacedModel, components: ComponentStacks, ci_fn: PlacedCIFn, tokens: jax.Array
-) -> tuple[Any, dict[str, jax.Array], dict[str, jax.Array]]:
+    model: PlacedModel[LMOutput],
+    components: ComponentStacks,
+    ci_fn: PlacedCIFn,
+    tokens: jax.Array,
+) -> tuple[Any, Mapping[str, SiteCI], dict[str, jax.Array]]:
     """The shared batch-context values the steps consume, prepared eagerly for tests."""
     output_key_by_site = attn_output_key_by_site(model)
     capture_keys = ci_fn.fn.capture_keys | frozenset(output_key_by_site.values())
@@ -132,7 +140,7 @@ def _context_values(
 
 def _run_step(
     step: AttnPatternsStep,
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     components: ComponentStacks,
     ci_fn: PlacedCIFn,
     tokens: jax.Array,
@@ -144,7 +152,7 @@ def _run_step(
 
 def _accumulate(
     step: AttnPatternsStep,
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     components: ComponentStacks,
     ci_fn: PlacedCIFn,
     token_batches: list[jax.Array],
@@ -256,7 +264,8 @@ def test_simple_mlp_step_runs_end_to_end():
 
 class _PositionlessStub(eqx.Module):
     """A positionless model whose methods are never called — only exercises the
-    LM-only `has_position_axis` guards (which fire at step construction)."""
+    LM-only `has_position_axis` guards (which fire at step construction). It binds the
+    LM output edge so the LM step factories admit it up to that guard."""
 
     sites: tuple[SiteSpec, ...] = eqx.field(static=True)
     has_position_axis: bool = eqx.field(static=True)
@@ -269,8 +278,14 @@ class _PositionlessStub(eqx.Module):
         del placement
         raise AssertionError("positionless stub fn must not be called")
 
-    def recon_loss_fn(self, masked_output: Any, clean_output: Any) -> jax.Array:
+    @staticmethod
+    def recon_loss_fn(masked_output: LMOutput, clean_output: LMOutput) -> jax.Array:
         del masked_output, clean_output
+        raise AssertionError("positionless stub fn must not be called")
+
+    @staticmethod
+    def pin_output_batch(output: LMOutput, mesh: Mesh | None) -> LMOutput:
+        del output, mesh
         raise AssertionError("positionless stub fn must not be called")
 
     def site_output_keys(self, sites: tuple[str, ...]) -> tuple[str, ...]:
@@ -287,7 +302,7 @@ class _PositionlessStub(eqx.Module):
         capture_keys: CaptureKeys = EMPTY_CAPTURE_KEYS,
         *,
         placement: PlacementRules | None,
-    ) -> ForwardResult:
+    ) -> ForwardResult[LMOutput]:
         del resid, capture_keys, placement
         raise AssertionError("positionless stub fn must not be called")
 
@@ -301,13 +316,14 @@ class _PositionlessStub(eqx.Module):
         inputs: Any,
         /,
         *,
+        sites: tuple[str, ...],
         capture_keys: CaptureKeys,
         placement: PlacementRules | None,
-    ) -> tuple[ForwardResult, dict[str, jax.Array]]:
-        del prepared_weights, inputs, capture_keys, placement
+    ) -> tuple[ForwardResult[LMOutput], dict[str, SiteCI]]:
+        del prepared_weights, inputs, sites, capture_keys, placement
         raise NotImplementedError
 
-    def stack_ci(self, ci_lower: dict[str, Any]) -> dict[str, Any]:
+    def stack_ci(self, ci_lower: Mapping[str, SiteCI]) -> Mapping[str, SiteCI]:
         return ci_lower
 
     def masked_forward(
@@ -320,7 +336,7 @@ class _PositionlessStub(eqx.Module):
         placement: PlacementRules | None,
         capture_keys: CaptureKeys = EMPTY_CAPTURE_KEYS,
         remat: bool,
-    ) -> ForwardResult:
+    ) -> ForwardResult[LMOutput]:
         del prepared_weights, inputs, masking, placement, capture_keys, remat
         raise AssertionError("positionless stub fn must not be called")
 
@@ -339,8 +355,8 @@ def test_attn_patterns_steps_reject_positionless_target():
     model = PlacedModel(
         model=_PositionlessStub(
             sites=(
-                SiteSpec("linear1", 5, 2, 8, "linear1"),
-                SiteSpec("linear2", 2, 5, 6, "linear2"),
+                SiteSpec("linear1", Dense(d_in=5, d_out=2, C=8), "linear1"),
+                SiteSpec("linear2", Dense(d_in=2, d_out=5, C=6), "linear2"),
             ),
             has_position_axis=False,
         ),

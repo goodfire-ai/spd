@@ -26,7 +26,12 @@ from param_decomp.core.ci_fn import (
     build_ci_fn,
     init_chunkwise_transformer_ci_fn,
 )
-from param_decomp.core.components import SiteSpec, component_stacks_from_sites
+from param_decomp.core.components import (
+    Dense,
+    SiteSpec,
+    component_stacks_from_sites,
+    require_full_emission,
+)
 from param_decomp.core.configs import (
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
@@ -48,7 +53,7 @@ from param_decomp.tests.core.test_generic_model_io import SyntheticDecomposedMod
 SITE = "block.0.proj"
 B, T, D, C = 2, 5, 8, 4
 D_MODEL, FFN = 16, 32
-SITES = (SiteSpec(name=SITE, d_in=D, d_out=D, C=C, group=SITE),)
+SITES = (SiteSpec(name=SITE, factorization=Dense(d_in=D, d_out=D, C=C), group=SITE),)
 
 
 def _arch(n_blocks: int) -> ChunkwiseTransformerCIArch:
@@ -87,9 +92,10 @@ def test_zero_blocks_forward_shape_and_finiteness():
     ci_fn = _ci_fn(0)
     for remat in (False, True):
         ci = ci_fn(_taps(), remat=remat, placement=None)
-        assert ci.preactivations[SITE].shape == (B, T, C)
-        assert ci.lower[SITE].shape == (B, T, C)
-        assert bool(jnp.isfinite(ci.lower[SITE]).all())
+        assert require_full_emission(ci.preactivations[SITE]).shape == (B, T, C)
+        lower = require_full_emission(ci.lower[SITE])
+        assert lower.shape == (B, T, C)
+        assert bool(jnp.isfinite(lower).all())
 
 
 def test_zero_blocks_is_exactly_position_local():
@@ -101,8 +107,10 @@ def test_zero_blocks_is_exactly_position_local():
 
     def moved(n_blocks: int) -> jax.Array:
         ci_fn = _ci_fn(n_blocks)
-        base = ci_fn(taps, remat=False, placement=None).preactivations[SITE]
-        pert = ci_fn(perturbed, remat=False, placement=None).preactivations[SITE]
+        base = require_full_emission(ci_fn(taps, remat=False, placement=None).preactivations[SITE])
+        pert = require_full_emission(
+            ci_fn(perturbed, remat=False, placement=None).preactivations[SITE]
+        )
         return jnp.abs(base - pert).max(axis=(0, 2))  # per-position
 
     local = moved(0)
@@ -184,7 +192,7 @@ def test_zero_blocks_trains_a_positioned_target():
         components_optimizer=opt_vu,
         ci_fn_optimizer=opt_ci,
         total_steps=10,
-        faithfulness=faithfulness_loss_for(model),
+        faithfulness=faithfulness_loss_for(placed),
     )
 
     in_proj_before = jax.device_get(ci_fn.chunks.in_proj_w)  # host copy survives step donation
@@ -202,4 +210,4 @@ def test_zero_blocks_trains_a_positioned_target():
         remat=False,
         placement=None,
     )
-    assert final_ci.lower[SITE].shape == (B, T, C)
+    assert require_full_emission(final_ci.lower[SITE]).shape == (B, T, C)

@@ -117,18 +117,18 @@ class LossMetricConfig(BaseConfig):
 
 class HiddenActsReconstruction(BaseConfig):
     """The auxiliary relative-MSE part of one recon loss (SPEC S35): how hard, and measured
-    where. Both are required together — a strength with nowhere to measure, or measurement
-    points nothing pulls on, are equally meaningless, so they are one object rather than two
-    optional fields. Unlike the eval-only hidden-acts metrics, this compares configured activation
-    points by relative error and contributes to the optimization objective."""
+    where. Both are required together, so they are one object rather than two optional fields.
+    Training requires positive strength; eval additionally admits zero to measure the configured
+    activation errors without changing the reconstruction probe's masks or output objective."""
 
-    coeff: PositiveFloat | ScheduleConfig = Field(
+    coeff: NonNegativeFloat | ScheduleConfig = Field(
         ...,
         description=(
             "Strength RELATIVE to the e2e loss: each forward uses "
-            "`e2e + coeff * mean_points(relative squared error)`. A training term's outer "
-            "`coeff` scales that sum; the eval probe reports it directly (and, having no "
-            "training step to read, takes only the float arm). A `ScheduleConfig` is "
+            "`e2e + coeff * mean_points(relative squared error)`. Zero is the eval-only "
+            "measurement arm: it logs the hidden errors while leaving the probe objective "
+            "exactly e2e. A training term's outer `coeff` scales the sum; the eval probe "
+            "has no training step and therefore takes only the float arm. A `ScheduleConfig` is "
             "evaluated at the current step like every other loss coefficient."
         ),
     )
@@ -215,11 +215,17 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
     `gamma` is the width's full schedule (SPEC S9); annealing it down (knots with
     decreasing `frac`) sharpens the count. Its knots must keep `frac > 0` (asserted
     where the term is built) — a `gamma` touching 0 is never intended.
+
+    With `normalize_at_one`, `phi` is rescaled by `(1 + gamma^2)` so a fully-on component
+    (`c = 1`) contributes exactly 1 regardless of `gamma`. Otherwise `phi(1) =
+    1/(1+gamma^2)` grows as `gamma` anneals, silently ramping the effective `coeff` on
+    saturated components.
     """
 
     type: Literal["ImportanceMinimalityLoss"] = "ImportanceMinimalityLoss"
     gamma: ScheduleConfig
     frequency: FrequencyMinimalityConfig | None = None
+    normalize_at_one: bool = False
 
 
 class NonlinearityLocalityLossConfig(LossMetricConfig):
@@ -321,6 +327,15 @@ class PGDReconLossConfig(PGDConfig):
     type: Literal["PGDReconLoss"] = "PGDReconLoss"
 
 
+class SlowPGDReconLossConfig(PGDReconLossConfig):
+    """The fresh-PGD probe on the slow tier: same attack, same binding, only the cadence
+    differs. For long attack ladders (hundreds of steps) that would dominate the fast pass.
+    Eval-only — it is not a member of the training-loss union."""
+
+    slow: ClassVar[bool] = True
+    type: Literal["SlowPGDReconLoss"] = "SlowPGDReconLoss"  # pyright: ignore[reportIncompatibleVariableOverride]
+
+
 class PGDReconSubsetLossConfig(PGDConfig):
     type: Literal["PGDReconSubsetLoss"] = "PGDReconSubsetLoss"
     routing: Annotated[SubsetRoutingType, Field(discriminator="type")] = (
@@ -329,7 +344,8 @@ class PGDReconSubsetLossConfig(PGDConfig):
 
 
 class AdamPGDConfig(BaseConfig):
-    """Adam-style PGD optimizer config — the only implemented persistent-PGD optimizer."""
+    """Adam-style persistent-PGD source optimizer (SPEC §6 SRC_STEP `adam`): coordinate
+    moments persist alongside the sources."""
 
     type: Literal["adam"] = "adam"
     beta1: Probability = Field(default=0.9, description="Adam beta1 for masks")
@@ -338,20 +354,53 @@ class AdamPGDConfig(BaseConfig):
     lr_schedule: ScheduleConfig
 
 
-class PersistentPGDLossConfig(LossMetricConfig, HiddenActsReconstructionMixin):
-    """Shared adversary fields for the persistent-PGD loss terms (SPEC §4.4–4.5): the
-    Adam-ascended source bundle's optimizer, stored shape, dtype, and warmup. Sources are
-    clamped to `[0, 1]` after each step — the only implemented parameterization."""
+class SgdPGDConfig(BaseConfig):
+    """Stateless persistent-PGD source optimizer (SPEC §6 SRC_STEP `sgd`):
+    `sources += lr·grad`, project to [0,1] — no moments, so the persistent bundle is the
+    sources alone (the arm that makes large `bsc` source banks storable)."""
 
-    optimizer: AdamPGDConfig
-    source_shape: SourceShape
-    source_dtype: Literal["float32", "bfloat16"] = "float32"
-    """Storage dtype for the persistent PPGD source tensors AND their Adam moments
-    (`m`/`v`). `float32` (default) is SPEC N1 (fp32 SRC_STEP moments) and the only
-    oracle-parity path. `bfloat16` halves the resident source+moment footprint (it scales
-    with total source elements — dominant at large site counts) at some numerical risk: the
-    second-moment `v` accumulates squared grads, which can underflow in bf16 for small
-    grads — opt in only as an experiment."""
+    type: Literal["sgd"] = "sgd"
+    lr_schedule: ScheduleConfig
+
+
+class MomentumSgdPGDConfig(BaseConfig):
+    """Momentum-SGD persistent-PGD source optimizer (SPEC §6 SRC_STEP `momentum_sgd`):
+    `v = momentum·v + grad; sources += lr·v`, project to [0,1]. One velocity buffer
+    persists, float at `adversary.velocity_dtype` of the storage (bf16 under either
+    16-bit storage) — the supported SRC_STEP optimizer for the `bsc` reference."""
+
+    type: Literal["momentum_sgd"] = "momentum_sgd"
+    momentum: Probability
+    lr_schedule: ScheduleConfig
+
+
+class PersistentAdversaryLossConfig(LossMetricConfig, HiddenActsReconstructionMixin):
+    """Shared optimizer and lifecycle fields for persistent adversarial sources."""
+
+    optimizer: Annotated[
+        AdamPGDConfig | SgdPGDConfig | MomentumSgdPGDConfig, Field(discriminator="type")
+    ]
+    source_dtype: Literal["float32", "bfloat16", "uint16"] = "float32"
+    """Storage representation for the persistent PPGD source VALUES; adam moments follow
+    it, the momentum velocity takes its float sibling (`adversary.velocity_dtype`).
+    `float32` (default) is SPEC N1 (fp32 SRC_STEP moments) and the only oracle-parity
+    path. `bfloat16` halves the resident footprint at ~2^-8 resolution near 1.0.
+    `uint16` is the unit-interval FIXED-POINT representation (`value = u/65535`,
+    `adversary.UINT16_UNIT_SCALE`): same bytes as bf16, uniform 1/65535 resolution across
+    [0,1]; ascents update the fp32 view and store back with stochastic rounding
+    (unbiased — round-to-nearest would permanently stall sub-half-step updates). uint16
+    pairs with the float-buffered or stateless SRC_STEPs; adam refuses it (its moments
+    follow the storage dtype, and integer moments are meaningless)."""
+
+    @model_validator(mode="after")
+    def validate_storage_supports_optimizer(self) -> Self:
+        if self.source_dtype == "uint16" and isinstance(self.optimizer, AdamPGDConfig):
+            raise ValueError(
+                "uint16 fixed-point source storage pairs with SRC_STEP sgd/momentum_sgd; "
+                "adam stores its moments at the source dtype"
+            )
+        return self
+
     n_warmup_steps: NonNegativeInt = Field(
         default=0,
         description=(
@@ -365,11 +414,47 @@ class PersistentPGDLossConfig(LossMetricConfig, HiddenActsReconstructionMixin):
     objective; `term` makes the sources ascend the complete loss."""
 
 
+class PersistentPGDLossConfig(PersistentAdversaryLossConfig):
+    """A persistent adversary stored in one of the ordinary waist-axis shapes."""
+
+    source_shape: SourceShape
+
+
 class PersistentPGDReconLossConfig(PersistentPGDLossConfig):
     """Persistent-PGD recon loss: the adversary's masks routed to all sites every
     forward."""
 
     type: Literal["PersistentPGDReconLoss"] = "PersistentPGDReconLoss"
+
+
+class MergedStochasticSubsetPooledPPGDReconLossConfig(PersistentAdversaryLossConfig):
+    """The merged stochastic/PPGD term with a persistent pool of cross-site source particles.
+
+    A pool row is one cross-site particle: row ``i`` at every site is trained and used
+    together. Each step draws one row per batch element with replacement and broadcasts
+    it over every position in that element. The same sampled row indices are used by the warmup
+    ascents, the main forward, and the final source-gradient retake. Persistent source
+    storage therefore scales as ``pool_size * (C + 1)`` per site instead of
+    ``batch * positions * (C + 1)``.
+
+    This is deliberately a sibling of ``MergedStochasticSubsetPPGDReconLossConfig`` so
+    matches on the dense strategy cannot silently capture the pooled strategy. The
+    selected source-LR×2 recipe is authored normally through ``optimizer.lr_schedule``;
+    the pool does not hide a multiplier relative to that explicit schedule.
+    """
+
+    type: Literal["MergedStochasticSubsetPooledPPGDReconLoss"] = (
+        "MergedStochasticSubsetPooledPPGDReconLoss"
+    )
+    pool_size: PositiveInt
+    adv_fraction: ScheduleConfig
+    routing: SubsetRoutingType = Field(default_factory=UniformKSubsetRoutingConfig)
+
+    @model_validator(mode="after")
+    def validate_adv_fraction_is_probability(self) -> Self:
+        if self.adv_fraction.max_val > 1.0:
+            raise ValueError(f"adv_fraction must stay within [0, 1]: {self.adv_fraction}")
+        return self
 
 
 class MergedStochasticSubsetPPGDReconLossConfig(PersistentPGDLossConfig):
@@ -433,7 +518,7 @@ class CI_L0Config(BaseConfig):
     slow: ClassVar[bool] = False
     type: Literal["CI_L0"] = "CI_L0"
     groups: dict[str, list[str]] | None
-    ci_alive_threshold: float = 0.0
+    ci_alive_threshold: Probability = 0.0
 
 
 class CIMeanPerComponentConfig(BaseConfig):
@@ -444,7 +529,7 @@ class CIMeanPerComponentConfig(BaseConfig):
 class ComponentActivationDensityConfig(BaseConfig):
     slow: ClassVar[bool] = True
     type: Literal["ComponentActivationDensity"] = "ComponentActivationDensity"
-    ci_alive_threshold: float = 0.0
+    ci_alive_threshold: Probability = 0.0
 
 
 class IdentityCITargetSpec(BaseConfig):
@@ -490,22 +575,6 @@ class UVPlotsConfig(_PermutationPlotsBaseConfig):
     type: Literal["UVPlots"] = "UVPlots"
 
 
-class WellTemperednessConfig(BaseConfig):
-    """Whether higher causal importance preactivations mean greater ablation effects.
-
-    `groups` maps names to fnmatch-style site patterns. Every region always schedules
-    `n_locations * n_components_per_region` solo ablations: a sparse region pads its quota
-    with out-of-region components whose damage is computed and discarded.
-    """
-
-    slow: ClassVar[bool] = True
-    type: Literal["WellTemperedness"] = "WellTemperedness"
-    groups: dict[str, list[str]] | None
-    n_locations: PositiveInt
-    n_components_per_region: PositiveInt
-    ablations_per_forward: PositiveInt
-
-
 # ---------------------------------------------------------------------------
 # Top-level PD configs
 # ---------------------------------------------------------------------------
@@ -525,9 +594,11 @@ class AdamWOptimizerConfig(BaseConfig):
 
 
 class MuonOptimizerConfig(BaseConfig):
-    """Muon (`optax.contrib.muon`): Newton-Schulz-orthogonalized momentum for the group's
-    matrix leaves; the rest fall back to Adam(0.9, 0.999) at the same LR. Experimental
-    (non-canonical). Which leaves are matrices is per-group (`run_state.build_optimizers`):
+    """Muon: Newton-Schulz-orthogonalized momentum for the group's matrix leaves; the rest
+    fall back to Adam(0.9, 0.999) at the same LR. Experimental (non-canonical). The
+    semantics are `optax.contrib.muon`'s (SPEC S20); the NS runs batched per semantic
+    kind at the placement table's `ns_compute` waypoint (`muon_stacked.py`). Which leaves
+    are matrices is per-group (`run_state.build_optimizers`):
     the V/U components tree is all-2D (fallback never fires); the chunkwise CI fn is
     per-chunk stacks, so its 3D leaves are muon'd over the trailing two axes (chunk axis
     batched) and its 2D bias stacks take the fallback; the MLP CI fns use the plain 2D rule."""
@@ -550,17 +621,6 @@ class MuonOptimizerConfig(BaseConfig):
         default=None,
         description="If set, clip the grad norm of this group's parameters to this value",
     )
-    impl: Literal["optax", "stacked"] = Field(
-        default="optax",
-        description=(
-            "NS implementation. `optax` = per-leaf `optax.contrib.muon` (the reference"
-            " semantics, SPEC S20). `stacked` = one batched NS per semantic kind's"
-            " stack, executed at the placement table's `ns_compute` waypoint row —"
-            " device-local orthogonalization, no per-iteration collectives"
-            " (`muon_stacked.py`); same trajectory up to float reassociation (the"
-            " SPEC D4 tolerance class)."
-        ),
-    )
     ns_steps: PositiveInt = Field(
         default=5, description="Newton-Schulz iterations (optax default 5; fewer = cheaper/looser)"
     )
@@ -568,7 +628,7 @@ class MuonOptimizerConfig(BaseConfig):
         default="float32",
         description=(
             "Dtype of the NS orthogonalization only (masters/momentum stay fp32 per N1);"
-            " bfloat16 halves NS compute+comm (the Kimi recipe). `stacked` impl only."
+            " bfloat16 halves NS compute+comm (the Kimi recipe)."
         ),
     )
 
@@ -591,6 +651,7 @@ AnyOptimizerConfig = Annotated[
 type AnyReconLossMetricConfig = (
     CIMaskedReconLossConfig
     | CIMaskedReconSubsetLossConfig
+    | MergedStochasticSubsetPooledPPGDReconLossConfig
     | MergedStochasticSubsetPPGDReconLossConfig
     | PersistentPGDReconLossConfig
     | PGDReconLossConfig
@@ -692,10 +753,13 @@ class NontargetConfig(BaseConfig):
 
 RuleConfig = dict[SemanticAxis, MeshAxis | list[MeshAxis] | None]
 """One placement row as configured: semantic axis name -> mesh axis, ordered mesh axes,
-or null (replicate). Both name vocabularies are the closed `axes.py` Literals, so an
-axis name outside them is refused at parse; rules construction additionally fails
-closed on any in-vocabulary key no tensor consumes at that row (a typo'd axis would
-silently replicate) and on mesh axes the run's bound mesh does not declare."""
+or null (replicate). The three value spellings are authoring sugar for ONE in-code value
+(`axes.MeshAssignment`, an ordered tuple; `null` = `()`), folded at the placement parse
+boundary. A `null` entry is a LISTED axis — unlike an omitted one it still meets the
+row-key check. Both name vocabularies are the closed `axes.py` Literals, so an axis
+name outside them is refused at parse; rules construction additionally fails closed on
+any in-vocabulary key no tensor consumes at that row (a typo'd axis would silently
+replicate) and on a mesh whose axes are not the table's vocabulary."""
 
 
 class ComponentsPlacementConfig(BaseConfig):
@@ -721,8 +785,18 @@ class CIWeightPlacementConfig(BaseConfig):
     ns_compute: RuleConfig
 
 
+class CIMoEPlacementConfig(BaseConfig):
+    """The MoE chunkwise CI fn's expert-carrying weight families (concat-wide expert
+    banks + fused narrow heads)."""
+
+    expert_ffn: CIWeightPlacementConfig
+    expert_head: CIWeightPlacementConfig
+
+
 class CIFnPlacementConfig(BaseConfig):
-    """Chunkwise CI-transformer weight and activation roles."""
+    """Chunkwise CI-transformer weight and activation roles. `moe` carries the MoE
+    arch's extra families; a table without it refuses that arch at placement
+    resolution."""
 
     attention: CIWeightPlacementConfig
     ffn: CIWeightPlacementConfig
@@ -730,6 +804,7 @@ class CIFnPlacementConfig(BaseConfig):
     output: CIWeightPlacementConfig
     vectors: RuleConfig
     activations: RuleConfig
+    moe: CIMoEPlacementConfig | None = None
 
 
 class ActivationsPlacementConfig(BaseConfig):
@@ -788,6 +863,72 @@ class PlacementTableConfig(BaseConfig):
     ci_fn: CIFnPlacementConfig
     activations: ActivationsPlacementConfig
     target: TargetPlacementConfig
+
+
+PlacementPresetName = Literal[
+    "owner",
+    "zero1",
+    "zero1-replicated-resident",
+    "owner-replicated-resident",
+    "zero1-replicated-resident-moe",
+    "owner-replicated-resident-moe",
+    "ddp",
+]
+"""The built-in placement tables by name (`placement.PRESETS` holds the tables and asserts
+it enumerates exactly these names)."""
+
+PlacementSpec = PlacementPresetName | PlacementTableConfig
+"""What a run or consumer writes down as its placement: a preset name or an explicit table."""
+
+
+SequenceSharding = Literal["replicate", "sequence_parallel"]
+"""How masked forwards place the between-blocks residual over tp. `replicate` keeps the
+position axis replicated (the standing spelling). `sequence_parallel` shards the position
+axis over tp between the blocks of masked forwards; block interiors run at full width,
+so each block boundary's tp-axis activation reduction becomes a reduce-scatter +
+all-gather pair at 1/tp resident width. Clean forwards, CI-fn taps and the output edge
+keep the replicated residual. Sequence length must tile tp, and only targets implementing
+it accept it (currently qwen36_moe; others refuse at their masked forward)."""
+
+
+class HsdpMeshShape(BaseConfig):
+    """The three-axis `(replicate, fsdp, tp)` logical mesh every non-resident placement
+    runs on — the `runtime.mesh:` value of those runs."""
+
+    replicate: PositiveInt = Field(
+        description="Logical model-replication and cross-replica ownership axis.",
+    )
+    fsdp: PositiveInt = Field(
+        description="Logical parameter-sharding axis; also shards the data batch.",
+    )
+    tp: PositiveInt = Field(
+        description="Logical Megatron tensor-parallel axis; batch activations replicate over it.",
+    )
+
+    @property
+    def world_size(self) -> int:
+        return self.replicate * self.fsdp * self.tp
+
+
+class ResidentMeshShape(BaseConfig):
+    """The two-axis `(data, tp)` logical mesh of the `*-replicated-resident` placements —
+    the whole ÷tp working copy is resident, so no fsdp axis exists to spell."""
+
+    data: PositiveInt = Field(
+        description="Logical data-parallel axis: shards the batch and the ÷N optimizer masters.",
+    )
+    tp: PositiveInt = Field(
+        description="Logical Megatron tensor-parallel axis; batch activations replicate over it.",
+    )
+
+    @property
+    def world_size(self) -> int:
+        return self.data * self.tp
+
+
+MeshShape = HsdpMeshShape | ResidentMeshShape
+"""Structurally discriminated: the two shapes' required keys are disjoint and extra keys
+refuse (`extra="forbid"`), so a `runtime.mesh:` mapping parses to exactly one arm."""
 
 
 class PDConfigBase(BaseConfig):
@@ -891,16 +1032,13 @@ class TargetedPDConfig(PDConfigBase):
     def validate_loss_metrics(self) -> Self:
         _validate_training_losses(self.loss_metrics)
         for metric in self.loss_metrics:
-            match metric:
-                case ImportanceMinimalityLossConfig(frequency=frequency) if frequency is not None:
-                    assert frequency.ema_halflife_steps is None, (
-                        "frequency.ema_halflife_steps is not implemented for the targeted "
-                        "(tPD) objective: the EMA carries one frequency stream per site, and "
-                        "the two-pass step takes the penalty on two independent streams "
-                        "(SPEC S8'' — plain PD only)"
-                    )
-                case _:
-                    pass
+            if isinstance(metric, ImportanceMinimalityLossConfig) and metric.frequency is not None:
+                assert metric.frequency.ema_halflife_steps is None, (
+                    "frequency.ema_halflife_steps is not implemented for the targeted "
+                    "(tPD) objective: the EMA carries one frequency stream per site, and "
+                    "the two-pass step takes the penalty on two independent streams "
+                    "(SPEC S8'' — plain PD only)"
+                )
         return self
 
 
@@ -918,6 +1056,15 @@ def _validate_training_losses(loss_metrics: Sequence[AnyLossMetricConfig]) -> No
     seen: set[str] = set()
     for cfg in loss_metrics:
         assert cfg.coeff is not None, f"loss_metrics.{cfg.type!r} must set `coeff`"
+        if (
+            isinstance(cfg, HiddenActsReconstructionMixin)
+            and cfg.hidden_acts_reconstruction is not None
+            and isinstance(cfg.hidden_acts_reconstruction.coeff, float)
+        ):
+            assert cfg.hidden_acts_reconstruction.coeff > 0.0, (
+                f"loss_metrics.{cfg.type!r}.hidden_acts_reconstruction.coeff must be positive; "
+                "zero is reserved for eval-only measurement"
+            )
         name = cfg.name if cfg.name is not None else cfg.type
         assert name not in seen, f"duplicate loss instance_key {name!r}"
         seen.add(name)
@@ -1062,8 +1209,8 @@ METRIC_SHORT_NAMES: dict[str, str] = {
     "CIMaskedReconLoss": "CIMaskRecon",
     "CIMaskedReconSubsetLoss": "CIMaskReconSub",
     "FaithfulnessLoss": "Faith",
-    "NonlinearityLocalityLoss": "Nonlinearity",
     "ImportanceMinimalityLoss": "ImpMin",
+    "NonlinearityLocalityLoss": "Nonlinearity",
     "PersistentPGDReconLoss": "PersistPGDRecon",
     "PGDReconLoss": "PGDRecon",
     "PGDReconSubsetLoss": "PGDReconSub",

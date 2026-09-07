@@ -13,7 +13,8 @@ range. Usage:
 
     python -m param_decomp.core.tools.memreport <dump_dir|run_dir> [--top N]
 
-The dump lands at runs/<id>/hlo when the launcher dumps HLO (see launch.py XLA_FLAGS).
+The LM runner writes its dump under `<run_dir>/hlo`; an explicit XLA dump directory
+can also be passed directly.
 All proto schemas here are reversed from dumps (no public .proto ships with jaxlib) and
 parse fail-closed: unknown wire types and unmodeled structure raise.
 """
@@ -180,13 +181,19 @@ class LogicalBuffer:
 
 
 @dataclass(frozen=True)
+class BufferLocation:
+    allocation_index: int
+    offset: int
+
+
+@dataclass(frozen=True)
 class BufferAssignment:
     """The byte-relevant slice of XLA's BufferAssignmentProto (HloProto field 3).
     `arena_allocation_index` is the one allocation every heap-traced buffer is assigned
     into — the temporally-packed slab; every other allocation is static for the step."""
 
     buffers: dict[int, LogicalBuffer]
-    buffer_arena_offsets: dict[int, int]
+    buffer_locations: dict[int, BufferLocation]
     allocation_sizes: tuple[int, ...]
     entry_parameter_allocation_indices: frozenset[int]
     arena_allocation_index: int
@@ -203,8 +210,7 @@ def parse_buffer_assignment(hlo_proto: memoryview) -> BufferAssignment:
     (assignment,) = [v for f, v in walk_fields(hlo_proto) if f == 3]
     buffers: dict[int, LogicalBuffer] = {}
     allocations: dict[int, tuple[int, bool]] = {}
-    allocation_of_buffer: dict[int, int] = {}
-    offset_of_buffer: dict[int, int] = {}
+    locations: dict[int, BufferLocation] = {}
     traces: list[tuple[bool, tuple[HeapEvent, ...]]] = []
     for field, value in walk_fields(_sub(assignment)):
         if field == 1:
@@ -241,8 +247,8 @@ def parse_buffer_assignment(hlo_proto: memoryview) -> BufferAssignment:
                     assigned.append((entry_buffer_id, offset))
             allocations[index] = (size, is_param)
             for entry_buffer_id, offset in assigned:
-                allocation_of_buffer[entry_buffer_id] = index
-                offset_of_buffer[entry_buffer_id] = offset
+                assert entry_buffer_id not in locations, entry_buffer_id
+                locations[entry_buffer_id] = BufferLocation(index, offset)
         elif field == 4:
             whole_module = False
             events: list[HeapEvent] = []
@@ -268,13 +274,13 @@ def parse_buffer_assignment(hlo_proto: memoryview) -> BufferAssignment:
     n = len(allocations)
     assert sorted(allocations) == list(range(n)), "allocation indices not dense"
     (arena_index,) = {
-        allocation_of_buffer[e.buffer_id] for e in trace_events if e.kind is HeapEventKind.ALLOC
+        locations[e.buffer_id].allocation_index
+        for e in trace_events
+        if e.kind is HeapEventKind.ALLOC
     }
     return BufferAssignment(
         buffers=buffers,
-        buffer_arena_offsets={
-            b: offset_of_buffer[b] for b, i in allocation_of_buffer.items() if i == arena_index
-        },
+        buffer_locations=locations,
         allocation_sizes=tuple(allocations[i][0] for i in range(n)),
         entry_parameter_allocation_indices=frozenset(i for i in range(n) if allocations[i][1]),
         arena_allocation_index=arena_index,
@@ -311,14 +317,24 @@ def _render_shape(shape: memoryview, shape_index: tuple[int, ...]) -> str:
 @dataclass(frozen=True)
 class Instruction:
     name: str
+    opcode: str
     shape: memoryview
     op_path: str
+    stack_frame_id: int
+    """1-based frame in the module's `StackFrameIndex`; 0 = jax recorded no source."""
+
+
+def parse_module_name(hlo_proto: memoryview) -> str:
+    """HloModuleProto field 1 of the HloProto's module (field 1)."""
+    (module,) = [v for f, v in walk_fields(hlo_proto) if f == 1]
+    (name,) = [v for f, v in walk_fields(_sub(module)) if f == 1]
+    return bytes(_sub(name)).decode()
 
 
 def parse_instruction_index(hlo_proto: memoryview) -> dict[int, Instruction]:
-    """Instruction id → (name, shape proto, jax metadata op path), from the HloModuleProto
-    (HloProto field 1; computations at field 3, instructions at computation field 2;
-    instruction {1: name, 3: shape, 7: metadata {2: op_name}, 35: id})."""
+    """Instruction id → `Instruction`, from the HloModuleProto (HloProto field 1;
+    computations at field 3, instructions at computation field 2; instruction {1: name,
+    2: opcode, 3: shape, 7: metadata {2: op_name, 15: stack_frame_id}, 35: id})."""
     (module,) = [v for f, v in walk_fields(hlo_proto) if f == 1]
     index: dict[int, Instruction] = {}
     for field, computation in walk_fields(_sub(module)):
@@ -327,21 +343,84 @@ def parse_instruction_index(hlo_proto: memoryview) -> dict[int, Instruction]:
         for f2, instruction in walk_fields(_sub(computation)):
             if f2 != 2:
                 continue
-            name, shape, op_path, instruction_id = "", memoryview(b""), "", 0
+            name, opcode, shape, op_path = "", "", memoryview(b""), ""
+            stack_frame_id, instruction_id = 0, 0
             for f3, v3 in walk_fields(_sub(instruction)):
                 if f3 == 1:
                     name = bytes(_sub(v3)).decode()
+                elif f3 == 2:
+                    opcode = bytes(_sub(v3)).decode()
                 elif f3 == 3:
                     shape = _sub(v3)
                 elif f3 == 7:
                     for f4, v4 in walk_fields(_sub(v3)):
                         if f4 == 2:
                             op_path = bytes(_sub(v4)).decode()
+                        elif f4 == 15:
+                            stack_frame_id = _int(v4)
                 elif f3 == 35:
                     instruction_id = _int(v3)
-            index[instruction_id] = Instruction(name, shape, op_path)
+            index[instruction_id] = Instruction(name, opcode, shape, op_path, stack_frame_id)
     assert index, "no instructions parsed — schema drift"
     return index
+
+
+# ── hlo.pb: stack-frame index (jax source locations) ─────────────────────────────────
+
+
+@dataclass(frozen=True)
+class StackFrameIndex:
+    """The module's interned source-location table (HloModuleProto field 17). jax ≥0.10
+    records instruction source locations here (metadata `stack_frame_id`), not in the
+    legacy `source_file`/`source_line` metadata fields."""
+
+    file_names: tuple[str, ...]
+    file_locations: tuple[tuple[int, int], ...]
+    """(1-based file_name id, line) per location."""
+    frame_locations: tuple[int, ...]
+    """1-based file_location id per stack frame (the frame chain is not needed: jax's
+    recorded leaf frame is already the user-code frame)."""
+
+    def source_of(self, stack_frame_id: int) -> str:
+        """`file:line` of the instruction's recorded frame; '' when none was recorded."""
+        if stack_frame_id == 0:
+            return ""
+        file_name_id, line = self.file_locations[self.frame_locations[stack_frame_id - 1] - 1]
+        return f"{self.file_names[file_name_id - 1]}:{line}"
+
+
+def parse_stack_frame_index(hlo_proto: memoryview) -> StackFrameIndex:
+    """Schema: StackFrameIndexProto {1 (repeated): file_names, 2 (repeated):
+    function_names, 3 (repeated): file_location {1: file_name_id, 2: function_name_id,
+    3: line}, 4 (repeated): stack_frame {1: file_location_id, 2: parent_frame_id}}.
+    A module compiled without source tracking has no field 17 — the empty index."""
+    (module,) = [v for f, v in walk_fields(hlo_proto) if f == 1]
+    file_names: list[str] = []
+    file_locations: list[tuple[int, int]] = []
+    frame_locations: list[int] = []
+    for field, value in walk_fields(_sub(module)):
+        if field != 17:
+            continue
+        for f2, v2 in walk_fields(_sub(value)):
+            if f2 == 1:
+                file_names.append(bytes(_sub(v2)).decode())
+            elif f2 == 3:
+                file_name_id, line = 0, 0
+                for f3, v3 in walk_fields(_sub(v2)):
+                    if f3 == 1:
+                        file_name_id = _int(v3)
+                    elif f3 == 3:
+                        line = _int(v3)
+                assert file_name_id, "file_location without file_name_id — schema drift"
+                file_locations.append((file_name_id, line))
+            elif f2 == 4:
+                location_id = 0
+                for f3, v3 in walk_fields(_sub(v2)):
+                    if f3 == 1:
+                        location_id = _int(v3)
+                assert location_id, "stack_frame without file_location_id — schema drift"
+                frame_locations.append(location_id)
+    return StackFrameIndex(tuple(file_names), tuple(file_locations), tuple(frame_locations))
 
 
 # ── live-range sweep ─────────────────────────────────────────────────────────────────
@@ -446,7 +525,7 @@ def _print_live_range_section(path: Path, top: int) -> None:
     static = sum(assignment.allocation_sizes) - arena - parameters
     assert liveness.peak_bytes <= arena, "swept peak exceeds the arena allocation"
     peak_intervals = sorted(
-        (assignment.buffer_arena_offsets[r.buffer_id], r.size_bytes)
+        (assignment.buffer_locations[r.buffer_id].offset, r.size_bytes)
         for r in liveness.live_at(liveness.peak_event)
     )
     for (offset, size), (next_offset, _) in zip(peak_intervals, peak_intervals[1:], strict=False):

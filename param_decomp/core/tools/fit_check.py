@@ -33,29 +33,60 @@ from jax import random
 from jax.sharding import Mesh, NamedSharding
 from jax.sharding import PartitionSpec as P
 
-from param_decomp.core.adversary import PersistentAdversary, init_sources_adam_state
+from param_decomp.core.adversary import PersistentAdversary, init_sources_opt_state
 from param_decomp.core.built_run import BuiltRun
 from param_decomp.core.ci_fn import resolve_ci_placement
-from param_decomp.core.configs import PDConfig
-from param_decomp.core.faithfulness import faithfulness_loss_for
-from param_decomp.core.init_placed import ci_fn_shardings, persistent_sources_shardings
-from param_decomp.core.model import PlacedModel, PositionAxis
+from param_decomp.core.components import site_slots_for
+from param_decomp.core.configs import NontargetConfig, PDConfig, TargetedPDConfig
+from param_decomp.core.faithfulness import FaithfulnessLossFn, make_faithfulness_loss
+from param_decomp.core.init_placed import (
+    ci_fn_shardings,
+    persistent_sources_shardings_from_config,
+)
+from param_decomp.core.losses import EmaFrequency, resolve_frequency
+from param_decomp.core.model import DecomposedModel, PlacedModel, PositionAxis
 from param_decomp.core.objective import (
     build_objective,
     build_recon_terms,
+    build_targeted_objective,
 )
-from param_decomp.core.placement import component_stacks_shardings
+from param_decomp.core.placement import PlacementRules, component_stacks_shardings
 from param_decomp.core.recon import persistent_configs
-from param_decomp.core.run_state import build_optimizers, init_train_state
+from param_decomp.core.run_state import build_optimizers, imp_min_config, init_train_state
 from param_decomp.core.train import (
+    CIScaledWeightDecay,
     Decomposition,
     ForwardSubstrate,
     TrainingItem,
     TrainState,
+    make_targeted_train_step,
     make_train_step,
 )
 
 GIB = 2**30
+
+
+@dataclasses.dataclass(frozen=True)
+class DumpConfig:
+    """What a fit compile dumps under `xla_dump_to`. `hlo_protos` adds the
+    after-optimizations `HloProto` (module + buffer assignment) — the input of both the
+    memory ledger (`core.tools.memory_ledger`) and the profiler's memory viewer;
+    `graph_html` adds XLA's HTML renders (see the LM fit_check CLI docstring for the
+    size caveats)."""
+
+    dir: Path
+    hlo_protos: bool
+    graph_html: bool
+
+    def compiler_options(self) -> dict[str, bool | int | str]:
+        options: dict[str, bool | int | str] = {"xla_dump_to": str(self.dir)}
+        if self.hlo_protos:
+            options["xla_dump_hlo_as_proto"] = True
+        if self.graph_html:
+            options["xla_dump_hlo_as_html"] = True
+            options["xla_dump_fusion_visualization"] = True
+        return options
+
 
 RUNTIME_WORKSPACE_MARGIN_GIB = 5.0
 """Non-XLA per-device HBM the arena number does not see (cuBLAS/cuDNN/NCCL workspaces,
@@ -117,10 +148,36 @@ def _abstract_like(tree: Any, shardings: Any) -> Any:
     )
 
 
-def abstract_placed_model(model: Any, rules: Any) -> PlacedModel:
+def abstract_placed_model[Out, PreparedT](
+    model: DecomposedModel[Out, PreparedT], rules: PlacementRules
+) -> PlacedModel[Out, PreparedT]:
     """The placed-model bundle with abstract leaves on the rules' declared shardings —
     `place_target` without the placement (no data ever moves onto the described mesh)."""
     return PlacedModel(model=_abstract_like(model, model.shardings(rules)), placement=rules)
+
+
+def standin_faithfulness_loss[Out](abstract_placed: PlacedModel[Out]) -> FaithfulnessLossFn:
+    """`faithfulness_loss_for` for a shapes-only model: the frozen norms are host floats
+    the loss merely SCALES by, and an abstract model has no values to read, so
+    shape-matched 1.0 stand-ins bind instead — the lowered/compiled step is the run's
+    (the norms enter the jaxpr as scalar constants either way; no buffer moves). The
+    bundle's placement census supplies the persist-stack pads, exactly as the runtime
+    binding does."""
+    abstract_model = abstract_placed.model
+    norm_shapes = eqx.filter_eval_shape(lambda m: m.target_weight_sq_norms(), abstract_model)
+    stack_pads = (
+        {}
+        if abstract_placed.placement is None
+        else {
+            group: entry.stack_pad
+            for group, entry in abstract_placed.placement.components.group_census.items()
+        }
+    )
+    return make_faithfulness_loss(
+        site_slots_for(abstract_model.sites),
+        {group: (1.0,) * struct.shape[0] for group, struct in norm_shapes.items()},
+        stack_pads,
+    )
 
 
 def _sharding_of(leaf: Any, mesh: Mesh) -> NamedSharding:
@@ -145,19 +202,21 @@ def _mirrored(fn: Any, typed_arg: Any, mesh: Mesh) -> Any:
     )
 
 
-def _declared_state(
+def _declared_state[Out](
     state_struct: TrainState,
     pd: Any,
-    model: PlacedModel,
+    model: PlacedModel[Out],
     positions: PositionAxis,
     mesh: Mesh,
     rules: Any,
+    ci_placement: Any,
     opt_vu: Any,
     opt_ci: Any,
 ) -> TrainState:
     """The abstract `TrainState` typed with the shardings the RUNTIME state actually
     carries — assembled from the same declared sources the eager init places onto
-    (`component_stacks_shardings`, `ci_fn_shardings`, `persistent_sources_shardings`),
+    (`component_stacks_shardings`, `ci_fn_shardings`,
+    `persistent_sources_shardings_from_config`),
     with optimizer moments mirroring their parameters and scalars replicated.
 
     An AOT compile of the init function is NOT a valid source: `out_shardings` on the
@@ -171,28 +230,42 @@ def _declared_state(
     )
     ci_fn_typed = _abstract_like(
         state_struct.decomposition.ci_fn,
-        ci_fn_shardings(state_struct.decomposition.ci_fn, mesh, rules),
+        ci_fn_shardings(state_struct.decomposition.ci_fn, mesh, ci_placement),
     )
     persistent = persistent_configs(build_recon_terms(pd.loss_metrics, model.site_names))
     adversaries: dict[str, PersistentAdversary] = {}
     for state_key, adv in state_struct.training.adversaries.items():
         sources_typed = _abstract_like(
             adv.sources,
-            persistent_sources_shardings(
-                model.site_names,
+            persistent_sources_shardings_from_config(
+                model.sites,
                 positions,
-                persistent[state_key].source_shape,
+                persistent[state_key],
                 pd.batch_size,
                 mesh,
             ),
         )
         adversaries[state_key] = PersistentAdversary(
             sources=sources_typed,
-            opt_state=_mirrored(init_sources_adam_state, sources_typed, mesh),
+            opt_state=_mirrored(
+                lambda s, opt=adv.optimizer: init_sources_opt_state(opt, s), sources_typed, mesh
+            ),
             state_key=adv.state_key,
-            adam=adv.adam,
+            optimizer=adv.optimizer,
             n_warmup=adv.n_warmup,
         )
+    # The EMA frequency mode owns per-site `(C,)` state the runtime places replicated —
+    # `_mirrored` over untyped leaves is exactly that placement.
+    match imp_min_config(pd).frequency:
+        case None:
+            freq_ema = None
+        case freq_cfg:
+            freq_role = resolve_frequency(freq_cfg)
+            freq_ema = (
+                _mirrored(lambda _: freq_role.initial_state(model.sites), None, mesh)
+                if isinstance(freq_role, EmaFrequency)
+                else None
+            )
     return TrainState(
         decomposition=Decomposition(components=components_typed, ci_fn=ci_fn_typed),
         training=TrainingItem(
@@ -205,7 +278,7 @@ def _declared_state(
             adversaries=adversaries,
             # The tree deliberately carries abstract leaves in Array positions — it only
             # ever feeds `.lower(...)`.
-            freq_ema=None,
+            freq_ema=freq_ema,
             step=cast(Any, jax.ShapeDtypeStruct((), jnp.int32, sharding=NamedSharding(mesh, P()))),
         ),
     )
@@ -252,23 +325,24 @@ class DeclaredRun:
     ci_placement: Any
 
 
-def declared_run(
-    built: BuiltRun[Any, Any, Any], model: PlacedModel, positions: PositionAxis
+def declared_run[Out, PreparedT](
+    pd: Any, ci_fn: Any, model: PlacedModel[Out, PreparedT], positions: PositionAxis
 ) -> DeclaredRun:
-    pd = built.pd
+    """`pd` + the CI arch are all this needs of a built run — deliberately not a
+    `BuiltRun`, so store-free callers (the trace gate) assemble the same state."""
     rules = model.placement
     assert rules is not None, "fit check is a placed-run question"
     mesh = rules.mesh
     assert isinstance(mesh, Mesh), type(mesh)
 
-    ci_placement = resolve_ci_placement(built.ci_fn, rules)
-    opt_vu, opt_ci, _ = build_optimizers(pd, built.ci_fn, mesh, rules, ci_placement)
+    ci_placement = resolve_ci_placement(ci_fn, rules)
+    opt_vu, opt_ci, _ = build_optimizers(pd, ci_fn, mesh, rules, ci_placement, model.sites)
 
-    def init(m: PlacedModel, init_key: Any, src_key: Any):
+    def init(m: PlacedModel[Out, PreparedT], init_key: Any, src_key: Any):
         return init_train_state(
             pd,
             m,
-            built.ci_fn,
+            ci_fn,
             positions,
             opt_vu,
             opt_ci,
@@ -279,7 +353,9 @@ def declared_run(
     key_struct = jax.eval_shape(lambda: random.PRNGKey(0))
     print("assembling the state's declared shardings ...", flush=True)
     state_struct = jax.eval_shape(init, model, key_struct, key_struct)
-    state = _declared_state(state_struct, pd, model, positions, mesh, rules, opt_vu, opt_ci)
+    state = _declared_state(
+        state_struct, pd, model, positions, mesh, rules, ci_placement, opt_vu, opt_ci
+    )
     return DeclaredRun(state=state, opt_vu=opt_vu, opt_ci=opt_ci, ci_placement=ci_placement)
 
 
@@ -296,34 +372,37 @@ def fit_report_of_compiled(compiled: Any, pool_gib: float) -> FitReport:
     )
 
 
-def aot_fit_check(
-    built: BuiltRun[Any, Any, Any],
-    model: PlacedModel,
+def lowered_train_step[Out, PreparedT](
+    pd: Any,
+    ci_fn: Any,
+    model: PlacedModel[Out, PreparedT],
     positions: PositionAxis,
     batch: jax.ShapeDtypeStruct,
+    faithfulness: FaithfulnessLossFn,
     *,
     remat_recon_forwards: bool,
     remat_ci_fn: bool,
-    compiler_options: dict[str, bool | int | str],
-    pool_gib: float,
-    dump_dir: Path | None,
-) -> FitReport:
-    """Compile the run's jit_step AOT (model already abstract, on a compile-only or real
-    mesh) and report per-device memory vs the stated pool."""
-    pd = built.pd
+    compiler_options: dict[str, bool | int | str] | None,
+) -> tuple[Any, DeclaredRun]:
+    """Assemble and LOWER the run's real jit_step at the declared placement — the trace
+    gate's whole job (explicit-sharding refusals fire here, before any compile), and the
+    fit check's front half. `faithfulness` arrives bound (`faithfulness_loss_for` reads
+    frozen norms as host floats, which a shape-only model cannot serve — the trace gate
+    binds shape-matched stand-ins instead). Returns the `jax.stages.Lowered` and the
+    declared state."""
     rules = model.placement
     assert rules is not None, "fit check is a placed-run question"
     mesh = rules.mesh
     assert isinstance(mesh, Mesh), type(mesh)
     jax.set_mesh(mesh)
 
-    assert isinstance(pd, PDConfig), f"fit check is a plain-VPD question, got {type(pd)}"
+    assert isinstance(pd, PDConfig), (
+        f"got {type(pd)} — a targeted run lowers via lowered_targeted_train_step"
+    )
     objective = build_objective(pd.loss_metrics, model.site_names)
-    faithfulness = faithfulness_loss_for(model.model)
 
-    declared = declared_run(built, model, positions)
+    declared = declared_run(pd, ci_fn, model, positions)
     state, opt_vu, opt_ci = declared.state, declared.opt_vu, declared.opt_ci
-    argument_audit((model, state, batch), pool_gib)
 
     substrate = ForwardSubstrate.of(
         model,
@@ -346,18 +425,154 @@ def aot_fit_check(
         compiler_options=None,
     )
 
-    options: dict[str, bool | int | str] = dict(compiler_options)
-    if dump_dir is not None:
-        options["xla_dump_to"] = str(dump_dir)
-
     # The engine's donation exactly (`filter_jit(step, donate="all-except-first")`): the
     # inner eqx jit inlines under this outer trace, so donation and compiler options must
     # be restated here to reach the compile.
-    def step(m: PlacedModel, state_arg: TrainState, batch_arg: Any, key_arg: Any):
+    def step(m: PlacedModel[Out, PreparedT], state_arg: TrainState, batch_arg: Any, key_arg: Any):
         return step_fn(m, state_arg, batch_arg, key_arg)
 
-    outer = jax.jit(step, donate_argnums=(1, 2, 3), compiler_options=options)
+    outer = jax.jit(step, donate_argnums=(1, 2, 3), compiler_options=compiler_options)
     step_key = jax.eval_shape(lambda: random.fold_in(random.PRNGKey(0), 0))
+    print("lowering jit_step AOT ...", flush=True)
+    return outer.lower(model, state, batch, step_key), declared
+
+
+def lowered_targeted_train_step[Out, PreparedT](
+    pd: Any,
+    nontarget: NontargetConfig,
+    ci_fn: Any,
+    model: PlacedModel[Out, PreparedT],
+    positions: PositionAxis,
+    target_batch: jax.ShapeDtypeStruct,
+    nontarget_batch: jax.ShapeDtypeStruct,
+    *,
+    remat_recon_forwards: bool,
+    remat_ci_fn: bool,
+    compiler_options: dict[str, bool | int | str] | None,
+) -> tuple[Any, DeclaredRun]:
+    """`lowered_train_step`'s tPD twin (SPEC §11): assemble and LOWER the two-stream
+    targeted step at the declared placement, exactly as `run_targeted_decomposition_
+    training` assembles it. `positions` is the TARGET stream's waist geometry (T2) —
+    persistent sources live in the target pass."""
+    rules = model.placement
+    assert rules is not None, "fit check is a placed-run question"
+    mesh = rules.mesh
+    assert isinstance(mesh, Mesh), type(mesh)
+    jax.set_mesh(mesh)
+
+    assert isinstance(pd, TargetedPDConfig), (
+        f"got {type(pd)} — a plain-VPD run lowers via lowered_train_step"
+    )
+    objective = build_targeted_objective(pd.loss_metrics, nontarget, model.site_names)
+
+    declared = declared_run(pd, ci_fn, model, positions)
+    state, opt_vu, opt_ci = declared.state, declared.opt_vu, declared.opt_ci
+
+    substrate = ForwardSubstrate.of(
+        model,
+        remat_recon_forwards=remat_recon_forwards,
+        remat_ci_fn=remat_ci_fn,
+        ci_capture_keys=state.decomposition.ci_fn.capture_keys,
+        ci_placement=declared.ci_placement,
+    )
+    step_fn = make_targeted_train_step(
+        model_static=model,
+        substrate=substrate,
+        objective=objective,
+        ci_scaled_weight_decay=(
+            CIScaledWeightDecay(pd.ci_scaled_weight_decay, pd.components_optimizer.lr_schedule)
+            if pd.ci_scaled_weight_decay is not None
+            else None
+        ),
+        components_optimizer=opt_vu,
+        ci_fn_optimizer=opt_ci,
+        total_steps=pd.steps,
+        compiler_options=None,
+    )
+
+    # The targeted engine's donation exactly: state and both streams' batches donated,
+    # model not; options restated at the top level where the compile reads them.
+    def step(
+        m: PlacedModel[Out, PreparedT],
+        state_arg: TrainState,
+        target_arg: Any,
+        nontarget_arg: Any,
+        key_arg: Any,
+    ):
+        return step_fn(m, state_arg, target_arg, nontarget_arg, key_arg)
+
+    outer = jax.jit(step, donate_argnums=(1, 2, 3, 4), compiler_options=compiler_options)
+    step_key = jax.eval_shape(lambda: random.fold_in(random.PRNGKey(0), 0))
+    print("lowering targeted jit_step AOT ...", flush=True)
+    return outer.lower(model, state, target_batch, nontarget_batch, step_key), declared
+
+
+def aot_fit_check[Out](
+    built: BuiltRun[Any, Any, Any],
+    model: PlacedModel[Out],
+    positions: PositionAxis,
+    batch: jax.ShapeDtypeStruct,
+    *,
+    remat_recon_forwards: bool,
+    remat_ci_fn: bool,
+    compiler_options: dict[str, bool | int | str],
+    pool_gib: float,
+    dump: DumpConfig | None,
+) -> FitReport:
+    """Compile the run's jit_step AOT (model already abstract, on a compile-only or real
+    mesh) and report per-device memory vs the stated pool."""
+    options: dict[str, bool | int | str] = dict(compiler_options)
+    if dump is not None:
+        options |= dump.compiler_options()
+    lowered, declared = lowered_train_step(
+        built.pd,
+        built.ci_fn,
+        model,
+        positions,
+        batch,
+        standin_faithfulness_loss(model),
+        remat_recon_forwards=remat_recon_forwards,
+        remat_ci_fn=remat_ci_fn,
+        compiler_options=options,
+    )
+    argument_audit((model, declared.state, batch), pool_gib)
     print("compiling jit_step AOT ...", flush=True)
-    compiled = outer.lower(model, state, batch, step_key).compile()
-    return fit_report_of_compiled(compiled, pool_gib)
+    return fit_report_of_compiled(lowered.compile(), pool_gib)
+
+
+def aot_targeted_fit_check[Out](
+    built: BuiltRun[Any, Any, Any],
+    nontarget: NontargetConfig,
+    model: PlacedModel[Out],
+    positions: PositionAxis,
+    target_batch: jax.ShapeDtypeStruct,
+    nontarget_batch: jax.ShapeDtypeStruct,
+    *,
+    remat_recon_forwards: bool,
+    remat_ci_fn: bool,
+    compiler_options: dict[str, bool | int | str],
+    pool_gib: float,
+    dump: DumpConfig | None,
+) -> FitReport:
+    """`aot_fit_check`'s tPD twin (SPEC §11): compile the two-stream targeted jit_step
+    AOT and report per-device memory vs the stated pool. `positions` is the TARGET
+    stream's waist geometry — the pool's own prompt length, so the receipt prices the
+    persistent sources at their true extent."""
+    options: dict[str, bool | int | str] = dict(compiler_options)
+    if dump is not None:
+        options |= dump.compiler_options()
+    lowered, declared = lowered_targeted_train_step(
+        built.pd,
+        nontarget,
+        built.ci_fn,
+        model,
+        positions,
+        target_batch,
+        nontarget_batch,
+        remat_recon_forwards=remat_recon_forwards,
+        remat_ci_fn=remat_ci_fn,
+        compiler_options=options,
+    )
+    argument_audit((model, declared.state, target_batch, nontarget_batch), pool_gib)
+    print("compiling targeted jit_step AOT ...", flush=True)
+    return fit_report_of_compiled(lowered.compile(), pool_gib)

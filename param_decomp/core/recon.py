@@ -8,7 +8,6 @@ composes those with the recon terms into the complete loss surface.
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, NamedTuple
 
 import jax
 from jax import random
@@ -19,6 +18,7 @@ from param_decomp.core.configs import (
     AllRoutingConfig,
     HiddenActsReconstruction,
     LossCoeff,
+    MergedStochasticSubsetPooledPPGDReconLossConfig,
     MergedStochasticSubsetPPGDReconLossConfig,
     PersistentPGDReconLossConfig,
     PGDInitStrategy,
@@ -32,7 +32,6 @@ from param_decomp.core.model import (
     ForwardResult,
     select_captures,
 )
-from param_decomp.core.sharding import batch_shard_leading
 
 Routes = dict[str, Array] | None
 RoutingSampler = Callable[[PRNGKeyArray, tuple[int, ...]], tuple[Routes, ...]]
@@ -106,6 +105,19 @@ class MixedPersistentStochasticSources:
     cfg: "MergedStochasticSubsetPPGDReconLossConfig"
 
 
+@dataclass(frozen=True)
+class PersistentSourcePool:
+    """A persistent pool whose rows are cross-site adversarial particles.
+
+    Each row supplies one component vector per site. Consumers sample one row per batch
+    element and apply it at every position; ``state_key`` indexes the pool in
+    ``TrainState.adversaries``.
+    """
+
+    state_key: str
+    cfg: MergedStochasticSubsetPooledPPGDReconLossConfig
+
+
 MaskSourceStrategy = (
     StochasticSources
     | ConstantSources
@@ -113,6 +125,7 @@ MaskSourceStrategy = (
     | FreshPGDSources
     | PersistentSources
     | MixedPersistentStochasticSources
+    | PersistentSourcePool
 )
 
 
@@ -137,23 +150,26 @@ class OutputAndHiddenActsReconstruction:
 type ReconstructionSpec = OutputOnlyReconstruction | OutputAndHiddenActsReconstruction
 
 
-class ForwardObservations(NamedTuple):
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class ForwardObservations[Out]:
     """The output and named activations one reconstruction comparison consumes."""
 
-    output: Any
+    output: Out
     hidden_acts_by_point: dict[str, Array]
 
 
-def reconstruction_observations(
-    result: ForwardResult,
+def reconstruction_observations[Out](
+    result: ForwardResult[Out],
+    pin_output_batch: Callable[[Out, Mesh | None], Out],
     *,
     hidden_acts_capture_keys: CaptureKeys,
     mesh: Mesh | None,
-) -> ForwardObservations:
-    """Convert one forward result into the exact view a reconstruction consumes."""
-    output = jax.tree.map(lambda value: batch_shard_leading(value, mesh), result.output)
+) -> ForwardObservations[Out]:
+    """Convert one forward result into the exact view a reconstruction consumes;
+    `pin_output_batch` is the target's (`DecomposedModel.pin_output_batch`)."""
     return ForwardObservations(
-        output,
+        pin_output_batch(result.output, mesh),
         select_captures(result.captures, hidden_acts_capture_keys),
     )
 
@@ -294,16 +310,26 @@ def routing_sampler_from_config(
 # ───────────────────────────── shared-config -> flat terms ─────────────────────────────
 
 
+type AnyPersistentLossConfig = (
+    PersistentPGDReconLossConfig
+    | MergedStochasticSubsetPPGDReconLossConfig
+    | MergedStochasticSubsetPooledPPGDReconLossConfig
+)
+
+PERSISTENT_SOURCE_TYPES = (
+    PersistentSources,
+    MixedPersistentStochasticSources,
+    PersistentSourcePool,
+)
+
+
 def persistent_configs(
     recon_terms: tuple[AnyReconLossTerm, ...],
-) -> "dict[str, PersistentPGDReconLossConfig | MergedStochasticSubsetPPGDReconLossConfig]":
-    """`state_key -> config` for every persistent-source-carrying recon term (SPEC S23:
-    each key feeds exactly one term). Derived from the terms, not stored separately — the
-    config rides each `PersistentSources` / `MixedPersistentStochasticSources` strategy;
-    both carry the same adversary fields (optimizer/scope/source_dtype/n_warmup_steps)."""
-    out: dict[str, PersistentPGDReconLossConfig | MergedStochasticSubsetPPGDReconLossConfig] = {}
+) -> dict[str, AnyPersistentLossConfig]:
+    """``state_key -> config`` for every persistent-source-carrying recon term (S23)."""
+    out: dict[str, AnyPersistentLossConfig] = {}
     for term in recon_terms:
-        if isinstance(term.sources, (PersistentSources, MixedPersistentStochasticSources)):
+        if isinstance(term.sources, PERSISTENT_SOURCE_TYPES):
             assert term.sources.state_key not in out, term.sources.state_key
             out[term.sources.state_key] = term.sources.cfg
     return out

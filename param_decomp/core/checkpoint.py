@@ -3,7 +3,7 @@
 Each checkpoint step holds TWO orbax items, splitting the product from the process:
 
 - `decomposition` — `train.Decomposition` (V/U components + ci_fn), the trained product.
-  Every consumer (clustering, fine-tune initialization, and others) restores ONLY this
+  Every downstream consumer (including fine-tune initialization) restores ONLY this
   item, with zero knowledge of how training initializes its optimizers or adversaries.
 - `training` — `train.TrainingItem` (both optimizer states, the persistent adversaries,
   the step counter), the trainer-only trajectory tail. Only trainer resume touches it.
@@ -19,7 +19,7 @@ Checkpoints are therefore topology-free: orbax saves the LOGICAL array, and rest
 places values by the abstract reference's shardings — a reference rebuilt from config
 on the restoring side's OWN mesh. Any checkpoint restores onto any mesh whose placement
 constructs, train mesh to train mesh included; consumers re-place finished runs the
-same way (`zero1` on `hsdp_mesh(1, device_count, 1)` — every stack length tiles).
+same way, on whatever layout their caller names.
 Pinned by the cross-topology restore tests in `param_decomp/tests/core/test_checkpoint.py`.
 
 Synchronous saves (no async): a SIGTERM-triggered save must be on disk before the
@@ -78,7 +78,7 @@ def make_checkpoint_manager(
 
 def make_read_only_checkpoint_manager(ckpt_dir: Path) -> ocp.CheckpointManager:
     """A manager for consumers that only restore (fine-tune parent init, `open_jax_run`,
-    clustering, and others). `read_only` makes orbax refuse both saves and deletes, so no
+    fine-tune initialization and other downstream readers). `read_only` makes orbax refuse both saves and deletes, so no
     retention question arises: a reader of someone else's run has no say in what that run
     keeps on disk."""
     return ocp.CheckpointManager(

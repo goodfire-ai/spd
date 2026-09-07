@@ -11,12 +11,21 @@ import numpy as np
 from pydantic import Discriminator
 
 from param_decomp.core.base_config import BaseConfig
-from param_decomp.experiments.lm.arithmetic_probe import PromptEncoder, build_arithmetic_probe
+from param_decomp.experiments.lm.arithmetic_probe import (
+    PromptEncoder,
+    build_arithmetic_prompt_grid,
+)
 
 
 class ArithmeticGridPromptsConfig(BaseConfig):
     """The `[a_range] x [b_range]` grid of `"<a><op><b>="` prompts — the same in-memory
-    construction as the `ArithmeticCIGrid` eval probe, reused as a training pool."""
+    construction as the `ArithmeticCIGrid` eval probe, reused as a training pool.
+
+    A pool draws prompt rows and never scores an answer position, so unlike the probe it
+    carries NO single-token-answer premise — only the shared prompt length (T8). Under a
+    per-digit number tokenizer (the Qwen family) that means same-digit-count operands;
+    single-digit-ANSWER ranges (e.g. add over `[1, 4] x [1, 5]`) are the working default
+    for arithmetic-style pools, keeping the same grid usable as the eval probe too."""
 
     kind: Literal["arithmetic_grid"] = "arithmetic_grid"
     operation: Literal["add", "sub", "mul"]
@@ -54,7 +63,7 @@ def build_prompt_pool(
     makes any grid-shaped analysis meaningful (SPEC T8)."""
     match config:
         case ArithmeticGridPromptsConfig():
-            tokens = build_arithmetic_probe(
+            tokens = build_arithmetic_prompt_grid(
                 config.operation, config.a_range, config.b_range, tokenizer
             ).tokens
         case PromptsFileConfig():

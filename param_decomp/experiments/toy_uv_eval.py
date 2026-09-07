@@ -28,7 +28,9 @@ from param_decomp.core.slow_eval import (
 )
 
 
-def toy_uv_spec(model: PlacedModel, metric: UVPlotsConfig | None) -> PermutationMetricSpec:
+def toy_uv_spec[Out](
+    model: PlacedModel[Out], metric: UVPlotsConfig | None
+) -> PermutationMetricSpec:
     """Resolve the optional typed UV-plot metric over the toy model's sites."""
     return resolve_permutation_metrics(model.site_names, [] if metric is None else [metric])
 

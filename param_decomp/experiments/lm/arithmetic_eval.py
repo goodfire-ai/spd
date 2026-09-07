@@ -16,8 +16,9 @@ from jaxtyping import Array, Float, Int
 from matplotlib.figure import Figure
 from typing_extensions import TypeVar
 
+from param_decomp.core.base_config import Probability
 from param_decomp.core.ci_fn import PlacedCIFn, ci_preactivations, lower_leaky_hard_sigmoid
-from param_decomp.core.components import ComponentStacks
+from param_decomp.core.components import ComponentStacks, require_full_emission
 from param_decomp.core.masking import all_live_masking_no_delta
 from param_decomp.core.model import (
     CaptureKeys,
@@ -28,12 +29,13 @@ from param_decomp.core.model import (
 )
 from param_decomp.core.placement import PlacementRules
 from param_decomp.core.precision import COMPUTE_DT
+from param_decomp.targets.lm_output import LMOutput
 
 PreparedT = TypeVar("PreparedT", default=Any)
 
 
 @runtime_checkable
-class ComponentActivationModel(DecomposedModel[PreparedT], Protocol[PreparedT]):
+class ComponentActivationModel(DecomposedModel[LMOutput, PreparedT], Protocol[PreparedT]):
     """A `DecomposedModel` that also exposes per-component activations `x@V`. The arithmetic
     activation heatmaps need this seam; it is LM-only (currently `GLUDecomposedModel`), so
     the eval narrows to it with an `isinstance` check rather than widening the core
@@ -78,7 +80,7 @@ class ArithmeticGrid:
 
 
 ArithmeticGridStep = Callable[
-    [PlacedModel, ComponentStacks, PlacedCIFn, Int[Array, "n_pad T"]],
+    [PlacedModel[LMOutput], ComponentStacks, PlacedCIFn, Int[Array, "n_pad T"]],
     tuple[dict[str, Array], dict[str, Array], dict[str, Array]],
 ]
 """`(model, components, placed_ci_fn, tokens) -> ({site: CI}, {site: x@V}, {site: max CI})`. CI and
@@ -88,7 +90,7 @@ over the REAL (`< n_valid_rows`) rows only. `model` (frozen-weight-bearing) is t
 
 
 def component_activation_model[PreparedT](
-    placed: PlacedModel[PreparedT],
+    placed: PlacedModel[LMOutput, PreparedT],
 ) -> ComponentActivationModel[PreparedT]:
     """Narrow the bundle's target to the `x@V` seam — re-derived from the traced model arg
     each call, never closed over (the HLO-baking rule)."""
@@ -100,7 +102,7 @@ def component_activation_model[PreparedT](
 
 
 def make_arithmetic_grid_step[PreparedT](
-    model_static: PlacedModel[PreparedT],
+    model_static: PlacedModel[LMOutput, PreparedT],
     ci_capture_keys: CaptureKeys,
     answer_position: int,
     n_valid_rows: int,
@@ -118,7 +120,7 @@ def make_arithmetic_grid_step[PreparedT](
     # access goes through the traced `model` arg.
     @eqx.filter_jit
     def step(
-        model: PlacedModel[PreparedT],
+        model: PlacedModel[LMOutput, PreparedT],
         components: ComponentStacks,
         placed_ci_fn: PlacedCIFn,
         tokens: Int[Array, "n_pad T"],
@@ -128,6 +130,9 @@ def make_arithmetic_grid_step[PreparedT](
             model.clean_forward(tokens, ci_capture_keys).captures,
             remat=False,
         )
+        # Per-component grid columns need the full axis; narrow sites refuse (the
+        # metric is GLU-anatomy-gated anyway).
+        preactivations = {site: require_full_emission(v) for site, v in preactivations.items()}
         assert preactivations[site_names[0]].ndim == 3, (
             f"arithmetic grid is LM-only ((n_prompts, T, C)); got {preactivations[site_names[0]].shape}"
         )
@@ -188,12 +193,12 @@ class ArithmeticSelection:
 
 def compute_arithmetic_selection(
     step: ArithmeticGridStep,
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     components: ComponentStacks,
     placed_ci_fn: PlacedCIFn,
     tokens: Int[Array, "n_pad T"],
     n_prompts: int,
-    thresholds: tuple[float, ...],
+    thresholds: tuple[Probability, ...],
     top_k: int,
 ) -> ArithmeticSelection:
     """Two-phase device->host pull, sized to what the figures actually need — NEVER the full
@@ -229,7 +234,7 @@ def compute_arithmetic_selection(
 
 
 def select_active(
-    max_ci: dict[str, np.ndarray], thresholds: tuple[float, ...]
+    max_ci: dict[str, np.ndarray], thresholds: tuple[Probability, ...]
 ) -> dict[float, dict[str, np.ndarray]]:
     """`{threshold: {site: ids of components whose max CI over the grid exceeds the
     threshold}}`, descending by max CI so the most-active plot first. Computed ONCE so the

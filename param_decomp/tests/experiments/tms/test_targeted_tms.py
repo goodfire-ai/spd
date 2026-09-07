@@ -192,8 +192,7 @@ def test_targeted_step_trains_with_persistent_adversary():
     )
     sources = _untyped(
         init_sources_sharded(
-            model.site_names,
-            tuple(s.C for s in model.sites),
+            model.sites,
             Positionless(),
             "bc",
             target_batch_size,
@@ -206,7 +205,7 @@ def test_targeted_step_trains_with_persistent_adversary():
         sources=sources,
         opt_state=init_sources_adam_state(sources),
         state_key="PersistentPGDReconLoss",
-        adam=ppgd.optimizer,
+        optimizer=ppgd.optimizer,
         n_warmup=1,
     )
     state = TrainState(
@@ -344,6 +343,7 @@ def _with_adversary_sources(
     from jax.sharding import Mesh
 
     from param_decomp.core.adversary import PersistentAdversary, init_sources_adam_state
+    from param_decomp.core.components import Dense, SiteSpec
     from param_decomp.core.init_placed import init_sources_sharded
     from param_decomp.core.model import Positionless
 
@@ -354,8 +354,14 @@ def _with_adversary_sources(
     )
     sources = _untyped(
         init_sources_sharded(
-            ("linear1", "linear2"),
-            (8, 6),
+            (
+                SiteSpec(
+                    name="linear1", factorization=Dense(d_in=8, d_out=8, C=8), group="linear1"
+                ),
+                SiteSpec(
+                    name="linear2", factorization=Dense(d_in=6, d_out=6, C=6), group="linear2"
+                ),
+            ),
             Positionless(),
             "bc",
             16,
@@ -368,7 +374,7 @@ def _with_adversary_sources(
         sources=sources,
         opt_state=init_sources_adam_state(sources),
         state_key="PersistentPGDReconLoss",
-        adam=cfg_optimizer,
+        optimizer=cfg_optimizer,
         n_warmup=2,
     )
     return TrainState(
@@ -385,10 +391,12 @@ def _with_adversary_sources(
 
 def test_tpd_three_step_golden():
     """REFACTOR PIN: a 3-step tPD trajectory (stochastic + persistent-PGD target grid,
-    stochastic non-target grid, constant coeffs) against literals generated on the
-    remove-Lp branch (the imp-min seat is smooth-L0, gamma constant 1.0 — the one
-    deliberate math change of that PR; previous literals: 81c510cee, Lp p=1). A pure
-    restructuring of the step
+    stochastic non-target grid, constant coeffs) against literals generated at
+    81c510cee and RE-PINNED twice since: under the explicit-field source draw (the
+    packed [.., C+1] init draw was deleted, deliberately changing the U[0,1] stream;
+    the step math is unchanged — per-step values moved only through the source values)
+    and under the smooth-L0 imp-min seat (gamma constant 1.0, replacing Lp p=1 — the
+    one deliberate math change of the Lp removal). A pure restructuring of the step
     machinery must reproduce these
     values — needing to regenerate them means the MATH changed, which is a different PR.
     Tolerance absorbs the D4 float-reassociation class (SPEC D4): the per-step-metric
@@ -429,8 +437,7 @@ def test_tpd_three_step_golden():
     )
     sources = _untyped(
         init_sources_sharded(
-            model.site_names,
-            tuple(s.C for s in model.sites),
+            model.sites,
             Positionless(),
             "bc",
             16,
@@ -443,7 +450,7 @@ def test_tpd_three_step_golden():
         sources=sources,
         opt_state=init_sources_adam_state(sources),
         state_key="PersistentPGDReconLoss",
-        adam=ppgd.optimizer,
+        optimizer=ppgd.optimizer,
         n_warmup=2,
     )
     state = TrainState(
@@ -459,22 +466,22 @@ def test_tpd_three_step_golden():
 
     expected_per_step = (
         {
-            "total": 1.427467726171e-02,
+            "total": 1.428222283721e-02,
             "loss/StochasticReconLoss": 2.224520547315e-03,
-            "loss/PersistentPGDReconLoss": 2.428050385788e-03,
+            "loss/PersistentPGDReconLoss": 2.443142002448e-03,
             "loss/nontarget/total": 9.804574772716e-03,
         },
         {
-            "total": 1.091865170747e-02,
-            "loss/StochasticReconLoss": 1.462063402869e-03,
-            "loss/PersistentPGDReconLoss": 1.721132895909e-03,
-            "loss/nontarget/total": 7.962030358613e-03,
+            "total": 1.113750413060e-02,
+            "loss/StochasticReconLoss": 1.461514621042e-03,
+            "loss/PersistentPGDReconLoss": 2.150140702724e-03,
+            "loss/nontarget/total": 7.966522127390e-03,
         },
         {
-            "total": 9.593502618372e-03,
-            "loss/StochasticReconLoss": 1.872145221569e-03,
-            "loss/PersistentPGDReconLoss": 3.473097924143e-03,
-            "loss/nontarget/total": 5.056168884039e-03,
+            "total": 9.230432100594e-03,
+            "loss/StochasticReconLoss": 1.873412053101e-03,
+            "loss/PersistentPGDReconLoss": 2.740368479863e-03,
+            "loss/nontarget/total": 5.058536771685e-03,
         },
     )
     for i, expected in enumerate(expected_per_step):
@@ -495,18 +502,20 @@ def test_tpd_three_step_golden():
             assert got == pytest.approx(want, rel=5e-3), (i, key, got, want)
 
     expected_sums = {
-        ("V", "linear2"): -1.364225268364e00,
-        ("U", "linear2"): -2.958668231964e00,
-        ("V", "linear1"): 8.874316215515e-01,
-        ("U", "linear1"): 1.312882065773e00,
+        ("V", "linear2"): -1.364253997803e00,
+        ("U", "linear2"): -2.957349777222e00,
+        ("V", "linear1"): 8.885897994041e-01,
+        ("U", "linear1"): 1.314910650253e00,
     }
     for shape, (v_stack, u_stack) in state.decomposition.components.stacks.items():
         assert float(jnp.sum(v_stack)) == pytest.approx(expected_sums[("V", shape)], rel=1e-4)
         assert float(jnp.sum(u_stack)) == pytest.approx(expected_sums[("U", shape)], rel=1e-4)
     final = state.training.adversaries["PersistentPGDReconLoss"]
-    expected_sources = {"linear1": 7.531780433655e01, "linear2": 5.923494911194e01}
+    expected_sources = {"linear1": 6.525482368469e01, "linear2": 5.563022947311e01}
     for site, want in expected_sources.items():
-        total = sum(float(jnp.sum(leaf)) for leaf in jax.tree.leaves(final.sources[site]))
+        total = sum(
+            float(jnp.sum(leaf)) for leaf in jax.tree.leaves(final.sources.per_site()[site])
+        )
         assert total == pytest.approx(want, rel=1e-4)
 
 
@@ -521,6 +530,7 @@ def test_gated_ppgd_shapes_nothing_but_the_adversary_still_ascends():
     outcomes = {}
     for source_key in (7, 8):
         cfg, model, state, step = _tiny_setup((*_loss_metrics(), ppgd), _stochastic_nontarget())
+        assert isinstance(ppgd.optimizer, AdamPGDConfig)
         state = _with_adversary_sources(state, ppgd.optimizer, source_key)
         # host copies: the jitted step donates its input state's buffers
         before = jax.tree.map(
@@ -846,3 +856,5 @@ def test_targeted_engine_end_to_end(tmp_path: Path):
     last = json.loads(lines[-1])
     assert "train/loss/nontarget/total" in last
     assert not any("Faithfulness" in k for k in last)
+    assert last["train/perf/flops_per_step"] > 0
+    assert "train/perf/hfu" not in last  # cpu declares no peak, so no utilization ratio

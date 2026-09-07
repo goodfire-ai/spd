@@ -4,6 +4,7 @@ Each step trains once on the fixed target-prompt pool and once on the broader co
 module prepares both streams and reuses the process setup, checkpoint, and shutdown
 behavior from ordinary LM training."""
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -21,9 +22,9 @@ from param_decomp.core.run import (
 )
 from param_decomp.core.sharding import (
     data_parallel_size,
-    hsdp_mesh,
     initialize_topology,
     local_data_parallel_size,
+    mesh_for_shape,
 )
 from param_decomp.experiments.eval_config import EvalConfig
 from param_decomp.experiments.lm.arithmetic_probe import PromptEncoder
@@ -32,11 +33,16 @@ from param_decomp.experiments.lm.config import (
     build_targeted_experiment_config,
 )
 from param_decomp.experiments.lm.eval_operations import global_token_batch, make_lm_evaluation
-from param_decomp.experiments.lm.load_run import build_target, component_initializer_for
+from param_decomp.experiments.lm.load_run import (
+    build_target,
+    component_initializer_for,
+    target_vocab_size,
+)
 from param_decomp.experiments.lm.resolved import (
     AnyLMTargetConfig,
     LlamaSimpleMLPTargetConfig,
     LMTargetedRun,
+    Qwen36MoeTargetConfig,
     TargetConfig,
 )
 from param_decomp.experiments.lm.targeted_data import build_prompt_pool, pool_batch
@@ -50,22 +56,45 @@ from param_decomp.infra.dataset_store import read_dataset_meta
 from param_decomp.infra.run_files import generate_run_id
 from param_decomp.pretrain.batch_data import BatchSchedule, ShardServer, scan_shards
 from param_decomp.targets.glu_transformer import hf_snapshot_dir
+from param_decomp.targets.lm_output import LMOutput
 
 
-def _pool_tokenizer(target: AnyLMTargetConfig, dataset_tokenizer_name: str) -> PromptEncoder:
-    """The tokenizer the prompt pool encodes with — necessarily the SAME vocabulary the
-    model and the broad stream use. An HF-family target reads its local snapshot (the
-    weights load already staged it); the lab-pretrained target names its tokenizer via
-    the dataset's own meta."""
+@dataclass(frozen=True)
+class SnapshotTokenizer:
+    """The target's local HF snapshot (already staged by the weights load) — loaded
+    offline, never from the hub."""
+
+    path: Path
+
+
+@dataclass(frozen=True)
+class HubTokenizer:
+    """A hub tokenizer name — the lab-pretrained target names its tokenizer via the
+    dataset's own meta."""
+
+    name: str
+
+
+def pool_tokenizer_source(
+    target: AnyLMTargetConfig, dataset_tokenizer_name: str
+) -> SnapshotTokenizer | HubTokenizer:
+    """Where the prompt pool's tokenizer comes from — necessarily the SAME vocabulary the
+    model and the broad stream use."""
+    match target:
+        case TargetConfig() | Qwen36MoeTargetConfig():
+            return SnapshotTokenizer(path=hf_snapshot_dir(target.model_name))
+        case LlamaSimpleMLPTargetConfig():
+            return HubTokenizer(name=dataset_tokenizer_name)
+
+
+def load_pool_tokenizer(source: SnapshotTokenizer | HubTokenizer) -> PromptEncoder:
     from transformers import AutoTokenizer
 
-    match target:
-        case TargetConfig():
-            loaded = AutoTokenizer.from_pretrained(
-                str(hf_snapshot_dir(target.model_name)), local_files_only=True
-            )
-        case LlamaSimpleMLPTargetConfig():
-            loaded = AutoTokenizer.from_pretrained(dataset_tokenizer_name)
+    match source:
+        case SnapshotTokenizer(path=path):
+            loaded = AutoTokenizer.from_pretrained(str(path), local_files_only=True)
+        case HubTokenizer(name=name):
+            loaded = AutoTokenizer.from_pretrained(name)
     return cast(PromptEncoder, cast(object, loaded))
 
 
@@ -73,7 +102,7 @@ def train_targeted(
     built: LMTargetedRun,
     cfg: LMTargetedExperimentConfig,
     eval_config: EvalConfig | None,
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     mesh: Mesh,
 ) -> None:
     """The targeted LM composition over the engine: the prompt-pool TARGET seam, the
@@ -100,7 +129,7 @@ def train_targeted(
             f"{name} {batch} must be a positive multiple of data-parallel size {n_data}"
         )
 
-    tokenizer = _pool_tokenizer(built.target, train_meta.tokenizer_name)
+    tokenizer = load_pool_tokenizer(pool_tokenizer_source(built.target, train_meta.tokenizer_name))
     pool = build_prompt_pool(cfg.prompts, tokenizer)
     n_prompts, prompt_len = pool.tokens.shape
     if is_main:
@@ -117,14 +146,15 @@ def train_targeted(
         local_data,
     )
     per_process_target = target_batch // n_proc
+    vocab_size = target_vocab_size(model)
 
     def sample_target_batch(step: int) -> jax.Array:
         rows = pool_batch(pool, built.pd.seed, step, target_batch)
         local = rows[jax.process_index() * per_process_target :][:per_process_target]
-        return global_token_batch(local, mesh, target_batch)
+        return global_token_batch(local, mesh, target_batch, vocab_size)
 
     def sample_nontarget_batch(step: int) -> jax.Array:
-        return global_token_batch(server.local_batch(step), mesh, nontarget_batch)
+        return global_token_batch(server.local_batch(step), mesh, nontarget_batch, vocab_size)
 
     sink = MetricsSink.for_run(built.run, is_main)
     evaluation = None
@@ -174,7 +204,7 @@ def main(
     data_root = Path(data_root)
     if run_id is None:
         # Ad-hoc run-here invocation: mint a fresh identity; `pin_config_copy` below
-        # stages the config into the run dir exactly as the launcher would.
+        # stages the config into the run dir.
         run_id = generate_run_id("param_decomp")
     raw = yaml.safe_load(config.read_text())
     cfg = LMTargetedExperimentConfig.model_validate(raw)
@@ -184,7 +214,7 @@ def main(
     install_sigterm_flag()
     enable_hlo_dump(built.run.run_dir)
     initialize_topology(runtime.world_size, local_device_count)
-    mesh = hsdp_mesh(runtime.replicate, runtime.fsdp, runtime.tp)
+    mesh = mesh_for_shape(runtime.mesh)
 
     cache_dir = enable_persistent_compilation_cache(runtime.compilation_cache_dir)
 
@@ -203,7 +233,7 @@ def main(
             flush=True,
         )
 
-    model = build_target(built.target, mesh, data_root, runtime.sharding)
+    model = build_target(built.target, mesh, data_root, runtime.sharding, runtime.sequence_sharding)
 
     train_targeted(built, cfg, cfg.eval, model, mesh)
 

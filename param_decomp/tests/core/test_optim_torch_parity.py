@@ -208,10 +208,11 @@ def test_muon_chunk_stacked_dimension_numbers_orthogonalize_3d_and_adam_2d_bias_
 
 
 def test_stacked_muon_update_matches_optax_muon():
-    """SPEC S20 `impl: stacked`: the stack-by-shape batched NS produces the same updates as
-    per-leaf `optax.contrib.muon` (same momentum, same partition, same post-NS chain) up to
-    float reassociation — on a tree mixing 2D matrices (shared-shape group + a transposed
-    member), a 3D chunk stack, and Adam-fallback leaves."""
+    """SPEC S20: the production muon (per-kind batched NS) produces the same updates as
+    the reference semantics — per-leaf `optax.contrib.muon` under the same S19 clip chain,
+    built here directly (same momentum, same partition, same post-NS chain) — up to float
+    reassociation, on a tree mixing 2D matrices (shared-shape group + a transposed member),
+    a 3D chunk stack, and Adam-fallback leaves."""
     schedule = ScheduleConfig(
         max_val=1e-3, points=(Knot(at=0.0, frac=1.0), Knot(at=1.0, frac=0.1, interp="cosine"))
     )
@@ -228,16 +229,24 @@ def test_stacked_muon_update_matches_optax_muon():
         for i, (name, p) in enumerate(params.items())
     }
     dim_nums = stacked_muon_dimension_numbers
+    cfg = MuonOptimizerConfig(
+        type="muon", lr_schedule=schedule, grad_clip_norm=0.01, consistent_rms=0.2
+    )
+    assert cfg.grad_clip_norm is not None
+    production = _optimizer_with_clip(cfg, lr, dim_nums, waypoints=None)
+    oracle = optax.chain(
+        clip_by_global_norm_with_eps(cfg.grad_clip_norm, eps=1e-6),
+        optax.contrib.muon(
+            lr,
+            beta=cfg.beta,
+            weight_decay=cfg.weight_decay,
+            consistent_rms=cfg.consistent_rms,
+            muon_weight_dimension_numbers=dim_nums,
+            ns_steps=cfg.ns_steps,
+        ),
+    )
 
-    from typing import Literal
-
-    def cfg(impl: Literal["optax", "stacked"]) -> MuonOptimizerConfig:
-        return MuonOptimizerConfig(
-            type="muon", lr_schedule=schedule, grad_clip_norm=0.01, consistent_rms=0.2, impl=impl
-        )
-
-    def two_steps(impl: Literal["optax", "stacked"]):
-        opt = _optimizer_with_clip(cfg(impl), lr, dim_nums, waypoints=None)
+    def two_steps(opt: optax.GradientTransformation):
         state = opt.init(params)
         p = params
         for _ in range(2):
@@ -245,10 +254,10 @@ def test_stacked_muon_update_matches_optax_muon():
             p = jax.tree.map(lambda x, u: x + u, p, updates)
         return p
 
-    optax_p, stacked_p = two_steps("optax"), two_steps("stacked")
+    oracle_p, production_p = two_steps(oracle), two_steps(production)
     for k in params:
-        assert jnp.allclose(optax_p[k], stacked_p[k], rtol=1e-4, atol=1e-6), (
-            f"{k}: stacked impl diverged from optax beyond reassociation tolerance"
+        assert jnp.allclose(oracle_p[k], production_p[k], rtol=1e-4, atol=1e-6), (
+            f"{k}: stacked NS diverged from per-leaf optax muon beyond reassociation tolerance"
         )
 
 
@@ -370,11 +379,11 @@ def test_stacked_muon_bf16_ns_is_sane():
 
 
 def test_stacked_muon_dim_numbers_fail_closed():
-    """SPEC S20 cross-impl promise: `impl: stacked` executes hardcoded trailing-two matrix
-    axes and DISCARDS the declared dim numbers, so a muon leaf honestly declaring any other
-    layout must die at optimizer build — `impl: optax` would honor the declaration and the
-    two impls would silently diverge. Conforming declarations (trailing-two, negative or
-    positive indices) build fine."""
+    """SPEC S20: the stacked NS executes hardcoded trailing-two matrix axes and DISCARDS
+    the declared dim numbers, so a muon leaf honestly declaring any other layout must die
+    at optimizer build — the reference `optax.contrib.muon` would honor the declaration
+    and the two would silently diverge. Conforming declarations (trailing-two, negative
+    or positive indices) build fine."""
     from param_decomp.core.muon_stacked import stacked_muon
 
     def build(params: dict[str, Array], spec: optax.contrib.MuonDimensionNumbers):
@@ -397,18 +406,24 @@ def test_stacked_muon_dim_numbers_fail_closed():
     for reduction, output in ((0, 1), (-2, -1)):
         build(matrix_2d, optax.contrib.MuonDimensionNumbers(reduction, output))
 
-    # A 3D leaf whose stack axis is LAST, honestly declared: correct under `impl: optax`,
-    # silently wrong under stacked — must be refused, naming the escape paths.
+    # A 3D leaf whose stack axis is LAST, honestly declared: correct under per-leaf optax
+    # muon, silently wrong under the stacked NS — must be refused.
     stack_last = {"w": jnp.zeros((16, 24, 3))}
-    with pytest.raises(AssertionError, match=r"impl: optax"):
+    with pytest.raises(AssertionError, match=r"discards the declaration"):
         build(stack_last, optax.contrib.MuonDimensionNumbers(reduction_axis=0, output_axis=1))
     # Swapped orientation: optax's width scaling (consistent_rms=None) is directional.
-    with pytest.raises(AssertionError, match=r"impl: optax"):
+    with pytest.raises(AssertionError, match=r"discards the declaration"):
         build(matrix_2d, optax.contrib.MuonDimensionNumbers(reduction_axis=1, output_axis=0))
-    # A 4D conv-style kernel lands on the ndim gate.
-    with pytest.raises(AssertionError, match=r"impl: optax"):
+    # A 4D [stack, expert, rows, cols] leaf declaring trailing-two axes is a conforming
+    # layout (stacked NS folds the two leading axes into one batch axis); any other 4D
+    # declaration still refuses, and a 5D leaf lands on the ndim gate.
+    stack_4d = {"w": jnp.zeros((2, 3, 16, 24))}
+    build(stack_4d, optax.contrib.MuonDimensionNumbers(reduction_axis=-2, output_axis=-1))
+    with pytest.raises(AssertionError, match=r"discards the declaration"):
+        build(stack_4d, optax.contrib.MuonDimensionNumbers(reduction_axis=0, output_axis=1))
+    with pytest.raises(AssertionError, match=r"discards the declaration"):
         build(
-            {"k": jnp.zeros((3, 3, 8, 16))},
+            {"k": jnp.zeros((2, 2, 3, 8, 16))},
             optax.contrib.MuonDimensionNumbers(reduction_axis=-2, output_axis=-1),
         )
 
@@ -564,26 +579,28 @@ def _explicit_table(
 def test_ns_compute_waypoints_are_declared_rows():
     """The muon-NS staging is placement-table DATA, not derived geometry: every preset
     declares the same node-axis stack split (`{stack: replicate}` — owner's ingress is
-    the identity on the stack axis, zero1/ddp hop to it), any stack-sharded persistence
-    is placeable once its waypoint is declared (no owner-geometry sniffing survives),
-    and the row language fails closed — a matrix-axis assignment refuses at table build
-    (the batched NS needs whole matrices per device), while a stack split some kind
-    cannot tile refuses at the stacked-muon consumer's claim (nothing hunts for an
-    alternative split, and non-muon runs never consume the row)."""
+    the identity on the stack axis), any stack-sharded persistence is placeable once
+    its waypoint is declared (no owner-geometry sniffing survives), and the row
+    language fails closed — a matrix-axis assignment refuses at table build (the
+    batched NS needs whole matrices per device), a stack split some kind cannot tile
+    refuses at the stacked-muon consumer's claim, and a MASTER layout whose
+    within-block matrix axes ride the staging axes (zero1's intra-matrix cut) refuses
+    there too: muon pairs with the owner-flavored layouts, and the full-master-bytes
+    staging round-trip has no silent arm. Non-muon runs never consume the row."""
     import jax.sharding
     from pydantic import ValidationError
 
-    from param_decomp.core.components import SiteSpec
+    from param_decomp.core.components import Dense, SiteSpec
     from param_decomp.core.placement import from_config
 
     mesh = jax.sharding.AbstractMesh((4, 8, 1), ("replicate", "fsdp", "tp"))
-    tiling = tuple(SiteSpec(f"t.{i}", 64, 32, 8, "t") for i in range(4))
-    mixed = tiling + (SiteSpec("odd.0", 128, 64, 8, "odd"),)
+    tiling = tuple(SiteSpec(f"t.{i}", Dense(d_in=64, d_out=32, C=8), "t") for i in range(4))
+    mixed = tiling + (SiteSpec("odd.0", Dense(d_in=128, d_out=64, C=8), "odd"),)
 
     for preset in ("owner", "zero1", "ddp"):
         rules = from_config(preset, mesh, tiling)
-        assert dict(rules.components.ns_compute.rule) == {"stack": "replicate"}
-        assert dict(rules.ci_fn.ffn.ns_compute.rule) == {"stack": "replicate"}
+        assert dict(rules.components.ns_compute.rule) == {"stack": ("replicate",)}
+        assert dict(rules.ci_fn.ffn.ns_compute.rule) == {"stack": ("replicate",)}
 
     # Only a stacked-muon optimizer consumes the ns_compute rows, so a non-tiling group
     # builds fine (zero1 keeps its any-stack-length universality for adamw runs) and the
@@ -596,10 +613,24 @@ def test_ns_compute_waypoints_are_declared_rows():
     mixed_rules = from_config("zero1", mesh, mixed)
     with pytest.raises(AssertionError, match="stack lengths do not tile"):
         assert_stacked_muon_component_staging(mixed_rules)
+    # zero1's CI masters rest intra-matrix, so no chunk-stack pad resolves and the NS
+    # claim sees the real chunk count.
+    from param_decomp.core.placement import CIFnPlacement, StackCensus
+
+    def ci_placement(n_chunks: int) -> CIFnPlacement:
+        return CIFnPlacement.resolved(
+            mixed_rules.ci_fn, StackCensus(stack_len=n_chunks, stack_pad=0)
+        )
+
     with pytest.raises(AssertionError, match="stack lengths do not tile"):
-        assert_stacked_muon_ci_staging(mixed_rules, n_chunks=1)
-    assert_stacked_muon_component_staging(from_config("zero1", mesh, tiling))
-    assert_stacked_muon_ci_staging(mixed_rules, n_chunks=8)
+        assert_stacked_muon_ci_staging(ci_placement(1))
+    # the muon <-> owner pairing rule: zero1's intra-matrix masters ride the staging
+    # axis (`C -> (tp, replicate)`), so the components claim refuses even a tiling set;
+    # owner's stack-cut masters pass, and the CI rows (their own families) are exempt.
+    with pytest.raises(AssertionError, match="stacked muon refuses this master layout"):
+        assert_stacked_muon_component_staging(from_config("zero1", mesh, tiling))
+    assert_stacked_muon_component_staging(from_config("owner", mesh, tiling))
+    assert_stacked_muon_ci_staging(ci_placement(8))
 
     # A stack-sharded persistence that is NOT the owner geometry simply builds: its
     # NS staging is whatever row it declares, not a derived hop path.
@@ -615,7 +646,9 @@ def test_ns_compute_waypoints_are_declared_rows():
         {},
     )
     swapped_rules = from_config(
-        swapped, mesh, tuple(SiteSpec(f"sw.{i}", 64, 32, 8, "sw") for i in range(8))
+        swapped,
+        mesh,
+        tuple(SiteSpec(f"sw.{i}", Dense(d_in=64, d_out=32, C=8), "sw") for i in range(8)),
     )
     assert dict(swapped_rules.components.ns_compute.rule) == {}
 
@@ -645,12 +678,16 @@ def test_ns_staging_sharding_is_the_row_verbatim():
     from param_decomp.core.placement import PlacedRule, ns_staging_sharding
 
     mesh = AbstractMesh((2, 2, 1), ("replicate", "fsdp", "tp"))
-    row = PlacedRule(mesh=mesh, label="ns", rule={"stack": "replicate"})
+    row = PlacedRule(mesh=mesh, label="ns", rule={"stack": ("replicate",)})
     assert ns_staging_sharding(row, mesh).spec == P("replicate", None, None)
     replicated = PlacedRule(mesh=mesh, label="ns", rule={})
     assert ns_staging_sharding(replicated, mesh).spec == P(None, None, None)
     with pytest.raises(AssertionError):
-        ns_staging_sharding(PlacedRule(mesh=mesh, label="bad", rule={"d_in": "fsdp"}), mesh)
+        ns_staging_sharding(PlacedRule(mesh=mesh, label="bad", rule={"d_in": ("fsdp",)}), mesh)
+    # The resident two-axis mesh: the respelled `{stack: data}` row, verbatim too.
+    resident_mesh = AbstractMesh((4, 2), ("data", "tp"))
+    resident_row = PlacedRule(mesh=resident_mesh, label="ns", rule={"stack": ("data",)})
+    assert ns_staging_sharding(resident_row, resident_mesh).spec == P("data", None, None)
 
 
 def test_staging_hops_move_one_axis_per_reshard():
@@ -679,6 +716,15 @@ def test_staging_hops_move_one_axis_per_reshard():
     assert staging_hops(P(None, None, None), ("replicate",)) == [P(("replicate",), None, None)]
     # replicated waypoint from replicated master: the identity hop.
     assert staging_hops(P(None, None, None), ()) == [P(None, None, None)]
+    # `staging_hops` is mesh-axis-agnostic: the two-axis resident geometries need no
+    # owner-geometry special case. owner-replicated-resident: masters already rest at
+    # the `{stack: data}` waypoint — ingress is the identity on the stack axis.
+    assert staging_hops(P("data", None, "tp"), ("data",)) == [P(("data",), None, None)]
+    # zero1-replicated-resident V: move `data` off the C dim, then drop `tp`.
+    assert staging_hops(P(None, None, ("tp", "data")), ("data",)) == [
+        P(("data",), None, ("tp",)),
+        P(("data",), None, None),
+    ]
 
 
 def _hlo_computations(hlo: str) -> dict[str, str]:
@@ -801,7 +847,7 @@ def test_per_kind_ns_census_zero_collectives_inside_the_ns_loop(
         "a": jax.device_put(jax.random.normal(k1, (4, 8, 16), jnp.float32), owner),
         "b": jax.device_put(jax.random.normal(k2, (2, 16, 8), jnp.float32), owner),
     }
-    compiled_census(owner_tree, PlacedRule(mesh=mesh, label="ns", rule={"stack": "replicate"}))
+    compiled_census(owner_tree, PlacedRule(mesh=mesh, label="ns", rule={"stack": ("replicate",)}))
 
     # zero1 geometry: intra-matrix masters hopping to the same node-axis stack split.
     # The receipt-class guard: replicated staging used to materialize whole fp32 stacks
@@ -813,7 +859,7 @@ def test_per_kind_ns_census_zero_collectives_inside_the_ns_loop(
         "b": jax.device_put(jax.random.normal(k3, (6, 8, 16), jnp.float32), zero1),
     }
     hlo = compiled_census(
-        zero1_tree, PlacedRule(mesh=mesh, label="ns", rule={"stack": "replicate"})
+        zero1_tree, PlacedRule(mesh=mesh, label="ns", rule={"stack": ("replicate",)})
     )
     smallest_kind_elems = min(math.prod(v.shape) for v in zero1_tree.values())
     for shape in _collective_result_shapes(hlo):
@@ -833,7 +879,7 @@ def test_per_kind_ns_census_zero_collectives_inside_the_ns_loop(
     )
     ffn_master = NamedSharding(mesh3, P(None, None, ("tp", "fsdp", "replicate")))
     ffn_tree = {"w1": jax.device_put(jax.random.normal(k1, (4, 8, 16), jnp.float32), ffn_master)}
-    row = PlacedRule(mesh=mesh3, label="ns", rule={"stack": "replicate"})
+    row = PlacedRule(mesh=mesh3, label="ns", rule={"stack": ("replicate",)})
     waypoint3 = ns_staging_sharding(row, mesh3)
     waypoints = lambda t: jax.tree.map(lambda _: waypoint3, t)
     capfd.readouterr()

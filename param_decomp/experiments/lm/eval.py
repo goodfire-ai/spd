@@ -42,6 +42,7 @@ what keeps it correct when `n_steps` is raised.
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 import jax
@@ -50,9 +51,15 @@ from jax import random
 from jax.sharding import Mesh
 from jaxtyping import Array, Float, Int, PRNGKeyArray
 
+from param_decomp.core.base_config import Probability
 from param_decomp.core.ci_fn import PlacedCIFn, evaluate_ci
 from param_decomp.core.ci_l0_eval import ci_l0_scalars, resolve_site_groups
-from param_decomp.core.components import ComponentStacks
+from param_decomp.core.components import (
+    ComponentStacks,
+    SiteCI,
+    map_site_ci,
+    site_ci_values,
+)
 from param_decomp.core.decomposed_linear import constrain_component_activation
 from param_decomp.core.jit_util import filter_jit
 from param_decomp.core.linear_plan import uniform_like
@@ -74,16 +81,27 @@ from param_decomp.core.precision import COMPUTE_DT
 from param_decomp.core.recon import ForwardObservations, reconstruction_observations
 from param_decomp.core.recon_eval import FreshPGDReconEval, fresh_pgd_recon_sources
 from param_decomp.core.sharding import batch_shard_leading
-from param_decomp.targets.losses import kl_per_position
+from param_decomp.targets.lm_output import LMOutput, StreamedLinearOutput
+from param_decomp.targets.losses import (
+    kl_per_position,
+    streamed_position_kl,
+    streamed_position_next_token_ce,
+)
 
 type ScalarStep = Callable[
-    [PlacedModel, ComponentStacks, PlacedCIFn, Array, PRNGKeyArray], Mapping[str, Array]
+    [PlacedModel[LMOutput], ComponentStacks, PlacedCIFn, Array, PRNGKeyArray], Mapping[str, Array]
 ]
 
-type ScalarScorer = Callable[[PlacedModel, "PreparedLMBatch[Any]", PRNGKeyArray], dict[str, Array]]
+type ScalarScorer = Callable[
+    [PlacedModel[LMOutput], "PreparedLMBatch[Any]", PRNGKeyArray], dict[str, Array]
+]
 """The pure scoring half of a scalar kernel over an already-prepared batch — jitted by
 the caller: the shared-context eval path jits it alone (the batch comes from the pass's
 one context step), the fused `make_*_step` path jits it composed with `prepare_lm_batch`."""
+
+
+def _uniform_mask(key: PRNGKeyArray, values: Array) -> Array:
+    return uniform_like(key, values)
 
 
 def next_token_cross_entropy(
@@ -138,14 +156,14 @@ class PreparedLMBatch[PreparedT]:
     `LMBatchContext` (the corpus eval path). A pytree, so it crosses jit boundaries."""
 
     tokens: Array
-    clean: ForwardObservations
+    clean: ForwardObservations[LMOutput]
     prepared_weights: PreparedT
-    ci_lower: dict[str, Array]
+    ci_lower: dict[str, SiteCI]
     valid_row_mask: Array | None
 
 
 def prepare_lm_batch[PreparedT](
-    model: PlacedModel[PreparedT],
+    model: PlacedModel[LMOutput, PreparedT],
     components: ComponentStacks,
     placed_ci_fn: PlacedCIFn,
     token_ids: Int[Array, "B T"],
@@ -161,6 +179,7 @@ def prepare_lm_batch[PreparedT](
     ci_input_activations = select_captures(clean_forward_result.captures, ci_capture_keys)
     clean = reconstruction_observations(
         clean_forward_result,
+        model.pin_output_batch,
         hidden_acts_capture_keys=activation_capture_keys,
         mesh=mesh,
     )
@@ -184,13 +203,13 @@ def prepare_lm_batch[PreparedT](
 
 
 def _compute_masked_output[PreparedT](
-    model: PlacedModel[PreparedT],
+    model: PlacedModel[LMOutput, PreparedT],
     batch: PreparedLMBatch[PreparedT],
-    masks: dict[str, Array],
+    masks: Mapping[str, SiteCI],
     delta_masks: dict[str, Array],
     mesh: Mesh | None,
     capture_keys: CaptureKeys,
-) -> Array:
+) -> LMOutput:
     masked_forward_result = model.masked_forward(
         batch.prepared_weights,
         batch.tokens,
@@ -198,31 +217,50 @@ def _compute_masked_output[PreparedT](
         capture_keys=capture_keys,
         remat=False,
     )
-    return batch_shard_leading(masked_forward_result.output, mesh)
+    return model.pin_output_batch(masked_forward_result.output, mesh)
 
 
-def _kl[PreparedT](batch: PreparedLMBatch[PreparedT], logits: Array) -> Array:
-    if batch.valid_row_mask is None:
-        return kl_per_position(logits, batch.clean.output)
-    return _row_masked_kl(logits, batch.clean.output, batch.valid_row_mask)
+def _kl[PreparedT](batch: PreparedLMBatch[PreparedT], output: LMOutput) -> Array:
+    match (output, batch.clean.output):
+        case (StreamedLinearOutput(), StreamedLinearOutput()):
+            position_kl = streamed_position_kl(output, batch.clean.output)
+            if batch.valid_row_mask is None:
+                return position_kl.mean()
+            return _row_masked_mean(position_kl, batch.valid_row_mask)
+        case (jax.Array(), jax.Array()):
+            if batch.valid_row_mask is None:
+                return kl_per_position(output, batch.clean.output)
+            return _row_masked_kl(output, batch.clean.output, batch.valid_row_mask)
+        case _:
+            raise AssertionError(
+                f"mixed model-output edges: {type(output).__name__} vs "
+                f"{type(batch.clean.output).__name__}"
+            )
 
 
-def _ce[PreparedT](batch: PreparedLMBatch[PreparedT], logits: Array) -> Array:
-    if batch.valid_row_mask is None:
-        return next_token_cross_entropy(logits, batch.tokens)
-    return _row_masked_cross_entropy(logits, batch.tokens, batch.valid_row_mask)
+def _ce[PreparedT](batch: PreparedLMBatch[PreparedT], output: LMOutput) -> Array:
+    match output:
+        case StreamedLinearOutput():
+            position_ce = streamed_position_next_token_ce(output, batch.tokens)
+            if batch.valid_row_mask is None:
+                return position_ce.mean()
+            return _row_masked_mean(position_ce, batch.valid_row_mask)
+        case jax.Array():
+            if batch.valid_row_mask is None:
+                return next_token_cross_entropy(output, batch.tokens)
+            return _row_masked_cross_entropy(output, batch.tokens, batch.valid_row_mask)
 
 
 def make_ce_kl_scorer[PreparedT](
-    model_static: PlacedModel[PreparedT],
-    rounding_threshold: float,
+    model_static: PlacedModel[LMOutput, PreparedT],
+    rounding_threshold: Probability,
     mesh: Mesh | None = None,
 ) -> ScalarScorer:
     """Build the pure CE/KL scorer over a prepared batch."""
     assert model_static.has_position_axis, "CEandKLLosses is LM-only and requires a position axis"
 
     def score(
-        model: PlacedModel[PreparedT],
+        model: PlacedModel[LMOutput, PreparedT],
         batch: PreparedLMBatch[PreparedT],
         key: PRNGKeyArray,
     ) -> dict[str, Array]:
@@ -236,54 +274,70 @@ def make_ce_kl_scorer[PreparedT](
             site: jnp.zeros_like(batch.tokens, dtype=COMPUTE_DT) for site in model.site_names
         }
         stoch_key, random_key, _ = random.split(key, 3)
-        stochastic_masks: dict[str, Array] = {}
+        stochastic_masks: dict[str, SiteCI] = {}
         stochastic_deltas: dict[str, Array] = {}
         for site_idx, site in enumerate(model.site_names):
             ci = batch.ci_lower[site]
-            source = uniform_like(random.fold_in(stoch_key, site_idx), ci)
-            stochastic_masks[site] = ci + (1.0 - ci) * source
+            source_key = random.fold_in(stoch_key, site_idx)
+            stochastic_masks[site] = map_site_ci(
+                lambda v, k=source_key: v + (1.0 - v) * uniform_like(k, v), ci
+            )
             stochastic_deltas[site] = uniform_like(
                 random.fold_in(stoch_key, len(model.site_names) + site_idx),
-                ci,
+                site_ci_values(ci),
                 drop_last_axis=True,
             )
+        # Every variant is pointwise on the CI values, so narrow sites' masks inherit
+        # the bundle (indices carried through to the masked forward).
         variants = {
             "ci_masked": (batch.ci_lower, zeros_delta),
             "unmasked": (
-                {site: jnp.ones_like(batch.ci_lower[site]) for site in model.site_names},
+                {
+                    site: map_site_ci(jnp.ones_like, batch.ci_lower[site])
+                    for site in model.site_names
+                },
                 zeros_delta,
             ),
             "stoch_masked": (stochastic_masks, stochastic_deltas),
             "random_masked": (
                 {
-                    site: uniform_like(random.fold_in(random_key, site_idx), batch.ci_lower[site])
+                    site: map_site_ci(
+                        partial(_uniform_mask, random.fold_in(random_key, site_idx)),
+                        batch.ci_lower[site],
+                    )
                     for site_idx, site in enumerate(model.site_names)
                 },
                 zeros_delta,
             ),
             "rounded_masked": (
                 {
-                    site: (batch.ci_lower[site] > rounding_threshold).astype(COMPUTE_DT)
+                    site: map_site_ci(
+                        lambda v: (v > rounding_threshold).astype(COMPUTE_DT),
+                        batch.ci_lower[site],
+                    )
                     for site in model.site_names
                 },
                 zeros_delta,
             ),
             "zero_masked": (
-                {site: jnp.zeros_like(batch.ci_lower[site]) for site in model.site_names},
+                {
+                    site: map_site_ci(jnp.zeros_like, batch.ci_lower[site])
+                    for site in model.site_names
+                },
                 zeros_delta,
             ),
         }
-        variant_logits = {
+        variant_outputs = {
             name: _compute_masked_output(model, batch, masks, deltas, mesh, frozenset())
             for name, (masks, deltas) in variants.items()
         }
         target_ce = _ce(batch, batch.clean.output)
         metrics = {
-            f"ce_kl/kl_{name}": _kl(batch, logits) for name, logits in variant_logits.items()
+            f"ce_kl/kl_{name}": _kl(batch, output) for name, output in variant_outputs.items()
         }
         metrics.update(
             {
-                f"ce_kl/ce_difference_{name}": _ce(batch, variant_logits[name]) - target_ce
+                f"ce_kl/ce_difference_{name}": _ce(batch, variant_outputs[name]) - target_ce
                 for name in variants
                 if name != "zero_masked"
             }
@@ -294,9 +348,9 @@ def make_ce_kl_scorer[PreparedT](
 
 
 def make_ce_kl_step[PreparedT](
-    model_static: PlacedModel[PreparedT],
+    model_static: PlacedModel[LMOutput, PreparedT],
     ci_capture_keys: CaptureKeys,
-    rounding_threshold: float,
+    rounding_threshold: Probability,
     mesh: Mesh | None = None,
     compiler_options: dict[str, bool | int | str] | None = None,
     *,
@@ -306,7 +360,7 @@ def make_ce_kl_step[PreparedT](
     score = make_ce_kl_scorer(model_static, rounding_threshold, mesh)
 
     def eval_step(
-        model: PlacedModel[PreparedT],
+        model: PlacedModel[LMOutput, PreparedT],
         components: ComponentStacks,
         placed_ci_fn: PlacedCIFn,
         token_ids: Array,
@@ -321,8 +375,8 @@ def make_ce_kl_step[PreparedT](
 
 
 def make_ci_l0_scorer[PreparedT](
-    model_static: PlacedModel[PreparedT],
-    ci_alive_threshold: float,
+    model_static: PlacedModel[LMOutput, PreparedT],
+    ci_alive_threshold: Probability,
     groups: dict[str, tuple[str, ...]] | None,
 ) -> ScalarScorer:
     """Bind the generic `CI_L0` arithmetic (`core.ci_l0_eval`) to a prepared LM batch
@@ -331,7 +385,7 @@ def make_ci_l0_scorer[PreparedT](
     resolved_groups = resolve_site_groups(model_static.site_names, groups)
 
     def score(
-        model: PlacedModel[PreparedT],
+        model: PlacedModel[LMOutput, PreparedT],
         batch: PreparedLMBatch[PreparedT],
         key: PRNGKeyArray,
     ) -> dict[str, Array]:
@@ -350,9 +404,9 @@ def make_ci_l0_scorer[PreparedT](
 
 
 def make_ci_l0_step[PreparedT](
-    model_static: PlacedModel[PreparedT],
+    model_static: PlacedModel[LMOutput, PreparedT],
     ci_capture_keys: CaptureKeys,
-    ci_alive_threshold: float,
+    ci_alive_threshold: Probability,
     groups: dict[str, tuple[str, ...]] | None,
     mesh: Mesh | None = None,
     compiler_options: dict[str, bool | int | str] | None = None,
@@ -363,7 +417,7 @@ def make_ci_l0_step[PreparedT](
     score = make_ci_l0_scorer(model_static, ci_alive_threshold, groups)
 
     def eval_step(
-        model: PlacedModel[PreparedT],
+        model: PlacedModel[LMOutput, PreparedT],
         components: ComponentStacks,
         placed_ci_fn: PlacedCIFn,
         token_ids: Array,
@@ -378,7 +432,7 @@ def make_ci_l0_step[PreparedT](
 
 
 def make_fresh_pgd_scorer[PreparedT](
-    model_static: PlacedModel[PreparedT],
+    model_static: PlacedModel[LMOutput, PreparedT],
     fresh_pgd: FreshPGDReconEval,
     mesh: Mesh | None = None,
 ) -> ScalarScorer:
@@ -391,19 +445,30 @@ def make_fresh_pgd_scorer[PreparedT](
     )
 
     def score(
-        model: PlacedModel[PreparedT],
+        model: PlacedModel[LMOutput, PreparedT],
         batch: PreparedLMBatch[PreparedT],
         key: PRNGKeyArray,
     ) -> dict[str, Array]:
         _, _, pgd_key = random.split(key, 3)
 
-        def end_to_end_error(masked: Array, clean_value: Array) -> Array:
+        def end_to_end_error(masked: LMOutput, clean_value: LMOutput) -> Array:
             if batch.valid_row_mask is None:
                 return model.recon_loss_fn(masked, clean_value)
-            return _row_masked_kl(masked, clean_value, batch.valid_row_mask)
+            match (masked, clean_value):
+                case (StreamedLinearOutput(), StreamedLinearOutput()):
+                    return _row_masked_mean(
+                        streamed_position_kl(masked, clean_value), batch.valid_row_mask
+                    )
+                case (jax.Array(), jax.Array()):
+                    return _row_masked_kl(masked, clean_value, batch.valid_row_mask)
+                case _:
+                    raise AssertionError(
+                        f"mixed model-output edges: {type(masked).__name__} vs "
+                        f"{type(clean_value).__name__}"
+                    )
 
         def objective_with_breakdown(
-            masks: dict[str, Array], delta_masks: dict[str, Array]
+            masks: Mapping[str, SiteCI], delta_masks: dict[str, Array]
         ) -> ReconstructionLoss:
             masked_forward_result = model.masked_forward(
                 batch.prepared_weights,
@@ -417,6 +482,7 @@ def make_fresh_pgd_scorer[PreparedT](
             )
             masked = reconstruction_observations(
                 masked_forward_result,
+                model.pin_output_batch,
                 hidden_acts_capture_keys=reconstruction_capture_keys,
                 mesh=mesh,
             )
@@ -428,7 +494,7 @@ def make_fresh_pgd_scorer[PreparedT](
                 valid_row_mask=batch.valid_row_mask,
             )
 
-        def loss_at_masks(masks: dict[str, Array], delta_masks: dict[str, Array]) -> Array:
+        def loss_at_masks(masks: dict[str, SiteCI], delta_masks: dict[str, Array]) -> Array:
             return objective_with_breakdown(masks, delta_masks).total
 
         sources = fresh_pgd_recon_sources(
@@ -453,7 +519,7 @@ def make_fresh_pgd_scorer[PreparedT](
 
 
 def make_fresh_pgd_step[PreparedT](
-    model_static: PlacedModel[PreparedT],
+    model_static: PlacedModel[LMOutput, PreparedT],
     ci_capture_keys: CaptureKeys,
     fresh_pgd: FreshPGDReconEval,
     mesh: Mesh | None = None,
@@ -465,7 +531,7 @@ def make_fresh_pgd_step[PreparedT](
     score = make_fresh_pgd_scorer(model_static, fresh_pgd, mesh)
 
     def eval_step(
-        model: PlacedModel[PreparedT],
+        model: PlacedModel[LMOutput, PreparedT],
         components: ComponentStacks,
         placed_ci_fn: PlacedCIFn,
         token_ids: Array,
@@ -487,10 +553,10 @@ def make_fresh_pgd_step[PreparedT](
 
 
 def make_eval_step[PreparedT](
-    model_static: PlacedModel[PreparedT],
+    model_static: PlacedModel[LMOutput, PreparedT],
     ci_capture_keys: CaptureKeys,
-    rounding_threshold: float,
-    ci_alive_threshold: float,
+    rounding_threshold: Probability,
+    ci_alive_threshold: Probability,
     l0_group_patterns: dict[str, tuple[str, ...]] | None,
     fresh_pgd: FreshPGDReconEval | None,
     mesh: Mesh | None = None,
@@ -530,7 +596,7 @@ def make_eval_step[PreparedT](
     )
 
     def evaluate(
-        model: PlacedModel[PreparedT],
+        model: PlacedModel[LMOutput, PreparedT],
         components: ComponentStacks,
         placed_ci_fn: PlacedCIFn,
         token_ids: Array,

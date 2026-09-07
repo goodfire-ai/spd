@@ -1,20 +1,22 @@
 """Golden pin of placement CONSTRUCTION: every preset plus two explicit tables, over a
 mesh x site-set grid, each cell serialized (or its refusal message recorded) against the
-committed `placement_goldens.json` — refusals are pinned behavior, the strict refusal
-message included. Fallback-bearing tables are unrepresentable, so their cells pin the
-SCHEMA refusal (pydantic parse errors). Regenerate only when placement semantics
-deliberately change: `python -m param_decomp.tests.core.gen_placement_goldens`."""
+committed `placement_goldens.json` — refusals are pinned behavior, message included, and
+the census' resolved `stack_pad` counts are pinned per cell. Fallback-bearing tables are
+unrepresentable, so their cells pin the SCHEMA refusal (pydantic parse errors).
+Regenerate only when placement semantics deliberately change:
+`python -m param_decomp.tests.core.gen_placement_goldens`."""
 
+import dataclasses
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 from jax.sharding import AbstractMesh
 from pydantic import ValidationError
 
-from param_decomp.core.axes import MeshAssignment
-from param_decomp.core.components import SiteSpec
-from param_decomp.core.configs import PlacementTableConfig
+from param_decomp.core.components import Dense, SiteSpec
+from param_decomp.core.configs import PlacementSpec, PlacementTableConfig
 from param_decomp.core.placement import (
     CIWeightPlacement,
     PlacedRule,
@@ -25,24 +27,30 @@ from param_decomp.core.placement import (
 GOLDENS_PATH = Path(__file__).parent / "placement_goldens.json"
 
 _MESH_AXES = ("replicate", "fsdp", "tp")
+# The `(data, tp)` mesh: home of the `*-replicated-resident` presets; every three-axis
+# spec on it (and every resident preset on a three-axis mesh) pins the binder's
+# mesh-vocabulary refusal.
 MESHES = {
     "replicate4_fsdp8_tp1": AbstractMesh((4, 8, 1), _MESH_AXES),
     "replicate2_fsdp2_tp2": AbstractMesh((2, 2, 2), _MESH_AXES),
+    "data4_tp2": AbstractMesh((4, 2), ("data", "tp")),
 }
 
 
 def _sites(group_sizes: dict[tuple[int, int, int], int]) -> tuple[SiteSpec, ...]:
     """One semantic group per `(d_in, d_out, C): g` entry."""
     return tuple(
-        SiteSpec(f"s{d_in}x{d_out}x{c}.{i}", d_in, d_out, c, f"{d_in}x{d_out}x{c}")
+        SiteSpec(
+            f"s{d_in}x{d_out}x{c}.{i}", Dense(d_in=d_in, d_out=d_out, C=c), f"{d_in}x{d_out}x{c}"
+        )
         for (d_in, d_out, c), g in group_sizes.items()
         for i in range(g)
     )
 
 
 # `tiling` tiles every preset's stack sharding on both meshes; `mixed` adds a 1-stack
-# group that tiles neither mesh's replicate extent, so stack-sharded specs refuse it —
-# the refusal message is pinned behavior.
+# group that tiles neither mesh's replicate extent, so stack-sharded specs resolve a
+# persist pad for it — the pinned census carries the pad count.
 SITE_SETS = {
     "tiling": _sites({(64, 32, 8): 4}),
     "mixed": _sites({(64, 32, 8): 4, (128, 64, 8): 1}),
@@ -197,10 +205,17 @@ _EXPLICIT_FSDP_ONLY = PlacementTableConfig.model_validate(
     }
 )
 
-SPECS: dict[str, str | PlacementTableConfig] = {
+SPECS: dict[str, PlacementSpec] = {
     "preset_owner": "owner",
-    "preset_owner_zero1": "owner+zero1",  # deleted preset: pins the unknown-name refusal
+    # deleted preset: pins the unknown-name refusal (a str, so the widening cast holds)
+    "preset_owner_zero1": cast(PlacementSpec, cast(str, "owner+zero1")),
     "preset_zero1": "zero1",
+    "preset_zero1_replicated_resident": "zero1-replicated-resident",
+    "preset_owner_replicated_resident": "owner-replicated-resident",
+    # the MoE presets over these DENSE site sets pin their fail-closed refusals (their
+    # expert/C_block keys name axes no dense tensor consumes)
+    "preset_zero1_replicated_resident_moe": "zero1-replicated-resident-moe",
+    "preset_owner_replicated_resident_moe": "owner-replicated-resident-moe",
     "preset_ddp": "ddp",
     "explicit_owner": _EXPLICIT_OWNER,
     "explicit_fsdp_only": _EXPLICIT_FSDP_ONLY,
@@ -239,18 +254,10 @@ GRID_KEYS = tuple(
 ) + tuple(SCHEMA_REFUSALS)
 
 
-def _assignment_json(assignment: MeshAssignment) -> str | list[str] | None:
-    match assignment:
-        case None | str():
-            return assignment
-        case tuple():
-            return list(assignment)
-
-
 def _row_json(row: PlacedRule) -> dict[str, object]:
     return {
         "label": row.label,
-        "rule": {axis: _assignment_json(a) for axis, a in sorted(row.rule.items())},
+        "rule": {axis: list(assignment) for axis, assignment in sorted(row.rule.items())},
     }
 
 
@@ -278,7 +285,17 @@ def serialize_rules(rules: PlacementRules) -> dict[str, object]:
             "faithfulness_deltas": _row_json(components.faithfulness_deltas),
             "operands": _row_json(components.operands),
             "ns_compute": _row_json(components.ns_compute),
-            "group_stack_lens": dict(sorted(components.group_stack_lens.items())),
+            "group_census": {
+                name: {
+                    "factorization": {
+                        "kind": type(entry.factorization).__name__,
+                        **dataclasses.asdict(entry.factorization),
+                    },
+                    "stack_len": entry.stack_len,
+                    "stack_pad": entry.stack_pad,
+                }
+                for name, entry in sorted(components.group_census.items())
+            },
         },
         "ci_fn": {
             "attention": _ci_weight_json(rules.ci_fn.attention),

@@ -11,7 +11,10 @@ import pytest
 from jax.sharding import AxisType, Mesh
 
 from param_decomp.experiments.lm.arithmetic_eval_operation import global_arithmetic_probe
-from param_decomp.experiments.lm.arithmetic_probe import build_arithmetic_probe
+from param_decomp.experiments.lm.arithmetic_probe import (
+    build_arithmetic_probe,
+    build_arithmetic_prompt_grid,
+)
 
 BOS = 7
 SYMBOL_IDS = {"+": 101, "-": 102, "*": 103, "=": 104}
@@ -67,6 +70,14 @@ def test_build_arithmetic_probe_rejects_multi_token_answer():
     # operands single-token but 5+5=10 splits -> the answer premise breaks
     with pytest.raises(AssertionError, match="single answer token"):
         build_arithmetic_probe("add", (5, 5), (5, 6), _StubTokenizer(split_from=10))
+
+
+def test_prompt_grid_carries_no_answer_premise():
+    # The same ranges the probe refuses above: a training pool draws prompt rows and
+    # never scores an answer, so only the shared prompt length is asserted.
+    grid = build_arithmetic_prompt_grid("add", (5, 5), (5, 6), _StubTokenizer(split_from=10))
+    assert grid.tokens.shape == (2, 5)
+    assert grid.tokens.dtype == np.int32
 
 
 def test_arithmetic_probe_global_preserves_grid():

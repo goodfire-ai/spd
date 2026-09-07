@@ -8,13 +8,20 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from param_decomp.core.configs import PlacementTableConfig
+from param_decomp.core.configs import (
+    HsdpMeshShape,
+    PlacementTableConfig,
+    ResidentMeshShape,
+)
 from param_decomp.core.placement import PRESET_NAMES
 from param_decomp.core.run import JaxProfilerTrace, NsightCaptureWindow
 from param_decomp.experiments.lm.config import LMExperimentConfig
 from param_decomp.experiments.lm.runtime import (
-    TUNED_V1_COMPILER_OPTIONS,
+    TUNED_V2_AUTOTUNE1_COMPILER_OPTIONS,
+    TUNED_V2_COMPILER_OPTIONS,
+    TYPED_ENV_VARS,
     AdHocProfiling,
+    LaunchEnv,
     NsightSystemsProfiling,
     ProfilingDisabled,
     RuntimeConfig,
@@ -25,12 +32,90 @@ CONFIGS = Path(__file__).parents[3] / "experiments" / "lm" / "configs"
 SEAT = CONFIGS / "llama8b_l18_C49k_200k.yaml"
 
 _MINIMAL_RUNTIME: dict[str, Any] = {
-    "replicate": 1,
-    "fsdp": 1,
-    "tp": 1,
+    "mesh": {"replicate": 1, "fsdp": 1, "tp": 1},
     "sharding": "zero1",
     "compilation_cache_dir": "~/.cache/param-decomp/xla",
-    "compiler_options": "tuned-v1",
+    "compiler_options": "tuned-v2",
+}
+
+_EXPLICIT_TABLE: dict[str, Any] = {
+    "components": {
+        "optimizer_state": {"stack": "replicate", "d_in": "fsdp", "d_out": "fsdp", "C": "tp"},
+        "compute_weights": {"d_in": "fsdp", "d_out": "fsdp", "C": "tp"},
+        "faithfulness_weights": {
+            "stack": "replicate",
+            "d_in": "fsdp",
+            "d_out": "fsdp",
+            "C": "tp",
+        },
+        "faithfulness_deltas": {"stack": "replicate", "d_out": "fsdp"},
+        "operands": {"C": "tp"},
+        "ns_compute": {},
+    },
+    "ci_fn": {
+        "attention": {
+            "optimizer_state": {"d_model": ["fsdp", "replicate"]},
+            "compute_weights": {"d_model": "fsdp"},
+            "operands": {},
+            "ns_compute": {},
+        },
+        "ffn": {
+            "optimizer_state": {"ffn_hidden": ["fsdp", "tp", "replicate"]},
+            "compute_weights": {"ffn_hidden": ["fsdp", "tp"]},
+            "operands": {},
+            "ns_compute": {},
+        },
+        "input": {
+            "optimizer_state": {"input": "tp", "d_model": ["fsdp", "replicate"]},
+            "compute_weights": {"input": "tp", "d_model": "fsdp"},
+            "operands": {},
+            "ns_compute": {},
+        },
+        "output": {
+            "optimizer_state": {"d_model": ["fsdp", "replicate"], "C": "tp"},
+            "compute_weights": {"d_model": "fsdp", "C": "tp"},
+            "operands": {},
+            "ns_compute": {},
+        },
+        "vectors": {"ffn_hidden": "tp", "C": "tp"},
+        "activations": {
+            "batch": ["replicate", "fsdp"],
+            "input": "tp",
+            "q_head": "tp",
+            "kv_head": "tp",
+            "ffn_hidden": "tp",
+            "C": "tp",
+        },
+    },
+    "activations": {
+        "external": {"batch": ["replicate", "fsdp"]},
+        "component": {"batch": ["replicate", "fsdp"], "C": "tp"},
+    },
+    "target": {
+        "embedding": {"persist": {"d_model": "fsdp"}, "operand": {}},
+        "normalization": {},
+        "position_encoding": {},
+        "column": {
+            "persist": {"d_in": "fsdp", "d_out": "tp"},
+            "operand": {"d_out": "tp"},
+            "input": "external",
+            "output": "intermediate",
+        },
+        "row": {
+            "persist": {"d_out": "fsdp", "d_in": "tp"},
+            "operand": {"d_in": "tp"},
+            "input": "intermediate",
+            "output": "external",
+        },
+        "output": {"persist": {"d_model": "fsdp"}, "operand": {}},
+        "intermediate": {
+            "batch": ["replicate", "fsdp"],
+            "feature": "tp",
+            "q_head": "tp",
+            "kv_head": "tp",
+        },
+        "component": {"input": "external", "output": "external"},
+    },
 }
 
 
@@ -38,15 +123,16 @@ def test_topology_is_explicit_and_fails_closed():
     def runtime(**overrides: Any) -> RuntimeConfig:
         return RuntimeConfig.model_validate(_MINIMAL_RUNTIME | overrides)
 
-    configured = runtime(replicate=16, fsdp=4, tp=2)
+    configured = runtime(mesh={"replicate": 16, "fsdp": 4, "tp": 2})
+    assert configured.mesh == HsdpMeshShape(replicate=16, fsdp=4, tp=2)
     assert configured.world_size == 128
     assert configured.data_parallel_size == 64
 
     for missing in ("replicate", "fsdp", "tp"):
-        authored = dict(_MINIMAL_RUNTIME, replicate=16, fsdp=4, tp=2)
+        authored = {"replicate": 16, "fsdp": 4, "tp": 2}
         del authored[missing]
         with pytest.raises(ValidationError):
-            RuntimeConfig.model_validate(authored)
+            runtime(mesh=authored)
 
     # Removed launch intent is not part of the live authoring schema.
     with pytest.raises(ValidationError):
@@ -56,6 +142,44 @@ def test_topology_is_explicit_and_fails_closed():
         RuntimeConfig.model_validate({"dp": 128, "gpus_per_node": 8, "tp": 2, "sharding": "zero1"})
 
 
+def test_retired_flat_mesh_keys_refuse_with_the_nested_spelling():
+    """The pre-nesting flat axis keys die at parse, and the refusal says the nested
+    spelling — not a bare extra-keys error."""
+    flat = {key: value for key, value in _MINIMAL_RUNTIME.items() if key != "mesh"}
+    with pytest.raises(ValidationError, match=r"nested under `runtime.mesh:`"):
+        RuntimeConfig.model_validate(flat | {"replicate": 4, "fsdp": 8, "tp": 1})
+    with pytest.raises(ValidationError, match=r"nested under `runtime.mesh:`"):
+        RuntimeConfig.model_validate(flat | {"data": 4, "tp": 2})
+
+
+def test_resident_mesh_parses():
+    """The two-axis `mesh: {data, tp}` spelling parses to `ResidentMeshShape`. Which
+    sharding it pairs with is not a parse-time fact: the placement table's mesh
+    vocabulary is checked at construction (`test_placement`)."""
+    configured = RuntimeConfig.model_validate(
+        _MINIMAL_RUNTIME | {"mesh": {"data": 4, "tp": 2}, "sharding": "zero1-replicated-resident"}
+    )
+    assert configured.mesh == ResidentMeshShape(data=4, tp=2)
+    assert configured.world_size == 8
+    assert configured.data_parallel_size == 4
+    # A mixed mesh spelling matches neither shape (disjoint required keys, extra=forbid).
+    with pytest.raises(ValidationError):
+        RuntimeConfig.model_validate(_MINIMAL_RUNTIME | {"mesh": {"data": 4, "fsdp": 2, "tp": 1}})
+
+
+def test_dead_tuned_v1_spellings_refuse_naming_the_successor():
+    """jaxlib 0.11 removed the pipelined-collective trio the tuned-v1 presets froze, so
+    the retired tokens can never again mean their exact flag sets: each refuses at parse
+    naming its successor, never silently resolving to different flags."""
+    for dead in ("tuned-v1", "tuned-v1-resident"):
+        with pytest.raises(ValidationError, match="retired.*Author 'tuned-v2'"):
+            RuntimeConfig.model_validate(_MINIMAL_RUNTIME | {"compiler_options": dead})
+    with pytest.raises(ValidationError, match="retired.*Author 'tuned-v2-autotune1'"):
+        RuntimeConfig.model_validate(
+            _MINIMAL_RUNTIME | {"compiler_options": "tuned-v1-resident-autotune1"}
+        )
+
+
 def test_compiler_options_is_required_and_fails_closed():
     """REQUIRED, no default, no merge: every run's flags trace to a visible authored token —
     a preset name from the closed vocabulary, or an explicit dict used verbatim."""
@@ -63,8 +187,8 @@ def test_compiler_options_is_required_and_fails_closed():
     with pytest.raises(ValidationError, match="compiler_options"):
         RuntimeConfig.model_validate(absent)
 
-    with pytest.raises(ValidationError, match="tuned-v1"):
-        RuntimeConfig.model_validate(_MINIMAL_RUNTIME | {"compiler_options": "tuned-v2"})
+    with pytest.raises(ValidationError, match="tuned-v2"):
+        RuntimeConfig.model_validate(_MINIMAL_RUNTIME | {"compiler_options": "tuned-v3"})
 
     with pytest.raises(ValidationError, match="gpu_enable_triton_gemm"):
         RuntimeConfig.model_validate(
@@ -77,8 +201,17 @@ def test_compiler_options_resolve_with_no_merging():
         runtime = RuntimeConfig.model_validate(_MINIMAL_RUNTIME | {"compiler_options": authored})
         return runtime.resolved_compiler_options
 
-    assert resolved("tuned-v1") == dict(TUNED_V1_COMPILER_OPTIONS)
+    assert resolved("tuned-v2") == dict(TUNED_V2_COMPILER_OPTIONS)
     assert resolved("bare") == {}
+
+    # tuned-v2-autotune1 = tuned-v2 plus the autotune dial, nothing else.
+    assert resolved("tuned-v2-autotune1") == dict(TUNED_V2_AUTOTUNE1_COMPILER_OPTIONS)
+    assert dict(TUNED_V2_AUTOTUNE1_COMPILER_OPTIONS) == dict(TUNED_V2_COMPILER_OPTIONS) | {
+        "xla_gpu_autotune_level": 1
+    }
+
+    # The one tuned set serves every placement, resident included: double-buffering off.
+    assert TUNED_V2_COMPILER_OPTIONS["xla_gpu_enable_while_loop_double_buffering"] is False
 
     # An explicit dict is the run's COMPLETE flag set, verbatim — nothing folded in.
     explicit = {"xla_disable_hlo_passes": "rematerialization"}
@@ -132,86 +265,7 @@ def test_preset_names_match_placement_presets():
 def test_sharding_accepts_an_explicit_placement_table():
     """The non-preset arm of `sharding` is reachable through the section, not just as a
     standalone type: an authored table lands as `PlacementTableConfig`."""
-    table = {
-        "components": {
-            "optimizer_state": {"stack": "replicate", "d_in": "fsdp", "d_out": "fsdp", "C": "tp"},
-            "compute_weights": {"d_in": "fsdp", "d_out": "fsdp", "C": "tp"},
-            "faithfulness_weights": {
-                "stack": "replicate",
-                "d_in": "fsdp",
-                "d_out": "fsdp",
-                "C": "tp",
-            },
-            "faithfulness_deltas": {"stack": "replicate", "d_out": "fsdp"},
-            "operands": {"C": "tp"},
-            "ns_compute": {},
-        },
-        "ci_fn": {
-            "attention": {
-                "optimizer_state": {"d_model": ["fsdp", "replicate"]},
-                "compute_weights": {"d_model": "fsdp"},
-                "operands": {},
-                "ns_compute": {},
-            },
-            "ffn": {
-                "optimizer_state": {"ffn_hidden": ["fsdp", "tp", "replicate"]},
-                "compute_weights": {"ffn_hidden": ["fsdp", "tp"]},
-                "operands": {},
-                "ns_compute": {},
-            },
-            "input": {
-                "optimizer_state": {"input": "tp", "d_model": ["fsdp", "replicate"]},
-                "compute_weights": {"input": "tp", "d_model": "fsdp"},
-                "operands": {},
-                "ns_compute": {},
-            },
-            "output": {
-                "optimizer_state": {"d_model": ["fsdp", "replicate"], "C": "tp"},
-                "compute_weights": {"d_model": "fsdp", "C": "tp"},
-                "operands": {},
-                "ns_compute": {},
-            },
-            "vectors": {"ffn_hidden": "tp", "C": "tp"},
-            "activations": {
-                "batch": ["replicate", "fsdp"],
-                "input": "tp",
-                "q_head": "tp",
-                "kv_head": "tp",
-                "ffn_hidden": "tp",
-                "C": "tp",
-            },
-        },
-        "activations": {
-            "external": {"batch": ["replicate", "fsdp"]},
-            "component": {"batch": ["replicate", "fsdp"], "C": "tp"},
-        },
-        "target": {
-            "embedding": {"persist": {"d_model": "fsdp"}, "operand": {}},
-            "normalization": {},
-            "position_encoding": {},
-            "column": {
-                "persist": {"d_in": "fsdp", "d_out": "tp"},
-                "operand": {"d_out": "tp"},
-                "input": "external",
-                "output": "intermediate",
-            },
-            "row": {
-                "persist": {"d_out": "fsdp", "d_in": "tp"},
-                "operand": {"d_in": "tp"},
-                "input": "intermediate",
-                "output": "external",
-            },
-            "output": {"persist": {"d_model": "fsdp"}, "operand": {}},
-            "intermediate": {
-                "batch": ["replicate", "fsdp"],
-                "feature": "tp",
-                "q_head": "tp",
-                "kv_head": "tp",
-            },
-            "component": {"input": "external", "output": "external"},
-        },
-    }
-    runtime = RuntimeConfig.model_validate(_MINIMAL_RUNTIME | {"sharding": table})
+    runtime = RuntimeConfig.model_validate(_MINIMAL_RUNTIME | {"sharding": _EXPLICIT_TABLE})
     assert isinstance(runtime.sharding, PlacementTableConfig)
     assert runtime.sharding.components.optimizer_state == {
         "stack": "replicate",
@@ -225,6 +279,7 @@ _PINNED_LAUNCH_ENV = {
     "xla_python_client_mem_fraction": 0.85,
     "xla_python_client_allocator": "platform",
     "xla_pjrt_gpu_host_memory_limit_gb": 512,
+    "xla_flags": "--xla_gpu_nccl_termination_timeout_seconds=120",
     "nccl_debug": "INFO",
     "malloc_arena_max": 4,
     "env": {"SOME_ONE_OFF_VAR": "1"},
@@ -240,19 +295,55 @@ def test_a_pinned_launch_config_still_round_trips(tmp_path: Path):
 
     cfg = LMExperimentConfig.from_file(pinned)
 
-    assert (cfg.runtime.replicate, cfg.runtime.fsdp, cfg.runtime.tp) == (4, 8, 1)
+    assert cfg.runtime.mesh == HsdpMeshShape(replicate=4, fsdp=8, tp=1)
     assert cfg.runtime.sharding == "zero1"
-    assert cfg.runtime.launch_env.as_env() == {
+    assert cfg.runtime.launch_env.as_env(None) == {
         "NCCL_DEBUG": "INFO",
         "MALLOC_ARENA_MAX": "4",
         "XLA_PYTHON_CLIENT_MEM_FRACTION": "0.85",
         "XLA_PJRT_GPU_HOST_MEMORY_LIMIT_GB": "512",
+        "XLA_FLAGS": "--xla_gpu_nccl_termination_timeout_seconds=120",
         "XLA_PYTHON_CLIENT_ALLOCATOR": "platform",
         "SOME_ONE_OFF_VAR": "1",
     }
     dumped = cfg.model_dump(mode="json")
     assert dumped["runtime"]["launch_env"] == _PINNED_LAUNCH_ENV
     assert "launch_env" not in dumped and "runtime" not in dumped["pd"]
+
+
+def test_launch_env_composes_inherited_xla_flags():
+    """`as_env` merges the config's `XLA_FLAGS` with flags the environment already
+    carries, keyed by flag name, three arms: disjoint flags compose (config's first,
+    the environment's extras appended — a wrapper's exports survive the bootstrap),
+    an identical duplicate dedupes silently, and the same flag with a DIFFERENT value
+    refuses — a reviewed config value conflicting with ambient env is a confused state,
+    never a silent resolution."""
+    launch_env = LaunchEnv(xla_flags="--xla_a=1 --xla_b=2")
+    composed = "--xla_a=1 --xla_b=2 --xla_force_host_platform_device_count=8"
+    assert launch_env.as_env("--xla_force_host_platform_device_count=8")["XLA_FLAGS"] == composed
+    assert (
+        launch_env.as_env("--xla_b=2 --xla_force_host_platform_device_count=8")["XLA_FLAGS"]
+        == composed
+    )
+    with pytest.raises(AssertionError, match=r"conflict on --xla_b.*'--xla_b=2'.*'--xla_b=3'"):
+        launch_env.as_env("--xla_b=3")
+    assert launch_env.as_env(None)["XLA_FLAGS"] == "--xla_a=1 --xla_b=2"
+    assert launch_env.as_env("")["XLA_FLAGS"] == "--xla_a=1 --xla_b=2"
+
+
+def test_launch_env_block_refuses_keys_typed_fields_own():
+    """`env: {XLA_FLAGS: ...}` would have replaced the merged typed string (dropping the
+    termination-timeout default and the inherited-flag composition); every typed field's
+    variable refuses at config load, naming the field to author instead. `as_env` renders
+    exactly the owned set, so the refusal list and the rendering cannot drift."""
+    with pytest.raises(ValidationError, match=r"XLA_FLAGS -> launch_env\.xla_flags"):
+        LaunchEnv(env={"XLA_FLAGS": "--xla_gpu_nccl_termination_timeout_seconds=5"})
+    with pytest.raises(ValidationError, match=r"NCCL_DEBUG -> launch_env\.nccl_debug"):
+        LaunchEnv(env={"NCCL_DEBUG": "INFO", "SOME_ONE_OFF_VAR": "1"})
+    rendered = LaunchEnv(
+        xla_python_client_allocator="platform", env={"SOME_ONE_OFF_VAR": "1"}
+    ).as_env(None)
+    assert set(rendered) == set(TYPED_ENV_VARS) | {"SOME_ONE_OFF_VAR"}
 
 
 def test_the_launch_env_block_has_no_second_home(tmp_path: Path):

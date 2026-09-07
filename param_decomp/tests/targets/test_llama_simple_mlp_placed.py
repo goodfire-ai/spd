@@ -25,6 +25,7 @@ from param_decomp.core.ci_fn import (
     ChunkwiseTransformerCIArch,
     ChunkwiseTransformerCIFn,
     MHACIAttention,
+    resolve_ci_placement,
 )
 from param_decomp.core.components import (
     ComponentStacks,
@@ -37,6 +38,7 @@ from param_decomp.core.configs import (
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
     PersistentPGDReconLossConfig,
+    PlacementPresetName,
     StochasticReconSubsetLossConfig,
     UniformKSubsetRoutingConfig,
 )
@@ -62,6 +64,7 @@ from param_decomp.targets.llama_simple_mlp import (
     site_specs,
 )
 from param_decomp.targets.testing import (
+    materialized_logits,
     tiny_simple_mlp_cfg,
     tiny_simple_mlp_decomposed_model,
 )
@@ -116,14 +119,21 @@ def _masked_loss(
     rules: PlacementRules | None,
 ) -> jax.Array:
     prepared = model.prepare_compute_weights(vu, rules)
-    output = model.masked_forward(
-        prepared, tokens, masking=masking, placement=rules, capture_keys=frozenset(), remat=False
-    ).output
+    output = materialized_logits(
+        model.masked_forward(
+            prepared,
+            tokens,
+            masking=masking,
+            placement=rules,
+            capture_keys=frozenset(),
+            remat=False,
+        ).output
+    )
     return jnp.mean(jnp.square(output))
 
 
 @pytest.mark.parametrize("preset", ("zero1", "owner", "ddp"))
-def test_placed_forwards_and_grads_trace(preset: str):
+def test_placed_forwards_and_grads_trace(preset: PlacementPresetName):
     model, sites = _model_and_sites()
     mesh = _mesh_2_2_1()
     rules = from_config(preset, mesh, model.sites)
@@ -138,7 +148,11 @@ def test_placed_forwards_and_grads_trace(preset: str):
         )
         jax.make_jaxpr(
             lambda m, c, x: m.component_activation_forward(
-                m.prepare_compute_weights(c, rules), x, capture_keys=frozenset(), placement=rules
+                m.prepare_compute_weights(c, rules),
+                x,
+                sites=m.site_names,
+                capture_keys=frozenset(),
+                placement=rules,
             )[1]
         )(placed_target, vu, tokens)
 
@@ -154,7 +168,11 @@ def test_placed_zero1_forward_and_grad_match_unplaced():
     )(vu)
     _, reference_acts = jax.jit(
         lambda m, c, x: m.component_activation_forward(
-            m.prepare_compute_weights(c, None), x, capture_keys=frozenset(), placement=None
+            m.prepare_compute_weights(c, None),
+            x,
+            sites=m.site_names,
+            capture_keys=frozenset(),
+            placement=None,
         )
     )(model, vu, tokens)
 
@@ -173,7 +191,11 @@ def test_placed_zero1_forward_and_grad_match_unplaced():
         )(placed_vu)
         _, placed_acts = jax.jit(
             lambda m, c, x: m.component_activation_forward(
-                m.prepare_compute_weights(c, rules), x, capture_keys=frozenset(), placement=rules
+                m.prepare_compute_weights(c, rules),
+                x,
+                sites=m.site_names,
+                capture_keys=frozenset(),
+                placement=rules,
             )
         )(placed_target, placed_vu, placed_tokens)
 
@@ -191,7 +213,7 @@ def test_placed_zero1_forward_and_grad_match_unplaced():
 
 
 @pytest.mark.parametrize("preset", ("zero1", "owner"))
-def test_placed_step_runs_the_full_objective(preset: str):
+def test_placed_step_runs_the_full_objective(preset: PlacementPresetName):
     """The real `make_train_step` (persistent PPGD + stochastic subset + faithfulness —
     the committed pile seat's term classes) executes placed at (2,2,1)."""
     cfg = tiny_simple_mlp_cfg()
@@ -219,8 +241,7 @@ def test_placed_step_runs_the_full_objective(preset: str):
         ci_fn = init_ci_fn_placed(arch, model.sites, random.PRNGKey(2), mesh, rules)
         assert isinstance(ci_fn, ChunkwiseTransformerCIFn)
         src = init_persistent_sources(
-            model.site_names,
-            tuple(s.C for s in model.sites),
+            model.sites,
             (1, _T),
             jnp.float32,
             random.PRNGKey(3),
@@ -254,7 +275,7 @@ def test_placed_step_runs_the_full_objective(preset: str):
                         sources=src,
                         opt_state=init_sources_adam_state(src),
                         state_key=ppgd_cfg.type,
-                        adam=ppgd_cfg.optimizer,
+                        optimizer=ppgd_cfg.optimizer,
                         n_warmup=ppgd_cfg.n_warmup_steps,
                     )
                 },
@@ -285,13 +306,13 @@ def test_placed_step_runs_the_full_objective(preset: str):
                 remat_recon_forwards=True,
                 remat_ci_fn=False,
                 ci_capture_keys=ci_fn.capture_keys,
-                ci_placement=rules.ci_fn,
+                ci_placement=resolve_ci_placement(arch, rules),
             ),
             objective=loss_terms,
             components_optimizer=opt_vu,
             ci_fn_optimizer=opt_ci,
             total_steps=100,
-            faithfulness=faithfulness_loss_for(model.model),
+            faithfulness=faithfulness_loss_for(model),
         )
         state, metrics = step(model, state, tokens, random.PRNGKey(100))
     assert jnp.isfinite(metrics["total"]), metrics

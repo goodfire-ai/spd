@@ -26,17 +26,17 @@ from param_decomp.core.recon_eval import FreshPGDReconEval, make_fresh_pgd_eval_
 from param_decomp.core.run import EvalInvocation, PassOperation
 from param_decomp.experiments.eval_config import EvalConfig
 
-type ScalarStep = Callable[
-    [PlacedModel, ComponentStacks, PlacedCIFn, Any, PRNGKeyArray], dict[str, Array]
+type ScalarStep[Out] = Callable[
+    [PlacedModel[Out], ComponentStacks, PlacedCIFn, Any, PRNGKeyArray], dict[str, Array]
 ]
 
 
-def _averaged_over_eval_batches(
-    step: ScalarStep,
+def _averaged_over_eval_batches[Out](
+    step: ScalarStep[Out],
     eval_config: EvalConfig,
     schedule: EvalSchedule,
     seed: int,
-    model: PlacedModel,
+    model: PlacedModel[Out],
     sample_eval_batch: Callable[[int], Any],
 ) -> PassOperation[EvalInvocation]:
     """Run `step` over the pass's eval batches and average each scalar it emits."""
@@ -61,13 +61,13 @@ def _averaged_over_eval_batches(
     return PassOperation(schedule, run)
 
 
-def make_fresh_pgd_operation(
+def make_fresh_pgd_operation[Out](
     metric: PGDReconLossConfig,
     eval_config: EvalConfig,
     schedule: EvalSchedule,
     seed: int,
     compiler_options: dict[str, bool | int | str],
-    model: PlacedModel,
+    model: PlacedModel[Out],
     ci_capture_keys: CaptureKeys,
     mesh: Mesh | None,
     sample_eval_batch: Callable[[int], Any],
@@ -88,7 +88,7 @@ def make_fresh_pgd_operation(
     )
 
     def step(
-        model: PlacedModel,
+        model: PlacedModel[Out],
         components: ComponentStacks,
         placed_ci_fn: PlacedCIFn,
         inputs: Any,
@@ -99,13 +99,13 @@ def make_fresh_pgd_operation(
     return _averaged_over_eval_batches(step, eval_config, schedule, seed, model, sample_eval_batch)
 
 
-def make_ci_l0_operation(
+def make_ci_l0_operation[Out](
     metric: CI_L0Config,
     eval_config: EvalConfig,
     schedule: EvalSchedule,
     seed: int,
     compiler_options: dict[str, bool | int | str],
-    model: PlacedModel,
+    model: PlacedModel[Out],
     ci_capture_keys: CaptureKeys,
     mesh: Mesh | None,
     sample_eval_batch: Callable[[int], Any],

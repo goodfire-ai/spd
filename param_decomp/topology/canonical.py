@@ -10,7 +10,9 @@ from typing import Literal, override
 
 _EMBED_RE = re.compile(r"^embed$")
 _OUTPUT_RE = re.compile(r"^output$")
-_LAYER_RE = re.compile(r"^(?P<layer>\d+)\.(?P<sublayer>attn|attn_fused|glu|mlp)\.(?P<proj>[a-z]+)$")
+_LAYER_RE = re.compile(
+    r"^(?P<layer>\d+)\.(?P<sublayer>attn|attn_fused|glu|mlp|moe|moe_shared)\.(?P<proj>[a-z]+)$"
+)
 
 
 class CanonicalWeight(ABC):
@@ -79,7 +81,21 @@ class MLPWeight:
     weight: Literal["up", "down"]
 
 
-FFNWeight = GLUWeight | MLPWeight
+@dataclass(frozen=True)
+class MoEExpertsWeight:
+    """One fused all-expert GLU matrix of an MoE block (every expert's blocks in one site)."""
+
+    weight: Literal["up", "down", "gate"]
+
+
+@dataclass(frozen=True)
+class MoESharedWeight:
+    """One GLU matrix of an MoE block's shared (always-on) expert."""
+
+    weight: Literal["up", "down", "gate"]
+
+
+FFNWeight = GLUWeight | MLPWeight | MoEExpertsWeight | MoESharedWeight
 
 
 @dataclass(frozen=True)
@@ -98,6 +114,10 @@ class LayerWeight(CanonicalWeight):
                 return f"{self.layer_idx}.glu.{p}"
             case MLPWeight(weight=p):
                 return f"{self.layer_idx}.mlp.{p}"
+            case MoEExpertsWeight(weight=p):
+                return f"{self.layer_idx}.moe.{p}"
+            case MoESharedWeight(weight=p):
+                return f"{self.layer_idx}.moe_shared.{p}"
 
 
 _SUBLAYER_PROJECTIONS: dict[str, tuple[type, tuple[str, ...]]] = {
@@ -105,4 +125,6 @@ _SUBLAYER_PROJECTIONS: dict[str, tuple[type, tuple[str, ...]]] = {
     "attn_fused": (FusedAttnWeight, ("qkv", "o")),
     "glu": (GLUWeight, ("up", "down", "gate")),
     "mlp": (MLPWeight, ("up", "down")),
+    "moe": (MoEExpertsWeight, ("up", "down", "gate")),
+    "moe_shared": (MoESharedWeight, ("up", "down", "gate")),
 }

@@ -48,6 +48,7 @@ from param_decomp.experiments.fast_eval_operations import _averaged_over_eval_ba
 from param_decomp.experiments.lm.eval import PreparedLMBatch
 from param_decomp.experiments.lm.eval_context import LMBatchContext, LMEvalPass
 from param_decomp.experiments.lm.scalar_eval_operations import _make_scalar_operation
+from param_decomp.targets.lm_output import LMOutput
 
 
 def _jax_average(per_batch_values: list[float], n_steps: int) -> float:
@@ -130,7 +131,7 @@ def _value_context(batch_index: int, value: float) -> LMBatchContext:
 
 def test_lm_scalar_operation_averages_residual_batch_objectives():
     def scorer(
-        _model: PlacedModel,
+        _model: PlacedModel[LMOutput],
         batch: PreparedLMBatch[Any],
         _key: PRNGKeyArray,
     ) -> dict[str, Array]:
@@ -162,7 +163,7 @@ def test_lm_scalar_operation_averages_residual_batch_objectives():
 
 def test_generic_scalar_operation_averages_residual_batch_objectives():
     def step(
-        _model: PlacedModel,
+        _model: PlacedModel[LMOutput],
         _components: ComponentStacks,
         _placed_ci_fn: PlacedCIFn,
         value: jax.Array,

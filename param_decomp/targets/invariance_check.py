@@ -30,7 +30,7 @@ from jax import random
 from param_decomp.core.adversary import (
     PersistentAdversary,
     init_persistent_sources,
-    init_sources_adam_state,
+    init_sources_opt_state,
 )
 from param_decomp.core.ci_fn import (
     Chunk,
@@ -47,6 +47,7 @@ from param_decomp.core.configs import (
     ImportanceMinimalityLossConfig,
     NonlinearityLocalityLossConfig,
     PersistentPGDReconLossConfig,
+    PlacementPresetName,
     StochasticReconSubsetLossConfig,
     UniformKSubsetRoutingConfig,
 )
@@ -74,7 +75,10 @@ from param_decomp.targets.transformer_taps import resid_tap_key
 
 
 def _run(
-    steps: int, topology: tuple[int, int, int] | None, sharding: str, census: bool
+    steps: int,
+    topology: tuple[int, int, int] | None,
+    sharding: PlacementPresetName,
+    census: bool,
 ) -> list[dict[str, float]]:
     cfg = tiny_glu_cfg()
     C, seq, gbatch = 8, 16, 8
@@ -106,8 +110,7 @@ def _run(
         vu = init_component_stacks(sites, random.PRNGKey(1))
         ci_fn = build_ci_fn(arch, model.sites, random.PRNGKey(2))
         src = init_persistent_sources(
-            model.site_names,
-            tuple(s.C for s in model.sites),
+            model.sites,
             (1, seq),
             jnp.float32,
             random.PRNGKey(3),
@@ -118,8 +121,7 @@ def _run(
         vu = init_component_stacks_placed(sites, random.PRNGKey(1), rules)
         ci_fn = init_ci_fn_placed(arch, placed.sites, random.PRNGKey(2), mesh, rules)
         src = init_persistent_sources(
-            placed.site_names,
-            tuple(s.C for s in placed.sites),
+            placed.sites,
             (1, seq),
             jnp.float32,
             random.PRNGKey(3),
@@ -157,9 +159,9 @@ def _run(
             adversaries={
                 ppgd_cfg.type: PersistentAdversary(
                     sources=src,
-                    opt_state=init_sources_adam_state(src),
+                    opt_state=init_sources_opt_state(ppgd_cfg.optimizer, src),
                     state_key=ppgd_cfg.type,
-                    adam=ppgd_cfg.optimizer,
+                    optimizer=ppgd_cfg.optimizer,
                     n_warmup=ppgd_cfg.n_warmup_steps,
                 )
             },
@@ -198,7 +200,7 @@ def _run(
         components_optimizer=opt_vu,
         ci_fn_optimizer=opt_ci,
         total_steps=100,
-        faithfulness=faithfulness_loss_for(model),
+        faithfulness=faithfulness_loss_for(placed),
     )
 
     out = []
@@ -236,7 +238,7 @@ def _run(
 def check_device_count_invariance(
     steps: int,
     topology: tuple[int, int, int],
-    sharding: str,
+    sharding: PlacementPresetName,
     *,
     census: bool,
     rel: float = 5e-4,
@@ -294,7 +296,9 @@ def main() -> None:
     topology = tuple(int(v) for v in args.mesh.split("x")) if args.mesh else (1, n_dev, 1)
     assert len(topology) == 3
     print(f"devices: {n_dev} mesh: {topology} sharding: {args.sharding!r}")
-    worst = check_device_count_invariance(args.steps, topology, args.sharding, census=args.census)
+    worst = check_device_count_invariance(
+        args.steps, topology, cast(PlacementPresetName, args.sharding), census=args.census
+    )
     print(
         f"OK: {args.steps}-step trajectory matches 1-layout vs {n_dev}-device GSPMD "
         f"(worst rel {worst:.2e}; reassociation-only)"

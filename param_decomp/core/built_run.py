@@ -41,7 +41,7 @@ class TargetSites(Protocol):
 @dataclass(frozen=True)
 class RunInstance:
     """A run's identity + logging lineage — the per-run bits that are NOT algorithm config.
-    Minted/stamped by the launcher; a toy mints its own."""
+    Resolved by the composition root; a toy mints its own."""
 
     run_name: str
     """Human-readable display name (the wandb run NAME)."""

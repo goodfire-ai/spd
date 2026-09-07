@@ -1,5 +1,7 @@
 """Declarative placement, build-time group-census validation, and strict refusals."""
 
+from typing import cast
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -17,13 +19,20 @@ from param_decomp.core.ci_fn import (
 )
 from param_decomp.core.components import (
     ComponentStacks,
+    Dense,
     SiteSpec,
     component_stacks_from_site_arrays,
 )
-from param_decomp.core.configs import PlacementTableConfig
+from param_decomp.core.configs import (
+    PlacementPresetName,
+    PlacementSpec,
+    PlacementTableConfig,
+)
 from param_decomp.core.decomposed_linear import constrain_component_activation
 from param_decomp.core.placement import (
+    CIFnPlacement,
     PlacedRule,
+    StackCensus,
     component_stacks_audit,
     component_stacks_shardings,
     component_stacks_to_compute_weights,
@@ -102,7 +111,9 @@ CI_ROWS = {
 def _sites(group_sizes: dict[tuple[int, int, int], int]) -> tuple[SiteSpec, ...]:
     """One semantic group per `(d_in, d_out, C): g` test entry."""
     return tuple(
-        SiteSpec(f"s{d_in}x{d_out}x{c}.{i}", d_in, d_out, c, f"{d_in}x{d_out}x{c}")
+        SiteSpec(
+            f"s{d_in}x{d_out}x{c}.{i}", Dense(d_in=d_in, d_out=d_out, C=c), f"{d_in}x{d_out}x{c}"
+        )
         for (d_in, d_out, c), g in group_sizes.items()
         for i in range(g)
     )
@@ -180,10 +191,10 @@ def test_unlisted_axis_is_replicated():
 
 def test_rule_validation_unknown_axes_loud_and_per_tensor_uniqueness():
     with pytest.raises(AssertionError, match="unknown mesh axes"):
-        PlacedRule(mesh=MESH, label="x", rule={"d_in": "data"})
+        PlacedRule(mesh=MESH, label="x", rule={"d_in": ("data",)})
     # a rule MAY reuse one mesh axis under several semantic names (d_in/d_out -> fsdp:
     # no single tensor carries both) — uniqueness is per-TENSOR, at spec derivation
-    row = PlacedRule(mesh=MESH, label="x", rule={"d_in": "fsdp", "d_out": ("fsdp", "tp")})
+    row = PlacedRule(mesh=MESH, label="x", rule={"d_in": ("fsdp",), "d_out": ("fsdp", "tp")})
     assert row.spec_for(("d_in", "vocab")) == P("fsdp", None)
     with pytest.raises(AssertionError, match="mesh axis twice"):
         row.spec_for(("d_in", "d_out"))
@@ -253,9 +264,13 @@ def test_duplicate_mesh_axis_within_one_assignment_rejected_statically():
         PlacedRule(mesh=MESH, label="x", rule={"d_in": ("fsdp", "fsdp")})
 
 
+UNKNOWN_PRESET: str = "fsdp2"
+DELETED_PRESET: str = "owner+zero1"
+
+
 def test_from_config_presets_and_explicit_table():
     with pytest.raises(AssertionError, match="unknown placement preset"):
-        from_config("fsdp2", MESH, TILING)
+        from_config(cast(PlacementSpec, UNKNOWN_PRESET), MESH, TILING)
     table = PlacementTableConfig.model_validate(
         {
             "components": {
@@ -346,7 +361,9 @@ def test_ci_head_split_refuses_a_non_tiling_kv_head_assignment():
     rules = from_config("owner", mesh, _sites({(64, 32, 16): 2}))
     with pytest.raises(AssertionError, match=r"'kv_head' \(dim 8\) does not tile"):
         resolve_ci_placement(_chunkwise_arch(GQACIAttention(n_heads=16, n_kv_heads=8)), rules)
-    assert resolve_ci_placement(_chunkwise_arch(MHACIAttention(n_heads=16)), rules) is rules.ci_fn
+    assert resolve_ci_placement(
+        _chunkwise_arch(MHACIAttention(n_heads=16)), rules
+    ) == CIFnPlacement.resolved(rules.ci_fn, StackCensus(stack_len=1, stack_pad=0))
 
 
 @pytest.mark.parametrize("tp", (1, 2, 4, 8))
@@ -356,7 +373,8 @@ def test_ci_head_split_resolves_at_the_llama_family_head_geometry(tp: int):
     mesh = jax.sharding.AbstractMesh((1, 8 // tp, tp), ("replicate", "fsdp", "tp"))
     rules = from_config("owner", mesh, _sites({(64, 32, 8): 2}))
     arch = _chunkwise_arch(GQACIAttention(n_heads=32, n_kv_heads=8))
-    assert resolve_ci_placement(arch, rules) is rules.ci_fn
+    resolved = resolve_ci_placement(arch, rules)
+    assert resolved is not None and resolved.attention is rules.ci_fn.attention
 
 
 def test_explicit_table_with_kv_head_unmapped_is_the_authored_kv_replication():
@@ -390,7 +408,8 @@ def test_explicit_table_with_kv_head_unmapped_is_the_authored_kv_replication():
     )
     rules = from_config(table, mesh, _sites({(64, 32, 8): 2}))
     arch = _chunkwise_arch(GQACIAttention(n_heads=8, n_kv_heads=2))  # 2 does not tile tp=4
-    assert resolve_ci_placement(arch, rules) is rules.ci_fn
+    resolved = resolve_ci_placement(arch, rules)
+    assert resolved is not None and resolved.attention is rules.ci_fn.attention
     kv_axes = ("stack", "kv_head", "d_model")
     assert rules.ci_fn.attention.optimizer_state.spec_for(kv_axes) == P(
         None, None, ("fsdp", "replicate")
@@ -408,7 +427,8 @@ def test_explicit_table_with_kv_head_unmapped_is_the_authored_kv_replication():
     assert all("kv_head" not in line for line in ci_lines), ci_lines
 
 
-def test_fsdp_only_table_replicates_parameter_state_over_replicate():
+def _fsdp_only_table() -> PlacementTableConfig:
+    """A table that never names `tp`: parameter state ÷fsdp, everything else replicated."""
     fsdp_only = {"d_in": "fsdp", "d_out": "fsdp"}
     ci_fsdp_only: dict[str, object] = {
         role: {
@@ -426,7 +446,7 @@ def test_fsdp_only_table_replicates_parameter_state_over_replicate():
     }
     ci_fsdp_only["vectors"] = {}
     ci_fsdp_only["activations"] = {"batch": ["replicate", "fsdp"]}
-    table = PlacementTableConfig.model_validate(
+    return PlacementTableConfig.model_validate(
         {
             "components": {
                 "optimizer_state": fsdp_only,
@@ -463,7 +483,10 @@ def test_fsdp_only_table_replicates_parameter_state_over_replicate():
             },
         }
     )
-    rules = from_config(table, MESH, TILING)
+
+
+def test_fsdp_only_table_replicates_parameter_state_over_replicate():
+    rules = from_config(_fsdp_only_table(), MESH, TILING)
 
     assert rules.components.optimizer_state.spec_for(V_AXES) == P(None, "fsdp", None)
     assert rules.components.compute_weights.spec_for(U_AXES) == P(None, None, "fsdp")
@@ -477,6 +500,127 @@ def test_fsdp_only_table_replicates_parameter_state_over_replicate():
     assert rules.activations.external.spec_for(("batch", "position", "d_model")) == P(
         ("replicate", "fsdp"), None, None
     )
+
+
+RESIDENT_MESH = jax.sharding.AbstractMesh((4, 2), ("data", "tp"))
+# A two-axis table in the zero1-resident spirit, authored directly rather than respelled
+# from a three-axis preset.
+_RESIDENT_TABLE = PlacementTableConfig.model_validate(
+    {
+        "components": {
+            "optimizer_state": {"C": ["tp", "data"]},
+            "compute_weights": {"C": "tp"},
+            "faithfulness_weights": {"C": ["tp", "data"]},
+            "faithfulness_deltas": {"d_in": ["tp", "data"]},
+            "operands": {"C": "tp"},
+            "ns_compute": {"stack": "data"},
+        },
+        "ci_fn": {
+            "attention": {
+                "optimizer_state": {"d_model": "data", "q_head": "tp", "kv_head": "tp"},
+                "compute_weights": {"q_head": "tp", "kv_head": "tp"},
+                "operands": {"q_head": "tp", "kv_head": "tp"},
+                "ns_compute": {"stack": "data"},
+            },
+            "ffn": {
+                "optimizer_state": {"ffn_hidden": ["tp", "data"]},
+                "compute_weights": {"ffn_hidden": "tp"},
+                "operands": {"ffn_hidden": "tp"},
+                "ns_compute": {"stack": "data"},
+            },
+            "input": {
+                "optimizer_state": {"input": "tp", "d_model": "data"},
+                "compute_weights": {"input": "tp"},
+                "operands": {"input": "tp"},
+                "ns_compute": {"stack": "data"},
+            },
+            "output": {
+                "optimizer_state": {"d_model": "data", "C": "tp"},
+                "compute_weights": {"C": "tp"},
+                "operands": {"C": "tp"},
+                "ns_compute": {"stack": "data"},
+            },
+            "vectors": {"ffn_hidden": "tp", "C": "tp"},
+            "activations": {
+                "batch": "data",
+                "input": "tp",
+                "q_head": "tp",
+                "kv_head": "tp",
+                "ffn_hidden": "tp",
+                "C": "tp",
+            },
+        },
+        "activations": {"external": {"batch": "data"}, "component": {"batch": "data", "C": "tp"}},
+        "target": {
+            "embedding": {"persist": {}, "operand": {}},
+            "normalization": {},
+            "position_encoding": {},
+            "column": {
+                "persist": {"d_out": "tp"},
+                "operand": {"d_out": "tp"},
+                "input": "external",
+                "output": "intermediate",
+            },
+            "row": {
+                "persist": {"d_in": "tp"},
+                "operand": {"d_in": "tp"},
+                "input": "intermediate",
+                "output": "external",
+            },
+            "output": {"persist": {}, "operand": {}},
+            "intermediate": {"batch": "data", "feature": "tp", "q_head": "tp", "kv_head": "tp"},
+            "component": {"input": "external", "output": "external"},
+        },
+    }
+)
+
+
+def test_the_mesh_vocabulary_is_the_tables_own_checked_once_at_bind():
+    """A table binds only a mesh spelled in the axes its rows name — preset and explicit
+    table alike, one check at construction, naming the missing axes and the mesh's."""
+    with pytest.raises(
+        AssertionError, match=r"names mesh axes \['data'\] the mesh does not declare"
+    ):
+        from_config("zero1-replicated-resident", MESH, TILING)
+    three_axis = PlacementTableConfig.model_validate(
+        {
+            "components": _OWNER_TABLE_ROWS,
+            "ci_fn": CI_ROWS,
+            "activations": _ACTIVATION_ROWS,
+            "target": TARGET_ROWS,
+        }
+    )
+    for spec in ("owner", three_axis):
+        with pytest.raises(
+            AssertionError,
+            match=r"names mesh axes \['fsdp', 'replicate'\] the mesh does not declare "
+            r"\(mesh axes: \['data', 'tp'\]\)",
+        ):
+            from_config(spec, RESIDENT_MESH, TILING)
+
+
+def test_an_explicit_two_axis_table_binds_the_data_tp_mesh():
+    rules = from_config(_RESIDENT_TABLE, RESIDENT_MESH, TILING)
+    assert rules.components.optimizer_state.spec_for(V_AXES) == P(None, None, ("tp", "data"))
+    assert rules.components.compute_weights.spec_for(V_AXES) == P(None, None, "tp")
+    assert rules.activations.external.spec_for(("batch", "position", "feature")) == P(
+        "data", None, None
+    )
+    assert rules.target.column.persist.spec_for(("d_out", "d_in")) == P("tp", None)
+
+
+def test_a_multi_device_mesh_axis_no_row_shards_over_refuses():
+    """An authored mesh axis of size > 1 that no row names would replicate the whole run
+    across it; a size-1 axis says nothing, so a table need not name it (the fsdp-only
+    table binds `tp: 1` in `test_fsdp_only_table_replicates_parameter_state_over_replicate`)."""
+    with pytest.raises(
+        AssertionError, match=r"shards nothing over mesh axes \['tp'\] \(sizes \[2\]\)"
+    ):
+        from_config(
+            _fsdp_only_table(),
+            jax.sharding.AbstractMesh((2, 2, 2), ("replicate", "fsdp", "tp")),
+            TILING,
+        )
 
 
 def test_component_linear_and_ci_constraints_are_derived_from_authored_rows():
@@ -503,7 +647,7 @@ def test_component_linear_and_ci_constraints_are_derived_from_authored_rows():
             "target": TARGET_ROWS,
         }
     )
-    rules = from_config(table, mesh, (SiteSpec("linear", 4, 6, 2, "linear"),))
+    rules = from_config(table, mesh, (SiteSpec("linear", Dense(d_in=4, d_out=6, C=2), "linear"),))
     v_plan = rules.component_linear_plan(
         ("d_in", "C"),
         ("batch", "feature"),
@@ -560,7 +704,9 @@ def test_ci_transformer_derives_megatron_row_and_column_plans():
             "target": TARGET_ROWS,
         }
     )
-    ci = from_config(table, mesh, (SiteSpec("linear", 4, 6, 2, "linear"),)).ci_fn
+    ci = from_config(
+        table, mesh, (SiteSpec("linear", Dense(d_in=4, d_out=6, C=2), "linear"),)
+    ).ci_fn
     ndim = 3  # [batch, position, feature]
 
     q = ci.linear_plan("attention", ("q_head", "d_model"), ndim, transposed=True)
@@ -618,26 +764,31 @@ def test_describe_marks_every_execution_row_enforced_and_flags_large_replication
 # ── strict construction: the group census + non-tiling refusals ──────────────
 
 
-def test_strict_owner_refuses_a_non_tiling_group_at_build():
-    # the refusal is the UX: it names every non-tiling group with its stack length,
-    # the sharded extent, and both remedies (mesh change or a stack-free placement)
-    with pytest.raises(
-        AssertionError,
-        match=r"128x64x8 \(stacks 1\).*no fallback.*divides 4.*sharding: zero1",
-    ):
-        from_config("owner", MESH, MIXED)
+def test_owner_pads_a_non_tiling_group_at_build():
+    # a stack that doesn't tile the ÷replicate cut resolves to an enumerated persist
+    # pad — 1 pads to 4 (pad 3), the tiling group stays pad-free
+    census = from_config("owner", MESH, MIXED).components.group_census
+    assert census["64x32x8"].stack_pad == 0
+    assert census["128x64x8"].stack_pad == 3
+    assert census["128x64x8"].padded_stack_len == 4
+    assert census["128x64x8"].stack_len == 1
 
 
 def test_owner_zero1_is_not_a_preset():
     with pytest.raises(AssertionError, match="unknown placement preset 'owner\\+zero1'"):
-        from_config("owner+zero1", MESH, MIXED)
+        from_config(cast(PlacementSpec, DELETED_PRESET), MESH, MIXED)
 
 
 def test_construction_resolves_the_group_census():
     rules = from_config("owner", MESH, TILING)
-    assert dict(rules.components.group_stack_lens) == {"64x32x8": 4}
+    census = dict(rules.components.group_census)
+    assert {name: entry.stack_len for name, entry in census.items()} == {"64x32x8": 4}
+    assert census["64x32x8"].factorization == Dense(d_in=64, d_out=32, C=8)
     mixed = from_config("zero1", MESH, MIXED)
-    assert dict(mixed.components.group_stack_lens) == {"64x32x8": 4, "128x64x8": 1}
+    assert {name: entry.stack_len for name, entry in mixed.components.group_census.items()} == {
+        "64x32x8": 4,
+        "128x64x8": 1,
+    }
 
 
 _OWNER_TABLE_ROWS = {
@@ -660,7 +811,7 @@ _ACTIVATION_ROWS = {
 }
 
 
-def test_explicit_table_stack_sharding_refuses_non_tiling_groups():
+def test_explicit_table_stack_sharding_pads_non_tiling_groups():
     strict = PlacementTableConfig.model_validate(
         {
             "components": _OWNER_TABLE_ROWS,
@@ -669,9 +820,10 @@ def test_explicit_table_stack_sharding_refuses_non_tiling_groups():
             "target": TARGET_ROWS,
         }
     )
-    with pytest.raises(AssertionError, match=r"128x64x8 \(stacks 1\).*no fallback"):
-        from_config(strict, MESH, MIXED)
-    assert from_config(strict, MESH, TILING) is not None
+    census = from_config(strict, MESH, MIXED).components.group_census
+    assert census["128x64x8"].stack_pad == 3
+    tiling = from_config(strict, MESH, TILING).components.group_census
+    assert all(entry.stack_pad == 0 for entry in tiling.values())
 
 
 def test_fallback_rows_are_unrepresentable_in_the_schema():
@@ -717,7 +869,10 @@ def test_single_device_construction_tiles_trivially():
     # a consumer re-placing a finished run on one device: every stack length divides 1,
     # so even `owner` constructs over the mixed census
     rules = from_config("owner", SINGLE_DEVICE_MESH, MIXED)
-    assert dict(rules.components.group_stack_lens) == {"64x32x8": 4, "128x64x8": 1}
+    assert {name: entry.stack_len for name, entry in rules.components.group_census.items()} == {
+        "64x32x8": 4,
+        "128x64x8": 1,
+    }
 
 
 # ── the consumer boundary: validation of the received assignment ─────────────
@@ -735,7 +890,9 @@ def _stacks_with_tiling_and_non_tiling_groups():
 @pytest.mark.multidevice
 @pytest.mark.skipif(len(jax.devices()) < 4, reason="requires four local devices")
 @pytest.mark.parametrize("preset", ("owner", "zero1"))
-def test_component_compute_weight_transition_executes_gather_and_transpose(preset: str):
+def test_component_compute_weight_transition_executes_gather_and_transpose(
+    preset: PlacementPresetName,
+):
     mesh = Mesh(
         np.asarray(jax.devices()[:4]).reshape(2, 2, 1),
         ("replicate", "fsdp", "tp"),

@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from param_decomp.core.objective import build_targeted_objective
+from param_decomp.experiments.lm.arithmetic_probe import build_arithmetic_probe
 from param_decomp.experiments.lm.config import LMExperimentConfig, LMTargetedExperimentConfig
 from param_decomp.experiments.lm.targeted_data import (
     ArithmeticGridPromptsConfig,
@@ -21,9 +22,9 @@ _CONFIGS_DIR = Path(__file__).parents[3] / "experiments" / "lm" / "configs"
 
 
 class _StubTokenizer:
-    """One id per character — every `<a><op><b>=` prompt over 1-digit operands is 4 ids,
-    every 1-digit answer 1 id, so the probe's single-length asserts hold without any HF
-    artifact."""
+    """One id per character, no BOS — the Qwen-family number geometry exactly: digits
+    tokenize per digit, so same-digit-count operands share one prompt length while any
+    answer past 9 is multi-token."""
 
     def encode(self, text: str, *, add_special_tokens: bool) -> list[int]:
         del add_special_tokens
@@ -40,6 +41,19 @@ def test_arithmetic_pool_runs_at_natural_prompt_length():
     assert pool.tokens.dtype == np.int32
 
 
+def test_arithmetic_pool_admits_multi_token_answers():
+    """The pool contract is prompt geometry only (T8): `[1, 9] x [1, 9]` sums reach 18 —
+    two ids under per-digit tokenization, which the eval probe refuses but a training
+    pool, which never scores an answer position, must not."""
+    pool = build_prompt_pool(
+        ArithmeticGridPromptsConfig(operation="add", a_range=(1, 9), b_range=(1, 9)),
+        _StubTokenizer(),
+    )
+    assert pool.tokens.shape == (81, 4)
+    with pytest.raises(AssertionError, match="single answer token"):
+        build_arithmetic_probe("add", (1, 9), (1, 9), _StubTokenizer())
+
+
 def test_prompts_file_pool_requires_one_shared_length(tmp_path: Path):
     path = tmp_path / "prompts.txt"
     path.write_text("abcd\n\nefgh\n")
@@ -47,6 +61,19 @@ def test_prompts_file_pool_requires_one_shared_length(tmp_path: Path):
     assert pool.tokens.shape == (2, 4)
 
     path.write_text("abcd\ntoolong\n")
+    with pytest.raises(AssertionError, match="ONE shared length"):
+        build_prompt_pool(PromptsFileConfig(path=path), _StubTokenizer())
+
+
+def test_prompts_file_pool_under_per_digit_tokenization(tmp_path: Path):
+    """Under a per-digit number tokenizer (the Qwen family) file prompts share a length
+    exactly when their digit counts line up; mixed digit counts refuse rather than pad."""
+    path = tmp_path / "prompts.txt"
+    path.write_text("12+34=\n56+78=\n")
+    pool = build_prompt_pool(PromptsFileConfig(path=path), _StubTokenizer())
+    assert pool.tokens.shape == (2, 6)
+
+    path.write_text("12+34=\n9+8=\n")
     with pytest.raises(AssertionError, match="ONE shared length"):
         build_prompt_pool(PromptsFileConfig(path=path), _StubTokenizer())
 

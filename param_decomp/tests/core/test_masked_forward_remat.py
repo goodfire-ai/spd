@@ -41,6 +41,7 @@ from param_decomp.core.model import (
 )
 from param_decomp.core.placement import from_config
 from param_decomp.core.sharding import place_target
+from param_decomp.target_ports.llama import AttentionImplementation
 from param_decomp.targets.glu_transformer import (
     KIND_ORDER,
     GLUDecomposedModel,
@@ -48,8 +49,8 @@ from param_decomp.targets.glu_transformer import (
     glu_site_specs,
     site_name,
 )
+from param_decomp.targets.lm_output import LMOutput
 from param_decomp.targets.testing import tiny_glu_cfg, tiny_glu_decomposed_lm
-from param_decomp.vendored_jax.llama import AttentionImplementation
 
 pytestmark = [
     pytest.mark.multidevice,
@@ -108,7 +109,7 @@ def _place_batched[T](mesh: Mesh, tree: T) -> T:
 
 
 def _loss_fn(
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     tokens: Array,
     masks: dict[str, Array],
     deltas: dict[str, Array],
@@ -130,6 +131,7 @@ def _loss_fn(
         capture_sum = sum(
             jnp.sum(value.astype(jnp.float32) ** 2) for value in result.captures.values()
         )
+        assert isinstance(result.output, jax.Array)
         return jnp.sum(result.output.astype(jnp.float32) ** 2) / 1e3 + capture_sum
 
     return loss
@@ -213,6 +215,7 @@ def test_remat_off_saves_only_batch_scaled_residuals(implementation: AttentionIm
             capture_sum = sum(
                 jnp.sum(value.astype(jnp.float32) ** 2) for value in result.captures.values()
             )
+            assert isinstance(result.output, jax.Array)
             return jnp.sum(result.output.astype(jnp.float32) ** 2) / 1e3 + capture_sum
 
         residuals = saved_residuals(loss, prepared)

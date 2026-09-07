@@ -37,7 +37,7 @@ from jaxtyping import Array, Float, Int
 from orbax.checkpoint.checkpoint_managers import preservation_policy
 from orbax.checkpoint.type_handlers import ArrayHandler, register_type_handler
 
-from param_decomp.core.model import BATCH_AXES
+from param_decomp.core.placement import batch_axes
 from param_decomp.core.sharding import HSDP_MESH_AXES, initialize_topology
 from param_decomp.infra.dataset_store import resolve_dataset_ref
 from param_decomp.pretrain.batch_data import BatchSchedule, ShardServer, scan_shards
@@ -175,7 +175,7 @@ def _replicate(tree: PretrainModel, mesh: Mesh) -> PretrainModel:
 
 
 def _global_token_batch(local: np.ndarray, mesh: Mesh, global_batch: int) -> jax.Array:
-    sharding = NamedSharding(mesh, P(BATCH_AXES))
+    sharding = NamedSharding(mesh, P(batch_axes(mesh)))
     return jax.make_array_from_process_local_data(sharding, local, (global_batch, local.shape[1]))
 
 
@@ -410,12 +410,12 @@ def main(config: Path) -> None:
 
 
 def _stamp_local_identity(cfg: PretrainConfig) -> PretrainConfig:
-    """A hand-run carries no launcher stamp: mint an ephemeral run id. `data_root` has no
-    such fallback — the config must carry it, authored or launcher-stamped."""
+    """A direct run mints an ephemeral run id. `data_root` has no fallback, so the
+    config must carry it."""
     import secrets
 
     assert cfg.data_root is not None, (
-        "config carries no data_root: author it in the YAML or launch via a stamping launcher"
+        "config carries no data_root: author it in the YAML before launch"
     )
     return cfg.model_copy(update={"run_id": cfg.run_id or f"t-{secrets.token_hex(4)}"})
 

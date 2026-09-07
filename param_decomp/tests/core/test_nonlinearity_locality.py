@@ -8,9 +8,12 @@ from pydantic import ValidationError
 
 from param_decomp.core.components import (
     ComponentStacks,
+    Dense,
+    ExpertBlocked,
     SiteSpec,
     component_stacks_from_sites,
     nonlinearity_partitions,
+    site_slots_for,
 )
 from param_decomp.core.configs import (
     AnyLossMetricConfig,
@@ -32,9 +35,11 @@ from param_decomp.core.nonlinearity_eval import (
     NONLINEARITY_EVAL_RELATIVE_THRESHOLD,
     NONLINEARITY_EVAL_SOFT_COUNT_KEY,
     ComponentNonlinearityStats,
+    SiteNonlinearityStats,
     component_nonlinearity_stats,
     make_nonlinearity_eval_step,
     nonlinearity_log_entries,
+    site_nonlinearity_stats,
 )
 from param_decomp.core.objective import build_objective
 from param_decomp.core.schedule import Knot, ScheduleConfig
@@ -248,9 +253,7 @@ def test_site_spec_rejects_bad_partitions():
     with pytest.raises(AssertionError):  # 10 % 4 != 0
         SiteSpec(
             "s",
-            4,
-            10,
-            3,
+            Dense(d_in=4, d_out=10, C=3),
             "s",
             nonlinearity_partition=QueryHeads(4),
         )
@@ -379,8 +382,9 @@ def test_component_nonlinearity_stats_endpoints_and_long_tail():
 def test_nonlinearity_eval_gathers_non_addressable_component_reductions(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    values = jnp.array([1.0, 3.0])
-    stats = {
+    site = SiteSpec("in", Dense(d_in=4, d_out=8, C=2), "in", nonlinearity_partition=Neurons())
+    values = jnp.array([[1.0, 3.0]])
+    stack_stats = {
         "in": ComponentNonlinearityStats(
             soft_use_count=values,
             effective_use_count_per_subcomponent=values + 1,
@@ -398,6 +402,8 @@ def test_nonlinearity_eval_gathers_non_addressable_component_reductions(
         "param_decomp.core.nonlinearity_eval.multihost_utils.process_allgather", gather
     )
 
+    stats = site_nonlinearity_stats(stack_stats, (site,))
+    np.testing.assert_array_equal(stats["in"].soft_use_count, [1.0, 3.0])
     entries = nonlinearity_log_entries(stats, {"in": np.ones(2)}, {"in": Neurons()})
     assert entries[f"eval/nonlinearity/sites/in/all/{NONLINEARITY_EVAL_SOFT_COUNT_KEY}"] == 2
     assert len(calls) == 2
@@ -420,8 +426,8 @@ def test_component_nonlinearity_stats_scale_by_use_multiplicity():
 
 def test_nonlinearity_eval_step_and_log_entries():
     sites = (
-        SiteSpec("in", 4, 8, 3, "in", nonlinearity_partition=Neurons()),
-        SiteSpec("out", 8, 4, 3, "out"),
+        SiteSpec("in", Dense(d_in=4, d_out=8, C=3), "in", nonlinearity_partition=Neurons()),
+        SiteSpec("out", Dense(d_in=8, d_out=4, C=3), "out"),
     )
     partitions = nonlinearity_partitions(sites)
     assert set(partitions) == {"in"}
@@ -430,7 +436,10 @@ def test_nonlinearity_eval_step_and_log_entries():
         for name, spec in (("in", sites[0]), ("out", sites[1]))
     }
     components = component_stacks_from_sites(vu)
-    stats = make_nonlinearity_eval_step(partitions, {})(components)
+    stack_stats = make_nonlinearity_eval_step(sites, {})(components)
+    assert set(stack_stats) == {"in"}
+    assert stack_stats["in"].soft_use_count.shape == (1, 3)
+    stats = site_nonlinearity_stats(stack_stats, sites)
     assert set(stats) == {"in"}
 
     prefix = "eval/nonlinearity/sites/in"
@@ -457,17 +466,17 @@ def test_nonlinearity_eval_step_and_log_entries():
 
 def test_nonlinearity_log_aggregates_pool_components_within_unit_kind():
     stats = {
-        "n0": ComponentNonlinearityStats(
-            soft_use_count=jnp.array([1.0, 3.0]),
-            effective_use_count_per_subcomponent=jnp.array([2.0, 4.0]),
+        "n0": SiteNonlinearityStats(
+            soft_use_count=np.array([1.0, 3.0]),
+            effective_use_count_per_subcomponent=np.array([2.0, 4.0]),
         ),
-        "n1": ComponentNonlinearityStats(
-            soft_use_count=jnp.array([5.0, 7.0]),
-            effective_use_count_per_subcomponent=jnp.array([6.0, 8.0]),
+        "n1": SiteNonlinearityStats(
+            soft_use_count=np.array([5.0, 7.0]),
+            effective_use_count_per_subcomponent=np.array([6.0, 8.0]),
         ),
-        "h0": ComponentNonlinearityStats(
-            soft_use_count=jnp.array([9.0, 11.0]),
-            effective_use_count_per_subcomponent=jnp.array([10.0, 12.0]),
+        "h0": SiteNonlinearityStats(
+            soft_use_count=np.array([9.0, 11.0]),
+            effective_use_count_per_subcomponent=np.array([10.0, 12.0]),
         ),
     }
     ci_means = {
@@ -491,4 +500,33 @@ def test_nonlinearity_log_aggregates_pool_components_within_unit_kind():
     attention = "eval/nonlinearity/aggregates/attention_head"
     assert entries[f"{attention}/mean_ci_gt_0/{NONLINEARITY_EVAL_SOFT_COUNT_KEY}"] == pytest.approx(
         11.0
+    )
+
+
+def test_expert_blocked_site_stats_land_in_flat_expert_major_order():
+    """An expert-blocked site's U is block-dim `[E, c, d]`; its statistics must land as
+    one `[C]` vector in the flat expert-major order every per-component consumer emits
+    (`narrow_component_sums`, the CI means): component `(e, j)` at `e·c + j`."""
+    n_experts, c_per_expert, d_out = 3, 2, 8
+    site = SiteSpec(
+        "moe",
+        ExpertBlocked(n_experts=n_experts, d_in=4, d_out=d_out, c_per_expert=c_per_expert),
+        "experts",
+        nonlinearity_partition=Neurons(),
+    )
+    # component (e, j) writes uniformly to its first `e·c + j + 1` neurons, so its
+    # effective use count IS its flat expert-major index + 1
+    flat_index = jnp.arange(n_experts * c_per_expert).reshape(n_experts, c_per_expert)
+    u = (jnp.arange(d_out)[None, None, :] <= flat_index[..., None]).astype(jnp.float32)
+    components = ComponentStacks(
+        stacks={"experts": (jnp.zeros((1, n_experts, 4, c_per_expert)), u[None])},
+        site_slots=site_slots_for((site,)),
+    )
+    stack_stats = make_nonlinearity_eval_step((site,), {})(components)
+    assert stack_stats["experts"].soft_use_count.shape == (1, n_experts, c_per_expert)
+    stats = site_nonlinearity_stats(stack_stats, (site,))["moe"]
+    np.testing.assert_allclose(
+        stats.effective_use_count_per_subcomponent,
+        np.arange(1, n_experts * c_per_expert + 1),
+        rtol=1e-6,
     )

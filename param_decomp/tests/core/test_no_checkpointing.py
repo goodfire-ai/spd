@@ -9,6 +9,7 @@ didn't. The re-entry refusal is `_make_saver`'s marker alone, so it is pinned in
 that an engine assert surfaces as a nonzero toy-entry exit is already `test_toy_resume`'s
 horizon-refusal coverage."""
 
+import json
 import os
 import signal
 import subprocess
@@ -27,14 +28,14 @@ _CONFIG = Path(__file__).parents[2] / "experiments" / "tms" / "configs" / "tms_5
 _RUN_ID = "p-1111abcd"
 
 
-def _tiny_no_checkpoint_config(path: Path, steps: int) -> Path:
+def _tiny_no_checkpoint_config(path: Path, steps: int, train_log_every: int = 1) -> Path:
     raw = yaml.safe_load(_CONFIG.read_text())
     raw["pd"]["steps"] = steps
     raw["pd"]["batch_size"] = 8
     raw["pd"]["faithfulness_warmup_steps"] = 0
     raw["target"]["pretrain"]["steps"] = 2
     raw["target"]["pretrain"]["batch_size"] = 8
-    raw["cadence"] = {"train_log_every": 1, "checkpointing": {"kind": "none"}}
+    raw["cadence"] = {"train_log_every": train_log_every, "checkpointing": {"kind": "none"}}
     raw["eval"] = None
     raw["wandb"] = None
     config = path / "tiny_tms_no_ckpt.yaml"
@@ -103,12 +104,13 @@ def test_reentering_a_no_checkpoint_run_dir_refuses(tmp_path: Path) -> None:
         _make_saver(NoCheckpointing(), tmp_path, is_main=True)
 
 
-def test_sigterm_exits_without_saving(tmp_path: Path) -> None:
-    """The SIGTERM handler's save is skipped too: a preempted no-checkpoint run must exit
-    cleanly having written nothing, not fall back to the requeue save."""
-    config = _tiny_no_checkpoint_config(tmp_path, steps=1_000_000)
+def _preempt_after_first_metric(
+    tmp_path: Path, train_log_every: int
+) -> tuple[subprocess.Popen[str], str, str, Path]:
+    """Start an endless no-checkpoint run, SIGTERM it once its first train metric lands, and
+    return the finished child with its streams and metrics path."""
+    config = _tiny_no_checkpoint_config(tmp_path, steps=1_000_000, train_log_every=train_log_every)
     data_root = tmp_path / "data"
-    env = _env(tmp_path)
     metrics = data_root / "runs" / _RUN_ID / "metrics.jsonl"
 
     child = subprocess.Popen(
@@ -116,7 +118,7 @@ def test_sigterm_exits_without_saving(tmp_path: Path) -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        env=env,
+        env=_env(tmp_path),
     )
     deadline = time.monotonic() + 300
     while not (metrics.exists() and metrics.read_text().strip()):
@@ -125,8 +127,29 @@ def test_sigterm_exits_without_saving(tmp_path: Path) -> None:
         time.sleep(0.2)
     child.send_signal(signal.SIGTERM)
     stdout, stderr = child.communicate(timeout=120)
+    return child, stdout, stderr, metrics
+
+
+def test_sigterm_exits_without_saving(tmp_path: Path) -> None:
+    """The SIGTERM handler's save is skipped too: a preempted no-checkpoint run must exit
+    cleanly having written nothing, not fall back to the requeue save."""
+    child, stdout, stderr, metrics = _preempt_after_first_metric(tmp_path, train_log_every=1)
 
     assert child.returncode == 0, stderr
     assert "SIGTERM: no checkpoint (cadence.checkpointing: none), exiting" in stdout
     assert "checkpoint saved" not in stdout
-    assert not (data_root / "runs" / _RUN_ID / "ckpts").exists()
+    assert not (metrics.parent / "ckpts").exists()
+
+
+def test_sigterm_is_serviced_at_the_next_train_log_boundary(tmp_path: Path) -> None:
+    """The cross-rank SIGTERM consensus is taken only at train-log steps, so the run exits
+    at a train-log boundary: the last logged step is a multiple of `train_log_every` and
+    every train-log step up to it was logged."""
+    train_log_every = 3
+    child, stdout, stderr, metrics = _preempt_after_first_metric(tmp_path, train_log_every)
+
+    assert child.returncode == 0, stderr
+    assert "SIGTERM: no checkpoint (cadence.checkpointing: none), exiting" in stdout
+    steps = [json.loads(line)["step"] for line in metrics.read_text().splitlines()]
+    assert steps and steps[-1] % train_log_every == 0, steps
+    assert steps == list(range(train_log_every, steps[-1] + 1, train_log_every)), steps

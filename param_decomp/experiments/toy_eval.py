@@ -7,40 +7,48 @@ read the toy's single-feature CI probe.
 
 from collections.abc import Callable
 
-import jax
 from jax.sharding import Mesh
 from jaxtyping import Array
 
 from param_decomp.core.built_run import BuiltRun, TargetSites
 from param_decomp.core.configs import (
     CI_L0Config,
+    CIHistogramsConfig,
+    CIMeanPerComponentConfig,
+    ComponentActivationDensityConfig,
+    IdentityCIErrorConfig,
     PDConfig,
+    PermutedCIPlotsConfig,
     PGDReconLossConfig,
     UVPlotsConfig,
-    WellTemperednessConfig,
 )
 from param_decomp.core.eval_schedule import EvalSchedule
 from param_decomp.core.metrics import LogRecord
 from param_decomp.core.model import CaptureKeys, PlacedModel
 from param_decomp.core.run import EvalInvocation, PassOperation
 from param_decomp.core.train import TrainState
-from param_decomp.core.well_temperedness_eval import make_well_temperedness_operation
 from param_decomp.experiments import toy_uv_eval
 from param_decomp.experiments.eval_config import EvalConfig, schedule_for
 from param_decomp.experiments.fast_eval_operations import (
     make_ci_l0_operation,
     make_fresh_pgd_operation,
 )
-from param_decomp.experiments.lm.eval_config import CEandKLLossesConfig
+from param_decomp.experiments.lm.eval_config import (
+    ArithmeticCIGridConfig,
+    CEandKLLossesConfig,
+    CIMaskedAttnPatternsReconLossConfig,
+    StochasticAttnPatternsReconLossConfig,
+    WellTemperednessConfig,
+)
 
 type ToyRun[TargetT: TargetSites] = BuiltRun[None, TargetT, PDConfig]
 type ProbeCI = Callable[[TrainState], dict[str, Array]]
 
 
-def _make_uv_plots_operation(
+def _make_uv_plots_operation[Out](
     metric: UVPlotsConfig,
     schedule: EvalSchedule,
-    model: PlacedModel,
+    model: PlacedModel[Out],
     probe_ci: ProbeCI,
     wandb_configured: bool,
 ) -> PassOperation[EvalInvocation]:
@@ -57,11 +65,11 @@ def _make_uv_plots_operation(
     return PassOperation(schedule, run)
 
 
-def make_toy_evaluation_operations(
+def make_toy_evaluation_operations[Out](
     eval_config: EvalConfig,
     seed: int,
     compiler_options: dict[str, bool | int | str],
-    model: PlacedModel,
+    model: PlacedModel[Out],
     ci_capture_keys: CaptureKeys,
     mesh: Mesh,
     sample_eval_batch: Callable[[int], Array],
@@ -70,15 +78,6 @@ def make_toy_evaluation_operations(
 ) -> tuple[PassOperation[EvalInvocation], ...]:
     """Exhaustively bind each authored toy metric to one executable operation."""
     operations: list[PassOperation[EvalInvocation]] = []
-    well_temperedness_base_key = jax.random.PRNGKey(seed + 2)
-
-    def well_temperedness_inputs(context: EvalInvocation) -> tuple[Array, jax.Array]:
-        pass_index = context.now_step // eval_config.every
-        return (
-            sample_eval_batch(pass_index * eval_config.n_steps),
-            jax.random.fold_in(well_temperedness_base_key, pass_index),
-        )
-
     for metric in eval_config.metrics:
         schedule = schedule_for(metric, eval_config)
         match metric:
@@ -110,23 +109,26 @@ def make_toy_evaluation_operations(
                 operation = _make_uv_plots_operation(
                     metric, schedule, model, probe_ci, wandb_configured
                 )
-            case WellTemperednessConfig():
-                operation = make_well_temperedness_operation(
-                    metric,
-                    schedule,
-                    model,
-                    ci_capture_keys,
-                    mesh,
-                    compiler_options,
-                    inputs_for_context=well_temperedness_inputs,
-                    figure_rendering="synchronous" if wandb_configured else None,
-                )
             case CEandKLLossesConfig():
                 raise AssertionError(
                     "CEandKLLosses scores next-token cross-entropy and KL over a categorical "
                     "output distribution; a toy target emits neither tokens nor logits"
                 )
-            case _:
+            case WellTemperednessConfig():
+                raise AssertionError(
+                    "WellTemperedness ablates components at token positions of an LM; a "
+                    "positionless toy target has no positions to ablate at"
+                )
+            case (
+                ArithmeticCIGridConfig()
+                | CIHistogramsConfig()
+                | CIMaskedAttnPatternsReconLossConfig()
+                | CIMeanPerComponentConfig()
+                | ComponentActivationDensityConfig()
+                | IdentityCIErrorConfig()
+                | PermutedCIPlotsConfig()
+                | StochasticAttnPatternsReconLossConfig()
+            ):
                 raise AssertionError(f"eval metric {metric.type!r} has no toy binding")
         operations.append(operation)
     return tuple(operations)

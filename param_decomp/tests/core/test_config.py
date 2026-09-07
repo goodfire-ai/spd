@@ -1,6 +1,6 @@
 """The single-file run-config route — the trainer's only config surface.
 
-The run id is NOT a config field: the launcher mints one and passes it to the build
+The run id is NOT a config field: the entry point mints one and passes it to the build
 helpers as an explicit arg (`RUN_ID` here), and the run dir derives from it
 (`<data_root>/runs/<run_id>`)."""
 
@@ -68,6 +68,16 @@ def test_b128_config_converts():
         "StochasticReconSubsetLoss",
         "PersistentPGDReconLoss",
     ]
+
+
+def test_normalize_at_one_parses_from_run_config():
+    raw = _reference_lm_raw()
+    imp = next(m for m in raw["pd"]["loss_metrics"] if m["type"] == "ImportanceMinimalityLoss")
+    imp["normalize_at_one"] = True
+    authored = LMExperimentConfig.model_validate(raw)
+    parsed = next(m for m in authored.pd.loss_metrics if m.type == "ImportanceMinimalityLoss")
+    assert isinstance(parsed, ImportanceMinimalityLossConfig)
+    assert parsed.normalize_at_one is True
 
 
 def test_implicit_faithful_config_still_requires_exactly_one_faithfulness_term():
@@ -171,7 +181,7 @@ def test_eval_pgd_threads_hidden_acts_reconstruction_into_built_probe():
                 "source_shape": "c",
                 "n_steps": 1,
                 "step_size": 0.1,
-                "hidden_acts_reconstruction": {"coeff": 1.0, "points": ["resid.19"]},
+                "hidden_acts_reconstruction": {"coeff": 0.0, "points": ["resid.19"]},
             },
         ],
     }
@@ -179,9 +189,18 @@ def test_eval_pgd_threads_hidden_acts_reconstruction_into_built_probe():
     assert authored.eval is not None
     [metric] = [m for m in authored.eval.metrics if isinstance(m, PGDReconLossConfig)]
     assert metric.hidden_acts_reconstruction is not None
-    assert metric.hidden_acts_reconstruction.coeff == 1.0
+    assert metric.hidden_acts_reconstruction.coeff == 0.0
     assert metric.hidden_acts_reconstruction.points == ("resid.19",)
     build_experiment_config(authored, RUN_ID, DATA_ROOT)
+
+
+def test_training_hidden_acts_reconstruction_refuses_measurement_only_coefficient():
+    raw = _reference_lm_raw()
+    recon = next(metric for metric in raw["pd"]["loss_metrics"] if "Recon" in metric["type"])
+    recon["hidden_acts_reconstruction"] = {"coeff": 0.0, "points": ["resid.19"]}
+
+    with pytest.raises(ValidationError, match="zero is reserved for eval-only measurement"):
+        LMExperimentConfig.model_validate(raw)
 
 
 def test_unsupported_settings_refuse():

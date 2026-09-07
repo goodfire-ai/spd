@@ -16,7 +16,8 @@ from jax.sharding import AxisType, Mesh
 
 from param_decomp.core.adversary import (
     PersistentAdversary,
-    Sources,
+    SourcesAdamState,
+    SourceStacks,
     init_persistent_sources,
     init_sources_adam_state,
     sources_adam_ascend_project,
@@ -68,12 +69,13 @@ from param_decomp.core.train import (
     TrainState,
     make_train_step,
 )
+from param_decomp.target_ports.llama import LlamaConfig
 from param_decomp.targets.glu_transformer import (
     glu_site_specs,
     mlp_family_site_cs,
 )
+from param_decomp.targets.lm_output import LMOutput
 from param_decomp.targets.testing import tiny_glu_cfg, tiny_glu_decomposed_lm
-from param_decomp.vendored_jax.llama import LlamaConfig
 
 
 def _ppgd_cfg(n_warmup: int) -> PersistentPGDReconLossConfig:
@@ -92,18 +94,20 @@ def _ppgd_cfg(n_warmup: int) -> PersistentPGDReconLossConfig:
     )
 
 
-def _adversary(src: Sources, cfg: PersistentPGDReconLossConfig) -> PersistentAdversary:
+def _adversary(src: SourceStacks, cfg: PersistentPGDReconLossConfig) -> PersistentAdversary:
     assert cfg.coeff is not None
     return PersistentAdversary(
         sources=src,
         opt_state=init_sources_adam_state(src),
         state_key=cfg.type,
-        adam=cfg.optimizer,
+        optimizer=cfg.optimizer,
         n_warmup=cfg.n_warmup_steps,
     )
 
 
-def _chunkwise_arch(model: DecomposedModel, cfg: LlamaConfig) -> ChunkwiseTransformerCIArch:
+def _chunkwise_arch(
+    model: DecomposedModel[LMOutput], cfg: LlamaConfig
+) -> ChunkwiseTransformerCIArch:
     """The old `CIArch(16, 2, 2, 32)` → one chunk reading the residual entering the first
     decomposed block and emitting CI for every site; `input_dim` is the residual width."""
     site_names = model.site_names
@@ -124,9 +128,7 @@ _C, _SEQ = 8, 16
 
 
 @cache
-def _optimizers_and_step(
-    muon_components: bool, muon_ci_fn: bool, stacked_impl: bool, freq_ema: bool = False
-):
+def _optimizers_and_step(muon_components: bool, muon_ci_fn: bool, freq_ema: bool = False):
     """Everything in `_build` that the seed cannot reach.
 
     The step is built from statics only — the model, the loss terms, and the two
@@ -138,33 +140,29 @@ def _optimizers_and_step(
     sites = glu_site_specs(cfg, mlp_family_site_cs(3, 4, _C))
     model = tiny_glu_decomposed_lm(cfg, sites, jax.random.PRNGKey(0))
 
-    def muon_impl(dim_nums: "Callable[[optax.Params], optax.Params] | None"):
-        if stacked_impl:
-            return stacked_muon(
-                1e-3,
-                beta=0.95,
-                weight_decay=0.0,
-                consistent_rms=0.2,
-                muon_weight_dimension_numbers=dim_nums,
-                ns_steps=5,
-                ns_dtype=jnp.dtype(jnp.float32),
-                waypoints=None,
-            )
-        return optax.contrib.muon(1e-3, consistent_rms=0.2, muon_weight_dimension_numbers=dim_nums)
+    def muon(dim_nums: Callable[[optax.Params], optax.Params]):
+        return stacked_muon(
+            1e-3,
+            beta=0.95,
+            weight_decay=0.0,
+            consistent_rms=0.2,
+            muon_weight_dimension_numbers=dim_nums,
+            ns_steps=5,
+            ns_dtype=jnp.dtype(jnp.float32),
+            waypoints=None,
+        )
 
     # Production labeling (`run_state.build_optimizers`): the V/U tree is all-3D
     # `ComponentStacks` stacks, so optax's default 2D rule (dim_nums=None) would label
     # every leaf adam and leave the muon partition under test empty.
     inner_vu = (
-        muon_impl(stacked_muon_dimension_numbers)
+        muon(stacked_muon_dimension_numbers)
         if muon_components
         else optax.adamw(1e-3, weight_decay=0.0)
     )
     opt_vu = optax.chain(optax.clip_by_global_norm(0.01), inner_vu)
     opt_ci = (
-        muon_impl(stacked_muon_dimension_numbers)
-        if muon_ci_fn
-        else optax.adamw(1e-3, weight_decay=0.0)
+        muon(stacked_muon_dimension_numbers) if muon_ci_fn else optax.adamw(1e-3, weight_decay=0.0)
     )
     ppgd_cfg = _ppgd_cfg(n_warmup=1)
     loss_terms = build_objective(
@@ -202,7 +200,7 @@ def _optimizers_and_step(
         components_optimizer=opt_vu,
         ci_fn_optimizer=opt_ci,
         total_steps=100,
-        faithfulness=faithfulness_loss_for(model),
+        faithfulness=faithfulness_loss_for(placed),
     )
     resid = jax.random.randint(jax.random.PRNGKey(9), (2, _SEQ), 0, cfg.vocab_size)
     return cfg, sites, placed, opt_vu, opt_ci, ppgd_cfg, step, resid
@@ -212,19 +210,17 @@ def _build(
     seed: int,
     muon_components: bool = False,
     muon_ci_fn: bool = False,
-    stacked_impl: bool = False,
     freq_ema: bool = False,
 ):
     cfg, sites, model, opt_vu, opt_ci, ppgd_cfg, step, resid = _optimizers_and_step(
-        muon_components, muon_ci_fn, stacked_impl, freq_ema
+        muon_components, muon_ci_fn, freq_ema
     )
     vu = init_component_stacks(sites, jax.random.PRNGKey(seed))
     ci_fn = build_ci_fn(
         _chunkwise_arch(model.model, cfg), model.sites, jax.random.PRNGKey(seed + 1)
     )
     src = init_persistent_sources(
-        model.site_names,
-        tuple(s.C for s in model.sites),
+        model.sites,
         (1, _SEQ),
         jnp.float32,
         jax.random.PRNGKey(seed + 2),
@@ -246,14 +242,12 @@ def _roundtrip_and_exact_resume(
     tmp_path: Path,
     muon_components: bool,
     muon_ci_fn: bool = False,
-    stacked_impl: bool = False,
     freq_ema: bool = False,
 ) -> None:
     model, state, step, resid = _build(
         seed=1,
         muon_components=muon_components,
         muon_ci_fn=muon_ci_fn,
-        stacked_impl=stacked_impl,
         freq_ema=freq_ema,
     )
     for i in range(2):
@@ -267,7 +261,6 @@ def _roundtrip_and_exact_resume(
         seed=7,
         muon_components=muon_components,
         muon_ci_fn=muon_ci_fn,
-        stacked_impl=stacked_impl,
         freq_ema=freq_ema,
     )
     restored = restore_latest(mgr, fresh)
@@ -314,9 +307,10 @@ def test_freq_ema_roundtrip_and_exact_resume(tmp_path: Path):
 
 
 def test_muon_roundtrip_and_exact_resume(tmp_path: Path):
-    """SPEC S20 amendment: the muon components opt state (optax-partitioned muon/adam
-    masked trees) must ALSO restore onto a rebuilt reference and continue exactly —
-    this is what a scavenge preemption + requeue exercises."""
+    """SPEC S20 amendment: the muon components opt state (optax's `MuonState` pytree
+    verbatim, partitioned into muon/adam masked trees) must ALSO restore onto a rebuilt
+    reference and continue exactly — this is what a scavenge preemption + requeue
+    exercises."""
     _roundtrip_and_exact_resume(tmp_path, muon_components=True)
 
 
@@ -326,63 +320,6 @@ def test_muon_ci_fn_roundtrip_and_exact_resume(tmp_path: Path):
     partitioned by `stacked_muon_dimension_numbers` (3D chunk stacks muon'd, 2D bias
     stacks in the Adam-fallback mask)."""
     _roundtrip_and_exact_resume(tmp_path, muon_components=True, muon_ci_fn=True)
-
-
-@pytest.mark.slow
-def test_stacked_muon_roundtrip_and_exact_resume(tmp_path: Path):
-    """SPEC S20 `impl: stacked`: the stacked-NS muon state is optax's `MuonState` pytree
-    verbatim, so the same roundtrip + exact-resume guarantee holds — and a checkpoint
-    written under either impl restores under the other (pinned by
-    `test_muon_cross_impl_checkpoint_roundtrip`)."""
-    _roundtrip_and_exact_resume(tmp_path, muon_components=True, muon_ci_fn=True, stacked_impl=True)
-
-
-@pytest.mark.parametrize(
-    ("save_impl", "restore_impl"), [("stacked", "optax"), ("optax", "stacked")]
-)
-def test_muon_cross_impl_checkpoint_roundtrip(tmp_path: Path, save_impl: str, restore_impl: str):
-    """SPEC S20: `impl: optax` and `impl: stacked` carry the SAME `MuonState` pytree, so a
-    checkpoint written under either impl restores bit-exact onto a reference built under
-    the other — and the other impl's train step consumes the restored state (continuing it
-    exactly as it continues the in-memory state). Muon on BOTH groups so the cross-impl
-    claim covers the V/U stacks and the ci-fn partition."""
-    model, state, save_step, resid = _build(
-        seed=1, muon_components=True, muon_ci_fn=True, stacked_impl=save_impl == "stacked"
-    )
-    for i in range(2):
-        state, _ = save_step(model, state, resid, jax.random.PRNGKey(i))
-    mgr = make_checkpoint_manager(tmp_path / "ckpts", KeepLastNCheckpoints(n=2))
-    save_state(mgr, 2, state)
-
-    # The reference — and the continuation step — are built under the OTHER impl.
-    _, fresh, restore_step_fn, _ = _build(
-        seed=7, muon_components=True, muon_ci_fn=True, stacked_impl=restore_impl == "stacked"
-    )
-    restored = restore_latest(mgr, fresh)
-    assert restored is not None
-    loaded, ckpt_step = restored
-    assert ckpt_step == 2
-    for a, b in zip(jax.tree.leaves(state), jax.tree.leaves(loaded), strict=True):
-        assert jnp.array_equal(jnp.asarray(a), jnp.asarray(b))
-
-    # Non-vacuous: the cross-restored muon momentum is real, moved by the two save-side
-    # steps — not an untouched fresh-init tree.
-    [muon_state] = [
-        x
-        for x in jax.tree.leaves(
-            loaded.training.components_opt_state,
-            is_leaf=lambda x: isinstance(x, optax.contrib.MuonState),
-        )
-        if isinstance(x, optax.contrib.MuonState)
-    ]
-    assert all(bool(jnp.any(leaf != 0)) for leaf in jax.tree.leaves(muon_state.mu))
-
-    state_cont, m_cont = restore_step_fn(model, state, resid, jax.random.PRNGKey(100))
-    loaded_cont, m_load = restore_step_fn(model, loaded, resid, jax.random.PRNGKey(100))
-    for k in m_cont:
-        assert float(m_cont[k]) == float(m_load[k]), k
-    for a, b in zip(jax.tree.leaves(state_cont), jax.tree.leaves(loaded_cont), strict=True):
-        assert jnp.array_equal(jnp.asarray(a), jnp.asarray(b))
 
 
 def test_persistent_adam_step_count_roundtrip_and_post_resume_bias_correction(tmp_path: Path):
@@ -398,6 +335,7 @@ def test_persistent_adam_step_count_roundtrip_and_post_resume_bias_correction(tm
         state, _ = step(model, state, resid, jax.random.PRNGKey(i))
 
     pre_save = state.training.adversaries[state_key].opt_state
+    assert isinstance(pre_save, SourcesAdamState)
     n_ascents = int(pre_save.step_count)
     # Each train step runs n_warmup_steps (1) supplemental ascents + 1 final ascent.
     assert n_ascents == 3 * (1 + 1)
@@ -410,6 +348,7 @@ def test_persistent_adam_step_count_roundtrip_and_post_resume_bias_correction(tm
     assert restored is not None
     loaded, _ = restored
     loaded_adam = loaded.training.adversaries[state_key].opt_state
+    assert isinstance(loaded_adam, SourcesAdamState)
 
     # (a) the step_count leaf survived the round-trip: present, fp32 scalar, value N.
     assert state_key in loaded.training.adversaries
@@ -417,24 +356,15 @@ def test_persistent_adam_step_count_roundtrip_and_post_resume_bias_correction(tm
     assert loaded_adam.step_count.shape == ()
     assert float(loaded_adam.step_count) == float(n_ascents)
 
-    # (c) the restored Adam moments are bit-equal to pre-save (per site, m and v).
-    for site in pre_save.m:
-        assert all(
-            jnp.array_equal(a, b)
-            for a, b in zip(
-                jax.tree.leaves(loaded_adam.m[site]),
-                jax.tree.leaves(pre_save.m[site]),
-                strict=True,
-            )
-        )
-        assert all(
-            jnp.array_equal(a, b)
-            for a, b in zip(
-                jax.tree.leaves(loaded_adam.v[site]),
-                jax.tree.leaves(pre_save.v[site]),
-                strict=True,
-            )
-        )
+    # (c) the restored Adam moments are bit-equal to pre-save (every leaf of m and v).
+    assert all(
+        jnp.array_equal(a, b)
+        for a, b in zip(jax.tree.leaves(loaded_adam.m), jax.tree.leaves(pre_save.m), strict=True)
+    )
+    assert all(
+        jnp.array_equal(a, b)
+        for a, b in zip(jax.tree.leaves(loaded_adam.v), jax.tree.leaves(pre_save.v), strict=True)
+    )
 
     # (b) the first post-resume ascent applies bias-correction for count N+1.
     adam_cfg = AdamPGDConfig(
@@ -581,8 +511,7 @@ def _build_sharded(
     opt_vu = optax.chain(optax.clip_by_global_norm(0.01), optax.adamw(1e-3, weight_decay=0.0))
     opt_ci = optax.adamw(1e-3, weight_decay=0.0)
     src = init_sources_sharded(
-        model.site_names,
-        tuple(s.C for s in model.sites),
+        model.sites,
         Positioned(seq),
         "sc",
         n,

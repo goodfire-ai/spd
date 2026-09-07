@@ -31,7 +31,7 @@ space) — the third naming system, out of scope here.
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from param_decomp.core.components import SiteC, SiteDims, SiteSpec
+from param_decomp.core.components import Factorization, SiteC, SiteSpec
 from param_decomp.core.nonlinearity import NonlinearityPartition
 
 
@@ -67,26 +67,23 @@ def canonical_site_cs(family: ArchFamily, site_cs: tuple[SiteC, ...]) -> tuple[S
 def site_specs(
     family: ArchFamily,
     site_cs: tuple[SiteC, ...],
-    dims_of: Callable[[str], SiteDims],
+    factorization_of: Callable[[str, int], Factorization],
     nonlinearity_partition_of: Callable[[str], NonlinearityPartition | None],
     n_layer: int,
 ) -> tuple[SiteSpec, ...]:
     """Shape-resolved specs in canonical order (input must already be canonical);
-    `dims_of(matrix)` / `nonlinearity_partition_of(matrix)` are the target's shape and
-    nonlinearity-unit tables, closed over its config."""
+    `factorization_of(matrix, C)` / `nonlinearity_partition_of(matrix)` are the target's
+    shape and nonlinearity-unit tables, closed over its config."""
     assert site_cs == canonical_site_cs(family, site_cs), f"sites not in canonical order: {site_cs}"
     specs = []
     for site in site_cs:
         layer, kind = family.parse(site.name)
         assert 0 <= layer < n_layer, (site.name, n_layer)
         assert site.C >= 1, site
-        dims = dims_of(kind)
         specs.append(
             SiteSpec(
                 name=site.name,
-                d_in=dims.d_in,
-                d_out=dims.d_out,
-                C=site.C,
+                factorization=factorization_of(kind, site.C),
                 group=kind,
                 nonlinearity_partition=nonlinearity_partition_of(kind),
             )

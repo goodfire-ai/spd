@@ -1,7 +1,7 @@
 """The single self-contained pretrain run config (`pretrain.train` reads it directly).
 
 Mirrors the torch `Config` recipe fields (next-token CE, AdamW, cosine LR + warmup, grad
-clip) plus the run-instance fields the lab launcher stamps (`run_id`, `data_root`). Data is
+clip) plus the run-instance fields supplied at entry (`run_id`, `data_root`). Data is
 the offline pre-tokenized parquet artifact served by `param_decomp.pretrain.batch_data.ShardServer` —
 NEVER streamed from HF at run time.
 """
@@ -32,7 +32,7 @@ class PretrainWandbConfig(BaseConfig):
 
 @dataclass(frozen=True)
 class PretrainRunPaths:
-    """The launcher's stamp, narrowed once: every path the run reads or writes hangs off
+    """The run-root stamp, narrowed once: every path the run reads or writes hangs off
     `data_root`, so no downstream site re-asserts that the config was stamped."""
 
     data_root: Path
@@ -62,7 +62,7 @@ class PretrainConfig(BaseConfig):
 
     gpus_per_node: PositiveInt = Field(
         default=8,
-        description="GPUs per node — the launcher's node math and the trainer's topology assert.",
+        description="GPUs per node — the caller's topology fact and the trainer's topology assert.",
     )
     dp: PositiveInt | None = Field(
         default=None,
@@ -105,7 +105,7 @@ class PretrainConfig(BaseConfig):
     @property
     def paths(self) -> PretrainRunPaths:
         assert self.data_root is not None and self.run_id is not None, (
-            "run identity incomplete: data_root is authored or launcher-stamped,"
+            "run identity incomplete: data_root is authored or supplied at entry,"
             " run_id is minted at entry"
         )
         return PretrainRunPaths(data_root=self.data_root, run_id=self.run_id)

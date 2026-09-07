@@ -8,13 +8,15 @@ whichever family happened to bind it.
 from typing import ClassVar, Literal
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from param_decomp.core.base_config import BaseConfig
 from param_decomp.core.configs import (
+    AnyLossMetricConfig,
     CI_L0Config,
     CIHistogramsConfig,
     PGDReconLossConfig,
+    SlowPGDReconLossConfig,
     UVPlotsConfig,
 )
 from param_decomp.core.eval_schedule import Every, FirstThenEvery, eval_due
@@ -40,6 +42,7 @@ SLOW_METRICS = {
     "ComponentActivationDensityConfig",
     "IdentityCIErrorConfig",
     "PermutedCIPlotsConfig",
+    "SlowPGDReconLossConfig",
     "UVPlotsConfig",
     "WellTemperednessConfig",
 }
@@ -94,6 +97,45 @@ def test_the_tier_travels_with_the_metric_across_families() -> None:
     """UVPlots is slow wherever it is bound; the toy and LM binders read the same
     declaration rather than each assigning a tier of their own."""
     assert UVPlotsConfig.slow and not PGDReconLossConfig.slow
+
+
+def _fresh_pgd_raw(metric_type: str, n_steps: int) -> dict[str, object]:
+    return {
+        "type": metric_type,
+        "coeff": None,
+        "name": f"PGDReconLoss_{n_steps}step",
+        "init": "random",
+        "source_shape": "c",
+        "n_steps": n_steps,
+        "step_size": 0.1,
+    }
+
+
+def test_the_slow_fresh_pgd_probe_is_the_fast_one_on_the_other_cadence() -> None:
+    """A long attack ladder rides `slow_every` beside the 20-step fast probe; both are the
+    same probe to every binder (`case PGDReconLossConfig()` covers the subclass)."""
+    eval_config = EvalConfig.model_validate(
+        {
+            "batch_size": 8,
+            "n_steps": 1,
+            "every": 1000,
+            "slow_every": 5000,
+            "metrics": [
+                _fresh_pgd_raw("PGDReconLoss", 20),
+                _fresh_pgd_raw("SlowPGDReconLoss", 1280),
+            ],
+        }
+    )
+    fast, slow = eval_config.metrics
+    assert type(fast) is PGDReconLossConfig and type(slow) is SlowPGDReconLossConfig
+    assert isinstance(slow, PGDReconLossConfig)
+    assert schedule_for(fast, eval_config) == Every(1000)
+    assert schedule_for(slow, eval_config) == FirstThenEvery(0, 5000)
+
+
+def test_the_slow_fresh_pgd_probe_is_not_a_training_loss() -> None:
+    with pytest.raises(ValidationError, match="SlowPGDReconLoss"):
+        TypeAdapter(AnyLossMetricConfig).validate_python(_fresh_pgd_raw("SlowPGDReconLoss", 40))
 
 
 def test_a_seat_cannot_author_its_own_tier() -> None:

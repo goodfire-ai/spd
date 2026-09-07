@@ -30,7 +30,7 @@ hot path). V/U, CI-fn, and source placement are the engine's concern (`placement
 
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -40,7 +40,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jax.sharding import NamedSharding
+from jax.sharding import Mesh, NamedSharding
 from jax.sharding import PartitionSpec as P
 from jax.typing import DTypeLike
 from jaxtyping import Array, Float, Int, PRNGKeyArray
@@ -51,10 +51,12 @@ from param_decomp.core.axes import Axes, SemanticAxis
 from param_decomp.core.components import (
     ComponentStacks,
     SiteC,
+    SiteCI,
     SiteDims,
     SiteSpec,
     activation_axes,
     component_stacks_from_site_arrays,
+    require_full_emission,
     site_slots_for,
 )
 from param_decomp.core.decomposed_linear import (
@@ -70,12 +72,14 @@ from param_decomp.core.linear_plan import (
     unreduce,
     value_mesh,
 )
+from param_decomp.core.masking import compose_source_mask
 from param_decomp.core.model import (
     EMPTY_CAPTURE_KEYS,
     CaptureKeys,
     ForwardResult,
     Masking,
     MaterializedMasking,
+    SourceMasking,
     StochasticMasking,
 )
 from param_decomp.core.nonlinearity import (
@@ -94,7 +98,16 @@ from param_decomp.core.placement import (
     placed_target_linear,
     target_linear_plan,
 )
-from param_decomp.targets.losses import kl_per_position
+from param_decomp.target_ports.llama import (
+    AttentionImplementation,
+    apply_rope,
+    causal_sdpa,
+    repeat_kv,
+    rms_norm,
+    rope_cos_sin,
+)
+from param_decomp.targets.lm_output import LMOutput, pin_lm_output_batch
+from param_decomp.targets.losses import lm_output_kl_per_position
 from param_decomp.targets.transformer_taps import (
     BlockTap,
     PostAttentionResidual,
@@ -107,14 +120,6 @@ from param_decomp.targets.transformer_taps import (
     mlp_hidden_tap_key,
     mlp_input_tap_key,
     site_output_tap_key,
-)
-from param_decomp.vendored_jax.llama import (
-    AttentionImplementation,
-    apply_rope,
-    causal_sdpa,
-    repeat_kv,
-    rms_norm,
-    rope_cos_sin,
 )
 
 
@@ -180,8 +185,11 @@ class GLUConfig:
 
 
 def default_inv_freq(head_dim: int, rope_theta: float) -> Float[Array, " hd2"]:
-    """Plain (unscaled) RoPE inverse frequencies — HF's `rope_type: default`."""
-    return 1.0 / (rope_theta ** (jnp.arange(0, head_dim, 2, dtype=jnp.float32) / head_dim))
+    """Plain (unscaled) RoPE inverse frequencies — HF's `rope_type: default`. Computed on
+    host (its callers are loaders, whose leaves must not touch a device before placement);
+    inside a trace numpy folds to a constant, so jitted callers are unaffected."""
+    host = 1.0 / (rope_theta ** (np.arange(0, head_dim, 2, dtype=np.float32) / head_dim))
+    return cast(Array, cast(object, host))
 
 
 # GLU = SwiGLU MLP (Llama-3.1, Qwen3). The family's matrix vocabulary — the authored
@@ -413,7 +421,7 @@ def glu_site_specs(cfg: GLUArch, site_cs: tuple[SiteC, ...]) -> tuple[SiteSpec, 
     return family.site_specs(
         FAMILY,
         site_cs,
-        lambda kind: site_dims(cfg, kind),
+        lambda kind, c: site_dims(cfg, kind).dense(c),
         lambda kind: nonlinearity_partition(cfg, kind),
         cfg.n_layer,
     )
@@ -490,7 +498,8 @@ class FrozenAttn(eqx.Module):
             assert activation_row.spec_for(q_axes) == activation_row.spec_for(kv_axes), (
                 f"{activation_row.label}: q_head and kv_head must carry the same mesh "
                 f"assignment (cuDNN SDPA shards q/k/v identically): "
-                f"{activation_row.rule.get('q_head')!r} != {activation_row.rule.get('kv_head')!r}"
+                f"{activation_row.assignment('q_head')!r} != "
+                f"{activation_row.assignment('kv_head')!r}"
             )
             qkv_spec = activation_row.sharding_for(q_axes)
         q = q_flat.reshape(b, t, self.n_head, self.head_dim)
@@ -1050,9 +1059,9 @@ def _attach_per_kind_masks(
     prepared_weights: dict[str, dict[str, Array]],
     n_layers: int,
     leading: tuple[int, ...],
-    component_masks: dict[str, Array],
-    weight_delta_masks: dict[str, Array] | None,
-    routes: dict[str, Array] | None,
+    component_masks: Mapping[str, Array],
+    weight_delta_masks: Mapping[str, Array] | None,
+    routes: Mapping[str, Array] | None,
 ) -> dict[str, dict[str, Array]]:
     """Attach the per-forward `(mask[, delta][, route])` stacks to the shared, already
     stacked + ÷fsdp-reconstructed `prepared_weights` per-kind `(V, U)` weights. The masks
@@ -1142,7 +1151,7 @@ def _attach_per_kind_stochastic(
     leading: tuple[int, ...],
     ci_stacked: dict[str, Array],
     draw_key: Array,
-    routes: dict[str, Array] | None,
+    routes: Mapping[str, Array] | None,
 ) -> dict[str, dict[str, Array]]:
     """Stochastic recon: attach the SHARED per-kind `ci` stack + per-(layer,kind) RNG keys
     instead of pre-built mask/delta stacks. `decomposed_site_output` draws `source = uniform(key)` and
@@ -1182,6 +1191,49 @@ def _attach_per_kind_stochastic(
             "delta_key": delta_keys,
         }
         if routes is not None:
+            r_shape = a_route.shape if a_route is not None else leading
+            r_dt = a_route.dtype if a_route is not None else jnp.bool_
+            entry["route"] = jnp.stack(
+                [routes[name] if name in routes else route_filler(r_shape, r_dt) for name in names]
+            )
+        per_kind[kind] = entry
+    return per_kind
+
+
+def _attach_per_kind_sources(
+    anatomy: Anatomy,
+    prepared_weights: dict[str, dict[str, Array]],
+    n_layers: int,
+    leading: tuple[int, ...],
+    ci_stacked: dict[str, Array],
+    source_values_stacked: dict[str, Array],
+    delta_values_stacked: dict[str, Array],
+    routes: Mapping[str, Array] | None,
+) -> dict[str, dict[str, Array]]:
+    """Persistent-source recon: compose the per-kind mask stacks EAGERLY from the
+    shared `ci` stack and the source-value stacks — `stack_ci` fills dummy zeros for
+    non-decomposed layers, which segmentation excludes, so the composed dummy rows are
+    equally unread. This family keeps the materialized-stack memory profile; the
+    in-block recomposition (the qwen36_moe spelling) is not built here."""
+    a_route = next(iter(routes.values())) if (routes and len(routes)) else None
+
+    def route_filler(r_shape: tuple[int, ...], r_dt: jnp.dtype) -> Array:
+        value = jnp.zeros(r_shape, r_dt)
+        if a_route is None or value_mesh(a_route).empty:
+            return value
+        return jax.sharding.reshard(value, jax.typeof(a_route).sharding)
+
+    per_kind: dict[str, dict[str, Array]] = {}
+    for kind, vu_entry in prepared_weights.items():
+        mask = compose_source_mask(ci_stacked[kind], source_values_stacked[kind])
+        assert isinstance(mask, Array), "this family's sites are dense-only"
+        entry: dict[str, Array] = {
+            **vu_entry,
+            "mask": mask,
+            "delta": delta_values_stacked[kind],
+        }
+        if routes is not None:
+            names = [anatomy.family.name_of(layer, kind) for layer in range(n_layers)]
             r_shape = a_route.shape if a_route is not None else leading
             r_dt = a_route.dtype if a_route is not None else jnp.bool_
             entry["route"] = jnp.stack(
@@ -1294,8 +1346,12 @@ class GLUDecomposedModel(eqx.Module):
         )
 
     @staticmethod
-    def recon_loss_fn(masked_output: Array, clean_output: Array) -> Array:
-        return kl_per_position(masked_output, clean_output)
+    def recon_loss_fn(masked_output: LMOutput, clean_output: LMOutput) -> Float[Array, ""]:
+        return lm_output_kl_per_position(masked_output, clean_output)
+
+    @staticmethod
+    def pin_output_batch(output: LMOutput, mesh: Mesh | None) -> LMOutput:
+        return pin_lm_output_batch(output, mesh)
 
     def embed_tokens(
         self, tokens: Int[Array, "b t"], placement: PlacementRules | None
@@ -1429,7 +1485,7 @@ class GLUDecomposedModel(eqx.Module):
         capture_keys: CaptureKeys = EMPTY_CAPTURE_KEYS,
         *,
         placement: PlacementRules | None,
-    ) -> ForwardResult:
+    ) -> ForwardResult[LMOutput]:
         if not capture_keys:
             return ForwardResult.from_producer(
                 output=self._clean_output(inputs, placement), capture_keys=(), capture_values=()
@@ -1483,12 +1539,19 @@ class GLUDecomposedModel(eqx.Module):
         *,
         collect_component_activations: bool,
         placement: PlacementRules | None,
-    ) -> tuple[ForwardResult, dict[str, Array]]:
+    ) -> tuple[ForwardResult[LMOutput], dict[str, Array]]:
         """One segmented masked forward for output, captures and optional ``x@V`` diagnostics.
 
         Empty capture keys keep the compact frozen blocks; non-empty keys allocate only
         their exact-size capture slots.
         """
+        assert (
+            placement is None
+            or placement.activations.masked_external is placement.activations.external
+        ), (
+            "sequence_sharding 'sequence_parallel' is only built for qwen36_moe; this "
+            "target's masked forward would silently ignore the row"
+        )
         capture_sources = (
             self._capture_grammar().resolve(
                 capture_keys, lambda point: _capture_source_for_point(self.anatomy, point)
@@ -1512,6 +1575,26 @@ class GLUDecomposedModel(eqx.Module):
                     leading,
                     ci_stacked,
                     draw_key,
+                    routes,
+                )
+            case SourceMasking(
+                ci_stacked=ci_stacked,
+                source_values_stacked=source_values_stacked,
+                delta_values_stacked=delta_values_stacked,
+                routes=routes,
+            ):
+                assert routes is None or set(routes) == site_set, (
+                    sorted(routes or {}),
+                    sorted(site_set),
+                )
+                per_kind = _attach_per_kind_sources(
+                    self.anatomy,
+                    prepared_weights,
+                    self.n_layer,
+                    leading,
+                    ci_stacked,
+                    source_values_stacked,
+                    delta_values_stacked,
                     routes,
                 )
             case MaterializedMasking(
@@ -1539,7 +1622,8 @@ class GLUDecomposedModel(eqx.Module):
                     prepared_weights,
                     self.n_layer,
                     leading,
-                    component_masks,
+                    # this family's sites are dense-only; a narrow mask has no arm here
+                    {name: require_full_emission(m) for name, m in component_masks.items()},
                     weight_delta_masks,
                     routes,
                 )
@@ -1736,13 +1820,15 @@ class GLUDecomposedModel(eqx.Module):
         inputs: Int[Array, "b t"],
         /,
         *,
+        sites: tuple[str, ...],
         capture_keys: CaptureKeys,
         placement: PlacementRules | None,
-    ) -> tuple[ForwardResult, dict[str, Array]]:
-        """Run one frozen forward for requested captures and every decomposed site's ``x @ V``."""
+    ) -> tuple[ForwardResult[LMOutput], dict[str, SiteCI]]:
+        """Run one frozen forward for requested captures and each requested site's ``x @ V``."""
+        assert set(sites) <= set(self.site_names), (sorted(sites), self.site_names)
         anatomy = self.anatomy
         component_input_keys: list[str] = []
-        site_locations = tuple(anatomy.family.parse(site) for site in self.site_names)
+        site_locations = tuple(anatomy.family.parse(site) for site in sites)
         for layer, kind in site_locations:
             if kind in (anatomy.q, anatomy.k, anatomy.v):
                 component_input_keys.append(attention_input_tap_key(layer))
@@ -1760,9 +1846,9 @@ class GLUDecomposedModel(eqx.Module):
             capture_keys | frozenset(component_input_keys),
             placement=placement,
         )
-        component_activations: dict[str, Array] = {}
+        component_activations: dict[str, SiteCI] = {}
         for site, key, (layer, kind) in zip(
-            self.site_names, component_input_keys, site_locations, strict=True
+            sites, component_input_keys, site_locations, strict=True
         ):
             V = unreduce(prepared_weights[kind]["V"])[layer]
             site_input = full_forward_result.captures[key].astype(V.dtype)
@@ -1784,8 +1870,10 @@ class GLUDecomposedModel(eqx.Module):
         )
         return requested_forward_result, component_activations
 
-    def stack_ci(self, ci_lower: dict[str, Array]) -> dict[str, Array]:
-        return _stack_ci_per_kind(self.anatomy, ci_lower, self.n_layer)
+    def stack_ci(self, ci_lower: Mapping[str, SiteCI]) -> dict[str, Array]:
+        # this family's sites are dense-only; a narrow CI has no arm here
+        full = {name: require_full_emission(value) for name, value in ci_lower.items()}
+        return _stack_ci_per_kind(self.anatomy, full, self.n_layer)
 
     def masked_forward(
         self,
@@ -1797,7 +1885,7 @@ class GLUDecomposedModel(eqx.Module):
         placement: PlacementRules | None,
         capture_keys: CaptureKeys = EMPTY_CAPTURE_KEYS,
         remat: bool,
-    ) -> ForwardResult:
+    ) -> ForwardResult[LMOutput]:
         masked_forward_result, _component_activations = self._run_masked_forward(
             prepared_weights,
             inputs,
@@ -1855,6 +1943,15 @@ class GLUDecomposedModel(eqx.Module):
                     for layer, kind in map(self.anatomy.family.parse, slot_names)
                 ]
             )
+            if pad := vu.pad_of(group):
+                # Persist-stack pad slots decompose a ZERO matrix: their deltas ride the
+                # faithfulness lane as exact zeros (pad V/U are zero by invariant) and
+                # exit at the loss reduction. The pad rows take the frozen stack's own
+                # sharding — explicit-mode concatenate demands matching operand specs.
+                zeros = jnp.zeros((pad, *Ws.shape[1:]), Ws.dtype)
+                if not value_mesh(Ws).empty:
+                    zeros = jax.sharding.reshard(zeros, jax.typeof(Ws).sharding)
+                Ws = jnp.concatenate([Ws, zeros])
             if not value_mesh(Vs).empty:
                 # Land the delta PIECE-WISE, derived from the faithfulness operands'
                 # own typing: g and d_out keep their assignments, and the C contraction
@@ -1906,8 +2003,8 @@ def _gather_unit_rows(weight: Array, units: Array) -> Array:
     match jax.typeof(weight).sharding:
         case NamedSharding(mesh=mesh, spec=sharding):
             return weight.at[units].get(out_sharding=NamedSharding(mesh, P(None, *sharding[1:])))
-        case _:
-            return weight[units]
+        case other:
+            raise AssertionError(f"an aval's sharding is always named, got {type(other).__name__}")
 
 
 def _neuron_aligned_site_factors(
@@ -1990,7 +2087,7 @@ def neuron_aligned_component_initializer(
 
 def hf_snapshot_dir(model_name: str) -> Path:
     """Newest local snapshot of `model_name`, from the STANDARD HF hub cache
-    (`HF_HUB_CACHE`, else `~/.cache/huggingface/hub`). Cluster launchers should export
+    (`HF_HUB_CACHE`, else `~/.cache/huggingface/hub`). Multi-host callers should export
     `HF_HUB_CACHE` to a shared world-readable cache — a home `~/.cache` hub is silently
     mutable, and a wiped entry strands running jobs that reload weights on requeue."""
     import os
@@ -2072,7 +2169,7 @@ def build_engine_model(
     expected = family.site_specs(
         anatomy.family,
         family.canonical_site_cs(anatomy.family, site_cs),
-        lambda kind: anatomy_site_dims(anatomy, cfg, kind),
+        lambda kind, c: anatomy_site_dims(anatomy, cfg, kind).dense(c),
         lambda kind: anatomy_nonlinearity_partition(anatomy, cfg, kind),
         cfg.n_layer,
     )

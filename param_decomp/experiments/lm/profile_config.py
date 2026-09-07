@@ -71,9 +71,7 @@ def derive_profile(raw: dict[str, Any], shape: ProfileShape) -> dict[str, Any]:
     hidden_reconstructions[0]["points"] = [f"resid.{layer}" for layer in range(1, shape.layers + 1)]
 
     runtime = _mapping(derived["runtime"], "runtime")
-    runtime["replicate"] = shape.replicate
-    runtime["fsdp"] = shape.fsdp
-    runtime["tp"] = shape.tp
+    runtime["mesh"] = {"replicate": shape.replicate, "fsdp": shape.fsdp, "tp": shape.tp}
     runtime["sharding"] = shape.sharding
     runtime["profiling"] = {"kind": "ad_hoc", "steps": shape.profile_steps}
 

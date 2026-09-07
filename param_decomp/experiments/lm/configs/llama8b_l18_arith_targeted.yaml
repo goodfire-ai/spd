@@ -138,6 +138,8 @@ target:
     model_name: meta-llama/Llama-3.1-8B
   attention_implementation: auto
   weights_dtype: bfloat16
+  output_edge:
+    kind: materialized
 data:
   train:
     kind: name
@@ -148,11 +150,12 @@ data:
 runtime:
   compilation_cache_dir: ~/.cache/param-decomp/xla
   remat_recon_forwards: true
-  replicate: 4
-  fsdp: 8
-  tp: 1
+  mesh:
+    replicate: 4
+    fsdp: 8
+    tp: 1
   sharding: zero1
-  compiler_options: tuned-v1
+  compiler_options: tuned-v2
 wandb:
   project: param-decomp-llama
   entity: goodfire

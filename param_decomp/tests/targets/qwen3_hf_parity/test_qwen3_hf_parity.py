@@ -32,7 +32,7 @@ from param_decomp.targets.qwen3 import (
     load_decomposed_qwen3_from_hf,
     qwen3_8b_base_config,
 )
-from param_decomp.targets.testing import capture_clean, run_clean
+from param_decomp.targets.testing import capture_clean, materialized_logits, run_clean
 from param_decomp.targets.transformer_taps import resid_tap_key
 
 HERE = Path(__file__).resolve().parent
@@ -110,7 +110,9 @@ def test_tiny_random_qwen3_matches_hf():
     residuals = capture_clean(model, tokens, residual_keys)
     for i, key in enumerate(residual_keys):
         np.testing.assert_allclose(residuals[key], f[f"resid::{i}"], rtol=2e-4, atol=1e-5)
-    np.testing.assert_allclose(run_clean(model, tokens), f["logits"], rtol=2e-4, atol=1e-5)
+    np.testing.assert_allclose(
+        materialized_logits(run_clean(model, tokens)), f["logits"], rtol=2e-4, atol=1e-5
+    )
 
 
 @pytest.mark.slow
@@ -126,7 +128,11 @@ def test_real_qwen3_8b_matches_hf():
     model = load_decomposed_qwen3_from_hf(
         "Qwen/Qwen3-8B-Base", qwen3_8b_base_config(), (), jnp.bfloat16
     )
-    logits = np.asarray(run_clean(model, jnp.asarray(f["tokens"]))[:, -1, :].astype(jnp.float32))
+    logits = np.asarray(
+        materialized_logits(run_clean(model, jnp.asarray(f["tokens"])))[:, -1, :].astype(
+            jnp.float32
+        )
+    )
     ref = f["final_logits"]
     # tie-aware argmax: the golden is bf16, so distinct plausible tokens often carry the
     # IDENTICAL quantized top logit (observed: a 3-way 32.25 tie) — require JAX's argmax

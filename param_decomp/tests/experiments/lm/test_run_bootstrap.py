@@ -18,12 +18,10 @@ def test_bootstrap_applies_launch_env_before_loading_training(
         yaml.safe_dump(
             {
                 "runtime": {
-                    "replicate": 1,
-                    "fsdp": 1,
-                    "tp": 1,
+                    "mesh": {"replicate": 1, "fsdp": 1, "tp": 1},
                     "sharding": "ddp",
                     "compilation_cache_dir": "~/.cache/param-decomp/xla",
-                    "compiler_options": "tuned-v1",
+                    "compiler_options": "tuned-v2",
                     "launch_env": {
                         "xla_python_client_mem_fraction": 0.5,
                         "env": {"PD_BOOTSTRAP_SENTINEL": "present"},
@@ -32,7 +30,10 @@ def test_bootstrap_applies_launch_env_before_loading_training(
             }
         )
     )
-    observed: list[tuple[str, str]] = []
+    # a wrapper's export must survive the bootstrap, composed additively with the
+    # config's flags — the harness spelling that realizes simulated devices.
+    monkeypatch.setenv("XLA_FLAGS", "--xla_force_host_platform_device_count=8")
+    observed: list[tuple[str, str, str]] = []
     training = ModuleType("param_decomp.experiments.lm.training")
 
     def train_main(
@@ -46,6 +47,7 @@ def test_bootstrap_applies_launch_env_before_loading_training(
             (
                 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"],
                 os.environ["PD_BOOTSTRAP_SENTINEL"],
+                os.environ["XLA_FLAGS"],
             )
         )
 
@@ -54,7 +56,14 @@ def test_bootstrap_applies_launch_env_before_loading_training(
 
     run.main(config, Path("/tmp/unused-data-root"), 1, "p-00000000")
 
-    assert observed == [("0.5", "present")]
+    assert observed == [
+        (
+            "0.5",
+            "present",
+            "--xla_gpu_nccl_termination_timeout_seconds=600"
+            " --xla_force_host_platform_device_count=8",
+        )
+    ]
 
 
 def test_importing_the_bootstrap_does_not_import_jax() -> None:

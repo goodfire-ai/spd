@@ -27,7 +27,7 @@ Masked and clean Q/K run in COMPUTE_DT (bf16, matching the trained model); the
 pattern softmax and the KL reduction are fp32.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -36,12 +36,14 @@ import numpy as np
 from jax import random
 from jaxtyping import Array, Float, Int, PRNGKeyArray
 
+from param_decomp.core.components import SiteCI, map_site_ci, site_ci_values
 from param_decomp.core.jit_util import filter_jit
 from param_decomp.core.linear_plan import uniform_like
 from param_decomp.core.model import (
     MaterializedMasking,
     PlacedModel,
 )
+from param_decomp.targets.lm_output import LMOutput
 
 
 @runtime_checkable
@@ -96,10 +98,10 @@ def _pattern_kl(target_pattern: Array, masked_pattern: Array) -> Array:
 
 AttnPatternsStep = Callable[
     [
-        PlacedModel,
+        PlacedModel[LMOutput],
         Any,
         Int[Array, "*leading"],
-        dict[str, Array],
+        Mapping[str, SiteCI],
         dict[str, Array],
         PRNGKeyArray,
     ],
@@ -112,7 +114,7 @@ only the masked forward runs here. `key` is unused by the deterministic CI step.
 (frozen-weight-bearing) is the jit ARG."""
 
 
-def attn_output_key_by_site(model_static: PlacedModel) -> dict[str, str]:
+def attn_output_key_by_site(model_static: PlacedModel[LMOutput]) -> dict[str, str]:
     """The decomposed q/k sites' canonical output capture keys — the clean-capture demand
     this eval declares on the shared batch context."""
     layer_pairs = _attn_layer_sites(model_static.site_names)
@@ -120,7 +122,7 @@ def attn_output_key_by_site(model_static: PlacedModel) -> dict[str, str]:
     return dict(zip(requested_sites, model_static.site_output_keys(requested_sites), strict=True))
 
 
-def _attn_pattern_model(model: PlacedModel) -> AttnPatternModel:
+def _attn_pattern_model(model: PlacedModel[LMOutput]) -> AttnPatternModel:
     """Narrow the bundle's target to the pattern-capable surface — re-derived from the
     traced model arg each call, never closed over (the HLO-baking rule)."""
     inner = model.model
@@ -129,7 +131,7 @@ def _attn_pattern_model(model: PlacedModel) -> AttnPatternModel:
 
 
 def _attention_patterns(
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     layer_pairs: tuple[tuple[str, str], ...],
     site_outputs: dict[str, Array],
 ) -> dict[str, Array]:
@@ -142,7 +144,7 @@ def _attention_patterns(
 
 
 def _attention_pattern_kl_by_layer(
-    model: PlacedModel,
+    model: PlacedModel[LMOutput],
     layer_pairs: tuple[tuple[str, str], ...],
     masked_outputs: dict[str, Array],
     target_patterns: dict[str, Array],
@@ -157,7 +159,7 @@ def _attention_pattern_kl_by_layer(
     }
 
 
-def _assert_position_axis(model_static: PlacedModel) -> None:
+def _assert_position_axis(model_static: PlacedModel[LMOutput]) -> None:
     """Attention patterns are `(B, H, T_query, T_key)` causal maps over the position
     axis; the metric only applies to a positioned LM target (the `AttnPatternModel`
     capability assert in the step factories rejects non-attention targets)."""
@@ -167,7 +169,7 @@ def _assert_position_axis(model_static: PlacedModel) -> None:
 
 
 def make_ci_attn_patterns_step(
-    model_static: PlacedModel,
+    model_static: PlacedModel[LMOutput],
     compiler_options: dict[str, bool | int | str] | None = None,
 ) -> AttnPatternsStep:
     """Deterministic CI-mask attention-pattern step: one masked forward over the shared
@@ -181,10 +183,10 @@ def make_ci_attn_patterns_step(
     site_output_keys = tuple(output_key_by_site.values())
 
     def step(
-        model: PlacedModel,
+        model: PlacedModel[LMOutput],
         prepared_weights: Any,
         tokens: Int[Array, "*leading"],
-        ci_lower: dict[str, Array],
+        ci_lower: Mapping[str, SiteCI],
         clean_site_outputs_by_site: dict[str, Array],
         _key: PRNGKeyArray,
     ) -> tuple[dict[str, Array], dict[str, int]]:
@@ -209,7 +211,7 @@ def make_ci_attn_patterns_step(
 
 
 def make_stochastic_attn_patterns_step(
-    model_static: PlacedModel,
+    model_static: PlacedModel[LMOutput],
     n_mask_samples: int,
     compiler_options: dict[str, bool | int | str] | None = None,
 ) -> AttnPatternsStep:
@@ -228,10 +230,10 @@ def make_stochastic_attn_patterns_step(
     site_output_keys = tuple(output_key_by_site.values())
 
     def step(
-        model: PlacedModel,
+        model: PlacedModel[LMOutput],
         prepared_weights: Any,
         tokens: Int[Array, "*leading"],
-        ci_lower: dict[str, Array],
+        ci_lower: Mapping[str, SiteCI],
         clean_site_outputs_by_site: dict[str, Array],
         key: PRNGKeyArray,
     ) -> tuple[dict[str, Array], dict[str, int]]:
@@ -248,10 +250,13 @@ def make_stochastic_attn_patterns_step(
             for site_idx, site in enumerate(site_names):
                 ci_site = ci_lower[site]
                 source_key = random.fold_in(mask_key, site_idx)
-                source = uniform_like(source_key, ci_site)
-                masks[site] = ci_site + (1.0 - ci_site) * source
+                masks[site] = map_site_ci(
+                    lambda v, k=source_key: v + (1.0 - v) * uniform_like(k, v), ci_site
+                )
                 delta_masks[site] = uniform_like(
-                    random.fold_in(delta_key, site_idx), ci_site, drop_last_axis=True
+                    random.fold_in(delta_key, site_idx),
+                    site_ci_values(ci_site),
+                    drop_last_axis=True,
                 )
             masked_captures_by_key = model.masked_forward(
                 prepared_weights,

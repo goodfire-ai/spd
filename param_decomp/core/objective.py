@@ -24,6 +24,7 @@ from param_decomp.core.configs import (
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
     LossCoeff,
+    MergedStochasticSubsetPooledPPGDReconLossConfig,
     MergedStochasticSubsetPPGDReconLossConfig,
     NonlinearityLocalityLossConfig,
     NontargetConfig,
@@ -46,6 +47,7 @@ from param_decomp.core.recon import (
     FreshPGDSources,
     MaskSourceStrategy,
     MixedPersistentStochasticSources,
+    PersistentSourcePool,
     PersistentSources,
     ReconLossTerm,
     StochasticSources,
@@ -257,6 +259,10 @@ def _collect_terms(
             case MergedStochasticSubsetPPGDReconLossConfig():
                 key = unique_name(cfg)
                 sources = MixedPersistentStochasticSources(state_key=key, cfg=cfg)
+                recon_terms.append(recon(cfg, cfg.routing, sources, n_samples=1))
+            case MergedStochasticSubsetPooledPPGDReconLossConfig():
+                key = unique_name(cfg)
+                sources = PersistentSourcePool(state_key=key, cfg=cfg)
                 recon_terms.append(recon(cfg, cfg.routing, sources, n_samples=1))
             case PersistentPGDReconLossConfig():
                 key = unique_name(cfg)

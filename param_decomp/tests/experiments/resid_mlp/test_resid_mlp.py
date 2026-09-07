@@ -28,6 +28,7 @@ from param_decomp.core.components import (
     SiteC,
     SiteSpec,
     init_component_stacks,
+    require_full_emission,
 )
 from param_decomp.core.configs import (
     FaithfulnessLossConfig,
@@ -245,9 +246,10 @@ def test_mlp_ci_fn_per_site_preactivations_and_values():
     inputs = capture_clean(model, x @ target.W_E, ci_fn.capture_keys)
     values = ci_fn(inputs, remat=False, placement=None)
     assert isinstance(values, CI)
-    assert values.lower["layers.0.mlp_in"].shape == (b, 6)
-    assert values.lower["layers.0.mlp_out"].shape == (b, 7)
-    for v in values.lower.values():
+    assert require_full_emission(values.lower["layers.0.mlp_in"]).shape == (b, 6)
+    assert require_full_emission(values.lower["layers.0.mlp_out"]).shape == (b, 7)
+    for value in values.lower.values():
+        v = require_full_emission(value)
         assert float(v.min()) >= 0.0 and float(v.max()) <= 1.0
 
 
@@ -280,7 +282,9 @@ def _loss_metrics():
 
 def _make_state_and_step(
     cfg: ResidMLPConfig, target: ResidMLPTarget, sites: tuple[SiteSpec, ...], total_steps: int
-) -> tuple[PlacedModel, TrainState, Callable[..., tuple[TrainState, dict[str, jax.Array]]]]:
+) -> tuple[
+    PlacedModel[jax.Array], TrainState, Callable[..., tuple[TrainState, dict[str, jax.Array]]]
+]:
     model = PlacedModel(model=resid_mlp_decomposed_model(cfg, target, sites), placement=None)
     vu = init_component_stacks(sites, jax.random.PRNGKey(1))
     ci_fn = init_layerwise_mlp_ci_fn(
@@ -318,7 +322,7 @@ def _make_state_and_step(
         components_optimizer=opt_vu,
         ci_fn_optimizer=opt_ci,
         total_steps=total_steps,
-        faithfulness=faithfulness_loss_for(model.model),
+        faithfulness=faithfulness_loss_for(model),
     )
     return model, state, step
 
@@ -355,7 +359,7 @@ def test_faith_warmup_decreases_faith():
     model = PlacedModel(model=resid_mlp_decomposed_model(cfg, target, sites), placement=None)
     vu = init_component_stacks(sites, jax.random.PRNGKey(1))
     opt = optax.adamw(1e-2, weight_decay=0.0)
-    wstep = make_faith_warmup_step(opt, faithfulness_loss_for(model.model))
+    wstep = make_faith_warmup_step(opt, faithfulness_loss_for(model))
     ostate = opt.init(eqx.filter(vu, eqx.is_array))
     first_loss = None
     loss = None
@@ -412,7 +416,7 @@ def _recovery_loss_metrics():
 
 
 def _faith_warmed_state(
-    model: PlacedModel,
+    model: PlacedModel[jax.Array],
     sites: tuple[SiteSpec, ...],
     total_steps: int,
     warmup_steps: int,
@@ -428,7 +432,7 @@ def _faith_warmed_state(
         jax.random.PRNGKey(2),
     )
     warm_opt = optax.adamw(1e-2, weight_decay=0.0)
-    wstep = make_faith_warmup_step(warm_opt, faithfulness_loss_for(model.model))
+    wstep = make_faith_warmup_step(warm_opt, faithfulness_loss_for(model))
     warm_state = warm_opt.init(eqx.filter(vu, eqx.is_array))
     for _ in range(warmup_steps):
         vu, warm_state, _ = wstep(model, vu, warm_state)
@@ -458,7 +462,7 @@ def _faith_warmed_state(
         components_optimizer=opt_vu,
         ci_fn_optimizer=opt_ci,
         total_steps=total_steps,
-        faithfulness=faithfulness_loss_for(model.model),
+        faithfulness=faithfulness_loss_for(model),
     )
     return state, step
 
@@ -547,9 +551,10 @@ def test_global_ci_fn_shapes_and_range():
         capture_clean(model, x @ target.W_E, ci_fn.capture_keys), remat=False, placement=None
     )
     assert isinstance(values, CI)
-    assert values.lower["layers.0.mlp_in"].shape == (b, 6)
-    assert values.lower["layers.0.mlp_out"].shape == (b, 7)
-    for v in values.lower.values():
+    assert require_full_emission(values.lower["layers.0.mlp_in"]).shape == (b, 6)
+    assert require_full_emission(values.lower["layers.0.mlp_out"]).shape == (b, 7)
+    for value in values.lower.values():
+        v = require_full_emission(value)
         assert float(v.min()) >= 0.0 and float(v.max()) <= 1.0
 
 
@@ -578,13 +583,16 @@ def test_global_ci_fn_concat_split_order_is_canonical():
     assert list(reordered) != list(inputs)
     same = ci_fn(reordered, remat=False, placement=None)
     for name in inputs:
-        assert jnp.array_equal(base.lower[name], same.lower[name]), name
+        assert jnp.array_equal(
+            require_full_emission(base.lower[name]), require_full_emission(same.lower[name])
+        ), name
     perturbed = dict(inputs)
     perturbed["layers.1.mlp_out"] = perturbed["layers.1.mlp_out"] + 1.0
     cross = ci_fn(perturbed, remat=False, placement=None)
-    assert not jnp.allclose(cross.lower["layers.0.mlp_in"], base.lower["layers.0.mlp_in"]), (
-        "global MLP must couple sites: an mlp_out perturbation should move mlp_in preactivations"
-    )
+    assert not jnp.allclose(
+        require_full_emission(cross.lower["layers.0.mlp_in"]),
+        require_full_emission(base.lower["layers.0.mlp_in"]),
+    ), "global MLP must couple sites: an mlp_out perturbation should move mlp_in preactivations"
 
 
 # ----------------------------- multi-layer forward -----------------------------

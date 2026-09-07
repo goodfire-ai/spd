@@ -18,26 +18,39 @@ import jax
 import jax.numpy as jnp
 
 from param_decomp.core.adversary import (
-    SiteSource,
-    Sources,
     SourcesAdamState,
+    SourceStack,
+    SourceStacks,
     init_sources_adam_state,
     sources_adam_ascend_project,
 )
+from param_decomp.core.components import Dense, SiteSpec, site_slots_for
 from param_decomp.core.configs import AdamPGDConfig
 from param_decomp.core.schedule import ScheduleConfig
+
+SITE_SLOTS = site_slots_for(
+    (SiteSpec(name="site", factorization=Dense(d_in=2, d_out=2, C=2), group="g"),)
+)
 
 
 def _adam() -> AdamPGDConfig:
     return AdamPGDConfig(beta1=0.8, beta2=0.9, eps=1e-8, lr_schedule=ScheduleConfig.constant(0.05))
 
 
-def _grad_for_ascent(ascent_idx: int) -> Sources:
+def _stacks(components: jax.Array, delta: jax.Array) -> SourceStacks:
+    """The one-site stacks: a single slot over the `[2, C=2]` components and `[2]` delta."""
+    return SourceStacks(
+        stacks={"g": SourceStack(components=components[None], delta=delta[None])},
+        site_slots=SITE_SLOTS,
+    )
+
+
+def _grad_for_ascent(ascent_idx: int) -> SourceStacks:
     # Distinct per ascent so the Adam moments are non-degenerate and the bias-correction
     # divisor genuinely matters (constant grads would converge m/v to the grad and shrink
     # the count-1-vs-count-N+1 gap).
     values = jnp.sin(jnp.arange(6.0).reshape(2, 3) + float(ascent_idx))
-    return {"site": SiteSource(values[..., :-1], values[..., -1])}
+    return _stacks(values[..., :-1], values[..., -1])
 
 
 def _roundtrip(adam_state: SourcesAdamState) -> SourcesAdamState:
@@ -50,8 +63,8 @@ def _roundtrip(adam_state: SourcesAdamState) -> SourcesAdamState:
     )
 
 
-def _ascend_n(n: int, lr: jax.Array, adam: AdamPGDConfig) -> tuple[Sources, SourcesAdamState]:
-    sources = {"site": SiteSource(jnp.full((2, 2), 0.5), jnp.full((2,), 0.5))}
+def _ascend_n(n: int, lr: jax.Array, adam: AdamPGDConfig) -> tuple[SourceStacks, SourcesAdamState]:
+    sources = _stacks(jnp.full((2, 2), 0.5), jnp.full((2,), 0.5))
     adam_state = init_sources_adam_state(sources)
     for ascent_idx in range(n):
         sources, adam_state = sources_adam_ascend_project(
@@ -71,7 +84,7 @@ def test_first_post_resume_ascent_uses_count_n_plus_1():
         sources_n, _grad_for_ascent(n), adam_state_n, lr, adam
     )
     uninterrupted_delta = jax.tree.map(
-        lambda after, before: after - before, uninterrupted_next["site"], sources_n["site"]
+        lambda after, before: after - before, uninterrupted_next, sources_n
     )
 
     # Resumed: round-trip the post-N Adam state through the checkpoint, then run the
@@ -81,9 +94,7 @@ def test_first_post_resume_ascent_uses_count_n_plus_1():
     resumed_next, resumed_state_n1 = sources_adam_ascend_project(
         sources_n, _grad_for_ascent(n), resumed_state, lr, adam
     )
-    resumed_delta = jax.tree.map(
-        lambda after, before: after - before, resumed_next["site"], sources_n["site"]
-    )
+    resumed_delta = jax.tree.map(lambda after, before: after - before, resumed_next, sources_n)
 
     assert all(
         jnp.allclose(a, b, atol=0.0, rtol=0.0)
@@ -95,9 +106,7 @@ def test_first_post_resume_ascent_uses_count_n_plus_1():
     assert all(
         jnp.array_equal(a, b)
         for a, b in zip(
-            jax.tree.leaves(resumed_next["site"]),
-            jax.tree.leaves(uninterrupted_next["site"]),
-            strict=True,
+            jax.tree.leaves(resumed_next), jax.tree.leaves(uninterrupted_next), strict=True
         )
     )
     assert jnp.array_equal(adam_state_n1.step_count, resumed_state_n1.step_count)
@@ -124,9 +133,5 @@ def test_count_reset_would_mis_scale_first_post_resume_ascent():
     assert float(reset_state_after.step_count) == 1.0
     assert any(
         not jnp.allclose(a, b)
-        for a, b in zip(
-            jax.tree.leaves(reset_next["site"]),
-            jax.tree.leaves(correct_next["site"]),
-            strict=True,
-        )
+        for a, b in zip(jax.tree.leaves(reset_next), jax.tree.leaves(correct_next), strict=True)
     )

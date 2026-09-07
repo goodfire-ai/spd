@@ -4,7 +4,7 @@ import math
 from collections import defaultdict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import einops
 import jax
@@ -15,7 +15,11 @@ from jaxtyping import Array, Float, jaxtyped
 
 from param_decomp.core.components import (
     ComponentStacks,
+    NarrowCI,
+    SiteCI,
     SiteSpec,
+    narrow_component_sums,
+    narrow_routed_counts,
 )
 from param_decomp.core.configs import (
     FrequencyMinimalityConfig,
@@ -133,11 +137,11 @@ class OutputAndHiddenActsReconstructionLoss(NamedTuple):
 type ReconstructionLoss = OutputOnlyReconstructionLoss | OutputAndHiddenActsReconstructionLoss
 
 
-def reconstruction_loss(
-    recon_loss_fn: Callable[[Any, Any], Array],
+def reconstruction_loss[Out](
+    recon_loss_fn: Callable[[Out, Out], Array],
     *,
-    masked: ForwardObservations,
-    clean: ForwardObservations,
+    masked: ForwardObservations[Out],
+    clean: ForwardObservations[Out],
     reconstruction: ReconstructionSpec,
     valid_row_mask: Array | None = None,
 ) -> ReconstructionLoss:
@@ -305,19 +309,62 @@ def nonlinearity_loss(
     return total, by_kind
 
 
+def _narrow_site_frequencies(
+    ci: NarrowCI, per_value_penalty: Callable[[Array], Array]
+) -> Float[Array, " C"]:
+    """The exact full-width `f_c` from the bundle: routed values' penalties scatter to
+    their global components (`narrow_component_sums` — shard-local partial sums, one
+    global reduction BEFORE the convex `log2`, S8/D2's Jensen requirement), and every
+    unrouted (token, component) contributes `psi(0)` — zero for smooth-L0's psi, kept so
+    the helper is exact for any per-value penalty — over the SAME `B·T` denominator."""
+    n = math.prod(ci.values.shape[:-1])
+    routed_sums = narrow_component_sums(ci, per_value_penalty(ci.values.astype(jnp.float32)))
+    routed_counts = narrow_routed_counts(ci)
+    psi_zero = per_value_penalty(jnp.zeros((), jnp.float32))
+    unrouted = jnp.repeat(n - routed_counts, ci.c_per_expert) * psi_zero
+    return (routed_sums + unrouted) / n
+
+
+def _site_frequencies(
+    ci: SiteCI, per_value_penalty: Callable[[Array], Array]
+) -> Float[Array, " _"]:
+    match ci:
+        case NarrowCI():
+            return _narrow_site_frequencies(ci, per_value_penalty)
+        case jax.Array():
+            return einops.reduce(per_value_penalty(ci.astype(jnp.float32)), "... c -> c", "mean")
+
+
 def _per_component_frequencies(
-    ci_upper: dict[str, Float[Array, "*leading _"]],
+    ci_upper: Mapping[str, SiteCI],
     per_value_penalty: Callable[[Float[Array, "*leading _"]], Float[Array, "*leading _"]],
 ) -> dict[str, Float[Array, " _"]]:
     """Per-site firing frequencies `f_c = mean_{b,t} psi(c)` for any per-value penalty
     `psi` (SPEC S8). Under GSPMD the leading axes are the global batch, so the reduction
     IS the exact global per-component mean — XLA reduces across shards inside the graph,
     so `f_c` is the true full-batch frequency inside the convex `log2` (a per-shard
-    `f_c` would give a Jensen bias)."""
-    return {
-        name: einops.reduce(per_value_penalty(ci.astype(jnp.float32)), "... c -> c", "mean")
-        for name, ci in ci_upper.items()
-    }
+    `f_c` would give a Jensen bias). Narrow sites take the exact scatter arm
+    (`_narrow_site_frequencies`); the full `[C]` vector exists only HERE, as a
+    reduction, never as a per-token tensor."""
+    return {name: _site_frequencies(ci, per_value_penalty) for name, ci in ci_upper.items()}
+
+
+def _site_activity(ci: SiteCI, per_value_penalty: Callable[[Array], Array]) -> Float[Array, ""]:
+    """One site's activity contribution `Σ_c f_c`, computed WITHOUT the `[C]` accumulator:
+    a narrow site's sum over the narrow axis is exact under the same `B·T` denominator
+    (zeros contribute nothing to a sum — never a mean over the last axis, which would
+    corrupt the denominator), plus the per-site `(C − k·c)·psi(0)` constant — zero for
+    smooth-L0's psi, kept so the helper is exact for any per-value penalty."""
+    match ci:
+        case NarrowCI():
+            n = math.prod(ci.values.shape[:-1])
+            routed = jnp.sum(per_value_penalty(ci.values.astype(jnp.float32))) / n
+            psi_zero = per_value_penalty(jnp.zeros((), jnp.float32))
+            return routed + (ci.C - ci.values.shape[-1]) * psi_zero
+        case jax.Array():
+            return jnp.sum(
+                einops.reduce(per_value_penalty(ci.astype(jnp.float32)), "... c -> c", "mean")
+            )
 
 
 def _frequency_curve(f: Float[Array, " _"], reference_datapoint_count: int) -> Float[Array, " _"]:
@@ -334,15 +381,29 @@ def _frequency_curve_slope(
 
 
 def _smooth_l0_psi(
-    gamma: Float[Array, ""],
+    gamma: Float[Array, ""], *, normalize_at_one: bool
 ) -> Callable[[Float[Array, "*leading _"]], Float[Array, "*leading _"]]:
     gamma_sq = gamma * gamma
+    if normalize_at_one:
+        return lambda ci: (1.0 + gamma_sq) * ci**2 / (ci**2 + gamma_sq)
     return lambda ci: ci**2 / (ci**2 + gamma_sq)
 
 
 def activity_sum(frequencies: dict[str, Float[Array, " _"]]) -> Float[Array, ""]:
     """`Σ_s Σ_c f_c` — the linear importance term (SPEC S8)."""
     return sum((jnp.sum(f) for f in frequencies.values()), start=jnp.zeros((), jnp.float32))
+
+
+def activity_sum_from_ci(
+    ci_upper: Mapping[str, SiteCI], gamma: Array, *, normalize_at_one: bool
+) -> Float[Array, ""]:
+    """The activity term directly from the CI values — the reader for steps with NO
+    frequency penalty, whose narrow arm needs no `[C]` machinery at all."""
+    per_value_penalty = _smooth_l0_psi(gamma, normalize_at_one=normalize_at_one)
+    return sum(
+        (_site_activity(ci, per_value_penalty) for ci in ci_upper.values()),
+        start=jnp.zeros((), jnp.float32),
+    )
 
 
 def _frequency_penalty(
@@ -353,19 +414,6 @@ def _frequency_penalty(
         (jnp.sum(_frequency_curve(f, reference_datapoint_count)) for f in frequencies.values()),
         start=jnp.zeros((), jnp.float32),
     )
-
-
-def _activity_and_freq(
-    frequencies: dict[str, Float[Array, " _"]], reference_datapoint_count: int | None
-) -> tuple[Float[Array, ""], Float[Array, ""]]:
-    """`(activity, freq)` from one set of per-site frequencies; `freq = 0.0` when no
-    frequency penalty is configured (`reference_datapoint_count is None`, SPEC S8')."""
-    freq = (
-        _frequency_penalty(frequencies, reference_datapoint_count)
-        if reference_datapoint_count is not None
-        else jnp.zeros((), jnp.float32)
-    )
-    return activity_sum(frequencies), freq
 
 
 def ema_frequency_penalty(
@@ -405,24 +453,39 @@ def ema_frequency_penalty(
 
 @jaxtyped(typechecker=beartype)
 def importance_minimality_terms(
-    ci_upper: dict[str, Float[Array, "*leading _"]],
+    ci_upper: Mapping[str, SiteCI],
     gamma: Float[Array, ""],
     reference_datapoint_count: int | None,
+    *,
+    normalize_at_one: bool,
 ) -> tuple[Float[Array, ""], Float[Array, ""]]:
     """Geman–McClure smooth-L0 imp-min terms: per-value penalty `c^2 / (c^2 + gamma^2)`.
     Flat at the origin (`phi'(0)=0`) and bounded (`|phi'| <= 0.65/gamma`) — no singularity,
-    no `eps` floor. Approaches the true `L_0` count as `gamma -> 0`."""
-    return _activity_and_freq(
-        _per_component_frequencies(ci_upper, _smooth_l0_psi(gamma)), reference_datapoint_count
+    no `eps` floor. Approaches the true `L_0` count as `gamma -> 0`. `normalize_at_one`
+    switches to `(1 + gamma^2) c^2 / (c^2 + gamma^2)`, so `c = 1` contributes exactly 1.
+
+    Without a frequency penalty (`reference_datapoint_count is None`, SPEC S8'), the
+    activity reads the CI values directly (no `[C]` accumulator — a narrow site's sum is
+    exact as-is) and `freq = 0.0`; with one, both terms read the same per-component
+    frequencies."""
+    if reference_datapoint_count is None:
+        return activity_sum_from_ci(ci_upper, gamma, normalize_at_one=normalize_at_one), jnp.zeros(
+            (), jnp.float32
+        )
+    frequencies = _per_component_frequencies(
+        ci_upper, _smooth_l0_psi(gamma, normalize_at_one=normalize_at_one)
     )
+    return activity_sum(frequencies), _frequency_penalty(frequencies, reference_datapoint_count)
 
 
 def per_component_frequencies(
-    ci_upper: dict[str, Float[Array, "*leading _"]], gamma: Array
+    ci_upper: Mapping[str, SiteCI], gamma: Array, *, normalize_at_one: bool
 ) -> dict[str, Float[Array, " _"]]:
     """The per-site `f_c` vectors both imp-min readouts consume (SPEC S8), under the
     smooth-L0 penalty at its annealed width (SPEC S9)."""
-    return _per_component_frequencies(ci_upper, _smooth_l0_psi(gamma))
+    return _per_component_frequencies(
+        ci_upper, _smooth_l0_psi(gamma, normalize_at_one=normalize_at_one)
+    )
 
 
 class BatchFrequencyTerm(NamedTuple):
@@ -498,7 +561,7 @@ def resolve_frequency(cfg: FrequencyMinimalityConfig) -> FrequencyRole:
 
 
 def imp_min_terms(
-    ci_upper: dict[str, Float[Array, "*leading _"]],
+    ci_upper: Mapping[str, SiteCI],
     cfg: ImportanceMinimalityLossConfig,
     gamma: Array,
 ) -> tuple[Float[Array, ""], Float[Array, ""]]:
@@ -507,4 +570,4 @@ def imp_min_terms(
     `per_component_frequencies` + `activity_sum` + the resolved `FrequencyRole`'s `term`
     instead (SPEC S8'')."""
     ref = cfg.frequency.reference_datapoint_count if cfg.frequency is not None else None
-    return _activity_and_freq(per_component_frequencies(ci_upper, gamma), ref)
+    return importance_minimality_terms(ci_upper, gamma, ref, normalize_at_one=cfg.normalize_at_one)

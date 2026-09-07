@@ -37,8 +37,8 @@ class ExperimentConfigBase(BaseConfig):
     Each domain owns its `eval:` schema. Omit `wandb:` to skip wandb (the run still writes
     `launch_config.yaml` + checkpoints locally).
 
-    The run id is NOT a config field: it is minted by the launcher and passed to
-    `run_instance` as an explicit argument. The run dir is a pure function of the
+    The run id is NOT a config field: the entry point mints it or accepts it explicitly,
+    then passes it to `run_instance`. The run dir is a pure function of the
     entry point's `data_root` + id (`<data_root>/runs/<run_id>`).
     """
 
@@ -67,8 +67,8 @@ def run_instance(
     data_root: Path,
     resume_provenance: ResumeProvenance | None,
 ) -> RunInstance:
-    """The resolved run identity + logging lineage. `run_id` is minted by the launcher (a
-    toy mints its own); the run dir is `<data_root>/runs/<run_id>`. Fine-tune provenance is
+    """The resolved run identity + logging lineage. The composition root supplies
+    `run_id` (a toy mints its own); the run dir is `<data_root>/runs/<run_id>`. Fine-tune provenance is
     explicit because only domains that implement resume expose it."""
     assert _RUN_ID_PATTERN.match(run_id), f"run_id must be p-<8hex>, got {run_id!r}"
     return RunInstance(

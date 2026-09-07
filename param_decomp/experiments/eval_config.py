@@ -20,8 +20,8 @@ from param_decomp.core.configs import (
     LossMetricConfig,
     PermutedCIPlotsConfig,
     PGDReconLossConfig,
+    SlowPGDReconLossConfig,
     UVPlotsConfig,
-    WellTemperednessConfig,
 )
 from param_decomp.core.eval_schedule import EvalSchedule, Every, FirstThenEvery
 from param_decomp.experiments.lm.eval_config import (
@@ -29,6 +29,7 @@ from param_decomp.experiments.lm.eval_config import (
     CEandKLLossesConfig,
     CIMaskedAttnPatternsReconLossConfig,
     StochasticAttnPatternsReconLossConfig,
+    WellTemperednessConfig,
 )
 
 AnyEvalMetricConfig = Annotated[
@@ -42,6 +43,7 @@ AnyEvalMetricConfig = Annotated[
     | IdentityCIErrorConfig
     | PermutedCIPlotsConfig
     | PGDReconLossConfig
+    | SlowPGDReconLossConfig
     | StochasticAttnPatternsReconLossConfig
     | UVPlotsConfig
     | WellTemperednessConfig,
