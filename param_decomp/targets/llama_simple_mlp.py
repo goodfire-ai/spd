@@ -254,6 +254,9 @@ class AttentionSinkFrozenAttn(FrozenAttn):
         b, h, t, _ = masked_scores.shape
         assert self.sinks.shape == (h,), (self.sinks.shape, h)
         sink_logits = jnp.broadcast_to(self.sinks[None, :, None, None], (b, h, t, 1))
+        scores_sharding = jax.typeof(masked_scores).sharding
+        if isinstance(scores_sharding, NamedSharding) and not scores_sharding.mesh.empty:
+            sink_logits = jax.sharding.reshard(sink_logits, scores_sharding)
         return jax.nn.softmax(jnp.concatenate((masked_scores, sink_logits), axis=-1), axis=-1)[
             ..., :-1
         ]

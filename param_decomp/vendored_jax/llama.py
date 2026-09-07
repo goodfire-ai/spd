@@ -205,6 +205,8 @@ def causal_sink_sdpa(
     causal = jnp.triu(jnp.ones((t, t), dtype=bool), k=1)
     scores = jnp.where(causal, -jnp.inf, scores)
     sink_logits = jnp.broadcast_to(sinks.astype(jnp.float32)[None, :, None, None], (b, h, t, 1))
+    if qkv_sharding is not None:
+        sink_logits = jax.sharding.reshard(sink_logits, jax.typeof(scores).sharding)
     probs = jax.nn.softmax(jnp.concatenate((scores, sink_logits), axis=-1), axis=-1)
     return jnp.einsum("bhqk,bhkd->bhqd", probs[..., :-1].astype(v.dtype), v)
 
