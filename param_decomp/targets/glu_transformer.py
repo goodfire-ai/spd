@@ -443,6 +443,20 @@ class FrozenAttn(eqx.Module):
         """Family hook between the head reshape and RoPE; identity for plain attention."""
         return q, k
 
+    def _sdpa(
+        self,
+        q: Float[Array, "b h t hd"],
+        k: Float[Array, "b kvh t hd"],
+        v: Float[Array, "b kvh t hd"],
+        qkv_sharding: jax.sharding.Sharding | None,
+    ) -> Array:
+        """Family hook for attention variants that change the softmax denominator."""
+        return causal_sdpa(q, k, v, qkv_sharding, self.implementation)
+
+    def _pattern_softmax(self, masked_scores: Float[Array, "b h t t"]) -> Array:
+        """Family hook matching `_sdpa` for eval-only attention maps."""
+        return jax.nn.softmax(masked_scores, axis=-1)
+
     def shardings(self, placement: PlacementRules, axes: Axes) -> "FrozenAttn":
         assert axes in (("d_out", "d_in"), ("layer", "d_out", "d_in")), axes
         column = placement.target.column.persist
@@ -502,7 +516,7 @@ class FrozenAttn(eqx.Module):
         cos, sin = rope_cos_sin(inv_freq, t, q_flat.dtype)
         q, k = apply_rope(q, k, cos, sin)
         output = (
-            causal_sdpa(q, k, v, qkv_spec, self.implementation)
+            self._sdpa(q, k, v, qkv_spec)
             .transpose(0, 2, 1, 3)
             .reshape(b, t, self.n_head * self.head_dim)
         )
@@ -532,7 +546,7 @@ class FrozenAttn(eqx.Module):
         scores = jnp.einsum("bhqd,bhkd->bhqk", q.astype(jnp.float32), k.astype(jnp.float32))
         scores = scores / self.head_dim**0.5
         causal = jnp.triu(jnp.ones((t, t), bool), k=1)
-        return jax.nn.softmax(jnp.where(causal, -jnp.inf, scores), axis=-1)
+        return self._pattern_softmax(jnp.where(causal, -jnp.inf, scores))
 
 
 class GatedMLP(eqx.Module):

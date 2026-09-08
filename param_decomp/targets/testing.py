@@ -29,6 +29,7 @@ from param_decomp.targets.glu_transformer import (
     GLUDecomposedModel,
     GLULayer,
     PlainMLP,
+    TiedHead,
     build_decomposed_lm,
     parse_site_name,
 )
@@ -171,7 +172,7 @@ def tiny_simple_mlp_decomposed_model(
     layers = _tiny_simple_mlp_layers(cfg, cfg.n_layer, layers_key)
     embed = jax.random.normal(embed_key, (cfg.vocab_size, cfg.n_embd)) * 0.02
     return build_decomposed_simple_mlp(
-        embed=embed, layers=layers, norm=jnp.ones((cfg.n_embd,)),
+        embed=embed, layers=layers, norm=jnp.ones((cfg.n_embd,)), lm_head=TiedHead(),
         cfg=cfg, sites=sites,
     )  # fmt: skip
 

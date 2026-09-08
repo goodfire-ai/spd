@@ -7,13 +7,15 @@ capability reimplementation (next-token CE, AdamW, cosine LR) — NOT a bit-exac
 The `LlamaSimpleMLP` checkpoint format is load-bearing: `param_decomp.targets.llama_simple_mlp`
 (`load_target_from_pretrain_cache`) reads safetensors keyed
 `h.{i}.attn.{q,k,v,o}_proj.weight`, `h.{i}.mlp.{c_fc,down_proj}.weight`,
-`h.{i}.rms_{1,2}.weight`, `wte.weight`, `ln_f.weight` (NO `lm_head.weight` — tied to
-`wte`), every weight in torch `nn.Linear` orientation `(d_out, d_in)`. `state_dict`
+`h.{i}.rms_{1,2}.weight`, `wte.weight`, `ln_f.weight`, plus `lm_head.weight` for an
+untied head and `h.{i}.attn.sinks` for learned sink logits. Every matrix uses torch
+`nn.Linear` orientation `(d_out, d_in)`. `state_dict`
 (below) emits exactly those keys, so a freshly-pretrained target is decomposable with no
 conversion. The other two archs follow the same key convention for symmetry.
 
-All three are pre-norm decoder blocks under a flat `h.{i}.` module tree, `wte` tied to
-`lm_head`, no biases on the Llama variants. RoPE is plain rotate-half
+All three are pre-norm decoder blocks under a flat `h.{i}.` module tree. The original
+variants tie `wte` to `lm_head`; `LlamaSimpleMLP` can instead carry a separate output
+head and learned attention-sink logits. The Llama variants have no biases. RoPE is plain rotate-half
 (`param_decomp.vendored_jax.llama.{rope_cos_sin,apply_rope}`); the GELU is the tanh approximation
 (torch `NewGELU`), matching the JAX port pinned by `param_decomp/tests/targets/simple_mlp_equivalence/`.
 
@@ -37,6 +39,7 @@ from param_decomp.core.base_config import BaseConfig
 from param_decomp.vendored_jax.llama import (
     apply_rope,
     causal_sdpa,
+    causal_sink_sdpa,
     repeat_kv,
     rms_norm,
     rope_cos_sin,
@@ -87,6 +90,8 @@ class LlamaSimpleConfig(BaseConfig):
 
 class LlamaSimpleMLPConfig(BaseConfig):
     model_type: Literal["LlamaSimpleMLP"]
+    tie_word_embeddings: bool = True
+    attention_sinks: bool = False
     block_size: int = 1024
     vocab_size: int = 50257
     n_layer: int = 12
@@ -260,11 +265,16 @@ def init_gpt2_simple(cfg: GPT2SimpleConfig, key: Array) -> GPT2Simple:
 # ----------------------------- Llama variants (shared rotary GQA attention) -----------------------------
 
 
+class TiedLMHead(eqx.Module):
+    """No-leaf marker: logits reuse `wte` rather than carrying a second trainable array."""
+
+
 class LlamaAttention(eqx.Module):
     wq: Float[Array, "qd d"]
     wk: Float[Array, "kvd d"]
     wv: Float[Array, "kvd d"]
     wo: Float[Array, "d qd"]
+    sinks: Float[Array, " h"] | None
     n_head: int = eqx.field(static=True)
     n_kv_head: int = eqx.field(static=True)
     head_dim: int = eqx.field(static=True)
@@ -277,13 +287,12 @@ class LlamaAttention(eqx.Module):
         v = (x @ self.wv.T).reshape(b, t, self.n_kv_head, self.head_dim).transpose(0, 2, 1, 3)
         cos, sin = rope_cos_sin(inv_freq, t, x.dtype)
         q, k = apply_rope(q, k, cos, sin)
-        k = repeat_kv(k, self.n_rep)
-        v = repeat_kv(v, self.n_rep)
-        y = (
-            causal_sdpa(q, k, v, None, "auto")
-            .transpose(0, 2, 1, 3)
-            .reshape(b, t, self.n_head * self.head_dim)
+        attention = (
+            causal_sdpa(q, repeat_kv(k, self.n_rep), repeat_kv(v, self.n_rep), None, "auto")
+            if self.sinks is None
+            else causal_sink_sdpa(q, k, v, self.sinks, None)
         )
+        y = attention.transpose(0, 2, 1, 3).reshape(b, t, self.n_head * self.head_dim)
         return y @ self.wo.T
 
 
@@ -303,6 +312,11 @@ def _init_llama_attention(
         wk=_normal(keys(), (kvd, d), _linear_std(cfg, False)),
         wv=_normal(keys(), (kvd, d), _linear_std(cfg, False)),
         wo=_normal(keys(), (d, qd), _linear_std(cfg, True)),
+        sinks=(
+            _normal(keys(), (cfg.n_head,), 0.02)
+            if isinstance(cfg, LlamaSimpleMLPConfig) and cfg.attention_sinks
+            else None
+        ),
         n_head=cfg.n_head,
         n_kv_head=cfg.n_key_value_heads,
         head_dim=cfg.head_dim,
@@ -403,6 +417,7 @@ class LlamaSimpleMLPBlock(eqx.Module):
 
 class LlamaSimpleMLP(eqx.Module):
     wte: Float[Array, "vocab d"]
+    lm_head: Float[Array, "vocab d"] | TiedLMHead
     blocks: list[LlamaSimpleMLPBlock]
     norm: Float[Array, " d"]
     inv_freq: Float[Array, " hd2"]
@@ -416,11 +431,14 @@ class LlamaSimpleMLP(eqx.Module):
         for block in self.blocks:
             x = block(x, self.inv_freq)
         x = rms_norm(x, self.norm, self.eps)
-        return x @ self.wte.T
+        head = self.wte if isinstance(self.lm_head, TiedLMHead) else self.lm_head
+        return x @ head.T
 
     def state_dict(self) -> dict[str, Array]:
-        """The exact keys `param_decomp.targets.llama_simple_mlp` loads — no `lm_head` (tied)."""
+        """The exact keys `param_decomp.targets.llama_simple_mlp` loads."""
         sd: dict[str, Array] = {"wte.weight": self.wte, "ln_f.weight": self.norm}
+        if not isinstance(self.lm_head, TiedLMHead):
+            sd["lm_head.weight"] = self.lm_head
         for i, block in enumerate(self.blocks):
             sd[f"h.{i}.rms_1.weight"] = block.ln1
             sd[f"h.{i}.rms_2.weight"] = block.ln2
@@ -428,13 +446,18 @@ class LlamaSimpleMLP(eqx.Module):
             sd[f"h.{i}.attn.k_proj.weight"] = block.attn.wk
             sd[f"h.{i}.attn.v_proj.weight"] = block.attn.wv
             sd[f"h.{i}.attn.o_proj.weight"] = block.attn.wo
+            if block.attn.sinks is not None:
+                sd[f"h.{i}.attn.sinks"] = block.attn.sinks
             sd[f"h.{i}.mlp.c_fc.weight"] = block.Wfc
             sd[f"h.{i}.mlp.down_proj.weight"] = block.Wdown
         return sd
 
 
 def init_llama_simple_mlp(cfg: LlamaSimpleMLPConfig, key: Array) -> LlamaSimpleMLP:
-    keys_it = iter(jax.random.split(key, cfg.n_layer * 6 + 2))
+    keys_per_layer = 6 + int(cfg.attention_sinks)
+    keys_it = iter(
+        jax.random.split(key, cfg.n_layer * keys_per_layer + 2 + int(not cfg.tie_word_embeddings))
+    )
     nxt = lambda: next(keys_it)
     d, di = cfg.n_embd, cfg.n_intermediate
     blocks = [
@@ -448,8 +471,11 @@ def init_llama_simple_mlp(cfg: LlamaSimpleMLPConfig, key: Array) -> LlamaSimpleM
         )
         for _ in range(cfg.n_layer)
     ]
+    wte = _normal(nxt(), (cfg.vocab_size, d), 0.02)
+    lm_head = TiedLMHead() if cfg.tie_word_embeddings else _normal(nxt(), wte.shape, 0.02)
     return LlamaSimpleMLP(
-        wte=_normal(nxt(), (cfg.vocab_size, d), 0.02),
+        wte=wte,
+        lm_head=lm_head,
         blocks=blocks,
         norm=jnp.ones((d,)),
         inv_freq=_plain_rope_inv_freq(cfg),
