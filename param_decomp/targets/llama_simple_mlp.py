@@ -50,7 +50,7 @@ from param_decomp.core.components import SiteC, SiteDims, SiteSpec
 from param_decomp.core.family import ArchFamily
 from param_decomp.core.nonlinearity import NonlinearityPartition
 from param_decomp.core.placement import PlacementRules
-from param_decomp.target_ports.llama import causal_sink_sdpa
+from param_decomp.vendored_jax.llama import causal_sink_sdpa
 from param_decomp.targets.glu_transformer import (
     Anatomy,
     FrozenAttn,

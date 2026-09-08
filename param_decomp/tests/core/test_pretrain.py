@@ -23,7 +23,7 @@ from param_decomp.pretrain.models import (
     model_logits,
 )
 from param_decomp.pretrain.train import train
-from param_decomp.target_ports.llama import causal_sink_sdpa
+from param_decomp.vendored_jax.llama import causal_sink_sdpa
 from param_decomp.targets.testing import run_clean
 
 
