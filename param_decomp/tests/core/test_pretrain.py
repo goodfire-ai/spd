@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Never
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -87,6 +88,15 @@ def test_all_archs_forward(cfg: ModelConfig):
     )
     assert out.shape == (2, 16, cfg.vocab_size)
     assert bool(jnp.isfinite(out).all())
+
+
+@pytest.mark.parametrize("cfg", _tiny_configs())
+def test_every_trained_array_is_exported(cfg: ModelConfig):
+    """The optimizer updates every array leaf, so every array leaf must reach the cache.
+    Architecture constants (RoPE frequencies) are static fields, rebuilt from config."""
+    model = init_model(cfg, jax.random.PRNGKey(0), "xla")
+    trained = {id(leaf) for leaf in jax.tree.leaves(eqx.filter(model, eqx.is_array))}
+    assert trained == {id(tensor) for tensor in model.state_dict().values()}
 
 
 @pytest.mark.skipif(jax.default_backend() != "cpu", reason="exercises unavailable cuDNN on CPU")

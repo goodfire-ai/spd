@@ -31,6 +31,7 @@ from typing import Literal
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jaxtyping import Array, Float
 
 from param_decomp.attention import AttentionImplementation, causal_attention_head_first
@@ -292,9 +293,9 @@ class LlamaAttention(eqx.Module):
         return y @ self.wo.T
 
 
-def _plain_rope_inv_freq(cfg: "LlamaSimpleConfig | LlamaSimpleMLPConfig") -> Float[Array, " hd2"]:
-    exponents = jnp.arange(0, cfg.head_dim, 2, dtype=jnp.float32) / cfg.head_dim
-    return 1.0 / (cfg.rotary_base**exponents)
+def _plain_rope_inv_freq(cfg: "LlamaSimpleConfig | LlamaSimpleMLPConfig") -> tuple[float, ...]:
+    exponents = np.arange(0, cfg.head_dim, 2, dtype=np.float32) / cfg.head_dim
+    return tuple(float(value) for value in 1.0 / (cfg.rotary_base**exponents))
 
 
 def _init_llama_attention(
@@ -339,7 +340,8 @@ class LlamaSimple(eqx.Module):
     wte: Float[Array, "vocab d"]
     blocks: list[LlamaSimpleBlock]
     norm: Float[Array, " d"]
-    inv_freq: Float[Array, " hd2"]
+    inv_freq: tuple[float, ...] = eqx.field(static=True)
+    """Fixed FP32 architecture constants, excluded from optimizer and compute casts."""
     n_ctx: int = eqx.field(static=True)
     eps: float = eqx.field(static=True)
 
@@ -348,8 +350,9 @@ class LlamaSimple(eqx.Module):
         t = inputs.batch.token_ids.shape[1]
         assert t <= self.n_ctx, (t, self.n_ctx)
         x = self.wte[inputs.batch.token_ids]
+        inv_freq = jnp.asarray(self.inv_freq, dtype=jnp.float32)
         for block in self.blocks:
-            x = block(x, self.inv_freq, inputs.sequence)
+            x = block(x, inv_freq, inputs.sequence)
         x = rms_norm(x, self.norm, self.eps)
         return x @ self.wte.T
 
@@ -416,7 +419,8 @@ class LlamaSimpleMLP(eqx.Module):
     wte: Float[Array, "vocab d"]
     blocks: list[LlamaSimpleMLPBlock]
     norm: Float[Array, " d"]
-    inv_freq: Float[Array, " hd2"]
+    inv_freq: tuple[float, ...] = eqx.field(static=True)
+    """Fixed FP32 architecture constants, excluded from optimizer and compute casts."""
     n_ctx: int = eqx.field(static=True)
     eps: float = eqx.field(static=True)
 
@@ -425,8 +429,9 @@ class LlamaSimpleMLP(eqx.Module):
         t = inputs.batch.token_ids.shape[1]
         assert t <= self.n_ctx, (t, self.n_ctx)
         x = self.wte[inputs.batch.token_ids]
+        inv_freq = jnp.asarray(self.inv_freq, dtype=jnp.float32)
         for block in self.blocks:
-            x = block(x, self.inv_freq, inputs.sequence)
+            x = block(x, inv_freq, inputs.sequence)
         x = rms_norm(x, self.norm, self.eps)
         return x @ self.wte.T
 
