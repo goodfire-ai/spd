@@ -61,6 +61,12 @@ a:hover { text-decoration: underline; }
 .top nav a { color: var(--text-2); }
 .top nav a.on { color: var(--text); font-weight: 600; }
 
+.disclaimer {
+  width: calc(100% - 48px); max-width: 1232px; margin: 24px auto 0; padding: 20px 24px;
+  border: 2px solid #a66b00; border-radius: 8px; background: #fff3cd; color: #3f2d00;
+  font-size: 20px; line-height: 1.5;
+}
+
 main { max-width: 1280px; margin: 0 auto; padding: 24px; }
 main.wide { max-width: 1800px; }
 h1 { font-size: 24px; margin: 0 0 6px; line-height: 1.25; }
