@@ -98,10 +98,25 @@ def parse_wandb_run_path(input_path: str) -> tuple[str, str, str]:
     )
 
 
-def fetch_latest_checkpoint_name(filenames: list[str], prefix: str | None = None) -> str:
-    """Fetch the latest checkpoint name from a list of .pth files.
+def _checkpoint_step(filename: str) -> int:
+    """Rank a checkpoint filename by its trailing `_<step>`; `-1` when there is none.
 
-    Assumes format is <name>_<step>.pth or <name>.pth.
+    Handles both `.pth` and `.pt` (the W&B caller accepts either) and treats a
+    non-integer trailing segment (e.g. `model.pth`, `model_final.pth`) as stepless.
+    """
+    stem = (
+        filename.rsplit(".pth", 1)[0] if filename.endswith(".pth") else filename.rsplit(".pt", 1)[0]
+    )
+    tail = stem.rsplit("_", 1)[-1]
+    return int(tail) if tail.isdigit() else -1
+
+
+def fetch_latest_checkpoint_name(filenames: list[str], prefix: str | None = None) -> str:
+    """Fetch the latest checkpoint name from a list of `.pth`/`.pt` files.
+
+    Assumes format is `<name>_<step>.pth` (or `.pt`) or `<name>.pth`. Files whose
+    trailing segment is not an integer rank as stepless (`-1`), so any numbered
+    checkpoint outranks them and an all-stepless set resolves lexicographically.
     """
     if prefix:
         filenames = [filename for filename in filenames if filename.startswith(prefix)]
@@ -109,7 +124,7 @@ def fetch_latest_checkpoint_name(filenames: list[str], prefix: str | None = None
         raise ValueError(f"No files found with prefix {prefix}")
     if len(filenames) == 1:
         return filenames[0]
-    return sorted(filenames, key=lambda x: int(x.split(".pth")[0].split("_")[-1]))[-1]
+    return sorted(filenames, key=lambda x: (_checkpoint_step(x), x))[-1]
 
 
 def fetch_latest_wandb_checkpoint(run: Run, prefix: str | None = None) -> File:
