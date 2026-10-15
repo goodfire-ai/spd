@@ -2,7 +2,7 @@ import os
 import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import wandb
 import wandb.errors
@@ -121,11 +121,31 @@ def fetch_latest_wandb_checkpoint(run: Run, prefix: str | None = None) -> File:
 
 
 def download_wandb_file(run: Run, wandb_run_dir: Path, file_name: str) -> Path:
-    """Download `file_name` from `run` to `wandb_run_dir`. No-op when the file already exists."""
+    """Download `file_name` from `run` to `wandb_run_dir`, trusting an existing copy
+    only when its size matches the remote.
+
+    A cache hit used to short-circuit unconditionally, so a partial download from a
+    crashed or disk-full run stayed "valid" forever. When the remote size is known
+    and disagrees with the local file, re-download with `replace=True`.
+    """
     file_on_wandb = run.file(file_name)
     assert isinstance(file_on_wandb, File)
+    target = wandb_run_dir / file_name
+    # The GraphQL attrs mark `size` optional at runtime; the SDK stubs say `int`.
+    remote_size = cast("int | None", file_on_wandb.size)
+    if target.exists() and remote_size is not None:
+        if target.stat().st_size == remote_size:
+            return target
+        logger.warning(
+            "wandb cache hit for %s is %d bytes but the remote is %d — re-downloading",
+            file_name,
+            target.stat().st_size,
+            remote_size,
+        )
+        file_on_wandb.download(exist_ok=True, replace=True, root=str(wandb_run_dir))
+        return target
     file_on_wandb.download(exist_ok=True, replace=False, root=str(wandb_run_dir))
-    return wandb_run_dir / file_name
+    return target
 
 
 def init_wandb(
