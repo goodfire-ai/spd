@@ -32,8 +32,12 @@ _WANDB_URL_RE = re.compile(
 
 
 def get_wandb_entity() -> str:
-    """Get the WandB entity from env var or the authenticated user's default entity."""
-    load_dotenv(override=True)
+    """Get the WandB entity from env var or the authenticated user's default entity.
+
+    `.env` fills in unset variables only: a real environment variable (CI secrets,
+    per-shell overrides) keeps the standard precedence over the file.
+    """
+    load_dotenv(override=False)
     entity = os.getenv("WANDB_ENTITY")
     if entity is None:
         entity = wandb.Api().default_entity
