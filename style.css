@@ -154,5 +154,15 @@ table.scores { width: auto; min-width: 460px; }
   font: 12px/1.4 ui-monospace, Menlo, monospace; padding: 5px 8px; border-radius: 6px;
   max-width: 360px; white-space: pre;
 }
+.tip.prose-tip { font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; white-space: normal; max-width: 320px; }
+a.term { color: inherit; text-decoration: underline dotted var(--muted); text-underline-offset: 3px; }
+a.term:hover { text-decoration-color: var(--accent); color: var(--accent); }
+ol.steps { padding-left: 22px; }
+ol.steps li { margin: 0 0 10px; }
+dl.glossary dt { font-weight: 650; font-size: 16px; margin: 28px 0 4px; scroll-margin-top: 64px; }
+dl.glossary dt.focus { color: var(--accent); }
+dl.glossary dd { margin: 0; }
+dl.glossary dd p { margin: 0 0 10px; }
+dl.glossary ul { margin: 0 0 10px; padding-left: 20px; }
 .note { border-left: 3px solid var(--rule); padding: 4px 12px; color: var(--text-2); font-size: 13px; margin: 12px 0; max-width: 820px; }
 footer { margin: 48px 0 0; color: var(--muted); font-size: 12px; }

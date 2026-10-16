@@ -1,6 +1,6 @@
 "use strict";
 // Static viewer for agent-written programs of Qwen3-1.7B's layer-0 MLP components. Routes:
-// #/ overview, #/components browser, #/c/<i> component pages.
+// #/ overview, #/components browser, #/c/<i> component pages, #/glossary[/<key>].
 
 const SHARD = 64;
 const PAGE = 100;
@@ -13,14 +13,135 @@ const MODELS = {
 };
 // One-at-a-time scores, in the order the data stores them.
 const METRICS = [
-  { name: "KL", tip: "KL from the original model's next-token distribution, nats/token; lower is better", lowerBetter: true },
-  { name: "ΔCE", tip: "change in next-token loss, nats/token; lower is better", lowerBetter: true },
-  { name: "VE", tip: "variance of the component's activation the predictor explains; higher is better", lowerBetter: false },
+  { name: "KL", gloss: "kl", lowerBetter: true },
+  { name: "ΔCE", gloss: "dce", lowerBetter: true },
+  { name: "VE", gloss: "ve", lowerBetter: false },
 ];
 const PROGRAM_MODELS = ["sol", "haiku", "luna"];
 
 // Training-data sources whose text the site doesn't show.
 const EXCLUDED = "text from chat logs, video transcripts, legal documents and library books";
+
+const BLOG = "https://www.goodfire.ai/research/interpreting-lm-parameters";
+const SPD_PAPER = "https://arxiv.org/abs/2506.20790";
+
+// In reading order. `short` is the hover text; `long` is the glossary entry.
+const GLOSSARY = [
+  {
+    key: "decomposition", term: "Parameter decomposition",
+    short: "A method that splits a model's weight matrices into many simple pieces, only a few of which are needed on any one token.",
+    long: `<p>Most interpretability methods decompose a model's activations; sparse autoencoders are the
+      best-known example. Parameter decomposition decomposes the <em>weights</em> instead. It writes each
+      weight matrix as a sum of many rank-one pieces, called components. Training pushes for as few
+      components as possible to be needed on each token, while the model's output stays the same.</p>
+      <p>For more, see the Goodfire post <a href="${BLOG}">Interpreting Language Model Parameters</a>
+      and the paper <a href="${SPD_PAPER}">Stochastic Parameter Decomposition</a>.</p>`,
+  },
+  {
+    key: "component", term: "Component",
+    short: "One rank-one piece u·vᵀ of a weight matrix. Here, the layer-0 MLP down-projection is split into 6,144 of them.",
+    long: `<p>A rank-one matrix <code>u·vᵀ</code>. Given an input vector <code>x</code>, it reads one direction
+      <code>v</code> of the input and writes along one direction <code>u</code> of the output. The decomposition
+      on this site splits the down-projection of Qwen3-1.7B's first MLP into 6,144 components. Together with a
+      small leftover term, they add up to the original weight matrix. On any given token, most components can be
+      removed without changing what the model does.</p>`,
+  },
+  {
+    key: "activation", term: "Component activation",
+    short: "How much a component contributes on a token: the number (x·v)·‖u‖, where x is the matrix's input. It can be positive or negative.",
+    long: `<p>A component's output on a token is <code>u·(v·x)</code>, a vector along <code>u</code>. Its activation is
+      the signed length of that vector, <code>(x·v)·‖u‖</code>. Multiplying by <code>‖u‖</code> means the number
+      doesn't depend on how the decomposition happens to split scale between <code>u</code> and <code>v</code>.
+      Unlike a neuron after a ReLU, it can be negative.</p>`,
+  },
+  {
+    key: "ci", term: "Causal importance",
+    short: "The decomposition's own estimate, between 0 and 1, of whether a component is needed on a token. Underlined tokens have causal importance above 0.1.",
+    long: `<p>Parameter decomposition trains a small network next to the components. For every component and token,
+      it outputs a value between 0 and 1. Near 0 means the component can be removed on that token without changing
+      the model's output. Near 1 means it can't. Training pushes these values toward 0, which is why most components
+      are inactive on most tokens. On the example text, tokens where a component's causal importance is above 0.1
+      are underlined.</p>`,
+  },
+  {
+    key: "program", term: "Program",
+    short: "A short Python program, written by a language-model agent, that predicts one component's activation from the text alone. The program is the explanation.",
+    long: `<p>A program reads only the text, never the model's internals, and predicts the component's activation at
+      each token. It is the explanation of that component: if programs capture what the components do, the model
+      should still work when the programs replace them. Three agents (Sol, Haiku 5.5 and Luna) each wrote one
+      program per component, after studying example text.</p>
+      <p>A program defines <code>step(carry, prefix, upstream)</code>. The harness calls it once per token, left to right:</p>
+      <ul>
+        <li><code>prefix</code> is the text up to and including the current token: token strings and ids, decoded
+          text, and which document each token belongs to (training sequences pack several documents together).</li>
+        <li><code>carry</code> is whatever the program returned at the previous token (<code>None</code> at the first),
+          so it can keep running state without re-reading the whole prefix.</li>
+        <li><code>upstream</code> holds predictions for other components the program lists in <code>READS</code>.
+          No program on this site reads any, so <code>READS = ()</code> everywhere.</li>
+      </ul>
+      <p><code>step</code> returns the new carry and the prediction. Programs may import the standard library, numpy
+      and a few table libraries, and run in a sandbox with no file or network access.</p>`,
+  },
+  {
+    key: "baselines", term: "Baselines",
+    short: "Predictors that aren't programs. Token lookup predicts each component's average activation for the current token. Zeroing removes the component.",
+    long: `<p><b>Token lookup</b> predicts, for each component, its average activation on the current token, measured
+      on training text. It knows nothing about context. <b>Zeroing</b> predicts 0 everywhere, which removes the
+      component. Applied to every component at once, zeroing removes the whole down-projection's output.</p>`,
+  },
+  {
+    key: "replace", term: "Replacing a component",
+    short: "Running the model with the component's output set to its own direction u, scaled to the predicted activation instead of the true one.",
+    long: `<p>To test a predictor, the model runs with the component's true activation swapped for the predicted one.
+      The output keeps the component's direction <code>u</code>; only its size changes. Everything else runs as
+      normal. The scores then compare the next-token predictions of this modified model with the original's.</p>
+      <p><b>All at once</b> replaces all 6,144 components together. This is the real test: it shows whether the
+      programs, taken together, can stand in for the layer. <b>One at a time</b> replaces a single component and
+      averages the scores over components. Each component is a tiny part of the model, so these scores are tiny
+      too, around 10⁻⁵ nats/token. They are useful for comparing predictors on the same component, not as
+      absolute numbers.</p>`,
+  },
+  {
+    key: "kl", term: "KL",
+    short: "KL divergence of the modified model's next-token distribution from the original's, in nats per token, averaged over positions. Lower is better; 0 means unchanged.",
+    long: `<p>At each token position, the KL divergence from the original model's next-token distribution to the
+      modified model's, averaged over positions. It is measured in nats (natural-log units) per token. 0 means the
+      modified model predicts exactly as the original does.</p>`,
+  },
+  {
+    key: "dce", term: "ΔCE",
+    short: "How much the modified model's next-token loss (cross-entropy) rises above the original's, in nats per token. Lower is better.",
+    long: `<p>The modified model's average next-token cross-entropy loss minus the original's, in nats per token. Unlike
+      KL, it only looks at the probability given to the actual next token, so it can be slightly negative by chance.</p>`,
+  },
+  {
+    key: "ve", term: "VE (variance explained)",
+    short: "The share of the variance of a component's true activation that the prediction explains. 1 is perfect; 0 is no better than always predicting the mean.",
+    long: `<p><code>1 − mean((prediction − activation)²) / variance(activation)</code>, over held-out positions. 1 is a
+      perfect prediction, and 0 is no better than predicting the component's mean activation everywhere. It is
+      negative for predictions worse than that. Zeroing has no VE.</p>`,
+  },
+  {
+    key: "heldout", term: "Held-out text",
+    short: "Text that wasn't used to write the programs or fit the baselines. All scores use it.",
+    long: `<p>Agents studied examples from the training data, and token lookup was fit on it. Scores use separate text
+      sequences that neither ever saw. Each sequence is about 500 tokens long.</p>`,
+  },
+  {
+    key: "window", term: "Example window",
+    short: "A snippet of training text around one token, coloured by the component's activation.",
+    long: `<p>A short snippet of training text centred on one token, with each token coloured by the component's
+      activation there: red for positive, blue for negative. <b>Strongest</b> windows are centred on the tokens
+      with the largest activations. <b>Weaker</b> windows are spread over the rest of the range. Agents studied
+      windows like these when writing programs.</p>`,
+  },
+];
+const GLOSSED = new Map(GLOSSARY.map((g) => [g.key, g]));
+// A glossary term in running text: hover for the short definition, click for the entry.
+const term = (key, text) => {
+  if (!GLOSSED.has(key)) throw new Error(`no glossary entry ${key}`);
+  return `<a class="term" href="#/glossary/${key}" data-gloss="${key}">${text}</a>`;
+};
 
 const cache = new Map();
 // A single-file preview (preview_artifact.py) embeds some data files and can't fetch the rest.
@@ -67,6 +188,9 @@ function route() {
   if (parts[0] === "components") {
     nav("components");
     browser().catch(fail);
+  } else if (parts[0] === "glossary") {
+    nav("glossary");
+    try { glossary(parts[1]); } catch (e) { fail(e); }
   } else if (parts[0] === "c" && /^\d+$/.test(parts[1] || "")) {
     nav("components");
     unitPage(Number(parts[1])).catch(fail);
@@ -102,49 +226,85 @@ async function overview() {
     const name = m === "zero" ? "Zero the component" : MODELS[m].name;
     return `<tr><td class="l">${name}</td>${x.map((v, k) => `<td>${metricText(k, v)}</td>`).join("")}</tr>`;
   };
+  const best = arms.filter((a) => a.unit === "components").reduce((x, y) => (x.kl < y.kl ? x : y));
   app.innerHTML = `
     <h1>Agent-written programs for every layer-0 MLP component of Qwen3-1.7B</h1>
-    <p class="lede">Parameter decomposition splits the layer-0 MLP down-projection of Qwen3-1.7B into
-    <a href="#/components">6,144 components</a>. Language-model agents each wrote a short Python program that
-    predicts one component's activation from the text. Swapped into the model all at once, the programs keep it
-    close to the original.</p>
+    <p class="lede">We split one weight matrix of Qwen3-1.7B into 6,144 simple pieces, then asked language-model
+    agents to write a short Python program for each piece that predicts what it does from the text alone.
+    With every piece replaced by its program, the model still mostly works.</p>
+
+    <h2>How this works</h2>
+    <ol class="prose steps">
+      <li><b>Decompose the weights.</b> ${term("decomposition", "Parameter decomposition")} splits the down-projection
+      of Qwen3-1.7B's first MLP layer into 6,144 rank-one ${term("component", "components")}. On any given token,
+      only a few of them matter.</li>
+      <li><b>Measure each component.</b> On every token, each component has an ${term("activation", "activation")}:
+      a single number saying how strongly it writes its output direction.</li>
+      <li><b>Write a program.</b> An agent studies ${term("window", "example text")} where a component is active, then
+      writes a ${term("program", "program")} that predicts its activation from the text so far. The program never
+      sees the model's internals, so it is a readable explanation of what the component responds to.</li>
+      <li><b>Test it inside the model.</b> We ${term("replace", "replace")} each component's true activation with the
+      program's prediction and check how much the model's next-token predictions change, on
+      ${term("heldout", "held-out text")}. If the explanation is good, they barely change.</li>
+    </ol>
 
     <h2>Replacing all 6,144 components at once</h2>
-    <p class="muted small">Every component's program substituted together in layer 0, on ${int(s.joint.rows)} held-out
-    rows (${int(s.joint.positions)} next-token positions). Lower is better. The dashed line is zeroing the whole layer.</p>
+    <p class="muted small prose">Each bar is the model with every component replaced by one predictor, over
+    ${int(s.joint.positions)} token positions. ${term("kl", "KL")} measures how far the model's next-token
+    distribution moves from the original's; ${term("dce", "ΔCE")} measures how much its loss rises. Both are in nats
+    per token, and lower is better. The dashed line is zeroing the whole layer's output, for scale.</p>
     <div class="chart">
       <div></div><div class="head">KL to the original model (nats/token)</div><div class="head">Increase in loss, ΔCE (nats/token)</div>
       ${rows}
     </div>
     <div class="legend">
       <span><i class="swatch" style="background:var(--components)"></i>programs</span>
-      <span><i class="swatch" style="background:var(--baseline)"></i>baselines</span>
+      <span><i class="swatch" style="background:var(--baseline)"></i>${term("baselines", "baselines")}</span>
     </div>
+    <p class="prose">The best programs (${MODELS[best.id].name}'s) raise the loss by ${fmt(best.ce_difference, 2)}
+    nats/token, against ${fmt(zero.ce_difference, 2)} for removing the layer's output entirely.</p>
 
     <h2>One component at a time</h2>
-    <p class="muted small prose">Replacing a single component by its predictor, on ${int(s.solo.rows)} held-out rows, averaged over
-    the 6,144 components. <b>KL</b> and <b>ΔCE</b> are in nats/token. <b>VE</b> is the variance of the component's activation the predictor explains.</p>
+    <p class="muted small prose">Here only one component is replaced at a time, on ${int(s.solo.rows)} held-out text
+    sequences, and the scores are averaged over the 6,144 components. One component is a tiny part of the model,
+    so KL and ΔCE are tiny too: compare them between rows, not against the chart above.
+    ${term("ve", "VE")} is how much of the component's activation the prediction explains, where 1 is perfect.</p>
     <table class="data scores">
-      <tr><th class="l">predictor</th>${METRICS.map((m) => `<th title="${esc(m.tip)}">mean ${m.name}</th>`).join("")}</tr>
+      <tr><th class="l">predictor</th>${METRICS.map((m) => `<th>mean ${term(m.gloss, m.name)}</th>`).join("")}</tr>
       ${[...PROGRAM_MODELS, "lookup", "zero"].map(soloRow).join("")}
     </table>
 
     <h2>What's here</h2>
     <div class="prose">
-      <p><b>Components.</b> The decomposition (run p-82af68dd, step 100,000) splits the layer-0 MLP down-projection
-      weight into 6,144 rank-one components. Each one is active on only a few tokens. Each component page shows
-      example text windows coloured by its activation, and programs by three agents: Sol, Haiku 5.5 and Luna.</p>
+      <p><b><a href="#/components">Components</a>.</b> A sortable table of all 6,144 components, each with a
+      one-line description from its program. Each component's page shows its programs, its scores, and example text
+      coloured by its activation.</p>
+      <p><b><a href="#/glossary">Glossary</a>.</b> Every term on the site, explained. Dotted-underlined words link to
+      it; hover them for a short definition.</p>
       <p><b>Data.</b> Examples are drawn from the model's training mix of public datasets: web text, code, math,
-      papers, Wikipedia, patents and agent coding traces. The site leaves out ${EXCLUDED}. Scores use separate held-out rows.</p>
-      <p><b>Programs.</b> Each program defines <code>step(carry, prefix, upstream)</code>. It sees the tokens so far and
-      returns a prediction for the current position. The docstring is the agent's own one-line description.
-      The token lookup baseline predicts each component's mean activation for the current token, with no program.</p>
+      papers, Wikipedia, patents and agent coding traces. The site leaves out ${EXCLUDED}.</p>
     </div>
-    <h3>Models</h3>
+    <h3>Agents</h3>
     <table class="data scores">
-      ${["sol", "haiku", "luna"].map((m) => `<tr><td class="l">${MODELS[m].name}</td><td class="l">${MODELS[m].full}</td></tr>`).join("")}
+      ${PROGRAM_MODELS.map((m) => `<tr><td class="l">${MODELS[m].name}</td><td class="l">${MODELS[m].full}</td></tr>`).join("")}
     </table>
-    <footer>Model: ${esc(s.model)} · site: ${esc(s.site)} · decomposition ${esc(s.decomposition.run)} at step ${int(s.decomposition.step)}.</footer>`;
+    <footer>Model: ${esc(s.model)} · weight matrix: ${esc(s.site)} · decomposition: Goodfire run ${esc(s.decomposition.run)}, training step ${int(s.decomposition.step)}.</footer>`;
+}
+
+// ---------- glossary ----------
+function glossary(focus) {
+  app.innerHTML = `
+    <h1>Glossary</h1>
+    <p class="muted prose">The terms this site uses, in the order the ideas build on each other.</p>
+    <dl class="glossary prose">${GLOSSARY.map((g) => `
+      <dt id="g-${g.key}">${g.term}</dt><dd>${g.long}</dd>`).join("")}
+    </dl>`;
+  if (focus) {
+    const entry = document.getElementById(`g-${focus}`);
+    if (!entry) throw new Error(`no glossary entry ${focus}`);
+    entry.classList.add("focus");
+    entry.scrollIntoView({ block: "start" });
+  }
 }
 
 // ---------- browser ----------
@@ -162,10 +322,12 @@ async function browser() {
 
   app.innerHTML = `
     <h1>Layer-0 MLP components</h1>
-    <p class="muted prose">${int(idx.units.length)} components. Scores replace one component at a time. Click a column to sort
-    and a row to open the component.</p>
+    <p class="muted prose">All ${int(idx.units.length)} ${term("component", "components")}, with each agent's score for
+    its program and the ${term("baselines", "token lookup baseline")}. Scores ${term("replace", "replace one component at a time")},
+    so they are tiny; the best predictor in each row is bold. The description is the first line of a program's
+    docstring. Click a column to sort and a row to open the component.</p>
     <div class="controls">
-      <span class="metric">${METRICS.map((m, k) => `<button data-metric="${k}" title="${esc(m.tip)}"${k === st.metric ? ' aria-pressed="true"' : ""}>${m.name}</button>`).join("")}</span>
+      <span class="metric">${METRICS.map((m, k) => `<button data-metric="${k}" title="${esc(GLOSSED.get(m.gloss).short)}"${k === st.metric ? ' aria-pressed="true"' : ""}>${m.name}</button>`).join("")}</span>
       <input type="search" placeholder="Search program descriptions or #index" value="${esc(st.q)}">
       <label class="small muted">Description from
         <select>${PROGRAM_MODELS.map((m) => `<option value="${m}"${m === st.desc ? " selected" : ""}>${MODELS[m].name}</option>`).join("")}</select></label>
@@ -289,10 +451,11 @@ function highlightPython(src) {
 function scoresTable(unit, models) {
   const name = (m) => (m === "zero" ? "Zero the component" : MODELS[m].name) + (m === "lookup" || m === "zero" ? ' <span class="muted">(baseline)</span>' : "");
   return `<table class="data scores">
-    <tr><th class="l">predictor</th>${METRICS.map((m) => `<th title="${esc(m.tip)}">${m.name}</th>`).join("")}</tr>
+    <tr><th class="l">predictor</th>${METRICS.map((m) => `<th>${term(m.gloss, m.name)}</th>`).join("")}</tr>
     ${models.map((m) => `<tr><td class="l">${name(m)}</td>${unit.scores[m].map((v, k) => `<td>${metricText(k, v)}</td>`).join("")}</tr>`).join("")}
   </table>
-  <p class="muted small">KL and ΔCE in nats/token; VE is the share of the component's activation variance the predictor explains.</p>`;
+  <p class="muted small">Each row ${term("replace", "replaces only this component")}. KL and ΔCE are in nats/token, lower is
+  better; VE is the share of the component's activation the prediction explains, higher is better.</p>`;
 }
 
 // Storage is unavailable in sandboxed frames; the layout choice then lasts only for the visit.
@@ -329,12 +492,18 @@ async function unitPage(i) {
     return ws.length ? `<div class="ex-group">${title}</div><div class="examples">${ws.map((w) => windowHtml(w, vocab, unit.scale)).join("")}</div>` : "";
   }).join("");
   const body = `
-    <h2>Programs</h2>${programsHtml(unit, PROGRAM_MODELS)}
+    <h2>Programs</h2>
+    <p class="muted small prose">Three agents each wrote a ${term("program", "program")} predicting this component's
+    ${term("activation", "activation")} from the text. The harness calls <code>step</code> once per token; it returns
+    a running state for the next token (<code>carry</code>) and its prediction. <code>prefix</code> is the text so far.</p>
+    ${programsHtml(unit, PROGRAM_MODELS)}
     <h2>Scores, one component at a time</h2>${scoresTable(unit, [...PROGRAM_MODELS, "lookup", "zero"])}
     <h2>Examples</h2>
-    <p class="muted small">Text windows sampled from the training data where the component is active, leaving out
-    ${EXCLUDED}. Colour is the component's activation, red positive and blue negative${unit.scale ? `; ${scaleLegend(unit.scale)}` : ""}.
-    An underline marks tokens where the decomposition counts the component as active (causal importance above 0.1). The outlined token is the window's centre. Hover a token for values.</p>
+    <p class="muted small prose">${term("window", "Text windows")} sampled from the training data where the component is
+    active, leaving out ${EXCLUDED}. Colour is the component's ${term("activation", "activation")}, red positive and blue
+    negative${unit.scale ? `; ${scaleLegend(unit.scale)}` : ""}. An underline marks tokens where the decomposition
+    counts the component as needed (${term("ci", "causal importance")} above 0.1). The outlined token is the window's
+    centre. Hover a token for its values.</p>
     ${examples || `<p class="muted">${unit.harvested_windows
       ? `All ${unit.harvested_windows} sampled windows come from datasets whose text isn't shown here.`
       : "This component wasn't active anywhere in the sampled text."}</p>`}`;
@@ -355,7 +524,11 @@ const tip = document.getElementById("tip");
 document.addEventListener("mouseover", (e) => {
   const tok = e.target.closest(".tok");
   const bar = e.target.closest("[data-tip]");
-  if (tok) {
+  const gloss = e.target.closest("[data-gloss]");
+  tip.classList.toggle("prose-tip", Boolean(gloss));
+  if (gloss) {
+    tip.textContent = GLOSSED.get(gloss.dataset.gloss).short;
+  } else if (tok) {
     const scale = Number(tok.closest(".ex").dataset.scale);
     const ci = tok.dataset.ci;
     tip.textContent = `${JSON.stringify(tok.dataset.t)}\nactivation ${fmt(Number(tok.dataset.v) * scale, 3)}${ci !== "" ? `\ncausal importance ${fmt(Number(ci), 2)}` : ""}`;
