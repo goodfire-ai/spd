@@ -16,18 +16,19 @@ guide for target implementation, sweep design, convergence, selection, and analy
   [p-63932d23](https://wandb.ai/goodfire/param-decomp/runs/p-63932d23), targeting
   [t-82543a24](https://wandb.ai/goodfire/param-decomp/runs/t-82543a24)
   (four layers, width 512, 42 experts, top-8 routing). For a fresh run on main, use
-  [the maintained config](param_decomp/experiments/lm/configs/pile_qwen3_5_moe-4L.yaml);
+  [the maintained config](param_decomp/param_decomp/experiments/lm/configs/pile_qwen3_5_moe-4L.yaml);
   its comments identify differences from that run.
 - **SPD paper (June 2025):** https://arxiv.org/abs/2506.20790. [SPD Code Release](https://github.com/goodfire-ai/param-decomp/releases/tag/v1).
 
 ## Install
 
-The public package is self-contained. Create the environment from the locked repository:
+The library is the `param_decomp/` project, with its own lock. Create its environment
+(`param_decomp/.venv`) from the repository root:
 
 ```bash
-uv sync --frozen --no-dev                    # CPU
-uv sync --frozen --no-dev --extra cuda       # NVIDIA driver r525-r579
-uv sync --frozen --no-dev --extra cuda13     # NVIDIA driver r580+
+uv sync --project param_decomp --frozen --no-dev                    # CPU
+uv sync --project param_decomp --frozen --no-dev --extra cuda       # NVIDIA driver r525-r579
+uv sync --project param_decomp --frozen --no-dev --extra cuda13     # NVIDIA driver r580+
 ```
 
 **Blackwell GPUs require `--extra cuda13` and driver r580 or newer.** The CUDA-12 lock
@@ -35,8 +36,7 @@ contains cuBLAS older than 13.2, which can silently corrupt execution on Blackwe
 than merely failing. Use `--extra cuda` only for Ampere, Ada, or Hopper hosts whose driver
 cannot load the CUDA-13 wheels.
 
-`make install` is the library-only shorthand. For development setup, see
-[Contributing](#contributing).
+For development setup, see [Contributing](#contributing).
 
 ## Run Experiments
 
@@ -44,20 +44,20 @@ A run is one self-contained YAML configuration. Start from a shipped config, mak
 for the experiment, and run it inside the GPU allocation supplied by your compute system:
 
 ```bash
-uv run python -m param_decomp.experiments.lm.run <config.yaml> \
+uv run --project param_decomp python -m param_decomp.experiments.lm.run <config.yaml> \
   --data-root <data-root> --local-device-count <devices-per-process>
 ```
 
 The `runtime.mesh` axes' product must equal the allocation's total GPU count.
 Process-local allocation size is a launch argument, not a logical mesh axis. The
 command does not submit a job or choose a cluster. For example, the current JAX reference config
-[`param_decomp/experiments/lm/configs/pile_llama_simple_mlp-4L.yaml`](param_decomp/experiments/lm/configs/pile_llama_simple_mlp-4L.yaml)
+[`param_decomp/experiments/lm/configs/pile_llama_simple_mlp-4L.yaml`](param_decomp/param_decomp/experiments/lm/configs/pile_llama_simple_mlp-4L.yaml)
 sets `mesh: {replicate: 1, fsdp: 32, tp: 1}`, and therefore needs 32 GPUs.
 
 ### Maintained LM configs
 
 - Maintain **one LM decomposition config per model** in
-  [`param_decomp/experiments/lm/configs/`](param_decomp/experiments/lm/configs/), not one
+  [`param_decomp/experiments/lm/configs/`](param_decomp/param_decomp/experiments/lm/configs/), not one
   per experiment, optimizer, layer selection, topology, or test.
 - Configs on `main` must stay runnable with the documented data, weights, and hardware;
   schema changes must update affected configs in the same PR.
@@ -76,14 +76,17 @@ sets `mesh: {replicate: 1, fsdp: 32, tp: 1}`, and therefore needs 32 GPUs.
 - LM training reads staged, pre-tokenized Parquet shards; it does not tokenize or
   stream source text at runtime.
 - Set named train/eval refs in `data.train` and `data.eval`; each resolves to
-  `<data-root>/datasets/<name>/`. See the [config/data guide](param_decomp/experiments/CLAUDE.md#lm-data).
+  `<data-root>/datasets/<name>/`. See the [config/data guide](param_decomp/param_decomp/experiments/CLAUDE.md#lm-data).
 - Match the dataset tokenizer and row width to the target; use the
-  [maintained configs](param_decomp/experiments/lm/configs/) for model-specific choices.
+  [maintained configs](param_decomp/param_decomp/experiments/lm/configs/) for model-specific choices.
 - Maintained Llama 3.1 and dense Qwen3 configs require stored document IDs; Pile 4L
   and hybrid Qwen retain token-only rows. For Llama preparation, see the
-  [prestager](param_decomp/experiments/lm/llama3/prestage_tokenized.py).
+  [prestager](param_decomp/param_decomp/experiments/lm/llama3/prestage_tokenized.py).
 - Dense Qwen3 data uses text + `<|endoftext|>` (151643), no BOS. Token-only Qwen3
   data is unsupported.
+- Every dataset PD reads is row-shuffled (`row_shuffle.json`); new runs refuse any other.
+  The maintained configs name `_rowshuf0` FineWeb and Pile sets; new datasets come from
+  `prestage_tokenized` (`tokenize` then `finish`).
 
 ### Pretrained target weights
 
@@ -96,11 +99,11 @@ network access. `python -m param_decomp.pretrain.train` writes the same layout d
 when training a target locally.
 
 TMS and ResidualMLP run the same way — in-process module mains, on CPU:
-`uv run python -m param_decomp.experiments.tms.run <config.yaml> --data-root <data-root>`
+`uv run --project param_decomp python -m param_decomp.experiments.tms.run <config.yaml> --data-root <data-root>`
 (likewise `...experiments.resid_mlp.run`). The shipped toy configs log to W&B by default,
 so authenticate with `wandb login` or set `WANDB_API_KEY` before running them. For local-only
 tests, copy the config and set `wandb: null`; the run still writes `metrics.jsonl` under
-`<data-root>/runs/<run-id>/`. See [the experiments guide](param_decomp/experiments/CLAUDE.md)
+`<data-root>/runs/<run-id>/`. See [the experiments guide](param_decomp/param_decomp/experiments/CLAUDE.md)
 for the complete LM config schema.
 
 ## Metrics
@@ -118,24 +121,26 @@ batch row independent adversarial state. Fresh evaluation PGD uses separate conf
 types requiring `source_shape: c` and `init: random`; the `PGDReconLoss` YAML tag is
 shared, with its schema selected by the containing training or evaluation list.
 Changing an older `sc` training config to `bsc` changes its adversary and multiplies
-source and optimizer-buffer storage by the global batch size. Stored-run pins require
-their original revision. Training checkpoints created before frequency estimators moved
-into the plain and targeted training-state records require a one-off external migration
-before resume; the loader intentionally has no compatibility reader. The separately
-checkpointed `decomposition` item is unchanged.
+source and optimizer-buffer storage by the global batch size. Stored-run pins
+require their original revision; checkpoints are not automatically converted.
 
-The [analytical MFU calculator](param_decomp/experiments/lm/model_flops.py) estimates useful FLOPs from an LM
+The [analytical MFU calculator](param_decomp/param_decomp/experiments/lm/model_flops.py) estimates useful FLOPs from an LM
 decomposition config and reports MFU with and without optimizer work from measured
 step time, without loading weights or compiling the training step.
 
-The root `pyproject.toml` builds the `param-decomp` library (the whole `param_decomp/`
-package). It declares no console scripts: every runnable surface is a module main, so
-the library never submits a job or chooses a machine for you.
+The `param_decomp/` project builds the `param-decomp` library. It declares no console
+scripts: every runnable surface is a module main, so the library never submits a job or
+chooses a machine for you.
 
 ## Contributing
 
-Run `make install-dev` at the repository root to install the library, development tools,
-and pre-commit hooks. Run commands with `uv run` or activate `.venv`.
+The repository is one directory per project, each with its own `pyproject.toml`; there is
+no workspace. The library (`param_decomp/`) has its own lock and depends on
+`param_decomp_formats/`, the readers of its outputs, by path. Run `make install-dev` at the
+repository root to sync the library's environment with development tools and install the
+pre-commit hooks. Run commands from the repository root with
+`uv run --project param_decomp`, or activate `param_decomp/.venv`. The Makefile's targets
+run each tool in that environment.
 
 ### Checks
 
@@ -145,17 +150,17 @@ Use the narrowest useful check while iterating:
 make check     # ruff format/lint + basedpyright
 make type      # basedpyright only
 make format    # ruff lint + format
-make lint      # what CI enforces: ruff without fixes, the `|=` check, basedpyright
+make lint      # what CI enforces: ruff without fixes, basedpyright
 make test      # testmon-selected tests, excluding slow
 make test-all  # all tests
 ```
 
 CI runs `make test-all`'s selection, every test including those marked `slow`, on every
 pull request and push to `main`, sharded across parallel jobs. The shards are an exact
-partition of the suite pinned by `param_decomp/tests/infra/test_ci_shards.py`; a new test
+partition of the suite pinned by `param_decomp/param_decomp/tests/infra/test_ci_shards.py`; a new test
 directory must be placed in one.
 
-Python `|=` is rejected by `make format`, pre-commit, and CI. Use
+Do not use Python `|=`. Use
 `dict_safe_update_` for dictionary composition so duplicate keys fail; use explicit
 `.update()` for intentional replacement or set unions, and assignment for bitwise operations.
 

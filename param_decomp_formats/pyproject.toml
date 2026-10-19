@@ -1,0 +1,19 @@
+[project]
+name = "param-decomp-formats"
+version = "0.0.1"
+description = "Readers of parameter decomposition's outputs: configs, component keys, datasets"
+requires-python = ">=3.12,<3.14"
+license = { text = "MIT" }
+# Few dependencies, loosely pinned: every project that reads PD's outputs resolves them
+# in its own lock.
+dependencies = [
+    "pydantic>=2,<2.12",
+    "annotated-types",
+    "numpy>=2",
+    "pyarrow>=19",
+    "pyyaml>=6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

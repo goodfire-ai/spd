@@ -2,6 +2,9 @@ name: Checks
 permissions:
   contents: read
 
+env:
+  UV_HTTP_RETRIES: "6"
+
 on:
   push:
     branches:
@@ -34,17 +37,17 @@ jobs:
         with:
           version: "0.8.19"
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          cache-dependency-glob: "param_decomp/uv.lock"
       - name: Set up Python
         run: uv python install 3.12
       - name: Install dependencies
-        run: uv sync --python 3.12
+        run: uv sync --project param_decomp --python 3.12
       - name: Import smoke
         run: |
-          uv run python -c "import param_decomp.core.built_run; from param_decomp.core.components import SiteSpec"
-          uv run python -m param_decomp.experiments.tms.run --help > /dev/null
+          uv run --project param_decomp python -c "import param_decomp.core.built_run; from param_decomp.core.components import SiteSpec"
+          uv run --project param_decomp python -m param_decomp.experiments.tms.run --help > /dev/null
 
-  # Once, not once per shard: ruff, the `|=` check, and basedpyright over the whole tree.
+  # Once, not once per shard: ruff and basedpyright over the whole tree.
   lint:
     name: lint and types
     runs-on: ubuntu-latest
@@ -57,7 +60,7 @@ jobs:
         with:
           version: "0.8.19"
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          cache-dependency-glob: "param_decomp/uv.lock"
       - name: Set up Python
         run: uv python install 3.13
       - name: Install dependencies
@@ -67,7 +70,7 @@ jobs:
 
   build:
     # The whole suite, sharded across parallel jobs (an exact partition — see the test-ci-*
-    # Makefile targets and `param_decomp/tests/infra/test_ci_shards.py`). Runners are
+    # Makefile targets and `param_decomp/param_decomp/tests/infra/test_ci_shards.py`). Runners are
     # 2-core machines, so wall clock is set by the slowest shard, not the sum.
     strategy:
       fail-fast: false
@@ -120,7 +123,7 @@ jobs:
         with:
           version: "0.8.19"
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          cache-dependency-glob: "param_decomp/uv.lock"
 
       - name: Set up Python
         run: uv python install 3.13
@@ -151,9 +154,9 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: .jax_test_cache
-          key: jax-test-cache-${{ matrix.shard }}-${{ hashFiles('uv.lock') }}-${{ steps.cache-key.outputs.week }}
+          key: jax-test-cache-${{ matrix.shard }}-${{ hashFiles('param_decomp/uv.lock') }}-${{ steps.cache-key.outputs.week }}
           restore-keys: |
-            jax-test-cache-${{ matrix.shard }}-${{ hashFiles('uv.lock') }}-
+            jax-test-cache-${{ matrix.shard }}-${{ hashFiles('param_decomp/uv.lock') }}-
 
       # An aborting pass must not dump core: one process holding eight simulated devices'
       # executables dumps multiple GB, enough to fill the runner's disk.
@@ -184,4 +187,25 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: .jax_test_cache
-          key: jax-test-cache-${{ matrix.shard }}-${{ hashFiles('uv.lock') }}-${{ steps.cache-key.outputs.week }}
+          key: jax-test-cache-${{ matrix.shard }}-${{ hashFiles('param_decomp/uv.lock') }}-${{ steps.cache-key.outputs.week }}
+
+  # One check that every other job passed, so branch protection can require a single
+  # check rather than every shard.
+  checks-passed:
+    name: checks passed
+    if: always()
+    needs: [python-312-compat, lint, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every job passed or was skipped
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *) exit 1 ;;
+            esac
+          done
