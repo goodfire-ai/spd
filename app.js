@@ -1,6 +1,6 @@
 "use strict";
-// Static viewer for agent-written programs of Qwen3-1.7B's layer-0 MLP components. Routes:
-// #/ overview, #/components browser, #/c/<i> component pages, #/glossary[/<key>].
+// Viewer for agent-written programs of Qwen3-1.7B's MLP down-projection components, several layers.
+// Routes: #/ overview, #/l/<L> a layer's components, #/c/<L>/<i> component pages, #/glossary[/<key>].
 
 const SHARD = 64;
 const PAGE = 100;
@@ -9,18 +9,17 @@ const MODELS = {
   haiku: { name: "Haiku 5.5", full: "Anthropic claude-haiku-5-5, high effort" },
   luna: { name: "Luna", full: "OpenAI gpt-6-luna, high reasoning effort" },
   lookup: { name: "Token lookup" },
+  lookup_plus: { name: "Token lookup+", full: "token lookup fit without documents' first tokens, which stay unchanged" },
   zero: { name: "Zeroing" },
 };
 // One-at-a-time scores, in the order the data stores them.
 const METRICS = [
-  { name: "KL", gloss: "kl", lowerBetter: true },
-  { name: "ΔCE", gloss: "dce", lowerBetter: true },
-  { name: "VE", gloss: "ve", lowerBetter: false },
+  { name: "KL", tip: "KL from the original model's next-token distribution, nats/token; lower is better", lowerBetter: true },
+  { name: "ΔCE", tip: "change in next-token loss, nats/token; lower is better", lowerBetter: true },
+  { name: "VE", tip: "variance of the component's activation the predictor explains; higher is better", lowerBetter: false },
 ];
-const PROGRAM_MODELS = ["sol", "haiku", "luna"];
+let PROGRAM_MODELS = ["sol", "haiku", "luna"];  // the current layer's; set per page
 
-// Training-data sources whose text the site doesn't show.
-const EXCLUDED = "text from chat logs, video transcripts, legal documents and library books";
 
 const BLOG = "https://www.goodfire.ai/research/interpreting-lm-parameters";
 const SPD_PAPER = "https://arxiv.org/abs/2506.20790";
@@ -39,10 +38,10 @@ const GLOSSARY = [
   },
   {
     key: "component", term: "Component",
-    short: "One rank-one piece u·vᵀ of a weight matrix. Here, the layer-0 MLP down-projection is split into 6,144 of them.",
+    short: "One rank-one piece u·vᵀ of a weight matrix. Here, each layer's MLP down-projection is split into 6,144 of them.",
     long: `<p>A rank-one matrix <code>u·vᵀ</code>. Given an input vector <code>x</code>, it reads one direction
       <code>v</code> of the input and writes along one direction <code>u</code> of the output. The decomposition
-      on this site splits the down-projection of Qwen3-1.7B's first MLP into 6,144 components. Together with a
+      on this site splits the down-projection of each of Qwen3-1.7B's MLPs into 6,144 components; this site shows layers 0, 1 and 15. Together with a
       small leftover term, they add up to the original weight matrix. On any given token, most components can be
       removed without changing what the model does.</p>`,
   },
@@ -68,7 +67,7 @@ const GLOSSARY = [
     short: "A short Python program, written by a language-model agent, that predicts one component's activation from the text alone. The program is the explanation.",
     long: `<p>A program reads only the text, never the model's internals, and predicts the component's activation at
       each token. It is the explanation of that component: if programs capture what the components do, the model
-      should still work when the programs replace them. Three agents (Sol, Haiku 5.5 and Luna) each wrote one
+      should still work when the programs replace them. Language-model agents (Sol, Haiku 5.5 and Luna; which ones varies by layer) each wrote one
       program per component, after studying example text.</p>
       <p>A program defines <code>step(carry, prefix, upstream)</code>. The harness calls it once per token, left to right:</p>
       <ul>
@@ -84,10 +83,15 @@ const GLOSSARY = [
   },
   {
     key: "baselines", term: "Baselines",
-    short: "Predictors that aren't programs. Token lookup predicts each component's average activation for the current token. Zeroing removes the component.",
+    short: "Predictors that aren't programs. Token lookup predicts each component's average activation for the current token; token lookup+ does the same but leaves each document's first token unchanged. Zeroing removes the component.",
     long: `<p><b>Token lookup</b> predicts, for each component, its average activation on the current token, measured
       on training text. It knows nothing about context. <b>Zeroing</b> predicts 0 everywhere, which removes the
-      component. Applied to every component at once, zeroing removes the whole down-projection's output.</p>`,
+      component. Applied to every component at once, zeroing removes the whole down-projection's output.</p>
+      <p><b>Token lookup+</b> is the same table fit without each document's first token, which instead keeps the
+      component's true activation. The first token of a document is where early layers write large values that the rest
+      of the document relies on, and a context-free average there is very costly. Its whole-layer scores were measured
+      with documents' first tokens left unchanged, so compare them with programs in nats rather than against the
+      zeroing line.</p>`,
   },
   {
     key: "replace", term: "Replacing a component",
@@ -144,15 +148,34 @@ const term = (key, text) => {
 };
 
 const cache = new Map();
-// A single-file preview (preview_artifact.py) embeds some data files and can't fetch the rest.
+// A single-file preview embeds its data files instead of fetching them.
 const EMBEDDED = window.EMBEDDED_DATA;
 
+// A preview split into several files says which file holds a page.
+const META = window.EMBEDDED_META;
+function elsewhere(path) {
+  // Which file holds a layer's index or a shard: files are keyed "<layer>:<first shard>:<end shard>".
+  const m = path.match(/^data\/l(\d+)\/(?:s(\d+)|index)/);
+  if (META && m) {
+    const shard = m[2] === undefined ? 0 : Number(m[2]);
+    const hit = Object.entries(META.files).find(([k]) => {
+      const [L, a, b] = k.split(":").map(Number);
+      return L === Number(m[1]) && shard >= a && shard < b;
+    });
+    if (hit) return `That page is in another file: ${hit[1]}`;
+  }
+  return `${path} is not in this file`;
+}
+// The single-file build embeds every data file gzipped and base64-encoded, decompressed on first use.
+async function inflate(b64) {
+  const bytes = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return JSON.parse(await new Response(stream).text());
+}
 function load(path) {
   if (!cache.has(path)) {
     const loaded = EMBEDDED
-      ? (path in EMBEDDED
-        ? Promise.resolve(EMBEDDED[path])
-        : Promise.reject(new Error(`This page isn't in the single-file preview. ${EMBEDDED.note}`)))
+      ? (path in EMBEDDED ? inflate(EMBEDDED[path]) : Promise.reject(new Error(elsewhere(path))))
       : fetch(path).then((r) => {
         if (!r.ok) throw new Error(`${path}: ${r.status}`);
         return r.json();
@@ -161,7 +184,7 @@ function load(path) {
   }
   return cache.get(path);
 }
-const shardOf = (i) => load(`data/components/s${String(Math.floor(i / SHARD)).padStart(3, "0")}.json`)
+const shardOf = (L, i) => load(`data/l${L}/s${String(Math.floor(i / SHARD)).padStart(3, "0")}.json`)
   .then((units) => units[i % SHARD]);
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -174,8 +197,21 @@ const int = (x) => Number(x).toLocaleString("en-US");
 const app = document.getElementById("app");
 
 // ---------- router ----------
+// A split preview puts each route's data in its own small file: the overview,
+// each layer's list, and each 64-component shard's pages. A route this file doesn't hold is opened in
+// the file that does, so every in-page link and hash change works unchanged.
+function fileFor(parts) {
+  if (parts[0] === "l" && /^\d+$/.test(parts[1] || "")) return `l${parts[1]}.html`;
+  if (parts[0] === "c" && /^\d+$/.test(parts[1] || "") && /^\d+$/.test(parts[2] || ""))
+    return `l${parts[1]}-s${String(Math.floor(Number(parts[2]) / SHARD)).padStart(3, "0")}.html`;
+  return "index.html";  // the overview and the glossary
+}
 function route() {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  if (META && META.split && fileFor(parts) !== META.file) {
+    location.href = `${fileFor(parts)}${location.hash || "#/"}`;
+    return;
+  }
   document.querySelectorAll("[data-nav]").forEach((a) => a.classList.remove("on"));
   const nav = (k) => document.querySelector(`[data-nav="${k}"]`)?.classList.add("on");
   window.scrollTo(0, 0);
@@ -185,15 +221,15 @@ function route() {
     const text = EMBEDDED ? e.message : `Could not load data: ${e.message}`;
     app.innerHTML = `<p class="muted">${esc(text)}</p><p><a href="#/">Back to the overview</a></p>`;
   };
-  if (parts[0] === "components") {
-    nav("components");
-    browser().catch(fail);
-  } else if (parts[0] === "glossary") {
+  if (parts[0] === "glossary") {
     nav("glossary");
     try { glossary(parts[1]); } catch (e) { fail(e); }
-  } else if (parts[0] === "c" && /^\d+$/.test(parts[1] || "")) {
-    nav("components");
-    unitPage(Number(parts[1])).catch(fail);
+  } else if (parts[0] === "l" && /^\d+$/.test(parts[1] || "")) {
+    nav(`l${parts[1]}`);
+    browser(Number(parts[1])).catch(fail);
+  } else if (parts[0] === "c" && /^\d+$/.test(parts[1] || "") && /^\d+$/.test(parts[2] || "")) {
+    nav(`l${parts[1]}`);
+    unitPage(Number(parts[1]), Number(parts[2])).catch(fail);
   } else {
     nav("overview");
     overview().catch(fail);
@@ -202,96 +238,106 @@ function route() {
 window.addEventListener("hashchange", route);
 
 // ---------- overview ----------
-async function overview() {
-  const s = await load("data/summary.json");
-  const arms = s.joint.arms;
-  const label = (a) => {
-    if (a.unit === "components") return `${MODELS[a.id].name}<span class="sub">programs</span>`;
-    return `${a.id === "zero" ? "Zero the layer" : MODELS[a.id].name}<span class="sub">baseline</span>`;
-  };
-  const colour = (a) => (a.unit === "components" ? "var(--components)" : "var(--baseline)");
+// A bar chart of joint KL and ΔCE, one row per arm, with a dashed line at `zero`'s values.
+function chart(arms, zero) {
   const max = Math.max(...arms.flatMap((a) => [a.kl, a.ce_difference])) * 1.12;
-  const zero = arms.find((a) => a.id === "zero");
   const cell = (a, key, unitName) => {
     const v = a[key];
-    const tip = `${a.id === "zero" ? "Zero the layer" : MODELS[a.id].name}, ${a.unit === "components" ? "programs" : "baseline"}\n${unitName}: ${fmt(v, 3)} nats/token`;
+    const tip = `${a.label.replace(/<[^>]+>/g, " ")}\n${unitName}: ${fmt(v, 3)} nats/token`;
     return `<div class="bar-cell" data-tip="${esc(tip)}">
-      <div class="zero-line" style="left:${(zero[key] / max) * 100}%"></div>
-      <div class="bar" style="width:${(v / max) * 100}%;background:${colour(a)}"></div>
-      <div class="val" style="left:${(v / max) * 100}%">${fmt(v, 2)}</div></div>`;
+      ${zero ? `<div class="zero-line" style="left:${(zero[key] / max) * 100}%"></div>` : ""}
+      <div class="bar" style="width:${(v / max) * 100}%;background:${a.kind === "programs" ? "var(--components)" : "var(--baseline)"}"></div>
+      <div class="val" style="left:${(v / max) * 100}%">${fmt(v, 3)}</div></div>`;
   };
-  const rows = arms.map((a) => `<div class="label">${label(a)}</div>${cell(a, "kl", "KL")}${cell(a, "ce_difference", "ΔCE")}`).join("");
-  const soloRow = (m) => {
-    const x = s.solo.means.components[m];
-    const name = m === "zero" ? "Zero the component" : MODELS[m].name;
-    return `<tr><td class="l">${name}</td>${x.map((v, k) => `<td>${metricText(k, v)}</td>`).join("")}</tr>`;
-  };
-  const best = arms.filter((a) => a.unit === "components").reduce((x, y) => (x.kl < y.kl ? x : y));
-  app.innerHTML = `
-    <h1>Agent-written programs for every layer-0 MLP component of Qwen3-1.7B</h1>
-    <p class="lede">We split one weight matrix of Qwen3-1.7B into 6,144 simple pieces, then asked language-model
-    agents to write a short Python program for each piece that predicts what it does from the text alone.
-    With every piece replaced by its program, the model still mostly works.</p>
-
-    <h2>How this works</h2>
-    <ol class="prose steps">
-      <li><b>Decompose the weights.</b> ${term("decomposition", "Parameter decomposition")} splits the down-projection
-      of Qwen3-1.7B's first MLP layer into 6,144 rank-one ${term("component", "components")}. On any given token,
-      only a few of them matter.</li>
-      <li><b>Measure each component.</b> On every token, each component has an ${term("activation", "activation")}:
-      a single number saying how strongly it writes its output direction.</li>
-      <li><b>Write a program.</b> An agent studies ${term("window", "example text")} where a component is active, then
-      writes a ${term("program", "program")} that predicts its activation from the text so far. The program never
-      sees the model's internals, so it is a readable explanation of what the component responds to.</li>
-      <li><b>Test it inside the model.</b> We ${term("replace", "replace")} each component's true activation with the
-      program's prediction and check how much the model's next-token predictions change, on
-      ${term("heldout", "held-out text")}. If the explanation is good, they barely change.</li>
-    </ol>
-
-    <h2>Replacing all 6,144 components at once</h2>
-    <p class="muted small prose">Each bar is the model with every component replaced by one predictor, over
-    ${int(s.joint.positions)} token positions. ${term("kl", "KL")} measures how far the model's next-token
-    distribution moves from the original's; ${term("dce", "ΔCE")} measures how much its loss rises. Both are in nats
-    per token, and lower is better. The dashed line is zeroing the whole layer's output, for scale.</p>
-    <div class="chart">
+  return `<div class="chart">
       <div></div><div class="head">KL to the original model (nats/token)</div><div class="head">Increase in loss, ΔCE (nats/token)</div>
-      ${rows}
-    </div>
-    <div class="legend">
-      <span><i class="swatch" style="background:var(--components)"></i>programs</span>
-      <span><i class="swatch" style="background:var(--baseline)"></i>${term("baselines", "baselines")}</span>
-    </div>
-    <p class="prose">The best programs (${MODELS[best.id].name}'s) raise the loss by ${fmt(best.ce_difference, 2)}
-    nats/token, against ${fmt(zero.ce_difference, 2)} for removing the layer's output entirely.</p>
+      ${arms.map((a) => `<div class="label">${a.label}</div>${cell(a, "kl", "KL")}${cell(a, "ce_difference", "ΔCE")}`).join("")}
+    </div>`;
+}
+const layerName = (L) => `Layer ${L}`;
 
-    <h2>One component at a time</h2>
-    <p class="muted small prose">Here only one component is replaced at a time, on ${int(s.solo.rows)} held-out text
-    sequences, and the scores are averaged over the 6,144 components. One component is a tiny part of the model,
-    so KL and ΔCE are tiny too: compare them between rows, not against the chart above.
-    ${term("ve", "VE")} is how much of the component's activation the prediction explains, where 1 is perfect.</p>
-    <table class="data scores">
-      <tr><th class="l">predictor</th>${METRICS.map((m) => `<th>mean ${term(m.gloss, m.name)}</th>`).join("")}</tr>
-      ${[...PROGRAM_MODELS, "lookup", "zero"].map(soloRow).join("")}
-    </table>
-
-    <h2>What's here</h2>
-    <div class="prose">
-      <p><b><a href="#/components">Components</a>.</b> A sortable table of all 6,144 components, each with a
-      one-line description from its program. Each component's page shows its programs, its scores, and example text
-      coloured by its activation.</p>
-      <p><b><a href="#/glossary">Glossary</a>.</b> Every term on the site, explained. Dotted-underlined words link to
-      it; hover them for a short definition.</p>
-      <p><b>Data.</b> Examples are drawn from the model's training mix of public datasets: web text, code, math,
-      papers, Wikipedia, patents and agent coding traces. The site leaves out ${EXCLUDED}.</p>
-    </div>
-    <h3>Agents</h3>
-    <table class="data scores">
-      ${PROGRAM_MODELS.map((m) => `<tr><td class="l">${MODELS[m].name}</td><td class="l">${MODELS[m].full}</td></tr>`).join("")}
-    </table>
-    <footer>Model: ${esc(s.model)} · weight matrix: ${esc(s.site)} · decomposition: Goodfire run ${esc(s.decomposition.run)}, training step ${int(s.decomposition.step)}.</footer>`;
+// A layer's whole-layer bar chart: its programs, the baselines and zeroing, all components substituted at once
+// (the overview's chart, and the top of the layer's page).
+const LEGEND = `<div class="legend"><span><i class="swatch" style="background:var(--components)"></i>programs</span>
+      <span><i class="swatch" style="background:var(--baseline)"></i>baselines</span></div>`;
+function layerChart(s, l) {
+  const order = [...l.models, "lookup", "zero"];
+  const arms = order.map((id) => ({ ...l.joint.arms[id], label: id === "zero" ? `Zero the layer<span class="sub">baseline</span>`
+    : `${MODELS[id].name}<span class="sub">${l.joint.arms[id].kind}${l.runs && l.runs[id] ? ` · <span class="run">${l.runs[id].map(esc).join(", ")}</span>` : ""}</span>` }));
+  // Token lookup+, beside token lookup: scored with documents' first tokens unchanged.
+  const plus = s.matched && s.matched.layers.find((x) => x.layer === l.layer);
+  if (plus) arms.splice(order.indexOf("zero"), 0, { ...plus.arms.lookup_plus, label: `${MODELS.lookup_plus.name}<span class="sub">baseline · documents' first tokens unchanged</span>` });
+  return chart(arms, l.joint.arms.zero);
 }
 
-// ---------- glossary ----------
+async function overview() {
+  const s = await load("data/summary.json");
+  const layerSection = (l) => `<h3>${layerName(l.layer)} <span class="muted small">· <a href="#/l/${l.layer}">${int(s.n_units)} components</a> · ${esc(l.joint.precision)}</span></h3>
+      ${layerChart(s, l)}`;
+  const c = s.combined.arms;
+  const comb = [
+    ["sol_both", "Sol, layers 0 and 1", "programs"], ["sol_l0", "Sol, layer 0 only", "programs"], ["sol_l1", "Sol, layer 1 only", "programs"],
+    ["both", "Haiku, layers 0 and 1", "programs"], ["l0", "Haiku, layer 0 only", "programs"], ["l1", "Haiku, layer 1 only", "programs"],
+    ["lookup", "Token lookup, both layers", "baseline"], ["zero_l0", "Zero layer 0", "baseline"], ["zero_l1", "Zero layer 1", "baseline"],
+    ["zero", "Zero both layers", "baseline"],
+  ].map(([id, name, kind]) => ({ ...c[id], kind, label: `${name}<span class="sub">${kind}</span>` }));
+  if (s.matched) comb.splice(comb.findIndex((a) => a.label.startsWith("Token lookup,")) + 1, 0,
+    { ...s.matched.combined.arms.lookup_plus, label: `Token lookup+, both layers<span class="sub">baseline · documents' first tokens unchanged</span>` });
+  const soloTable = (l) => `<h3>${layerName(l.layer)} <span class="muted small">· ${esc(l.solo_precision)}</span></h3>
+    <table class="data scores">
+      <tr><th class="l">predictor</th>${METRICS.map((m) => `<th title="${esc(m.tip)}">mean ${m.name}</th>`).join("")}<th title="mean lines of program source, over components with a program">mean lines</th><th title="mean size of program source, UTF-8, 1 KB = 1000 bytes">mean KB</th></tr>
+      ${[...l.models, "lookup", "zero"].map((m) => {
+        const code = l.code && l.code[m];
+        return `<tr><td class="l">${m === "zero" ? "Zero the component" : MODELS[m].name}</td>${l.solo_means[m].map((v, k) => `<td>${metricText(k, v)}</td>`).join("")}<td>${code ? fmt(code.mean_lines, 0) : ""}</td><td>${code ? fmt(code.mean_kb, 1) : ""}</td></tr>`;
+      }).join("")}
+    </table>`;
+  app.innerHTML = `
+    <h1>Agent-written programs for Qwen3-1.7B MLP components</h1>
+    <p class="lede">${term("decomposition", "Parameter decomposition")} (run p-82af68dd, step 100,000) splits each layer's MLP down-projection into
+    6,144 rank-one components. Language-model agents each wrote a short Python ${term("program", "program")} that predicts one component's
+    activation from the text. Layers: ${s.layers.map((l) => `<a href="#/l/${l.layer}">${layerName(l.layer)}</a>`).join(", ")}.</p>
+
+    <h2>Replacing a whole layer at once</h2>
+    <p class="muted small prose">Every component's program substituted together, on ${int(4096)} held-out rows. Lower is better.
+    The dashed line is zeroing the whole layer. A component with no program is zeroed.</p>
+    ${s.layers.map(layerSection).join("")}
+    ${LEGEND}
+
+    <h2>Layers 0 and 1 together</h2>
+    <p class="muted small prose">Both layers' down-projections substituted at once, on the same rows (TF32). The dashed line
+    is zeroing both layers. Program errors add almost linearly; zeroing compounds.</p>
+    ${chart(comb, c.zero)}
+    ${LEGEND}
+
+    <h2>One component at a time</h2>
+    <p class="muted small prose">Replacing a single component by its predictor, on 1,024 held-out rows, averaged over the
+    6,144 components. <b>KL</b> and <b>ΔCE</b> in nats/token; <b>VE</b> is the variance of the component's activation the
+    predictor explains. Layer 0 was scored in strict fp32; layers 1 and 15 in TF32 with its noise floor subtracted from KL.</p>
+    ${s.layers.map(soloTable).join("")}
+
+    <h2>Notes</h2>
+    <div class="prose">
+      <p><b>Programs.</b> Each program defines <code>step(carry, prefix, upstream)</code>. It sees the tokens so far and
+      returns a prediction for the current position. The docstring is the agent's own one-line description.
+      The token lookup baseline predicts each component's mean activation for the current token.</p>
+      <p><b>Token lookup+.</b> The token lookup table fit without each document's first token, which keeps its true
+      value. Its whole-layer bars were measured with documents' first tokens unchanged, no leftover weight term and full
+      fp32 precision, on the same held-out text. For programs those differences are small (Sol, layer 0: KL 0.139 under
+      this site's rules, 0.138 under lookup+'s), but zeroing with documents' first tokens unchanged costs far less (layer 0:
+      0.69 against 2.83), so lookup+'s bars are best read in nats, not against the dashed line. There are no one-at-a-time
+      scores for it.</p>
+      <p><b>Examples.</b> Text windows from a sample of the training data. Windows that include any text from a few
+      sources we can't share (such as chat logs, video transcripts, legal documents and library books) are left out,
+      before examples are chosen.</p>
+      <p><b>Layer 1.</b> Component 6136 has no Haiku 5.5 program.</p>
+    </div>
+    <h3>Models</h3>
+    <table class="data scores">
+      ${["sol", "haiku", "luna"].map((m) => `<tr><td class="l">${MODELS[m].name}</td><td class="l">${MODELS[m].full}</td></tr>`).join("")}
+    </table>
+    <footer>Model: ${esc(s.model)} · decomposition ${esc(s.decomposition.run)} at step ${int(s.decomposition.step)}.</footer>`;
+}
+
 function glossary(focus) {
   app.innerHTML = `
     <h1>Glossary</h1>
@@ -310,10 +356,17 @@ function glossary(focus) {
 // ---------- browser ----------
 const st = { sort: "i", asc: true, q: "", page: 0, desc: "sol", metric: 0 };
 
-async function browser() {
-  const idx = await load("data/components/index.json");
+async function browser(L) {
+  const [idx, s] = await Promise.all([load(`data/l${L}/index.json`), load("data/summary.json")]);
+  const layer = s.layers.find((x) => x.layer === L);
+  PROGRAM_MODELS = idx.models;
+  if (!PROGRAM_MODELS.includes(st.desc)) st.desc = PROGRAM_MODELS[0];
+  if (st.sort !== "i" && ![...PROGRAM_MODELS, "lookup"].includes(st.sort)) { st.sort = "i"; st.asc = true; }
+  if (st.layer !== L) { st.page = 0; st.layer = L; }
   const scoreModels = [...PROGRAM_MODELS, "lookup"];
-  const cols = [{ key: "i", label: "#" }, ...scoreModels.map((m) => ({ key: m, label: MODELS[m].name }))];
+  // A model's column can name the runs its programs came from (idx.runs), where the data has them.
+  const runsOf = (m) => (idx.runs && idx.runs[m] ? `<span class="run">${idx.runs[m].map(esc).join(", ")}</span>` : "");
+  const cols = [{ key: "i", label: "#" }, ...scoreModels.map((m) => ({ key: m, label: `${MODELS[m].name}${runsOf(m) ? `<br>${runsOf(m)}` : ""}` }))];
   const value = (u, key) => {
     if (key === "i") return u.i;
     const v = u.s[key][st.metric];
@@ -321,13 +374,17 @@ async function browser() {
   };
 
   app.innerHTML = `
-    <h1>Layer-0 MLP components</h1>
-    <p class="muted prose">All ${int(idx.units.length)} ${term("component", "components")}, with each agent's score for
-    its program and the ${term("baselines", "token lookup baseline")}. Scores ${term("replace", "replace one component at a time")},
-    so they are tiny; the best predictor in each row is bold. The description is the first line of a program's
-    docstring. Click a column to sort and a row to open the component.</p>
+    <h1>Layer-${L} MLP components</h1>
+    <h2>Replacing the whole layer at once</h2>
+    <p class="muted small prose">Every component's program substituted together, on ${int(layer.joint.rows)} held-out rows (${esc(layer.joint.precision)}). Lower is better.
+    The dashed line is zeroing the whole layer.</p>
+    ${layerChart(s, layer)}
+    ${LEGEND}
+    <h2>Components</h2>
+    <p class="muted prose">${int(idx.units.length)} components. Scores replace one component at a time. Click a column to sort
+    and a row to open the component.</p>
     <div class="controls">
-      <span class="metric">${METRICS.map((m, k) => `<button data-metric="${k}" title="${esc(GLOSSED.get(m.gloss).short)}"${k === st.metric ? ' aria-pressed="true"' : ""}>${m.name}</button>`).join("")}</span>
+      <span class="metric">${METRICS.map((m, k) => `<button data-metric="${k}" title="${esc(m.tip)}"${k === st.metric ? ' aria-pressed="true"' : ""}>${m.name}</button>`).join("")}</span>
       <input type="search" placeholder="Search program descriptions or #index" value="${esc(st.q)}">
       <label class="small muted">Description from
         <select>${PROGRAM_MODELS.map((m) => `<option value="${m}"${m === st.desc ? " selected" : ""}>${MODELS[m].name}</option>`).join("")}</select></label>
@@ -397,7 +454,7 @@ async function browser() {
     const b = e.target.closest(".pager button");
     if (b) { st.page += Number(b.dataset.p); render(); return; }
     const row = e.target.closest("tr.row");
-    if (row) location.hash = `#/c/${row.dataset.i}`;
+    if (row) location.hash = `#/c/${L}/${row.dataset.i}`;
   };
   render();
 }
@@ -451,11 +508,10 @@ function highlightPython(src) {
 function scoresTable(unit, models) {
   const name = (m) => (m === "zero" ? "Zero the component" : MODELS[m].name) + (m === "lookup" || m === "zero" ? ' <span class="muted">(baseline)</span>' : "");
   return `<table class="data scores">
-    <tr><th class="l">predictor</th>${METRICS.map((m) => `<th>${term(m.gloss, m.name)}</th>`).join("")}</tr>
+    <tr><th class="l">predictor</th>${METRICS.map((m) => `<th title="${esc(m.tip)}">${m.name}</th>`).join("")}</tr>
     ${models.map((m) => `<tr><td class="l">${name(m)}</td>${unit.scores[m].map((v, k) => `<td>${metricText(k, v)}</td>`).join("")}</tr>`).join("")}
   </table>
-  <p class="muted small">Each row ${term("replace", "replaces only this component")}. KL and ΔCE are in nats/token, lower is
-  better; VE is the share of the component's activation the prediction explains, higher is better.</p>`;
+  <p class="muted small">KL and ΔCE in nats/token; VE is the share of the component's activation variance the predictor explains.</p>`;
 }
 
 // Storage is unavailable in sandboxed frames; the layout choice then lasts only for the visit.
@@ -473,40 +529,34 @@ function programsHtml(unit, models) {
   return `${toggle}<div class="programs${stacked ? " stacked" : ""}">${models.map((m) => {
     const src = unit.programs[m];
     const sc = unit.scores[m];
-    return `<div class="program"><div class="ph"><b>${MODELS[m].name}</b>
+    const note = unit.notes && unit.notes[m] ? ` <span class="muted">(${esc(unit.notes[m])})</span>` : "";
+    const run = unit.runs && unit.runs[m] ? ` <span class="run" title="the explain run that wrote this program">${esc(unit.runs[m])}</span>` : "";
+    return `<div class="program"><div class="ph"><span><b>${MODELS[m].name}</b>${run}${note}</span>
       <span class="muted">KL ${sci(sc[0])} · ΔCE ${sci(sc[1])} · VE ${fmt(sc[2])}${src ? ` · ${src.split("\n").length} lines` : ""}</span></div>
       <pre>${src ? highlightPython(src) : '<span class="muted">No program.</span>'}</pre></div>`;
   }).join("")}</div>`;
 }
 
-async function unitPage(i) {
+async function unitPage(L, i) {
   if (i < 0 || i >= 6144) throw new Error(`no component ${i}`);
-  const [unit, vocab] = await Promise.all([shardOf(i), load("data/vocab.json")]);
+  const [idx, unit, vocab] = await Promise.all([load(`data/l${L}/index.json`), shardOf(L, i), load("data/vocab.json")]);
+  PROGRAM_MODELS = idx.models;
   const nav = `<div class="unit-nav">
-    ${i > 0 ? `<a href="#/c/${i - 1}">← ${i - 1}</a>` : ""}
-    <a href="#/components">all components</a>
-    ${i < 6143 ? `<a href="#/c/${i + 1}">${i + 1} →</a>` : ""}</div>`;
+    ${i > 0 ? `<a href="#/c/${L}/${i - 1}">← ${i - 1}</a>` : ""}
+    <a href="#/l/${L}">all layer-${L} components</a>
+    ${i < 6143 ? `<a href="#/c/${L}/${i + 1}">${i + 1} →</a>` : ""}</div>`;
   const groups = [["strongest", "Strongest windows, by activation at the marked token"], ["spread", "Weaker windows, spread over the rest of the sample"]];
   const examples = groups.map(([g, title]) => {
     const ws = unit.windows.filter((w) => w.g === g);
     return ws.length ? `<div class="ex-group">${title}</div><div class="examples">${ws.map((w) => windowHtml(w, vocab, unit.scale)).join("")}</div>` : "";
   }).join("");
   const body = `
-    <h2>Programs</h2>
-    <p class="muted small prose">Three agents each wrote a ${term("program", "program")} predicting this component's
-    ${term("activation", "activation")} from the text. The harness calls <code>step</code> once per token; it returns
-    a running state for the next token (<code>carry</code>) and its prediction. <code>prefix</code> is the text so far.</p>
-    ${programsHtml(unit, PROGRAM_MODELS)}
+    <h2>Programs</h2>${programsHtml(unit, PROGRAM_MODELS)}
     <h2>Scores, one component at a time</h2>${scoresTable(unit, [...PROGRAM_MODELS, "lookup", "zero"])}
     <h2>Examples</h2>
-    <p class="muted small prose">${term("window", "Text windows")} sampled from the training data where the component is
-    active, leaving out ${EXCLUDED}. Colour is the component's ${term("activation", "activation")}, red positive and blue
-    negative${unit.scale ? `; ${scaleLegend(unit.scale)}` : ""}. An underline marks tokens where the decomposition
-    counts the component as needed (${term("ci", "causal importance")} above 0.1). The outlined token is the window's
-    centre. Hover a token for its values.</p>
-    ${examples || `<p class="muted">${unit.harvested_windows
-      ? `All ${unit.harvested_windows} sampled windows come from datasets whose text isn't shown here.`
-      : "This component wasn't active anywhere in the sampled text."}</p>`}`;
+    <p class="muted small">Text windows sampled from the training data where the component is active, from sources we can share. Colour is the component's activation, red positive and blue negative${unit.scale ? `; ${scaleLegend(unit.scale)}` : ""}.
+    An underline marks tokens where the decomposition counts the component as active (causal importance above 0.1). The outlined token is the window's centre. Hover a token for values.</p>
+    ${examples || `<p class="muted">${unit.removed_all ? "Every example window for this component included text from a source we can't share, so none are shown." : "This component wasn't active anywhere in the sampled text."}</p>`}`;
   app.onclick = (e) => {
     const b = e.target.closest("button.layout");
     if (!b) return;
@@ -516,7 +566,7 @@ async function unitPage(i) {
     app.querySelectorAll("button.layout").forEach((x) => x.toggleAttribute("aria-pressed", x === b));
   };
   app.classList.add("wide");
-  app.innerHTML = `<div class="unit-head"><h1>Component ${i}</h1>${nav}</div>${body}`;
+  app.innerHTML = `<div class="unit-head"><h1>Layer ${L}, component ${i}</h1>${nav}</div>${body}`;
 }
 
 // ---------- tooltips ----------
@@ -525,7 +575,6 @@ document.addEventListener("mouseover", (e) => {
   const tok = e.target.closest(".tok");
   const bar = e.target.closest("[data-tip]");
   const gloss = e.target.closest("[data-gloss]");
-  tip.classList.toggle("prose-tip", Boolean(gloss));
   if (gloss) {
     tip.textContent = GLOSSED.get(gloss.dataset.gloss).short;
   } else if (tok) {
